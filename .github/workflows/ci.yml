@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - run: cp .env.example .env
+
+      - run: npm ci --ignore-scripts
+
+      - run: npm run lint:ci
+
+      - run: npm run tsc
+
+      - run: npm run docker:test-container-up
+
+      - name: Migrate & seed
+        run: |
+          cp .env.test .env
+          if [ -d "prisma/migrations" ] && [ "$(ls -A prisma/migrations)" ]; then
+            npx prisma migrate deploy
+            npm run seed
+          fi
+        env:
+          DATABASE_URL: postgresql://engine:password@localhost:5434/engine-test
+
+      - run: npm run test:cov
+        env:
+          DATABASE_URL: postgresql://engine:password@localhost:5434/engine-test
+
+      - run: npm run docker:test-container-down
+
+      - uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
+        continue-on-error: true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

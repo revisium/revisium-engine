@@ -3,7 +3,7 @@ FROM node:24.11.1-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --ignore-scripts && npm rebuild
+RUN npm ci --ignore-scripts
 
 COPY src ./src
 COPY prisma ./prisma

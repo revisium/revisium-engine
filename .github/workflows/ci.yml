@@ -22,7 +22,6 @@ jobs:
       - run: cp .env.example .env
 
       - run: npm ci --ignore-scripts
-      - run: npm rebuild
 
       - run: npm run lint:ci
 

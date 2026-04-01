@@ -3,7 +3,7 @@ FROM node:24.11.1-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts && npm rebuild
 
 COPY src ./src
 COPY prisma ./prisma
@@ -13,9 +13,8 @@ RUN npm run build
 
 FROM node:24.11.1-alpine
 
-RUN apk add --no-cache curl
-
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN apk add --no-cache curl && \
+    addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 

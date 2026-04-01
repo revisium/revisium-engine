@@ -21,7 +21,8 @@ jobs:
 
       - run: cp .env.example .env
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild
 
       - run: npm run lint:ci
 
@@ -45,7 +46,7 @@ jobs:
 
       - run: npm run docker:test-container-down
 
-      - uses: SonarSource/sonarqube-scan-action@v6
+      - uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
         continue-on-error: true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

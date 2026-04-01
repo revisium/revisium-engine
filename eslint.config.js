@@ -3,7 +3,7 @@ const tseslint = require('typescript-eslint');
 const prettierPlugin = require('eslint-plugin-prettier');
 const sonarjsPlugin = require('eslint-plugin-sonarjs');
 
-module.exports = tseslint.config(
+module.exports = [
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   sonarjsPlugin.configs.recommended,
@@ -56,4 +56,4 @@ module.exports = tseslint.config(
       'eslint.config.js',
     ],
   },
-);
+];

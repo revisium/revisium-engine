@@ -23,6 +23,8 @@ jobs:
 
       - run: npm ci --ignore-scripts
 
+      - run: npm run prisma:generate
+
       - run: npm run lint:ci
 
       - run: npm run tsc

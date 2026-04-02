@@ -280,11 +280,10 @@ export class TransactionPrismaService implements OnModuleInit {
    *
    * Prisma error codes:
    * - P2034: Transaction write conflict
-   * - P2003: Foreign key constraint failed (race condition on concurrent table creation)
    */
   private isRetryableError(error: Error): boolean {
     const code = (error as { code?: string }).code || '';
-    const retryableCodes = ['40001', '40P01', 'P2034', 'P2003'];
+    const retryableCodes = ['40001', '40P01', 'P2034'];
 
     if (retryableCodes.includes(code)) {
       return true;
@@ -296,7 +295,6 @@ export class TransactionPrismaService implements OnModuleInit {
       'deadlock detected',
       'TransactionWriteConflict',
       'Please retry your transaction',
-      'Foreign key constraint',
     ];
 
     return retryableMessages.some((pattern) => message.includes(pattern));

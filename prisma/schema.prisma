@@ -2,8 +2,83 @@ generator client {
   provider        = "prisma-client"
   output          = "../src/__generated__/client"
   moduleFormat    = "cjs"
+  previewFeatures = ["fullTextSearchPostgres", "typedSql"]
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model Branch {
+  id        String     @id
+  createdAt DateTime   @default(now())
+  isRoot    Boolean    @default(false)
+  name      String
+  projectId String
+  revisions Revision[]
+
+  @@unique([name, projectId])
+}
+
+model Revision {
+  id         String   @id
+  sequence   Int      @unique @default(autoincrement())
+  createdAt  DateTime @default(now())
+  comment    String   @default("")
+  isHead     Boolean  @default(false)
+  isDraft    Boolean  @default(false)
+  isStart    Boolean  @default(false)
+  hasChanges Boolean  @default(false)
+
+  branchId String
+  branch   Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  parentId String?
+  parent   Revision?  @relation("parentRevision", fields: [parentId], references: [id], onDelete: SetNull)
+  children Revision[] @relation("parentRevision")
+  tables   Table[]
+
+  @@index([branchId])
+}
+
+model Table {
+  versionId String @id
+  createdId String
+  id        String
+
+  readonly Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
+  system Boolean @default(false)
+
+  revisions Revision[]
+  rows      Row[]
+
+  @@index([id])
+}
+
+model Row {
+  versionId String @id
+  createdId String
+  id        String
+
+  readonly Boolean @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  publishedAt DateTime @default(now())
+
+  data       Json
+  meta       Json   @default("{}")
+  hash       String
+  schemaHash String
+
+  tables Table[]
+
+  @@index([data], type: Gin)
+  @@index([id])
+  @@index([hash])
+  @@index([schemaHash])
+  @@index([publishedAt])
 }

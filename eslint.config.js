@@ -37,6 +37,7 @@ module.exports = [
         'error',
         { ignore: [0, 1, -1], ignoreArrayIndexes: true, enforceConst: true },
       ],
+      '@typescript-eslint/no-non-null-assertion': 'error',
       'sonarjs/cognitive-complexity': ['error', 15],
     },
   },

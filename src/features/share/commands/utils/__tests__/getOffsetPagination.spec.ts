@@ -93,6 +93,26 @@ describe('getOffsetPagination', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should throw BadRequestException when after is an empty string', async () => {
+      await expect(
+        getOffsetPagination({
+          pageData: { first: 10, after: '' },
+          findMany: mockFindMany,
+          count: mockCount,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when after is whitespace', async () => {
+      await expect(
+        getOffsetPagination({
+          pageData: { first: 10, after: ' ' },
+          findMany: mockFindMany,
+          count: mockCount,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should accept first=0 as a valid value', async () => {
       const result = await getOffsetPagination({
         pageData: { first: 0 },

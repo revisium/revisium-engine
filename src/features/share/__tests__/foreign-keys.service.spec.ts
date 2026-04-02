@@ -424,7 +424,23 @@ describe('ForeignKeysService', () => {
             0,
           );
         }),
-      ).rejects.toThrow('contains double quote');
+      ).rejects.toThrow('could break jsonpath');
+    });
+
+    it('should reject keys containing backslashes to prevent jsonpath escape', async () => {
+      const tableVersionId = await createTableWithRows();
+
+      await expect(
+        transactionPrismaService.run(async () => {
+          return service.findRowsByKeyValueInData(
+            tableVersionId,
+            'key\\escape',
+            'test',
+            10,
+            0,
+          );
+        }),
+      ).rejects.toThrow('could break jsonpath');
     });
 
     it('should reject keys with null bytes', async () => {

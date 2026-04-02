@@ -29,9 +29,11 @@ export class ForeignKeysService {
       throw new Error(`Invalid ${label}: contains null byte`);
     }
 
-    // Reject double quotes to prevent jsonpath injection in quoted key segments
-    if (input.includes('"')) {
-      throw new Error(`Invalid ${label}: contains double quote`);
+    // Reject double quotes and backslashes to prevent jsonpath injection in quoted key segments
+    if (input.includes('"') || input.includes('\\')) {
+      throw new Error(
+        `Invalid ${label}: contains characters that could break jsonpath`,
+      );
     }
 
     // Length check for practical reasons

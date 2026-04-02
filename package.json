@@ -41,13 +41,18 @@
   },
   "dependencies": {
     "@revisium/prisma-pg-json": "^1.5.0",
+    "@revisium/schema-toolkit": "^0.24.0",
+    "ajv": "^8.18.0",
+    "lru-cache": "^11.2.7",
     "nanoid": "^5.1.7",
     "object-hash": "^3.0.0"
   },
   "peerDependencies": {
+    "@nestjs/cache-manager": "^3.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
+    "@nestjs/cqrs": "^11.0.0",
     "@prisma/adapter-pg": "^7.0.0",
     "@prisma/client": "^7.0.0",
     "pg": "^8.0.0",
@@ -56,10 +61,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
+    "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/cli": "^11.0.7",
     "@nestjs/common": "^11.1.11",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.11",
+    "@nestjs/cqrs": "^11.0.3",
     "@nestjs/platform-express": "^11.1.11",
     "@nestjs/schematics": "^11.0.1",
     "@nestjs/testing": "^11.1.11",
@@ -71,6 +78,8 @@
     "@types/node": "^22.15.21",
     "@types/object-hash": "^3.0.6",
     "@types/pg": "^8.15.4",
+    "ajv-formats": "^3.0.1",
+    "cache-manager": "^7.2.8",
     "dotenv": "^17.4.0",
     "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.5",
@@ -138,6 +147,9 @@
     "setupFiles": [
       "<rootDir>/jest.setup.ts"
     ],
-    "testTimeout": 30000
+    "testTimeout": 30000,
+    "transformIgnorePatterns": [
+      "node_modules/(?!nanoid)"
+    ]
   }
 }

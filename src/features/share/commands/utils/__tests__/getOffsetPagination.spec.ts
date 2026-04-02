@@ -93,6 +93,16 @@ describe('getOffsetPagination', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should throw BadRequestException when after exceeds safe integer', async () => {
+      await expect(
+        getOffsetPagination({
+          pageData: { first: 10, after: '99999999999999999999' },
+          findMany: mockFindMany,
+          count: mockCount,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should throw BadRequestException when after is an empty string', async () => {
       await expect(
         getOffsetPagination({

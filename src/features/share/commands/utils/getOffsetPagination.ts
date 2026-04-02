@@ -32,7 +32,10 @@ export async function getOffsetPagination<T>({
   }
 
   if (pageData.after !== undefined) {
-    if (!/^\d+$/.test(pageData.after)) {
+    if (
+      !/^\d+$/.test(pageData.after) ||
+      !Number.isSafeInteger(Number(pageData.after))
+    ) {
       throw new BadRequestException(
         'Invalid "after" cursor: must be a non-negative integer string',
       );

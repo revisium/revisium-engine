@@ -39,6 +39,7 @@ module.exports = [
       ],
       '@typescript-eslint/no-non-null-assertion': 'error',
       'sonarjs/cognitive-complexity': ['error', 15],
+      'sonarjs/function-return-type': 'off',
     },
   },
   {

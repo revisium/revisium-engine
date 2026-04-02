@@ -1,0 +1,160 @@
+import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Inject, Injectable } from '@nestjs/common';
+import { Prisma } from 'src/__generated__/client';
+import Ajv, { ErrorObject, Schema, ValidateFunction } from 'ajv/dist/2020';
+import hash from 'object-hash';
+import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
+import { historyPatchesSchema } from 'src/features/share/schema/history-patches-schema';
+import { jsonPatchSchema } from 'src/features/share/schema/json-patch-schema';
+import { metaSchema } from 'src/features/share/schema/meta-schema';
+import {
+  ajvFileSchema,
+  ajvRowCreatedAtSchema,
+  ajvRowCreatedIdSchema,
+  ajvRowHashSchema,
+  ajvRowIdSchema,
+  ajvRowPublishedAtSchema,
+  ajvRowSchemaHashSchema,
+  ajvRowUpdatedAtSchema,
+  ajvRowVersionIdSchema,
+} from 'src/features/share/schema/plugins';
+import { tableMigrationsSchema } from 'src/features/share/schema/table-migrations-schema';
+import { Migration, JsonSchema } from '@revisium/schema-toolkit/types';
+
+const HOURS_PER_DAY = 24;
+const MINUTES_PER_HOUR = 60;
+const SECONDS_PER_MINUTE = 60;
+const MS_PER_SECOND = 1000;
+const DEFAULT_TIME_EXPIRATION =
+  HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND;
+
+@Injectable()
+export class JsonSchemaValidatorService {
+  public readonly metaSchemaHash: string;
+  public readonly tableSchemaHash: string;
+
+  private readonly ajv = new Ajv();
+
+  public readonly metaSchemaValidateFunction: ValidateFunction<JsonSchema>;
+  public readonly jsonPatchSchemaValidateFunction: ValidateFunction;
+  public readonly historyPatchesSchemaValidate: ValidateFunction;
+  public readonly tableMigrationsSchemaValidate: ValidateFunction<Migration>;
+
+  constructor(@Inject(CACHE_MANAGER) private readonly cacheManager: Cache) {
+    this.ajv.addKeyword({
+      keyword: CustomSchemeKeywords.ForeignKey,
+      type: 'string',
+    });
+    this.ajv.addKeyword({
+      keyword: CustomSchemeKeywords.XFormula,
+    });
+    this.ajv.addFormat('regex', {
+      type: 'string',
+      validate: (str: string) => {
+        try {
+          new RegExp(str);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
+
+    this.compilePluginSchemas();
+    this.metaSchemaValidateFunction = this.ajv.compile(metaSchema);
+    this.jsonPatchSchemaValidateFunction = this.ajv.compile(jsonPatchSchema);
+    this.historyPatchesSchemaValidate = this.ajv.compile(historyPatchesSchema);
+    this.tableMigrationsSchemaValidate = this.ajv.compile(
+      tableMigrationsSchema,
+    );
+    this.metaSchemaHash = this.getSchemaHash(metaSchema);
+    this.tableSchemaHash = this.getSchemaHash(tableMigrationsSchema);
+  }
+
+  public validateMetaSchema(data: unknown) {
+    const result = this.metaSchemaValidateFunction(data);
+
+    return {
+      result,
+      errors: this.metaSchemaValidateFunction.errors,
+    };
+  }
+
+  public validateJsonPatchSchema(data: unknown) {
+    const result = this.jsonPatchSchemaValidateFunction(data);
+
+    return {
+      result,
+      errors: this.jsonPatchSchemaValidateFunction.errors,
+    };
+  }
+
+  public validateHistoryPatchesSchema(data: unknown) {
+    const result = this.historyPatchesSchemaValidate(data);
+
+    return {
+      result,
+      errors: this.historyPatchesSchemaValidate.errors,
+    };
+  }
+
+  public validateTableMigrationsSchema(data: unknown) {
+    const result = this.tableMigrationsSchemaValidate(data);
+
+    return {
+      result,
+      errors: this.tableMigrationsSchemaValidate.errors,
+    };
+  }
+
+  public async validate(
+    data: unknown,
+    schema: Schema,
+    schemaHash: string,
+  ): Promise<{ result: boolean; errors?: null | ErrorObject[] }> {
+    const validate = await this.getOrAddValidateFunction(schema, schemaHash);
+
+    const result = validate(data);
+
+    return {
+      result,
+      errors: validate.errors,
+    };
+  }
+
+  public getSchemaHash(schema: Schema | Prisma.InputJsonValue): string {
+    return hash(schema);
+  }
+
+  public async getOrAddValidateFunction(
+    schema: Schema | Prisma.InputJsonValue,
+    schemaHash: string,
+  ): Promise<ValidateFunction> {
+    const cachedValidateFunction =
+      await this.cacheManager.get<ValidateFunction>(schemaHash);
+
+    if (!cachedValidateFunction) {
+      const validateFunction = this.ajv.compile(schema as Schema);
+      await this.cacheManager.set(
+        schemaHash,
+        validateFunction,
+        DEFAULT_TIME_EXPIRATION,
+      );
+      return validateFunction;
+    }
+
+    return cachedValidateFunction;
+  }
+
+  private compilePluginSchemas(): void {
+    this.ajv.compile(ajvRowIdSchema);
+    this.ajv.compile(ajvRowCreatedIdSchema);
+    this.ajv.compile(ajvRowVersionIdSchema);
+    this.ajv.compile(ajvRowCreatedAtSchema);
+    this.ajv.compile(ajvRowPublishedAtSchema);
+    this.ajv.compile(ajvRowUpdatedAtSchema);
+    this.ajv.compile(ajvRowHashSchema);
+    this.ajv.compile(ajvRowSchemaHashSchema);
+    this.ajv.compile(ajvFileSchema);
+  }
+}

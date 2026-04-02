@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { IPaginatedType } from 'src/features/share/pagination.interface';
 
 type PageDataType = { readonly first: number; after?: string };
@@ -24,6 +25,21 @@ export async function getOffsetPagination<T>({
   findMany,
   count,
 }: GetPaginationArgsType<T>): Promise<IPaginatedType<T>> {
+  if (!Number.isInteger(pageData.first) || pageData.first < 0) {
+    throw new BadRequestException(
+      'Invalid "first" parameter: must be a non-negative integer',
+    );
+  }
+
+  if (pageData.after !== undefined) {
+    const parsed = Number(pageData.after);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new BadRequestException(
+        'Invalid "after" cursor: must be a non-negative integer string',
+      );
+    }
+  }
+
   const take = pageData.first;
   const skip = pageData.after ? Number(pageData.after) : 0;
 

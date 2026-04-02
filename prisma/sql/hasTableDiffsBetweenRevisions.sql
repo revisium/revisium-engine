@@ -22,6 +22,7 @@ SELECT EXISTS (
     WHERE
     pt."createdId" IS NULL OR
     ct."createdId" IS NULL OR
+    pt."id" != ct."id" OR
     ct."versionId" != pt."versionId"
 
 LIMIT 1)

@@ -6,6 +6,7 @@ type CountResult = { count: string | number | bigint };
 
 const MAX_INPUT_LENGTH = 1000;
 const DEFAULT_QUERY_LIMIT = 100;
+const MAX_CONDITIONS = 1000;
 
 // Using parameterized queries with $queryRaw for security
 // https://www.prisma.io/docs/orm/prisma-client/queries/raw-database-access/raw-queries#dynamic-table-names-in-postgresql
@@ -26,6 +27,11 @@ export class ForeignKeysService {
     // Only reject strings with null bytes or other characters that could break PostgreSQL
     if (input.includes('\0')) {
       throw new Error(`Invalid ${label}: contains null byte`);
+    }
+
+    // Reject double quotes to prevent jsonpath injection in quoted key segments
+    if (input.includes('"')) {
+      throw new Error(`Invalid ${label}: contains double quote`);
     }
 
     // Length check for practical reasons
@@ -198,6 +204,13 @@ export class ForeignKeysService {
   ) {
     if (jsonPaths.length === 0 || values.length === 0) {
       return 0;
+    }
+
+    const conditionCount = jsonPaths.length * values.length;
+    if (conditionCount > MAX_CONDITIONS) {
+      throw new Error(
+        `Too many conditions: ${conditionCount} exceeds maximum of ${MAX_CONDITIONS}`,
+      );
     }
 
     jsonPaths.forEach((path) => this.validateJsonPath(path));

@@ -15,11 +15,10 @@ export class FindDraftRevisionInBranchOrThrowHandler implements IQueryHandler<Fi
   async execute({
     data,
   }: FindDraftRevisionInBranchOrThrowQuery): Promise<FindDraftRevisionInBranchType> {
-    const existingDraftRevision =
-      await this.transaction.revision.findFirstOrThrow({
-        where: { isDraft: true, branchId: data.branchId },
-        select: { id: true },
-      });
+    const existingDraftRevision = await this.transaction.revision.findFirst({
+      where: { isDraft: true, branchId: data.branchId },
+      select: { id: true },
+    });
 
     if (!existingDraftRevision) {
       throw new BadRequestException(

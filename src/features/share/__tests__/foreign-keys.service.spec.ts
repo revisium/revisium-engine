@@ -297,6 +297,23 @@ describe('ForeignKeysService', () => {
       expect(count).toBe(0);
     });
 
+    it('should throw when cross-product of paths and values exceeds max conditions', async () => {
+      const tableVersionId = await createTableWithRows();
+      const manyPaths = Array.from({ length: 50 }, (_, i) => `$.field${i}`);
+      const manyValues = Array.from({ length: 21 }, (_, i) => `value${i}`);
+
+      // 50 * 21 = 1050 > 1000 (MAX_CONDITIONS)
+      await expect(
+        transactionPrismaService.run(async () => {
+          return service.countRowsByPathsAndValuesInData(
+            tableVersionId,
+            manyPaths,
+            manyValues,
+          );
+        }),
+      ).rejects.toThrow('Too many conditions');
+    });
+
     it('should handle nested paths with multiple values', async () => {
       const tableVersionId = await createTableWithNestedData();
 
@@ -392,6 +409,22 @@ describe('ForeignKeysService', () => {
       expect(results2).toHaveLength(1);
       expect(results3).toHaveLength(1);
       expect(results4).toHaveLength(1);
+    });
+
+    it('should reject keys containing double quotes to prevent jsonpath injection', async () => {
+      const tableVersionId = await createTableWithRows();
+
+      await expect(
+        transactionPrismaService.run(async () => {
+          return service.findRowsByKeyValueInData(
+            tableVersionId,
+            'key"injection',
+            'test',
+            10,
+            0,
+          );
+        }),
+      ).rejects.toThrow('contains double quote');
     });
 
     it('should reject keys with null bytes', async () => {

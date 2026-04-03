@@ -4,6 +4,10 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
+import { RevisionModule } from 'src/features/revision/revision.module';
+import { BranchModule } from 'src/features/branch/branch.module';
+import { TableModule } from 'src/features/table/table.module';
+import { RowModule } from 'src/features/row/row.module';
 
 @Module({
   imports: [
@@ -12,6 +16,10 @@ import { StorageModule } from 'src/infrastructure/storage/storage.module';
     StorageModule,
     ShareModule,
     PluginModule,
+    RevisionModule,
+    BranchModule,
+    TableModule,
+    RowModule,
   ],
 })
 export class AppModule {}

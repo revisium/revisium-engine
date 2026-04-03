@@ -1,5 +1,7 @@
 import { nanoid } from 'nanoid';
 import hash from 'object-hash';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import { FileStatus } from 'src/features/plugin/file/consts';
 import { metaSchema } from 'src/features/share/schema/meta-schema';
 import { tableMigrationsSchema } from 'src/features/share/schema/table-migrations-schema';
 import { SystemTables } from 'src/features/share/system-tables.consts';
@@ -338,3 +340,62 @@ export const createEmptyFile = () => ({
   width: 0,
   height: 0,
 });
+
+export const createPreviousFile = () => {
+  const file = createEmptyFile();
+  file.status = FileStatus.ready;
+  file.fileId = nanoid();
+  return file;
+};
+
+export async function prepareTableAndRowWithFile(
+  prismaService: PrismaService,
+  data: Record<string, unknown>,
+) {
+  const fileTableSchema: JsonObjectSchema = {
+    type: JsonSchemaTypeName.Object,
+    properties: {
+      file: { $ref: SystemSchemaIds.File } as unknown as JsonObjectSchema,
+      files: {
+        type: JsonSchemaTypeName.Array,
+        items: {
+          $ref: SystemSchemaIds.File,
+        },
+      } as unknown as JsonObjectSchema,
+    },
+    required: ['file', 'files'],
+    additionalProperties: false,
+  };
+
+  const branchResult = await prepareBranch(prismaService);
+
+  const tableResult = await prepareTableWithSchema({
+    prismaService,
+    headRevisionId: branchResult.headRevisionId,
+    draftRevisionId: branchResult.draftRevisionId,
+    schemaTableVersionId: branchResult.schemaTableVersionId,
+    migrationTableVersionId: branchResult.migrationTableVersionId,
+    schema: fileTableSchema,
+  });
+
+  const rowResult = await prepareRow({
+    prismaService,
+    headTableVersionId: tableResult.headTableVersionId,
+    draftTableVersionId: tableResult.draftTableVersionId,
+    data,
+    dataDraft: data,
+    schema: fileTableSchema,
+  });
+
+  return {
+    draftRevisionId: branchResult.draftRevisionId,
+    headRevisionId: branchResult.headRevisionId,
+    table: {
+      tableId: tableResult.tableId,
+      headTableVersionId: tableResult.headTableVersionId,
+      draftTableVersionId: tableResult.draftTableVersionId,
+    },
+    row: rowResult.row,
+    rowDraft: rowResult.rowDraft,
+  };
+}

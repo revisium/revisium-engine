@@ -1,0 +1,944 @@
+import { Test } from '@nestjs/testing';
+import { Prisma, Row } from 'src/__generated__/client';
+import {
+  JsonFilter,
+  OrderByConditions,
+  WhereConditionsTyped,
+} from '@revisium/prisma-pg-json';
+import { nanoid } from 'nanoid';
+import {
+  DEFAULT_ROW_FIELDS,
+  getRowsCountSql,
+  getRowsSql,
+  hasJsonFilter,
+} from 'src/features/row/utils/get-rows-sql';
+import { DatabaseModule } from 'src/infrastructure/database/database.module';
+import { PrismaService } from 'src/infrastructure/database/prisma.service';
+
+describe('getRowsSql', () => {
+  let prisma: PrismaService;
+  let tableVersionId: string;
+  let ids = { row1: '', row2: '', row3: '', row4: '', row5: '', row6: '' };
+
+  beforeAll(async () => {
+    const module = await Test.createTestingModule({
+      imports: [DatabaseModule],
+    }).compile();
+
+    prisma = module.get(PrismaService);
+  });
+
+  beforeAll(async () => {
+    const table = await prisma.table.create({
+      data: {
+        id: nanoid(),
+        versionId: nanoid(),
+        createdId: nanoid(),
+      },
+    });
+
+    tableVersionId = table.versionId;
+
+    ids = {
+      row1: nanoid(),
+      row2: nanoid(),
+      row3: nanoid(),
+      row4: nanoid(),
+      row5: nanoid(),
+      row6: nanoid(),
+    };
+
+    const versionIds = {
+      row1: nanoid(),
+      row2: nanoid(),
+      row3: nanoid(),
+      row4: nanoid(),
+      row5: nanoid(),
+      row6: nanoid(),
+    };
+
+    await prisma.row.createMany({
+      data: [
+        {
+          id: ids.row1,
+          versionId: versionIds.row1,
+          createdId: nanoid(),
+          hash: '',
+          schemaHash: '',
+          meta: {},
+          data: {
+            priority: 10,
+            tags: ['admin', 'user', 'typescript'],
+            scores: [85, 90, 95],
+            products: [
+              {
+                name: 'Product A',
+                price: 99.99,
+                tags: ['featured', 'new', 'bestseller'],
+                relatedItems: [
+                  {
+                    id: 'rel-1',
+                    name: 'Accessory A1',
+                    price: 19.99,
+                    tags: ['new', 'popular'],
+                  },
+                  {
+                    id: 'rel-2',
+                    name: 'Accessory A2',
+                    price: 29.99,
+                    tags: ['featured', 'sale'],
+                  },
+                ],
+              },
+            ],
+            reviews: [
+              {
+                rating: 4.5,
+                comment: 'Great!',
+                keywords: ['excellent', 'perfect'],
+              },
+              {
+                rating: 5.0,
+                comment: 'Excellent!',
+                keywords: ['excellent', 'perfect', 'amazing'],
+              },
+            ],
+            nestedArrays: [['nested1', 'nested2']],
+            mixedArray: [1, 'string', { key: 'value' }],
+          },
+          createdAt: new Date('2025-01-01T00:00:00.000Z'),
+        },
+        {
+          id: ids.row2,
+          versionId: versionIds.row2,
+          createdId: nanoid(),
+          hash: '',
+          schemaHash: '',
+          meta: {},
+          data: {
+            priority: 5,
+            tags: ['user', 'react'],
+            scores: [80, 85, 90],
+            products: [
+              {
+                name: 'Product B',
+                price: 149.99,
+                tags: ['premium', 'featured'],
+              },
+            ],
+          },
+          createdAt: new Date('2025-01-02T00:00:00.000Z'),
+        },
+        {
+          id: ids.row3,
+          versionId: versionIds.row3,
+          createdId: nanoid(),
+          hash: '',
+          schemaHash: '',
+          meta: {},
+          data: {
+            priority: 12,
+            tags: ['admin', 'moderator', 'express', 'user'],
+            scores: [90, 95],
+            products: [
+              {
+                name: 'Product C',
+                price: 199.99,
+                tags: ['premium', 'exclusive'],
+              },
+            ],
+          },
+          createdAt: new Date('2025-01-03T00:00:00.000Z'),
+        },
+        {
+          id: ids.row4,
+          versionId: versionIds.row4,
+          createdId: nanoid(),
+          hash: '',
+          schemaHash: '',
+          meta: {},
+          data: {
+            priority: 6,
+            tags: ['user', 'node'],
+            scores: [75, 80, 85],
+            products: [
+              {
+                name: 'Product D',
+                price: 299.99,
+                tags: ['budget', 'basic'],
+              },
+            ],
+          },
+          createdAt: new Date('2025-01-04T00:00:00.000Z'),
+        },
+        {
+          id: ids.row5,
+          versionId: versionIds.row5,
+          createdId: nanoid(),
+          hash: '',
+          schemaHash: '',
+          meta: {},
+          data: {
+            priority: 15,
+            tags: ['admin', 'supervisor'],
+            scores: [95, 100],
+            products: [
+              {
+                name: 'Product E',
+                price: 399.99,
+                tags: ['budget', 'exclusive'],
+              },
+            ],
+          },
+          createdAt: new Date('2025-01-05T00:00:00.000Z'),
+        },
+        {
+          id: ids.row6,
+          versionId: versionIds.row6,
+          createdId: nanoid(),
+          hash: '',
+          schemaHash: '',
+          meta: {},
+          data: {
+            name: 'Defense of the Crystal Labyrinth',
+            steps: [
+              {
+                items: [],
+                npc_id: 'crystal_keeper',
+                coordinates: { x: 640, y: 480 },
+                description:
+                  'Help the Crystal Keeper defend the labyrinth from attackers.',
+                location_id: 'crystal_maze',
+                step_number: 1,
+                objective_type: 'defend',
+              },
+            ],
+            preview: {
+              url: '/4096ecadbfe7ef524b6949997e72027e175ad293',
+              hash: '4096ecadbfe7ef524b6949997e72027e175ad293',
+              size: 2045900,
+              width: 1024,
+              fileId: 'iVdfUzO-YJj4yy8ukt4xP',
+              height: 1024,
+              status: 'uploaded',
+              fileName: '17_34_45.png',
+              mimeType: 'image/png',
+              extension: 'png',
+            },
+            rewards: {
+              items: [{ item_id: 'crystal_armor', quantity: 1 }],
+              currency: { gold: 200, silver: 100 },
+              abilities: ['crystal_shield'],
+              experience: 800,
+            },
+            description: 'Help defend the Crystal Labyrinth from enemies.',
+            requirements: {
+              required_items: [{ item_id: 'healing_potion', quantity: 2 }],
+              required_level: 12,
+              required_skills: ['blok_shhitom'],
+              required_factions: [
+                { faction_id: 'black_order', reputation: 'ally' },
+              ],
+            },
+            is_repeatable: false,
+            quest_type_id: 'escort_quest',
+          },
+          createdAt: new Date('2025-01-06T00:00:00.000Z'),
+        },
+      ],
+    });
+
+    for (const rowVersionId of Object.values(versionIds)) {
+      await prisma.row.update({
+        where: { versionId: rowVersionId },
+        data: {
+          tables: {
+            connect: {
+              versionId: tableVersionId,
+            },
+          },
+        },
+      });
+    }
+  });
+
+  describe('Filtering', () => {
+    it('should filter by array_contains on tags', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: ['tags'],
+          array_contains: ['user', 'admin'],
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+      const count = await prisma.$queryRaw<[{ count: bigint }]>(
+        getRowsCountSql(tableVersionId, where),
+      );
+
+      expect(result.length).toBe(2);
+      expect(Number(count[0].count)).toBe(2);
+      expect(result.map((r) => r.id)).toEqual([ids.row1, ids.row3]);
+    });
+
+    it('should filter by wildcard path with numeric comparison', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: ['products', '*', 'price'],
+          gt: 100,
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+      const count = await prisma.$queryRaw<[{ count: bigint }]>(
+        getRowsCountSql(tableVersionId, where),
+      );
+
+      expect(result.length).toBe(4);
+      expect(Number(count[0].count)).toBe(4);
+      expect(result.map((r) => r.id)).toEqual([
+        ids.row2,
+        ids.row3,
+        ids.row4,
+        ids.row5,
+      ]);
+    });
+
+    it('should filter by nested wildcard path with equals', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: ['products', '*', 'relatedItems', '*', 'price'],
+          equals: 19.99,
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+      const count = await prisma.$queryRaw<[{ count: bigint }]>(
+        getRowsCountSql(tableVersionId, where),
+      );
+
+      expect(result.length).toBe(1);
+      expect(Number((count[0] as (typeof count)[number]).count)).toBe(1);
+      expect((result[0] as Row).id).toBe(ids.row1);
+    });
+
+    it('should filter by AND condition with nested wildcard', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        AND: [
+          {
+            data: {
+              path: ['steps', '*', 'coordinates', 'y'],
+              equals: 480,
+            } as JsonFilter,
+          },
+        ],
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+      const count = await prisma.$queryRaw<[{ count: bigint }]>(
+        getRowsCountSql(tableVersionId, where),
+      );
+
+      expect(result.length).toBe(1);
+      expect(Number((count[0] as (typeof count)[number]).count)).toBe(1);
+      expect((result[0] as Row).id).toBe(ids.row6);
+    });
+  });
+
+  describe('Pagination', () => {
+    it('should return first page with limit 2', async () => {
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 2, 0, {}, orderBy),
+      );
+
+      expect(result.length).toBe(2);
+      expect(result.map((r) => r.id)).toEqual([ids.row1, ids.row2]);
+    });
+
+    it('should return second page with limit 2 and offset 2', async () => {
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 2, 2, {}, orderBy),
+      );
+
+      expect(result.length).toBe(2);
+      expect(result.map((r) => r.id)).toEqual([ids.row3, ids.row4]);
+    });
+
+    it('should return third page with limit 2 and offset 4', async () => {
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 2, 4, {}, orderBy),
+      );
+
+      expect(result.length).toBe(2);
+      expect(result.map((r) => r.id)).toEqual([ids.row5, ids.row6]);
+    });
+
+    it('should return last page when offset exceeds data', async () => {
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 2, 10, {}, orderBy),
+      );
+
+      expect(result.length).toBe(0);
+    });
+
+    it('should paginate filtered results', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: ['tags'],
+          array_contains: ['admin'],
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const page1 = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 2, 0, where, orderBy),
+      );
+      const page2 = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 2, 2, where, orderBy),
+      );
+
+      expect(page1.length).toBe(2);
+      expect(page1.map((r) => r.id)).toEqual([ids.row1, ids.row3]);
+      expect(page2.length).toBe(1);
+      expect(page2.map((r) => r.id)).toEqual([ids.row5]);
+    });
+  });
+
+  describe('Count', () => {
+    it('should count all rows without filter', async () => {
+      const count = await prisma.$queryRaw<[{ count: bigint }]>(
+        getRowsCountSql(tableVersionId, {}),
+      );
+
+      expect(Number(count[0].count)).toBe(6);
+    });
+
+    it('should count filtered rows', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: ['tags'],
+          array_contains: ['user'],
+        } as JsonFilter,
+      };
+
+      const count = await prisma.$queryRaw<[{ count: bigint }]>(
+        getRowsCountSql(tableVersionId, where),
+      );
+
+      expect(Number(count[0].count)).toBe(4);
+    });
+
+    it('should count with complex filter', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        AND: [
+          {
+            data: {
+              path: ['priority'],
+              gt: 10,
+            } as JsonFilter,
+          },
+        ],
+      };
+
+      const count = await prisma.$queryRaw<[{ count: bigint }]>(
+        getRowsCountSql(tableVersionId, where),
+      );
+
+      expect(Number(count[0].count)).toBe(2);
+    });
+  });
+
+  describe('Search', () => {
+    it('should search with searchType plain (default)', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'Crystal Labyrinth',
+          searchLanguage: 'simple',
+          searchType: 'plain',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(1);
+      expect((result[0] as Row).id).toBe(ids.row6);
+    });
+
+    it('should search with searchType phrase', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'Crystal Labyrinth',
+          searchLanguage: 'simple',
+          searchType: 'phrase',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(1);
+      expect((result[0] as Row).id).toBe(ids.row6);
+    });
+
+    it('should search with searchType prefix for partial words', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'Cryst Laby',
+          searchLanguage: 'simple',
+          searchType: 'prefix',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(1);
+      expect((result[0] as Row).id).toBe(ids.row6);
+    });
+
+    it('should search with searchType prefix for single partial word', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'blok',
+          searchLanguage: 'simple',
+          searchType: 'prefix',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(1);
+      expect((result[0] as Row).id).toBe(ids.row6);
+    });
+
+    it('should search with searchType tsquery using AND operator', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'Crystal & Labyrinth',
+          searchLanguage: 'simple',
+          searchType: 'tsquery',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(1);
+      expect((result[0] as Row).id).toBe(ids.row6);
+    });
+
+    it('should search with searchType tsquery using OR operator', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'Crystal | typescript',
+          searchLanguage: 'simple',
+          searchType: 'tsquery',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(2);
+      expect(result.map((r) => r.id)).toEqual([ids.row1, ids.row6]);
+    });
+
+    it('should search with searchType tsquery using NOT operator', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'admin & !supervisor',
+          searchLanguage: 'simple',
+          searchType: 'tsquery',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(2);
+      expect(result.map((r) => r.id)).toEqual([ids.row1, ids.row3]);
+    });
+
+    it('should search with searchType tsquery using prefix operator', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'Cryst:* & Laby:*',
+          searchLanguage: 'simple',
+          searchType: 'tsquery',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(1);
+      expect((result[0] as Row).id).toBe(ids.row6);
+    });
+
+    it('should not find with prefix search when word does not start with query', async () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: [],
+          search: 'ystal',
+          searchLanguage: 'simple',
+          searchType: 'prefix',
+        } as JsonFilter,
+      };
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 10, 0, where, orderBy),
+      );
+
+      expect(result.length).toBe(0);
+    });
+  });
+
+  describe('Tiebreaker: deterministic pagination with duplicate createdAt', () => {
+    let dupTableVersionId: string;
+    const ROW_COUNT = 20;
+
+    beforeAll(async () => {
+      const table = await prisma.table.create({
+        data: {
+          id: nanoid(),
+          versionId: nanoid(),
+          createdId: nanoid(),
+        },
+      });
+      dupTableVersionId = table.versionId;
+
+      const sameTimestamp = new Date('2025-06-01T12:00:00.000Z');
+      const rowVersionIds: string[] = [];
+
+      const rowsData = Array.from({ length: ROW_COUNT }, (_, i) => {
+        const vId = nanoid();
+        rowVersionIds.push(vId);
+        return {
+          id: `dup-row-${String(i).padStart(2, '0')}`,
+          versionId: vId,
+          createdId: nanoid(),
+          hash: '',
+          schemaHash: '',
+          meta: {},
+          data: { index: i },
+          createdAt: sameTimestamp,
+        };
+      });
+
+      await prisma.row.createMany({ data: rowsData });
+
+      for (const vId of rowVersionIds) {
+        await prisma.row.update({
+          where: { versionId: vId },
+          data: { tables: { connect: { versionId: dupTableVersionId } } },
+        });
+      }
+    });
+
+    it('pages should not overlap with default sort', async () => {
+      const page1 = await prisma.$queryRaw<Row[]>(
+        getRowsSql(dupTableVersionId, 10, 0),
+      );
+      const page2 = await prisma.$queryRaw<Row[]>(
+        getRowsSql(dupTableVersionId, 10, 10),
+      );
+
+      const ids1 = new Set(page1.map((r) => r.id));
+      const ids2 = new Set(page2.map((r) => r.id));
+      const overlap = [...ids1].filter((id) => ids2.has(id));
+
+      expect(page1).toHaveLength(10);
+      expect(page2).toHaveLength(10);
+      expect(overlap).toEqual([]);
+    });
+
+    it('all rows should appear exactly once across pages', async () => {
+      const allIds: string[] = [];
+      for (let offset = 0; offset < ROW_COUNT; offset += 7) {
+        const page = await prisma.$queryRaw<Row[]>(
+          getRowsSql(dupTableVersionId, 7, offset),
+        );
+        allIds.push(...page.map((r) => r.id));
+      }
+
+      expect(allIds).toHaveLength(ROW_COUNT);
+      expect(new Set(allIds).size).toBe(ROW_COUNT);
+    });
+
+    it('pages should not overlap with explicit orderBy', async () => {
+      const orderBy: OrderByConditions[] = [{ createdAt: 'desc' }];
+
+      const page1 = await prisma.$queryRaw<Row[]>(
+        getRowsSql(dupTableVersionId, 10, 0, {}, orderBy),
+      );
+      const page2 = await prisma.$queryRaw<Row[]>(
+        getRowsSql(dupTableVersionId, 10, 10, {}, orderBy),
+      );
+
+      expect(page1).toHaveLength(10);
+      expect(page2).toHaveLength(10);
+
+      const ids1 = new Set(page1.map((r) => r.id));
+      const ids2 = new Set(page2.map((r) => r.id));
+      const overlap = [...ids1].filter((id) => ids2.has(id));
+
+      expect(overlap).toEqual([]);
+    });
+
+    it('count matches total rows', async () => {
+      const count = await prisma.$queryRaw<[{ count: bigint }]>(
+        getRowsCountSql(dupTableVersionId, {}),
+      );
+
+      expect(Number(count[0].count)).toBe(ROW_COUNT);
+    });
+  });
+
+  describe('Query structure: json filters use subquery to avoid Seq Scan', () => {
+    function getSqlText(sql: Prisma.Sql): string {
+      return sql.strings.join('?');
+    }
+
+    it('getRowsSql with json filter should use subquery', () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: ['products', '*', 'price'],
+          gt: 100,
+        } as JsonFilter,
+      };
+
+      const sqlText = getSqlText(
+        getRowsSql(tableVersionId, 10, 0, where, [{ createdAt: 'asc' }]),
+      );
+
+      expect(sqlText).toMatch(/WITH\s+/i);
+    });
+
+    it('getRowsCountSql with json filter should use subquery', () => {
+      const where: WhereConditionsTyped<{ data: 'json' }> = {
+        data: {
+          path: ['tags'],
+          array_contains: ['admin'],
+        } as JsonFilter,
+      };
+
+      const sqlText = getSqlText(getRowsCountSql(tableVersionId, where));
+
+      expect(sqlText).toMatch(/WITH\s+/i);
+    });
+
+    it('getRowsSql without json filter should not need subquery', () => {
+      const sqlText = getSqlText(getRowsSql(tableVersionId, 10, 0));
+
+      expect(sqlText).not.toMatch(/WITH\s+/i);
+    });
+  });
+
+  describe('hasJsonFilter', () => {
+    it('returns false for undefined', () => {
+      expect(hasJsonFilter(undefined)).toBe(false);
+    });
+
+    it('returns false for empty object', () => {
+      expect(hasJsonFilter({})).toBe(false);
+    });
+
+    it('returns true for top-level data filter', () => {
+      expect(hasJsonFilter({ data: { path: ['x'], equals: 1 } })).toBe(true);
+    });
+
+    it('returns true for top-level meta filter', () => {
+      expect(hasJsonFilter({ meta: { path: ['y'], equals: 2 } })).toBe(true);
+    });
+
+    it('returns false for non-json field (createdAt)', () => {
+      expect(
+        hasJsonFilter({
+          createdAt: { gte: new Date() },
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(false);
+    });
+
+    it('returns true when json filter in AND array', () => {
+      expect(
+        hasJsonFilter({
+          AND: [{ data: { path: ['x'], equals: 1 } }],
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(true);
+    });
+
+    it('returns false when AND has no json filter', () => {
+      expect(
+        hasJsonFilter({
+          AND: [{ createdAt: { gte: new Date() } }],
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(false);
+    });
+
+    it('returns true when json filter in OR array', () => {
+      expect(
+        hasJsonFilter({
+          OR: [{ data: { path: ['x'], equals: 1 } }],
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(true);
+    });
+
+    it('returns false when OR has no json filter', () => {
+      expect(
+        hasJsonFilter({
+          OR: [{ createdAt: { gte: new Date() } }],
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(false);
+    });
+
+    it('returns true when json filter in NOT (object)', () => {
+      expect(
+        hasJsonFilter({
+          NOT: { data: { path: ['x'], equals: 1 } },
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(true);
+    });
+
+    it('returns true when json filter in NOT (array)', () => {
+      expect(
+        hasJsonFilter({
+          NOT: [{ data: { path: ['x'], equals: 1 } }],
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(true);
+    });
+
+    it('returns false when NOT has no json filter', () => {
+      expect(
+        hasJsonFilter({
+          NOT: { createdAt: { gte: new Date() } },
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(false);
+    });
+
+    it('returns true for nested AND > OR > data filter', () => {
+      expect(
+        hasJsonFilter({
+          AND: [{ OR: [{ data: { path: ['x'], equals: 1 } }] }],
+        } as WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>),
+      ).toBe(true);
+    });
+  });
+
+  describe('keyset condition', () => {
+    it('should apply keyset condition and skip offset', async () => {
+      const orderBy: OrderByConditions[] = [{ createdAt: 'asc' }];
+
+      const allRows = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 100, 0, {}, orderBy),
+      );
+      expect(allRows.length).toBeGreaterThanOrEqual(3);
+
+      const pivot = allRows[1] as Row;
+      const keysetCondition = Prisma.sql`r."createdAt" > ${pivot.createdAt}`;
+
+      const result = await prisma.$queryRaw<Row[]>(
+        getRowsSql(tableVersionId, 100, 999, {}, orderBy, keysetCondition),
+      );
+
+      expect(result.length).toBe(allRows.length - 2);
+      expect(result.map((r) => r.id)).toEqual(
+        allRows.slice(2).map((r) => r.id),
+      );
+    });
+  });
+
+  describe('Query structure: non-JSON filters', () => {
+    function getSqlText(sql: Prisma.Sql): string {
+      return sql.strings.join('?');
+    }
+
+    it('getRowsSql with non-JSON filter should not use subquery', () => {
+      const where = { createdAt: { gte: new Date() } } as WhereConditionsTyped<
+        typeof DEFAULT_ROW_FIELDS
+      >;
+
+      const sqlText = getSqlText(
+        getRowsSql(tableVersionId, 10, 0, where, [{ createdAt: 'asc' }]),
+      );
+
+      expect(sqlText).not.toMatch(/WITH\s+/i);
+      expect(sqlText).toMatch(/WHERE/i);
+    });
+
+    it('getRowsCountSql with non-JSON filter should not use subquery', () => {
+      const where = { createdAt: { gte: new Date() } } as WhereConditionsTyped<
+        typeof DEFAULT_ROW_FIELDS
+      >;
+
+      const sqlText = getSqlText(getRowsCountSql(tableVersionId, where));
+
+      expect(sqlText).not.toMatch(/WITH\s+/i);
+      expect(sqlText).toMatch(/WHERE/i);
+    });
+  });
+
+  describe('SQL snapshots', () => {
+    it('default ORDER BY includes versionId tiebreaker', () => {
+      const sql = getRowsSql('table-1', 10, 0);
+      expect(sql.strings.join('$')).toMatchSnapshot();
+    });
+
+    it('explicit orderBy includes versionId tiebreaker', () => {
+      const orderBy: OrderByConditions[] = [{ createdAt: 'desc' }];
+      const sql = getRowsSql('table-1', 10, 0, {}, orderBy);
+      expect(sql.strings.join('$')).toMatchSnapshot();
+    });
+
+    it('count query snapshot', () => {
+      const sql = getRowsCountSql('table-1');
+      expect(sql.strings.join('$')).toMatchSnapshot();
+    });
+  });
+});

@@ -325,3 +325,16 @@ export const prepareProject = async (prismaService: PrismaService) => {
     ...resultPrepareRow,
   };
 };
+
+export const createEmptyFile = () => ({
+  status: '',
+  fileId: '',
+  url: '',
+  fileName: '',
+  hash: '',
+  extension: '',
+  mimeType: '',
+  size: 0,
+  width: 0,
+  height: 0,
+});

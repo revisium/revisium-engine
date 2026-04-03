@@ -45,7 +45,8 @@
     "ajv": "^8.18.0",
     "lru-cache": "^11.2.7",
     "nanoid": "^5.1.7",
-    "object-hash": "^3.0.0"
+    "object-hash": "^3.0.0",
+    "sharp": "^0.34.5"
   },
   "peerDependencies": {
     "@nestjs/cache-manager": "^3.0.0",
@@ -60,6 +61,7 @@
     "rxjs": "^7.0.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1022.0",
     "@eslint/js": "^9.39.3",
     "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/cli": "^11.0.7",
@@ -75,6 +77,7 @@
     "@swc/core": "^1.12.4",
     "@swc/jest": "^0.2.38",
     "@types/jest": "^29.5.14",
+    "@types/multer": "^2.1.0",
     "@types/node": "^22.15.21",
     "@types/object-hash": "^3.0.6",
     "@types/pg": "^8.15.4",

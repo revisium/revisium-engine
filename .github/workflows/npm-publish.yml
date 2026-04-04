@@ -76,7 +76,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77 # v1
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
@@ -88,6 +88,6 @@ jobs:
             npm install @revisium/engine@${{ env.version }}
             ```
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(env.version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

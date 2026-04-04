@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 import { HashService } from 'src/infrastructure/database/hash.service';
 import { IdService } from 'src/infrastructure/database/id.service';
 import { PostgresqlNotificationService } from 'src/infrastructure/database/postgresql-notification.service';
@@ -14,6 +15,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
     IdService,
     TransactionPrismaService,
     HashService,
+    CleanupService,
   ],
   exports: [
     PrismaService,
@@ -21,6 +23,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
     IdService,
     TransactionPrismaService,
     HashService,
+    CleanupService,
   ],
 })
 export class DatabaseModule {}

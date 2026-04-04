@@ -23,11 +23,24 @@ describeOrSkip('keyset pagination - large dataset (15K rows)', () => {
   });
 
   beforeAll(async () => {
+    const revisionId = nanoid();
+    await prisma.branch.create({
+      data: {
+        id: nanoid(),
+        name: `keyset-branch-${nanoid()}`,
+        projectId: nanoid(),
+        revisions: {
+          create: { id: revisionId, isHead: true },
+        },
+      },
+    });
+
     const table = await prisma.table.create({
       data: {
         id: nanoid(),
         versionId: nanoid(),
         createdId: nanoid(),
+        revisions: { connect: { id: revisionId } },
       },
     });
 
@@ -36,14 +49,11 @@ describeOrSkip('keyset pagination - large dataset (15K rows)', () => {
     const baseDate = new Date('2024-01-01T00:00:00.000Z');
     const batchSize = 1000;
 
-    const allVersionIds: string[] = [];
-
     for (let batch = 0; batch < ROW_COUNT / batchSize; batch++) {
       const rows = Array.from({ length: batchSize }, (_, i) => {
         const index = batch * batchSize + i;
         const rowId = `row-${String(index).padStart(5, '0')}`;
         const versionId = nanoid();
-        allVersionIds.push(versionId);
         return {
           id: rowId,
           versionId,
@@ -60,19 +70,17 @@ describeOrSkip('keyset pagination - large dataset (15K rows)', () => {
         };
       });
 
-      await prisma.row.createMany({ data: rows });
-    }
-
-    for (let batch = 0; batch < allVersionIds.length; batch += batchSize) {
-      const batchIds = allVersionIds.slice(batch, batch + batchSize);
-      await Promise.all(
-        batchIds.map((vId) =>
-          prisma.row.update({
-            where: { versionId: vId },
-            data: { tables: { connect: { versionId: tableVersionId } } },
-          }),
-        ),
-      );
+      // Atomic: create rows + connect to table in one transaction
+      const versionIds = rows.map((r) => r.versionId);
+      await prisma.$transaction(async (tx) => {
+        await tx.row.createMany({ data: rows });
+        await tx.$executeRaw`
+          INSERT INTO "_RowToTable" ("A", "B")
+          SELECT "versionId", ${tableVersionId}
+          FROM "Row"
+          WHERE "versionId" = ANY(${versionIds})
+        `;
+      });
     }
   }, 120000);
 

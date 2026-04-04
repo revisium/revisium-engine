@@ -4,18 +4,25 @@ This document explains how to integrate `@revisium/engine` into a host applicati
 
 ## Importing the Engine
 
-### Option A: Import AppModule (all modules at once)
+### Recommended: Use EngineApiService
 
 ```typescript
-import { EngineModule } from '@revisium/engine';
+import { EngineModule, EngineApiService } from '@revisium/engine';
 
 @Module({
   imports: [EngineModule],
 })
 export class CoreModule {}
+
+@Injectable()
+export class MyService {
+  constructor(private readonly engine: EngineApiService) {}
+}
 ```
 
-### Option B: Import individual modules
+`EngineApiService` is a flat facade over all engine services. See [api.md](api.md) for the full method reference.
+
+### Alternative: Import individual modules
 
 ```typescript
 import {

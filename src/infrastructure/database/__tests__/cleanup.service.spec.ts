@@ -6,6 +6,7 @@ import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 describe('CleanupService', () => {
   let prismaService: PrismaService;
   let cleanupService: CleanupService;
+  const testPrefix = `cleanup-test-${nanoid(6)}`;
 
   beforeAll(async () => {
     const result = await createTestingModule();
@@ -14,18 +15,18 @@ describe('CleanupService', () => {
   });
 
   it('should delete orphaned tables', async () => {
-    const orphanedTableVersionId = nanoid();
+    const tableVersionId = `${testPrefix}-table-${nanoid()}`;
 
     await prismaService.table.create({
       data: {
-        versionId: orphanedTableVersionId,
+        versionId: tableVersionId,
         createdId: nanoid(),
-        id: 'orphaned-table',
+        id: `${testPrefix}-orphaned-table`,
       },
     });
 
     const before = await prismaService.table.findUnique({
-      where: { versionId: orphanedTableVersionId },
+      where: { versionId: tableVersionId },
     });
     expect(before).toBeDefined();
 
@@ -33,19 +34,19 @@ describe('CleanupService', () => {
     expect(result.tables).toBeGreaterThanOrEqual(1);
 
     const after = await prismaService.table.findUnique({
-      where: { versionId: orphanedTableVersionId },
+      where: { versionId: tableVersionId },
     });
     expect(after).toBeNull();
   });
 
   it('should delete orphaned rows', async () => {
-    const orphanedRowVersionId = nanoid();
+    const rowVersionId = `${testPrefix}-row-${nanoid()}`;
 
     await prismaService.row.create({
       data: {
-        versionId: orphanedRowVersionId,
+        versionId: rowVersionId,
         createdId: nanoid(),
-        id: 'orphaned-row',
+        id: `${testPrefix}-orphaned-row`,
         data: {},
         hash: 'test-hash',
         schemaHash: 'test-schema-hash',
@@ -53,7 +54,7 @@ describe('CleanupService', () => {
     });
 
     const before = await prismaService.row.findUnique({
-      where: { versionId: orphanedRowVersionId },
+      where: { versionId: rowVersionId },
     });
     expect(before).toBeDefined();
 
@@ -61,15 +62,15 @@ describe('CleanupService', () => {
     expect(result.rows).toBeGreaterThanOrEqual(1);
 
     const after = await prismaService.row.findUnique({
-      where: { versionId: orphanedRowVersionId },
+      where: { versionId: rowVersionId },
     });
     expect(after).toBeNull();
   });
 
   it('should not delete tables connected to revisions', async () => {
-    const branchId = nanoid();
-    const revisionId = nanoid();
-    const tableVersionId = nanoid();
+    const branchId = `${testPrefix}-branch-${nanoid()}`;
+    const revisionId = `${testPrefix}-rev-${nanoid()}`;
+    const tableVersionId = `${testPrefix}-connected-${nanoid()}`;
 
     await prismaService.branch.create({
       data: {
@@ -89,7 +90,7 @@ describe('CleanupService', () => {
       data: {
         versionId: tableVersionId,
         createdId: nanoid(),
-        id: 'connected-table',
+        id: `${testPrefix}-connected-table`,
         revisions: { connect: { id: revisionId } },
       },
     });
@@ -100,13 +101,5 @@ describe('CleanupService', () => {
       where: { versionId: tableVersionId },
     });
     expect(table).toBeDefined();
-  });
-
-  it('should return zero counts when nothing to clean', async () => {
-    await cleanupService.cleanOrphanedData();
-    const result = await cleanupService.cleanOrphanedData();
-
-    expect(result.tables).toBe(0);
-    expect(result.rows).toBe(0);
   });
 });

@@ -8,6 +8,8 @@ import { RevisionModule } from 'src/features/revision/revision.module';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { TableModule } from 'src/features/table/table.module';
 import { RowModule } from 'src/features/row/row.module';
+import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
+import { DraftModule } from 'src/features/draft/draft.module';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { RowModule } from 'src/features/row/row.module';
     BranchModule,
     TableModule,
     RowModule,
+    DraftRevisionModule,
+    DraftModule,
   ],
 })
 export class AppModule {}

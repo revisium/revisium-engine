@@ -9,6 +9,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { SHARE_COMMANDS_HANDLERS } from 'src/features/share/commands/handlers';
 import { SHARE_QUERIES_HANDLERS } from 'src/features/share/queries/handlers';
 import { ForeignKeysService } from 'src/features/share/foreign-keys.service';
+import { ShareCommands } from 'src/features/share/share.commands';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { SystemTablesService } from 'src/features/share/system-tables.service';
 
@@ -16,6 +17,7 @@ import { SystemTablesService } from 'src/features/share/system-tables.service';
   imports: [DatabaseModule, CqrsModule, CacheModule.register()],
   providers: [
     ShareTransactionalQueries,
+    ShareCommands,
     ForeignKeysService,
     DiffService,
     JsonSchemaStoreService,
@@ -27,6 +29,7 @@ import { SystemTablesService } from 'src/features/share/system-tables.service';
   ],
   exports: [
     ShareTransactionalQueries,
+    ShareCommands,
     ForeignKeysService,
     DiffService,
     JsonSchemaStoreService,

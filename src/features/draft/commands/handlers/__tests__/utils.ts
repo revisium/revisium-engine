@@ -5,15 +5,27 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   getNumberSchema,
   getObjectSchema,
+  getStringSchema,
+  getRefSchema,
 } from '@revisium/schema-toolkit/mocks';
-import { JsonObjectSchema } from '@revisium/schema-toolkit/types';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import {
+  JsonObjectSchema,
+  JsonSchemaTypeName,
+} from '@revisium/schema-toolkit/types';
 import { BranchModule } from 'src/features/branch/branch.module';
+import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
+import { DraftModule } from 'src/features/draft/draft.module';
+import { DraftApiService } from 'src/features/draft/draft-api.service';
+import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
+import { MigrationContextService } from 'src/features/draft/migration-context.service';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { RevisionModule } from 'src/features/revision/revision.module';
 import { RowModule } from 'src/features/row/row.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
+import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import { TableModule } from 'src/features/table/table.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
@@ -23,6 +35,40 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 
 export const testSchema: JsonObjectSchema = getObjectSchema({
   ver: getNumberSchema(),
+});
+
+export const testSchemaString: JsonObjectSchema = getObjectSchema({
+  ver: getStringSchema(),
+});
+
+export const testSchemaWithRef: JsonObjectSchema = getObjectSchema({
+  ver: getNumberSchema(),
+  file: getRefSchema(SystemSchemaIds.File),
+});
+
+export const invalidTestSchema: JsonObjectSchema = {
+  type: JsonSchemaTypeName.Object,
+  required: ['123', '$ver'],
+  properties: {
+    '123': { type: JsonSchemaTypeName.String, default: '' },
+    $ver: { type: JsonSchemaTypeName.Number, default: 0 },
+  },
+  additionalProperties: false,
+};
+
+export const getTestLinkedSchema = (
+  foreignKeyTableId: string,
+): JsonObjectSchema => ({
+  type: JsonSchemaTypeName.Object,
+  required: ['link'],
+  properties: {
+    link: {
+      type: JsonSchemaTypeName.String,
+      default: '',
+      foreignKey: foreignKeyTableId,
+    },
+  },
+  additionalProperties: false,
 });
 
 const mockStorage = {
@@ -47,6 +93,8 @@ export const createTestingModule = async () => {
       BranchModule,
       TableModule,
       RowModule,
+      DraftRevisionModule,
+      DraftModule,
       CacheModule.register(),
     ],
   })
@@ -62,6 +110,10 @@ export const createTestingModule = async () => {
   const pluginService = module.get(PluginService);
   const queryBus = module.get(QueryBus);
   const commandBus = module.get(CommandBus);
+  const draftApiService = module.get(DraftApiService);
+  const draftTransactionalCommands = module.get(DraftTransactionalCommands);
+  const migrationContextService = module.get(MigrationContextService);
+  const viewsMigrationService = module.get(ViewsMigrationService);
 
   return {
     module,
@@ -71,5 +123,9 @@ export const createTestingModule = async () => {
     pluginService,
     queryBus,
     commandBus,
+    draftApiService,
+    draftTransactionalCommands,
+    migrationContextService,
+    viewsMigrationService,
   };
 };

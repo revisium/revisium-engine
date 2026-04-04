@@ -282,7 +282,26 @@ export async function prepareRow({
   };
 }
 
-export const prepareProject = async (prismaService: PrismaService) => {
+export interface PrepareProjectOptions {
+  createLinkedTable?: boolean;
+}
+
+interface LinkedTableResult {
+  tableId: string;
+  headTableVersionId: string;
+  draftTableVersionId: string;
+}
+
+interface LinkedRowResult {
+  rowId: string;
+  headRowVersionId: string;
+  draftRowVersionId: string;
+}
+
+export const prepareProject = async (
+  prismaService: PrismaService,
+  options?: PrepareProjectOptions,
+) => {
   const testSchema: JsonObjectSchema = {
     type: JsonSchemaTypeName.Object,
     required: ['ver'],
@@ -310,7 +329,7 @@ export const prepareProject = async (prismaService: PrismaService) => {
     migrationTableVersionId,
     schema: testSchema,
   });
-  const { headTableVersionId, draftTableVersionId } =
+  const { headTableVersionId, draftTableVersionId, tableId } =
     resultPrepareTableWithSchema;
   const resultPrepareRow = await prepareRow({
     prismaService,
@@ -321,10 +340,60 @@ export const prepareProject = async (prismaService: PrismaService) => {
     schema: testSchema,
   });
 
+  let linkedTable: LinkedTableResult | undefined;
+  let linkedRow: LinkedRowResult | undefined;
+
+  if (options?.createLinkedTable) {
+    const linkedSchema: JsonObjectSchema = {
+      type: JsonSchemaTypeName.Object,
+      required: ['link'],
+      properties: {
+        link: {
+          type: JsonSchemaTypeName.String,
+          default: '',
+          foreignKey: tableId,
+        },
+      },
+      additionalProperties: false,
+    };
+
+    const linkedTableResult = await prepareTableWithSchema({
+      prismaService,
+      headRevisionId,
+      draftRevisionId,
+      schemaTableVersionId,
+      migrationTableVersionId,
+      schema: linkedSchema,
+    });
+
+    const linkedRowResult = await prepareRow({
+      prismaService,
+      headTableVersionId: linkedTableResult.headTableVersionId,
+      draftTableVersionId: linkedTableResult.draftTableVersionId,
+      data: { link: resultPrepareRow.rowId },
+      dataDraft: { link: resultPrepareRow.rowId },
+      schema: linkedSchema,
+    });
+
+    linkedTable = {
+      tableId: linkedTableResult.tableId,
+      headTableVersionId: linkedTableResult.headTableVersionId,
+      draftTableVersionId: linkedTableResult.draftTableVersionId,
+    };
+
+    linkedRow = {
+      rowId: linkedRowResult.rowId,
+      headRowVersionId: linkedRowResult.headRowVersionId,
+      draftRowVersionId: linkedRowResult.draftRowVersionId,
+    };
+  }
+
   return {
     ...prepareBranchResult,
     ...resultPrepareTableWithSchema,
     ...resultPrepareRow,
+    linkedTable,
+    linkedRow,
   };
 };
 

@@ -49,7 +49,7 @@ Branch (projectId: string, no FK)
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { AppModule as EngineModule } from '@revisium/engine';
+import { EngineModule } from '@revisium/engine';
 
 @Module({
   imports: [EngineModule],

@@ -1,5 +1,5 @@
-// App Module
-export { AppModule } from './app.module';
+// Engine Module
+export { AppModule as EngineModule } from './app.module';
 
 // Infrastructure — Database
 export { DatabaseModule } from './infrastructure/database/database.module';

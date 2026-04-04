@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import { SortOrder } from 'src/engine-prisma-types';
 import { GetTablesByRevisionIdQuery } from 'src/features/revision/queries/impl/get-tables-by-revision-id.query';
 import { GetRevisionTablesReturnType } from 'src/features/revision/queries/types';
 import { getOffsetPagination } from 'src/features/share/commands/utils/getOffsetPagination';
@@ -57,7 +57,7 @@ export class GetTablesByRevisionIdHandler implements IQueryHandler<
           system: false,
         },
         orderBy: {
-          createdAt: Prisma.SortOrder.desc,
+          createdAt: SortOrder.desc,
         },
       });
   }

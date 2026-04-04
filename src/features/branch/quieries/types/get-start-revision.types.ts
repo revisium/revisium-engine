@@ -1,4 +1,3 @@
-import { Prisma } from 'src/__generated__/client';
+import type { Revision } from 'src/engine-prisma-types';
 
-export type GetStartRevisionReturnType =
-  Prisma.RevisionGetPayload<Prisma.RevisionDefaultArgs>;
+export type GetStartRevisionReturnType = Revision;

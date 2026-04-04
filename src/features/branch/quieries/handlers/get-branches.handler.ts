@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import { SortOrder, TransactionIsolationLevel } from 'src/engine-prisma-types';
 import {
   GetBranchesQuery,
   GetBranchesQueryData,
@@ -23,7 +23,7 @@ export class GetBranchesHandler implements IQueryHandler<
     return this.transactionPrisma.run<GetBranchesQueryReturnType>(
       () => this.transactionHandler(data),
       {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        isolationLevel: TransactionIsolationLevel.Serializable,
       },
     );
   }
@@ -42,7 +42,7 @@ export class GetBranchesHandler implements IQueryHandler<
     return this.transaction.branch.findMany({
       ...args,
       where: { projectId: projectId },
-      orderBy: { name: Prisma.SortOrder.asc },
+      orderBy: { name: SortOrder.asc },
     });
   }
 

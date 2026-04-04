@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { CreateBranchByRevisionIdCommand } from 'src/features/branch/commands/impl';
 import { validateBranchName } from 'src/features/share/utils/validateUrlLikeId/validateBranchName';
 import { IdService } from 'src/infrastructure/database/id.service';
@@ -19,7 +19,7 @@ export class CreateBranchByRevisionIdHandler implements ICommandHandler<CreateBr
 
   async execute({ data }: CreateBranchByRevisionIdCommand): Promise<string> {
     return this.transactionService.run(() => this.transactionHandler(data), {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      isolationLevel: TransactionIsolationLevel.Serializable,
     });
   }
 

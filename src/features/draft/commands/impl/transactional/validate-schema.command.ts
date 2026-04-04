@@ -1,5 +1,5 @@
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 
 export class ValidateSchemaCommand {
-  constructor(readonly schema: Prisma.InputJsonValue) {}
+  constructor(readonly schema: InputJsonValue) {}
 }

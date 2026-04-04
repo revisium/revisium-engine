@@ -5,7 +5,10 @@ import {
   GetRevisionChangesQueryReturnType,
 } from '../impl/get-revision-changes.query';
 import { DiffService } from 'src/features/share/diff.service';
-import { getRowChangesStatsBetweenRevisions } from 'src/__generated__/client/sql/getRowChangesStatsBetweenRevisions';
+import {
+  getRowChangesStatsBetweenRevisionsSql,
+  type GetRowChangesStatsResult,
+} from 'src/engine-sql-queries';
 import { RevisionComparisonService } from '../../services/revision-comparison.service';
 import { createEmptyRevisionChangesResponse } from '../../utils/empty-responses';
 
@@ -65,11 +68,11 @@ export class GetRevisionChangesHandler implements IQueryHandler<
     toRevisionId: string,
     includeSystem = false,
   ) {
-    const result = await this.prisma.$queryRawTyped(
-      getRowChangesStatsBetweenRevisions(
+    const result = await this.prisma.$queryRaw<GetRowChangesStatsResult[]>(
+      getRowChangesStatsBetweenRevisionsSql(
         fromRevisionId,
         toRevisionId,
-        null as unknown as string,
+        null,
         includeSystem,
       ),
     );

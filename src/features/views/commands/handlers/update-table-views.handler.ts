@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandBus, CommandHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import { InternalCreateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-create-row.command';
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import { DraftContextService } from 'src/features/draft/draft-context.service';
@@ -98,7 +98,7 @@ export class UpdateTableViewsHandler extends DraftHandler<
           revisionId,
           tableId: SystemTables.Views,
           rowId: tableId,
-          data: viewsData as unknown as Prisma.InputJsonValue,
+          data: viewsData as unknown as InputJsonValue,
           schemaHash: this.viewsSchemaHash,
         }),
       );
@@ -108,7 +108,7 @@ export class UpdateTableViewsHandler extends DraftHandler<
           revisionId,
           tableId: SystemTables.Views,
           rowId: tableId,
-          data: viewsData as unknown as Prisma.InputJsonValue,
+          data: viewsData as unknown as InputJsonValue,
           schemaHash: this.viewsSchemaHash,
         }),
       );

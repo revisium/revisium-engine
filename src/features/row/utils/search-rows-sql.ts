@@ -1,4 +1,4 @@
-import { Prisma, Row, Table } from 'src/__generated__/client';
+import { sql, type Sql, type Row, type Table } from 'src/engine-prisma-types';
 import {
   generateWhere,
   WhereConditionsTyped,
@@ -21,7 +21,7 @@ export function searchRowsSql(
   searchQuery: string,
   take: number,
   skip: number,
-): Prisma.Sql {
+): Sql {
   const searchFilter: JsonFilter = {
     path: [],
     search: searchQuery,
@@ -40,7 +40,7 @@ export function searchRowsSql(
     tableAlias: 'r',
   });
 
-  return Prisma.sql`
+  return sql`
     SELECT
       r."versionId",
       r."createdId",
@@ -76,7 +76,7 @@ export function searchRowsSql(
 export function searchRowsCountSql(
   revisionId: string,
   searchQuery: string,
-): Prisma.Sql {
+): Sql {
   const searchFilter: JsonFilter = {
     path: [],
     search: searchQuery,
@@ -95,7 +95,7 @@ export function searchRowsCountSql(
     tableAlias: 'r',
   });
 
-  return Prisma.sql`
+  return sql`
     SELECT COUNT(*) as count
     FROM "Row" r
     INNER JOIN "_RowToTable" rt ON r."versionId" = rt."A"

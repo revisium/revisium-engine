@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandBus, CommandHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import { CreateInitMigrationCommand } from 'src/features/draft/commands/impl/migration';
 import { CreateSchemaCommand } from 'src/features/draft/commands/impl/transactional/create-schema.command';
 import {
@@ -57,7 +57,7 @@ export class CreateSchemaHandler extends DraftHandler<
     return true;
   }
 
-  private async validateSchema(data: Prisma.InputJsonValue) {
+  private async validateSchema(data: InputJsonValue) {
     const { result, errors } =
       this.jsonSchemaValidator.validateMetaSchema(data);
 
@@ -88,7 +88,7 @@ export class CreateSchemaHandler extends DraftHandler<
 
   private createRowInSchemaTable(
     data: CreateSchemaCommand['data'],
-    historyPatches: Prisma.InputJsonValue,
+    historyPatches: InputJsonValue,
   ) {
     return this.commandBus.execute<
       InternalCreateRowCommand,

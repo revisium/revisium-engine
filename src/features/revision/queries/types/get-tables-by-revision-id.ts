@@ -1,4 +1,3 @@
-import { Prisma } from 'src/__generated__/client';
+import type { Table } from 'src/engine-prisma-types';
 
-export type GetTablesByRevisionIdReturnType =
-  Prisma.TableGetPayload<Prisma.TableDefaultArgs>[];
+export type GetTablesByRevisionIdReturnType = Table[];

@@ -1,4 +1,4 @@
-import { Prisma } from 'src/__generated__/client';
+import { sql, raw, type Sql } from 'src/engine-prisma-types';
 import {
   FieldConfig,
   generateOrderByClauses,
@@ -64,12 +64,12 @@ export function hasJsonFilter(
   );
 }
 
-const ROW_COLUMNS = Prisma.sql`
+const ROW_COLUMNS = sql`
   r."versionId", r."createdId", r."id", r."readonly",
   r."createdAt", r."updatedAt", r."publishedAt",
   r."data", r."meta", r."hash", r."schemaHash"`;
 
-const BASE_JOIN = Prisma.sql`
+const BASE_JOIN = sql`
   FROM "Row" r
   INNER JOIN "_RowToTable" rt ON r."versionId" = rt."A"`;
 
@@ -79,8 +79,8 @@ export function getRowsSql(
   skip: number,
   whereConditions?: WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>,
   orderBy?: OrderByConditions[],
-  keysetCondition?: Prisma.Sql,
-): Prisma.Sql {
+  keysetCondition?: Sql,
+): Sql {
   const whereClause = generateWhere({
     where: whereConditions ?? {},
     fieldConfig: DEFAULT_ROW_FIELDS,
@@ -95,19 +95,15 @@ export function getRowsSql(
       })
     : null;
   const orderByClause = userClauses
-    ? Prisma.sql`ORDER BY ${userClauses}, ${Prisma.raw('r."versionId" DESC')}`
-    : Prisma.sql`ORDER BY r."createdAt" DESC, r."versionId" DESC`;
+    ? sql`ORDER BY ${userClauses}, ${raw('r."versionId" DESC')}`
+    : sql`ORDER BY r."createdAt" DESC, r."versionId" DESC`;
 
-  const keysetClause = keysetCondition
-    ? Prisma.sql`AND ${keysetCondition}`
-    : Prisma.sql``;
+  const keysetClause = keysetCondition ? sql`AND ${keysetCondition}` : sql``;
 
-  const offsetClause = keysetCondition
-    ? Prisma.sql``
-    : Prisma.sql`OFFSET ${skip}`;
+  const offsetClause = keysetCondition ? sql`` : sql`OFFSET ${skip}`;
 
   if (hasJsonFilter(whereConditions)) {
-    return Prisma.sql`
+    return sql`
       WITH _rows AS (
         SELECT ${ROW_COLUMNS}
         ${BASE_JOIN}
@@ -122,7 +118,7 @@ export function getRowsSql(
     `;
   }
 
-  return Prisma.sql`
+  return sql`
     SELECT ${ROW_COLUMNS}
     ${BASE_JOIN}
     WHERE rt."B" = ${tableId}
@@ -137,7 +133,7 @@ export function getRowsSql(
 export function getRowsCountSql(
   tableId: string,
   whereConditions?: WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>,
-): Prisma.Sql {
+): Sql {
   const whereClause = generateWhere({
     where: whereConditions ?? {},
     fieldConfig: DEFAULT_ROW_FIELDS,
@@ -145,7 +141,7 @@ export function getRowsCountSql(
   });
 
   if (hasJsonFilter(whereConditions)) {
-    return Prisma.sql`
+    return sql`
       WITH _rows AS (
         SELECT ${ROW_COLUMNS}
         ${BASE_JOIN}
@@ -156,7 +152,7 @@ export function getRowsCountSql(
     `;
   }
 
-  return Prisma.sql`
+  return sql`
     SELECT COUNT(*) as count
     ${BASE_JOIN}
     WHERE rt."B" = ${tableId}

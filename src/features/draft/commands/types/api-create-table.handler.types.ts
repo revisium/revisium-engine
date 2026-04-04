@@ -1,4 +1,4 @@
-import { Branch, Table } from 'src/__generated__/client';
+import type { Branch, Table } from 'src/engine-prisma-types';
 
 export type ApiCreateTableHandlerReturnType = {
   branch: Branch;

@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import { SortOrder } from 'src/engine-prisma-types';
 import { GetRevisionsByBranchIdQuery } from 'src/features/branch/quieries/impl/get-revisions-by-branch-id.query';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { getRevisionCursorPagination } from 'src/features/share/commands/utils/getRevisionCursorPagination';
@@ -43,7 +43,7 @@ export class GetRevisionsByBranchIdHandler implements IQueryHandler<GetRevisions
   private getRevisions(
     args: { take: number; skip: number; cursor?: { sequence: number } },
     branchId: string,
-    sort: Prisma.SortOrder = Prisma.SortOrder.asc,
+    sort: SortOrder = SortOrder.asc,
   ) {
     return this.prisma.branch
       .findUniqueOrThrow({ where: { id: branchId } })

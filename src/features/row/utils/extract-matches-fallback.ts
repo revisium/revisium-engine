@@ -1,4 +1,4 @@
-import { Prisma } from 'src/__generated__/client';
+import type { JsonValue } from 'src/engine-prisma-types';
 import { SearchMatch } from 'src/features/row/queries/impl';
 
 const MAX_MATCHES = 5;
@@ -14,7 +14,7 @@ interface MatchWithRelevance {
 }
 
 export function extractMatchesFallback(
-  data: Prisma.JsonValue,
+  data: JsonValue,
   query: string,
 ): SearchMatch[] {
   const matches: MatchWithRelevance[] = [];
@@ -31,7 +31,7 @@ export function extractMatchesFallback(
 }
 
 function searchInObject(
-  obj: Prisma.JsonValue,
+  obj: JsonValue,
   path: string,
   queryTokens: string[],
   matches: MatchWithRelevance[],
@@ -56,7 +56,7 @@ function searchInObject(
   } else if (typeof obj === 'object') {
     Object.entries(obj).forEach(([key, value]) => {
       searchInObject(
-        value as Prisma.JsonValue,
+        value as JsonValue,
         path ? `${path}.${key}` : key,
         queryTokens,
         matches,

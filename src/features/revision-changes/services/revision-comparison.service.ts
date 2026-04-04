@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from 'src/__generated__/client';
+import type { JsonValue } from 'src/engine-prisma-types';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -39,7 +39,7 @@ export class RevisionComparisonService {
   async getMigrationsForTable(
     revisionId: string,
     tableCreatedId: string,
-  ): Promise<Prisma.JsonValue[]> {
+  ): Promise<JsonValue[]> {
     const tableId = await this.resolveTableId(revisionId, tableCreatedId);
     if (!tableId) {
       return [];
@@ -77,7 +77,7 @@ export class RevisionComparisonService {
     fromRevisionId: string,
     toRevisionId: string,
     tableCreatedId: string,
-  ): Promise<Prisma.JsonValue[]> {
+  ): Promise<JsonValue[]> {
     const toMigrations = await this.getMigrationsForTable(
       toRevisionId,
       tableCreatedId,

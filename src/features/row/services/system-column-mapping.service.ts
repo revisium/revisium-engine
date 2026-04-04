@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from 'src/__generated__/client';
+import type { RowWhereInput } from 'src/engine-prisma-types';
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import {
   JsonFilter,
@@ -52,9 +52,9 @@ function hasPath(value: unknown): value is { path: string | string[] } {
 @Injectable()
 export class SystemColumnMappingService {
   public mapWhereConditions(
-    where: Prisma.RowWhereInput | undefined,
+    where: RowWhereInput | undefined,
     schema: JsonSchema,
-  ): Prisma.RowWhereInput | undefined {
+  ): RowWhereInput | undefined {
     if (!where) {
       return undefined;
     }
@@ -74,14 +74,14 @@ export class SystemColumnMappingService {
   }
 
   private processWhereConditions(
-    where: Prisma.RowWhereInput,
+    where: RowWhereInput,
     schema: JsonSchema,
-  ): Prisma.RowWhereInput {
+  ): RowWhereInput {
     return Object.fromEntries(
       Object.entries(where)
         .filter(([, value]) => value != null)
         .map(([key, value]) => this.processWhereEntry(key, value, schema)),
-    ) as Prisma.RowWhereInput;
+    ) as RowWhereInput;
   }
 
   private processWhereEntry(
@@ -98,7 +98,7 @@ export class SystemColumnMappingService {
         key,
         Array.isArray(value)
           ? this.processWhereArray(value, schema)
-          : this.processWhereConditions(value as Prisma.RowWhereInput, schema),
+          : this.processWhereConditions(value as RowWhereInput, schema),
       ];
     }
 
@@ -116,8 +116,8 @@ export class SystemColumnMappingService {
   private processWhereArray(
     value: unknown,
     schema: JsonSchema,
-  ): Prisma.RowWhereInput[] {
-    return (value as Prisma.RowWhereInput[]).map((v) =>
+  ): RowWhereInput[] {
+    return (value as RowWhereInput[]).map((v) =>
       this.processWhereConditions(v, schema),
     );
   }

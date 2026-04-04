@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import { SortOrder, TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { getOffsetPagination } from 'src/features/share/commands/utils/getOffsetPagination';
 import { getEmptyPaginatedResponse } from 'src/features/share/const';
@@ -33,7 +33,7 @@ export class ResolveTableForeignKeysByHandler implements IQueryHandler<
     data,
   }: ResolveTableForeignKeysByQuery): Promise<ResolveTableForeignKeysByReturnType> {
     return this.transactionService.run(() => this.transactionHandler(data), {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      isolationLevel: TransactionIsolationLevel.Serializable,
     });
   }
 
@@ -109,7 +109,7 @@ export class ResolveTableForeignKeysByHandler implements IQueryHandler<
           OR: foreignKeyTableIds.map((id) => ({ id })),
         },
         orderBy: {
-          id: Prisma.SortOrder.asc,
+          id: SortOrder.asc,
         },
       });
   }

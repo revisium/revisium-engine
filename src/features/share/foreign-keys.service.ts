@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Row } from 'src/__generated__/client';
+import { sql, join, type Sql, type Row } from 'src/engine-prisma-types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 type CountResult = { count: string | number | bigint };
@@ -133,9 +133,9 @@ export class ForeignKeysService {
 
     jsonPaths.forEach((path) => this.validateJsonPath(path));
 
-    const conditions = Prisma.join(
+    const conditions = join(
       jsonPaths.map(
-        (path) => Prisma.sql`
+        (path) => sql`
           jsonb_path_exists(
             "data",
             ${`${path} ? (@ == $val)`}::jsonpath,
@@ -170,9 +170,9 @@ export class ForeignKeysService {
 
     jsonPaths.forEach((path) => this.validateJsonPath(path));
 
-    const conditions = Prisma.join(
+    const conditions = join(
       jsonPaths.map(
-        (path) => Prisma.sql`
+        (path) => sql`
           jsonb_path_exists(
             "data",
             ${`${path} ? (@ == $val)`}::jsonpath,
@@ -217,12 +217,12 @@ export class ForeignKeysService {
 
     jsonPaths.forEach((path) => this.validateJsonPath(path));
 
-    const allConditions: Prisma.Sql[] = [];
+    const allConditions: Sql[] = [];
 
     for (const path of jsonPaths) {
       for (const value of values) {
         allConditions.push(
-          Prisma.sql`
+          sql`
             jsonb_path_exists(
               "data",
               ${`${path} ? (@ == $val)`}::jsonpath,
@@ -233,7 +233,7 @@ export class ForeignKeysService {
       }
     }
 
-    const conditions = Prisma.join(allConditions, ' OR ');
+    const conditions = join(allConditions, ' OR ');
 
     const result: CountResult[] = await this.transaction.$queryRaw`
         SELECT count(*)

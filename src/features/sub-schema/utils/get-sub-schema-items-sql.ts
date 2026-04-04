@@ -1,4 +1,10 @@
-import { Prisma, Row, Table } from 'src/__generated__/client';
+import {
+  sql,
+  raw,
+  type Sql,
+  type Row,
+  type Table,
+} from 'src/engine-prisma-types';
 import {
   buildSubSchemaCte,
   buildSubSchemaWhere,
@@ -31,13 +37,11 @@ export interface GetSubSchemaItemsSqlParams {
   skip: number;
 }
 
-export function getSubSchemaItemsSql(
-  params: GetSubSchemaItemsSqlParams,
-): Prisma.Sql {
+export function getSubSchemaItemsSql(params: GetSubSchemaItemsSqlParams): Sql {
   const { tables, where, orderBy, take, skip } = params;
 
   if (tables.length === 0) {
-    return Prisma.sql`
+    return sql`
       SELECT
         NULL as "tableId",
         NULL as "rowId",
@@ -76,13 +80,13 @@ export function getSubSchemaItemsSql(
     rowTableAlias: ROW_TABLE_ALIAS,
   });
 
-  return Prisma.sql`
+  return sql`
     ${cte}
     SELECT
-      ${Prisma.raw(SUB_SCHEMA_TABLE_ALIAS)}."tableId",
-      ${Prisma.raw(SUB_SCHEMA_TABLE_ALIAS)}."rowId",
-      ${Prisma.raw(SUB_SCHEMA_TABLE_ALIAS)}."rowVersionId",
-      ${Prisma.raw(SUB_SCHEMA_TABLE_ALIAS)}."fieldPath",
+      ${raw(SUB_SCHEMA_TABLE_ALIAS)}."tableId",
+      ${raw(SUB_SCHEMA_TABLE_ALIAS)}."rowId",
+      ${raw(SUB_SCHEMA_TABLE_ALIAS)}."rowVersionId",
+      ${raw(SUB_SCHEMA_TABLE_ALIAS)}."fieldPath",
       r."versionId" as "row_versionId",
       r."createdId" as "row_createdId",
       r."id" as "row_id",
@@ -101,9 +105,9 @@ export function getSubSchemaItemsSql(
       t."createdAt" as "table_createdAt",
       t."updatedAt" as "table_updatedAt",
       t."system" as "table_system"
-    FROM ${Prisma.raw(SUB_SCHEMA_CTE_NAME)} ${Prisma.raw(SUB_SCHEMA_TABLE_ALIAS)}
-    INNER JOIN "Row" r ON ${Prisma.raw(SUB_SCHEMA_TABLE_ALIAS)}."rowVersionId" = r."versionId"
-    INNER JOIN "Table" t ON ${Prisma.raw(SUB_SCHEMA_TABLE_ALIAS)}."tableVersionId" = t."versionId"
+    FROM ${raw(SUB_SCHEMA_CTE_NAME)} ${raw(SUB_SCHEMA_TABLE_ALIAS)}
+    INNER JOIN "Row" r ON ${raw(SUB_SCHEMA_TABLE_ALIAS)}."rowVersionId" = r."versionId"
+    INNER JOIN "Table" t ON ${raw(SUB_SCHEMA_TABLE_ALIAS)}."tableVersionId" = t."versionId"
     ${whereClause}
     ${orderByClause}
     LIMIT ${take}
@@ -113,11 +117,11 @@ export function getSubSchemaItemsSql(
 
 export function getSubSchemaItemsCountSql(
   params: Pick<GetSubSchemaItemsSqlParams, 'tables' | 'where'>,
-): Prisma.Sql {
+): Sql {
   const { tables, where } = params;
 
   if (tables.length === 0) {
-    return Prisma.sql`SELECT 0::bigint as count`;
+    return sql`SELECT 0::bigint as count`;
   }
 
   const cte = buildSubSchemaCte({ tables });
@@ -126,10 +130,10 @@ export function getSubSchemaItemsCountSql(
     tableAlias: SUB_SCHEMA_TABLE_ALIAS,
   });
 
-  return Prisma.sql`
+  return sql`
     ${cte}
     SELECT COUNT(*)::bigint as count
-    FROM ${Prisma.raw(SUB_SCHEMA_CTE_NAME)} ${Prisma.raw(SUB_SCHEMA_TABLE_ALIAS)}
+    FROM ${raw(SUB_SCHEMA_CTE_NAME)} ${raw(SUB_SCHEMA_TABLE_ALIAS)}
     ${whereClause}
   `;
 }

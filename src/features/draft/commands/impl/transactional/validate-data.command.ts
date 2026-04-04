@@ -1,4 +1,4 @@
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import { JsonSchema } from '@revisium/schema-toolkit/types';
 
 export class ValidateDataCommand {
@@ -7,7 +7,7 @@ export class ValidateDataCommand {
       readonly revisionId: string;
       readonly tableId: string;
       readonly tableSchema?: JsonSchema;
-      readonly rows: { rowId: string; data: Prisma.InputJsonValue }[];
+      readonly rows: { rowId: string; data: InputJsonValue }[];
     },
   ) {}
 }

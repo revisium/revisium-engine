@@ -1,6 +1,6 @@
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import Ajv, { ErrorObject, Schema, ValidateFunction } from 'ajv/dist/2020';
 import hash from 'object-hash';
 import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
@@ -122,12 +122,12 @@ export class JsonSchemaValidatorService {
     };
   }
 
-  public getSchemaHash(schema: Schema | Prisma.InputJsonValue): string {
+  public getSchemaHash(schema: Schema | InputJsonValue): string {
     return hash(schema);
   }
 
   public async getOrAddValidateFunction(
-    schema: Schema | Prisma.InputJsonValue,
+    schema: Schema | InputJsonValue,
     schemaHash: string,
   ): Promise<ValidateFunction> {
     const cachedValidateFunction =

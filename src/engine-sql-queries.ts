@@ -317,16 +317,30 @@ export interface GetRowChangesPaginatedResult {
   changeType: string | null;
 }
 
+export interface GetRowChangesPaginatedOptions {
+  fromRevisionId: string;
+  toRevisionId: string;
+  tableCreatedId: string | null;
+  searchTerm: string | null;
+  changeTypes: InputJsonObject | null;
+  limit: number;
+  offset: number;
+  includeSystem: boolean;
+}
+
 export function getRowChangesPaginatedBetweenRevisionsSql(
-  fromRevisionId: string,
-  toRevisionId: string,
-  tableCreatedId: string | null,
-  searchTerm: string | null,
-  changeTypes: InputJsonObject | null,
-  limit: number,
-  offset: number,
-  includeSystem: boolean,
+  options: GetRowChangesPaginatedOptions,
 ): Sql {
+  const {
+    fromRevisionId,
+    toRevisionId,
+    tableCreatedId,
+    searchTerm,
+    changeTypes,
+    limit,
+    offset,
+    includeSystem,
+  } = options;
   return sql`
 WITH parent_rows AS (
 SELECT

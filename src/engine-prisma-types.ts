@@ -16,16 +16,20 @@
 // ---------------------------------------------------------------------------
 // Re-export schema-independent runtime utilities
 // ---------------------------------------------------------------------------
-import { Sql, sqltag, join, raw, empty } from '@prisma/client/runtime/client';
-
-import type {
+export {
+  Sql,
+  sqltag as sql,
+  join,
+  raw,
+  empty,
+} from '@prisma/client/runtime/client';
+export type {
   InputJsonValue,
   InputJsonObject,
   JsonValue,
 } from '@prisma/client/runtime/client';
 
-export { Sql, sqltag as sql, join, raw, empty };
-export type { InputJsonValue, InputJsonObject, JsonValue };
+import type { JsonValue as _JsonValue } from '@prisma/client/runtime/client';
 
 // ---------------------------------------------------------------------------
 // SortOrder & TransactionIsolationLevel
@@ -96,8 +100,8 @@ export interface Row {
   createdAt: Date;
   updatedAt: Date;
   publishedAt: Date;
-  data: JsonValue;
-  meta: JsonValue;
+  data: _JsonValue;
+  meta: _JsonValue;
   hash: string;
   schemaHash: string;
   [key: string]: unknown;

@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import type { Row } from 'src/engine-prisma-types';
+import type { Row, InputJsonObject } from 'src/engine-prisma-types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import {
   GetRowChangesQuery,
@@ -14,7 +14,6 @@ import {
   countRowChangesBetweenRevisionsSql,
   type CountRowChangesResult,
 } from 'src/engine-sql-queries';
-import type { InputJsonObject } from 'src/engine-prisma-types';
 import { createEmptyPaginatedResponse } from '../../utils/empty-responses';
 import {
   RowChangeMapper,
@@ -102,16 +101,16 @@ export class GetRowChangesHandler implements IQueryHandler<
       : null;
 
     return this.prisma.$queryRaw<GetRowChangesPaginatedResult[]>(
-      getRowChangesPaginatedBetweenRevisionsSql(
+      getRowChangesPaginatedBetweenRevisionsSql({
         fromRevisionId,
         toRevisionId,
-        tableCreatedId ?? null,
-        searchTerm ?? null,
-        changeTypes as unknown as InputJsonObject,
+        tableCreatedId: tableCreatedId ?? null,
+        searchTerm: searchTerm ?? null,
+        changeTypes: changeTypes as unknown as InputJsonObject,
         limit,
         offset,
         includeSystem,
-      ),
+      }),
     );
   }
 

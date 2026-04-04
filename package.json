@@ -10,8 +10,11 @@
     "access": "public"
   },
   "files": [
-    "dist",
-    "prisma"
+    "dist/src",
+    "!dist/src/__generated__",
+    "!dist/**/__tests__",
+    "prisma/sql",
+    "prisma/schema.prisma"
   ],
   "scripts": {
     "build": "nest build && tsc-alias -p tsconfig.build.json",

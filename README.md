@@ -45,19 +45,44 @@ Branch (projectId: string, no FK)
 
 ## Usage
 
-### As a NestJS module (in @revisium/core)
+### Import and inject
 
 ```typescript
-import { Module } from '@nestjs/common';
-import { EngineModule } from '@revisium/engine';
+import { Module, Injectable } from '@nestjs/common';
+import { EngineModule, EngineApiService } from '@revisium/engine';
 
 @Module({
   imports: [EngineModule],
 })
 export class CoreModule {}
+
+@Injectable()
+export class MyService {
+  constructor(private readonly engine: EngineApiService) {}
+
+  async example() {
+    // Tables
+    await this.engine.createTable({ revisionId, tableId: 'products', schema });
+    await this.engine.getTables({ revisionId, first: 10 });
+
+    // Rows
+    await this.engine.createRow({ revisionId, tableId, rowId, data });
+    await this.engine.getRows({ revisionId, tableId, first: 100 });
+    await this.engine.searchRows({ revisionId, query: 'keyword' });
+
+    // Commit
+    await this.engine.createRevision({ projectId, branchName, comment });
+
+    // Diff
+    await this.engine.revisionChanges({ revisionId });
+
+    // Cleanup
+    await this.engine.cleanOrphanedData();
+  }
+}
 ```
 
-Or import individual modules:
+### Or import individual modules
 
 ```typescript
 import {
@@ -68,17 +93,7 @@ import {
 } from '@revisium/engine';
 ```
 
-### Key services
-
-| Service | Description |
-|---------|-------------|
-| `DraftApiService` | Create/update/delete tables and rows, commit revisions, upload files |
-| `RevisionsApiService` | Query revisions, migrations, parent/child traversal |
-| `BranchApiService` | Create/delete branches, query branch state |
-| `TableApiService` | Query tables, schemas, foreign keys |
-| `RowApiService` | Query rows, search, foreign key resolution |
-| `RevisionChangesApiService` | Compute diffs between revisions |
-| `ViewsApiService` | Manage table views |
+See [docs/api.md](docs/api.md) for the full API reference.
 
 ## Consumer Extension Points
 

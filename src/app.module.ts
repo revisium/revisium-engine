@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { CqrsModule } from '@nestjs/cqrs';
+import { EngineApiService } from 'src/engine-api.service';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
@@ -17,6 +19,7 @@ import { ViewsModule } from 'src/features/views/views.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    CqrsModule,
     DatabaseModule,
     StorageModule,
     ShareModule,
@@ -31,5 +34,7 @@ import { ViewsModule } from 'src/features/views/views.module';
     SubSchemaModule,
     ViewsModule,
   ],
+  providers: [EngineApiService],
+  exports: [EngineApiService],
 })
 export class AppModule {}

@@ -2,6 +2,9 @@
 export { AppModule } from './app.module';
 export { AppModule as EngineModule } from './app.module';
 
+// Engine API (unified facade)
+export { EngineApiService } from './engine-api.service';
+
 // Infrastructure — Database
 export { DatabaseModule } from './infrastructure/database/database.module';
 export { PrismaService } from './infrastructure/database/prisma.service';

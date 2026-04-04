@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CommandHandler, CommandBus } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
   JsonValue,
   JsonArray,
@@ -87,7 +87,7 @@ export class PatchRowsHandler extends DraftHandler<
   private async patchAllRows(
     data: PatchRowsCommand['data'],
     schemaStore: JsonSchemaStore,
-  ): Promise<Array<{ rowId: string; data: Prisma.InputJsonValue }>> {
+  ): Promise<Array<{ rowId: string; data: InputJsonValue }>> {
     const rowIds = data.rows.map((r) => r.rowId);
 
     const result = await this.rowApiService.getRows({
@@ -126,7 +126,7 @@ export class PatchRowsHandler extends DraftHandler<
     rowId: string,
     rowData: JsonValue,
     patches: PatchRowsRowInput['patches'],
-  ): Prisma.InputJsonValue {
+  ): InputJsonValue {
     const rootStore = createJsonValueStore(schemaStore, rowId, rowData);
 
     for (const patch of patches) {

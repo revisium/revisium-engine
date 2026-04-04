@@ -1,4 +1,4 @@
-import { Revision } from 'src/__generated__/client';
+import type { Revision } from 'src/engine-prisma-types';
 
 export class ResolveParentByRevisionQuery {
   constructor(public revisionId: string) {}

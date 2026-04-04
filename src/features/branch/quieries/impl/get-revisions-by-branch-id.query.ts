@@ -1,4 +1,4 @@
-import { Prisma } from 'src/__generated__/client';
+import type { SortOrder, Revision } from 'src/engine-prisma-types';
 import { IPaginatedType } from 'src/features/share/pagination.interface';
 
 export class GetRevisionsByBranchIdQuery {
@@ -9,7 +9,7 @@ export class GetRevisionsByBranchIdQuery {
       readonly after?: string;
       readonly before?: string;
       readonly inclusive?: boolean;
-      readonly sort?: Prisma.SortOrder;
+      readonly sort?: SortOrder;
       readonly comment?: string;
     },
   ) {}
@@ -18,6 +18,4 @@ export class GetRevisionsByBranchIdQuery {
 export type GetRevisionsByBranchIdQueryData =
   GetRevisionsByBranchIdQuery['data'];
 
-export type GetRevisionsByBranchIdQueryReturnType = IPaginatedType<
-  Prisma.RevisionGetPayload<Prisma.RevisionDefaultArgs>
->;
+export type GetRevisionsByBranchIdQueryReturnType = IPaginatedType<Revision>;

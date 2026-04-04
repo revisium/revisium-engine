@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import { SortOrder } from 'src/engine-prisma-types';
 import {
   GetMigrationsQuery,
   GetMigrationsQueryData,
@@ -35,7 +35,7 @@ export class GetMigrationsHandler implements IQueryHandler<GetMigrationsQuery> {
         },
       },
       orderBy: {
-        id: Prisma.SortOrder.asc,
+        id: SortOrder.asc,
       },
     });
 

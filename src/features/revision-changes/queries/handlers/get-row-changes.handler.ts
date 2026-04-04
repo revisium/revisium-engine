@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Row } from 'src/__generated__/client';
+import type { Row, InputJsonObject } from 'src/engine-prisma-types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import {
   GetRowChangesQuery,
@@ -8,8 +8,12 @@ import {
 import { getOffsetPagination } from 'src/features/share/commands/utils/getOffsetPagination';
 import { RowDiffService } from '../../services/row-diff.service';
 import { RowChange } from '../../types';
-import { getRowChangesPaginatedBetweenRevisions } from 'src/__generated__/client/sql/getRowChangesPaginatedBetweenRevisions';
-import { countRowChangesBetweenRevisions } from 'src/__generated__/client/sql/countRowChangesBetweenRevisions';
+import {
+  getRowChangesPaginatedBetweenRevisionsSql,
+  type GetRowChangesPaginatedResult,
+  countRowChangesBetweenRevisionsSql,
+  type CountRowChangesResult,
+} from 'src/engine-sql-queries';
 import { createEmptyPaginatedResponse } from '../../utils/empty-responses';
 import {
   RowChangeMapper,
@@ -96,17 +100,17 @@ export class GetRowChangesHandler implements IQueryHandler<
       ? JSON.stringify(filters.changeTypes)
       : null;
 
-    return this.prisma.$queryRawTyped(
-      getRowChangesPaginatedBetweenRevisions(
+    return this.prisma.$queryRaw<GetRowChangesPaginatedResult[]>(
+      getRowChangesPaginatedBetweenRevisionsSql({
         fromRevisionId,
         toRevisionId,
-        (tableCreatedId ?? null) as unknown as string,
-        (searchTerm ?? null) as unknown as string,
-        changeTypes as unknown as import('@prisma/client/runtime/client').InputJsonObject,
+        tableCreatedId: tableCreatedId ?? null,
+        searchTerm: searchTerm ?? null,
+        changeTypes: changeTypes as unknown as InputJsonObject,
         limit,
         offset,
         includeSystem,
-      ),
+      }),
     );
   }
 
@@ -125,13 +129,13 @@ export class GetRowChangesHandler implements IQueryHandler<
       ? JSON.stringify(filters.changeTypes)
       : null;
 
-    const result = await this.prisma.$queryRawTyped(
-      countRowChangesBetweenRevisions(
+    const result = await this.prisma.$queryRaw<CountRowChangesResult[]>(
+      countRowChangesBetweenRevisionsSql(
         fromRevisionId,
         toRevisionId,
-        (tableCreatedId ?? null) as unknown as string,
-        (searchTerm ?? null) as unknown as string,
-        changeTypes as unknown as import('@prisma/client/runtime/client').InputJsonObject,
+        tableCreatedId ?? null,
+        searchTerm ?? null,
+        changeTypes as unknown as InputJsonObject,
         includeSystem,
       ),
     );

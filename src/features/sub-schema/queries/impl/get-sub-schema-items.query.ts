@@ -1,4 +1,4 @@
-import { Row, Table } from 'src/__generated__/client';
+import type { Row, Table } from 'src/engine-prisma-types';
 import { IPaginatedType } from 'src/features/share/pagination.interface';
 import {
   SubSchemaWhereInput as PrismaSubSchemaWhereInput,

@@ -89,3 +89,24 @@ export type {
   ViewSort,
   TableViewsData,
 } from './features/views/types';
+
+// Engine Prisma Types — for consumers to use without generated client
+export type {
+  Branch,
+  Revision,
+  Table,
+  Row,
+  RowWhereInput,
+  InputJsonValue,
+  InputJsonObject,
+  JsonValue,
+} from './engine-prisma-types';
+export {
+  Sql,
+  sql,
+  join,
+  raw,
+  empty,
+  SortOrder,
+  TransactionIsolationLevel,
+} from './engine-prisma-types';

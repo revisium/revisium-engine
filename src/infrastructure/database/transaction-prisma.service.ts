@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from 'src/__generated__/client';
+import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomInt } from 'node:crypto';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
@@ -14,7 +14,7 @@ import { TransactionPrismaClient } from 'src/features/share/types';
 export interface TransactionOptions {
   maxWait?: number;
   timeout?: number;
-  isolationLevel?: Prisma.TransactionIsolationLevel;
+  isolationLevel?: TransactionIsolationLevel;
   retry?: {
     maxRetries: number;
     baseDelayMs: number;
@@ -35,7 +35,7 @@ export interface TransactionOptions {
 const DEFAULT_SERIALIZABLE_OPTIONS: Required<TransactionOptions> = {
   maxWait: 10000, // 10s - increased for high load (connection pool wait)
   timeout: 15000, // 15s - transaction timeout
-  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  isolationLevel: TransactionIsolationLevel.Serializable,
   retry: {
     maxRetries: 20, // 20 attempts - handles high contention scenarios
     baseDelayMs: 30, // 30ms - fast first retry

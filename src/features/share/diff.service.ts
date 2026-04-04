@@ -1,14 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-import { getTableDiffsPaginatedBetweenRevisions } from 'src/__generated__/client/sql/getTableDiffsPaginatedBetweenRevisions';
-import { hasTableDiffsBetweenRevisions } from 'src/__generated__/client/sql/hasTableDiffsBetweenRevisions';
-import { countTableDiffsBetweenRevisions } from 'src/__generated__/client/sql/countTableDiffsBetweenRevisions';
-import { getTableDiffsStatsBetweenRevisions } from 'src/__generated__/client/sql/getTableDiffsStatsBetweenRevisions';
-import { hasRowDiffsBetweenRevisions } from 'src/__generated__/client/sql/hasRowDiffsBetweenRevisions';
-import { Prisma } from 'src/__generated__/client';
-
-type ChangeTypesJsonParam = Prisma.InputJsonObject;
+import type { InputJsonObject } from 'src/engine-prisma-types';
+import {
+  getTableDiffsPaginatedBetweenRevisionsSql,
+  type GetTableDiffsPaginatedResult,
+  hasTableDiffsBetweenRevisionsSql,
+  type HasTableDiffsResult,
+  countTableDiffsBetweenRevisionsSql,
+  type CountTableDiffsResult,
+  getTableDiffsStatsBetweenRevisionsSql,
+  type GetTableDiffsStatsResult,
+  hasRowDiffsBetweenRevisionsSql,
+  type HasRowDiffsResult,
+} from 'src/engine-sql-queries';
 
 export enum TableDiffChangeType {
   Modified = 'modified',
@@ -56,11 +61,11 @@ export class DiffService {
   }): Promise<TableDiff[]> {
     const changeTypesJson = changeTypes ? JSON.stringify(changeTypes) : null;
 
-    const result = await this.prisma.$queryRawTyped(
-      getTableDiffsPaginatedBetweenRevisions(
+    const result = await this.prisma.$queryRaw<GetTableDiffsPaginatedResult[]>(
+      getTableDiffsPaginatedBetweenRevisionsSql(
         fromRevisionId,
         toRevisionId,
-        changeTypesJson as unknown as ChangeTypesJsonParam,
+        changeTypesJson as unknown as InputJsonObject,
         limit,
         offset,
         includeSystem,
@@ -103,8 +108,8 @@ export class DiffService {
     fromRevisionId: string;
     toRevisionId: string;
   }): Promise<boolean> {
-    const result = await this.prisma.$queryRawTyped(
-      hasTableDiffsBetweenRevisions(
+    const result = await this.prisma.$queryRaw<HasTableDiffsResult[]>(
+      hasTableDiffsBetweenRevisionsSql(
         options.fromRevisionId,
         options.toRevisionId,
       ),
@@ -123,11 +128,11 @@ export class DiffService {
       ? JSON.stringify(options.changeTypes)
       : null;
 
-    const result = await this.prisma.$queryRawTyped(
-      countTableDiffsBetweenRevisions(
+    const result = await this.prisma.$queryRaw<CountTableDiffsResult[]>(
+      countTableDiffsBetweenRevisionsSql(
         options.fromRevisionId,
         options.toRevisionId,
-        changeTypesJson as unknown as ChangeTypesJsonParam,
+        changeTypesJson as unknown as InputJsonObject,
         options.includeSystem ?? false,
       ),
     );
@@ -146,8 +151,8 @@ export class DiffService {
     removed: number;
     renamed: number;
   }> {
-    const result = await this.prisma.$queryRawTyped(
-      getTableDiffsStatsBetweenRevisions(
+    const result = await this.prisma.$queryRaw<GetTableDiffsStatsResult[]>(
+      getTableDiffsStatsBetweenRevisionsSql(
         options.fromRevisionId,
         options.toRevisionId,
         options.includeSystem ?? false,
@@ -180,8 +185,8 @@ export class DiffService {
     fromRevisionId: string;
     toRevisionId: string;
   }): Promise<boolean> {
-    const result = await this.prisma.$queryRawTyped(
-      hasRowDiffsBetweenRevisions(
+    const result = await this.prisma.$queryRaw<HasRowDiffsResult[]>(
+      hasRowDiffsBetweenRevisionsSql(
         options.tableCreatedId,
         options.fromRevisionId,
         options.toRevisionId,

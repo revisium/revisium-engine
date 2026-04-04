@@ -8,7 +8,7 @@ import {
   MigrationType,
   JsonPatchOp,
 } from '../types';
-import { Prisma } from 'src/__generated__/client';
+import type { JsonValue } from 'src/engine-prisma-types';
 import { JsonPatch, Migration } from '@revisium/schema-toolkit/types';
 
 @Injectable()
@@ -16,7 +16,7 @@ export class SchemaImpactService {
   analyzeSchemaImpact(
     fromSchemaHash: string | null,
     toSchemaHash: string | null,
-    migrations: Prisma.JsonValue[],
+    migrations: JsonValue[],
   ): SchemaChangeImpact | null {
     if (!fromSchemaHash || !toSchemaHash || fromSchemaHash === toSchemaHash) {
       return null;
@@ -34,7 +34,7 @@ export class SchemaImpactService {
   }
 
   public extractMigrationDetails(
-    migrations: Prisma.JsonValue[],
+    migrations: JsonValue[],
   ): SchemaMigrationDetail[] {
     return migrations.map((migration) => {
       const m = migration as Migration;

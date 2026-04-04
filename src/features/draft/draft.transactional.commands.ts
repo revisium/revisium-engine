@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import { ResolveDraftRevisionCommand } from 'src/features/draft/commands/impl/transactional/resolve-draft-revision.command';
 import {
   ValidateDataCommand,
@@ -30,7 +30,7 @@ export class DraftTransactionalCommands {
     readonly revisionId: string;
     readonly tableId: string;
     readonly tableSchema?: JsonSchema;
-    readonly rows: { rowId: string; data: Prisma.InputJsonValue }[];
+    readonly rows: { rowId: string; data: InputJsonValue }[];
   }) {
     return this.commandBus.execute<
       ValidateDataCommand,
@@ -38,7 +38,7 @@ export class DraftTransactionalCommands {
     >(new ValidateDataCommand(data));
   }
 
-  public async validateSchema(schema: Prisma.InputJsonValue) {
+  public async validateSchema(schema: InputJsonValue) {
     return this.commandBus.execute<ValidateSchemaCommand>(
       new ValidateSchemaCommand(schema),
     );

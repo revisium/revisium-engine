@@ -1,8 +1,8 @@
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 
 export interface ApiCreateRowsRowInput {
   rowId: string;
-  data: Prisma.InputJsonValue;
+  data: InputJsonValue;
 }
 
 export class ApiCreateRowsCommand {

@@ -1,6 +1,5 @@
-import { Prisma } from 'src/__generated__/client';
+import type { Table } from 'src/engine-prisma-types';
 
-export type TableWithContext =
-  Prisma.TableGetPayload<Prisma.TableDefaultArgs> & {
-    context: { revisionId?: string };
-  };
+export type TableWithContext = Table & {
+  context: { revisionId?: string };
+};

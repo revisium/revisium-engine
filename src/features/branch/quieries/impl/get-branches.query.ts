@@ -1,4 +1,4 @@
-import { Branch } from 'src/__generated__/client';
+import type { Branch } from 'src/engine-prisma-types';
 import { IPaginatedType } from 'src/features/share/pagination.interface';
 
 export class GetBranchesQuery {

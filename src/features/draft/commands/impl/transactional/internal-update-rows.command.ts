@@ -1,4 +1,4 @@
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import { JsonSchema } from '@revisium/schema-toolkit/types';
 
 export interface InternalUpdateRowsCommandReturnType {
@@ -15,7 +15,7 @@ export class InternalUpdateRowsCommand {
       schemaHash: string;
       rows: {
         rowId: string;
-        data: Prisma.InputJsonValue;
+        data: InputJsonValue;
       }[];
     },
   ) {}

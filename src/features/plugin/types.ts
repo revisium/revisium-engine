@@ -1,4 +1,4 @@
-import { Prisma, Row } from 'src/__generated__/client';
+import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import {
   JsonSchemaStore,
   JsonValueStore,
@@ -19,7 +19,7 @@ export type AfterCreateRowOptions = {
   revisionId: string;
   tableId: string;
   rowId: string;
-  data: Prisma.InputJsonValue;
+  data: InputJsonValue;
   isRestore?: boolean;
 };
 
@@ -27,7 +27,7 @@ export type AfterUpdateRowOptions = {
   revisionId: string;
   tableId: string;
   rowId: string;
-  data: Prisma.InputJsonValue;
+  data: InputJsonValue;
   isRestore?: boolean;
 };
 

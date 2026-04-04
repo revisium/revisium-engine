@@ -1,4 +1,4 @@
-import { Prisma, Row } from 'src/__generated__/client';
+import { sql, type Sql, type Row } from 'src/engine-prisma-types';
 import {
   OrderByConditions,
   OrderByPart,
@@ -22,7 +22,7 @@ interface GetKeysetPaginationArgs<T> {
   tableVersionId: string;
   whereConditions?: WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>;
   orderBy?: OrderByConditions[];
-  queryRaw: <R>(sql: Prisma.Sql) => Promise<R>;
+  queryRaw: <R>(sql: Sql) => Promise<R>;
   transformRows: (rows: Row[]) => Promise<T[]>;
 }
 
@@ -45,7 +45,7 @@ export async function getKeysetPagination<T>({
       ? userParts
       : [
           {
-            expression: Prisma.sql`r."createdAt"`,
+            expression: sql`r."createdAt"`,
             direction: 'DESC' as const,
             fieldName: 'createdAt',
             isJson: false,
@@ -54,7 +54,7 @@ export async function getKeysetPagination<T>({
 
   const sortHash = computeSortHash(effectiveParts);
 
-  let keysetCondition: Prisma.Sql | undefined;
+  let keysetCondition: Sql | undefined;
   let hasPreviousPage = false;
 
   if (pageData.after) {
@@ -67,7 +67,7 @@ export async function getKeysetPagination<T>({
         effectiveParts,
         decoded.values,
         decoded.tiebreaker,
-        Prisma.sql`r."versionId"`,
+        sql`r."versionId"`,
       );
       hasPreviousPage = true;
     }

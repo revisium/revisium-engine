@@ -1,6 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandBus, CommandHandler } from '@nestjs/cqrs';
-import { Prisma, Row } from 'src/__generated__/client';
+import {
+  SortOrder,
+  type InputJsonValue,
+  type Row,
+} from 'src/engine-prisma-types';
 import { UpdateSchemaCommand } from 'src/features/draft/commands/impl/transactional/update-schema.command';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
@@ -156,7 +160,7 @@ export class UpdateTableHandler extends DraftHandler<
       })
       .rows({
         orderBy: {
-          id: Prisma.SortOrder.asc,
+          id: SortOrder.asc,
         },
       });
   }
@@ -183,7 +187,7 @@ export class UpdateTableHandler extends DraftHandler<
 
   private async updateSchema(
     data: UpdateTableCommand['data'],
-    schema: Prisma.InputJsonValue,
+    schema: InputJsonValue,
   ) {
     return this.commandBus.execute<UpdateSchemaCommand, boolean>(
       new UpdateSchemaCommand({
@@ -218,7 +222,7 @@ export class UpdateTableHandler extends DraftHandler<
         tableSchema: data.tableSchema,
         rows: data.rows.map((row) => ({
           rowId: row.id,
-          data: row.data as Prisma.InputJsonValue,
+          data: row.data as InputJsonValue,
         })),
         schemaHash: data.schemaHash,
       }),
@@ -289,7 +293,7 @@ export class UpdateTableHandler extends DraftHandler<
           revisionId,
           tableId: SystemTables.Views,
           rowId: tableId,
-          data: migratedViewsData as unknown as Prisma.InputJsonValue,
+          data: migratedViewsData as unknown as InputJsonValue,
           schemaHash,
         }),
       );

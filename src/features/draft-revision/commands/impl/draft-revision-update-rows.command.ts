@@ -1,10 +1,10 @@
-import { Prisma } from 'src/__generated__/client';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 
 export interface DraftRevisionUpdateRowsRowData {
   rowId: string;
-  data: Prisma.InputJsonValue;
+  data: InputJsonValue;
   schemaHash?: string;
-  meta?: Prisma.InputJsonValue;
+  meta?: InputJsonValue;
   publishedAt?: Date;
 }
 

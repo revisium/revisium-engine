@@ -1,5 +1,8 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Prisma } from 'src/__generated__/client';
+import {
+  TransactionIsolationLevel,
+  type JsonValue,
+} from 'src/engine-prisma-types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { findSchemaForSystemTables } from 'src/features/share/system-tables.consts';
@@ -16,9 +19,9 @@ export class ResolveTableSchemaHandler implements IQueryHandler<ResolveTableSche
     return this.transactionService.getTransaction();
   }
 
-  async execute({ data }: ResolveTableSchemaQuery): Promise<Prisma.JsonValue> {
+  async execute({ data }: ResolveTableSchemaQuery): Promise<JsonValue> {
     return this.transactionService.run(() => this.transactionHandler(data), {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      isolationLevel: TransactionIsolationLevel.Serializable,
     });
   }
 

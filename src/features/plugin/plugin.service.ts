@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, Row } from 'src/__generated__/client';
+import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import { PluginListService } from 'src/features/plugin/plugin.list.service';
 import {
   ComputeRowsOptions,
@@ -35,7 +35,7 @@ export class PluginService {
 
   public async afterCreateRow(
     options: AfterCreateRowOptions,
-  ): Promise<Prisma.InputJsonValue> {
+  ): Promise<InputJsonValue> {
     const { schema, schemaHash, schemaStore } =
       await this.prepareSchemaContext(options);
 
@@ -68,7 +68,7 @@ export class PluginService {
 
   public async afterUpdateRow(
     options: AfterUpdateRowOptions,
-  ): Promise<Prisma.InputJsonValue> {
+  ): Promise<InputJsonValue> {
     const { schema, schemaHash, schemaStore } =
       await this.prepareSchemaContext(options);
 

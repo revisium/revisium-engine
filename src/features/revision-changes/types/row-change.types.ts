@@ -1,4 +1,4 @@
-import { Row, Table } from 'src/__generated__/client';
+import type { Row, Table } from 'src/engine-prisma-types';
 import { ChangeType } from './enums';
 import { FieldChange } from './field-change.types';
 

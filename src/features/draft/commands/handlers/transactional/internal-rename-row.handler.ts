@@ -1,5 +1,5 @@
 import { CommandBus, CommandHandler } from '@nestjs/cqrs';
-import { Row } from 'src/__generated__/client';
+import type { Row } from 'src/engine-prisma-types';
 import {
   InternalRenameRowCommand,
   InternalRenameRowCommandData,

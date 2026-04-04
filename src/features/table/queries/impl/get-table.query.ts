@@ -1,4 +1,4 @@
-import { Table } from 'src/__generated__/client';
+import type { Table } from 'src/engine-prisma-types';
 
 export class GetTableQuery {
   constructor(public data: { revisionId: string; tableId: string }) {}

@@ -7,7 +7,10 @@ import {
 import { getOffsetPagination } from 'src/features/share/commands/utils/getOffsetPagination';
 import { DiffService, TableDiff } from 'src/features/share/diff.service';
 import { TableChange } from '../../types';
-import { getRowChangesStatsBetweenRevisions } from 'src/__generated__/client/sql/getRowChangesStatsBetweenRevisions';
+import {
+  getRowChangesStatsBetweenRevisionsSql,
+  type GetRowChangesStatsResult,
+} from 'src/engine-sql-queries';
 import { RevisionComparisonService } from '../../services/revision-comparison.service';
 import { ViewsComparisonService } from '../../services/views-comparison.service';
 import { createEmptyPaginatedResponse } from '../../utils/empty-responses';
@@ -119,8 +122,8 @@ export class GetTableChangesHandler implements IQueryHandler<
     tableCreatedId: string,
     includeSystem = false,
   ) {
-    const result = await this.prisma.$queryRawTyped(
-      getRowChangesStatsBetweenRevisions(
+    const result = await this.prisma.$queryRaw<GetRowChangesStatsResult[]>(
+      getRowChangesStatsBetweenRevisionsSql(
         fromRevisionId,
         toRevisionId,
         tableCreatedId,

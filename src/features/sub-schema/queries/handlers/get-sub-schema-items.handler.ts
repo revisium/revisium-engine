@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Prisma, Table } from 'src/__generated__/client';
+import { SortOrder, type Table } from 'src/engine-prisma-types';
 import { SubSchemaTableConfig, SubSchemaPath } from '@revisium/prisma-pg-json';
 import { getValueByPath } from '@revisium/schema-toolkit/lib';
 import { JsonValue } from '@revisium/schema-toolkit/types';
@@ -177,7 +177,7 @@ export class GetSubSchemaItemsHandler implements IQueryHandler<
       .findUniqueOrThrow({ where: { id: revisionId } })
       .tables({
         where: { system: false },
-        orderBy: { createdAt: Prisma.SortOrder.desc },
+        orderBy: { createdAt: SortOrder.desc },
       });
   }
 

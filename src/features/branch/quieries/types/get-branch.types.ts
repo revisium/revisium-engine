@@ -1,4 +1,3 @@
-import { Prisma } from 'src/__generated__/client';
+import type { Branch } from 'src/engine-prisma-types';
 
-export type GetBranchReturnType =
-  Prisma.BranchGetPayload<Prisma.BranchDefaultArgs>;
+export type GetBranchReturnType = Branch;

@@ -1,7 +1,7 @@
-import { Prisma } from 'src/__generated__/client';
+import type { Row } from 'src/engine-prisma-types';
 import { FormulaFieldError } from 'src/features/plugin/types';
 
-export type RowWithContext = Prisma.RowGetPayload<Prisma.RowDefaultArgs> & {
+export type RowWithContext = Row & {
   context: { revisionId: string; tableId: string };
   formulaErrors?: FormulaFieldError[];
 };

@@ -5,7 +5,7 @@ import {
 } from 'src/features/share/diff.service';
 import { TableChange, ChangeType, ViewsChangeDetail } from '../types';
 import { SchemaMigrationDetail } from '../types/schema-change.types';
-import { Prisma } from 'src/__generated__/client';
+import type { JsonValue } from 'src/engine-prisma-types';
 import { SchemaImpactService } from '../services/schema-impact.service';
 
 export interface RowStatsData {
@@ -22,7 +22,7 @@ export class TableChangeMapper {
 
   public mapTableDiffToTableChange(
     diff: TableDiff,
-    migrations: Prisma.JsonValue[],
+    migrations: JsonValue[],
     rowStats: RowStatsData | null,
     viewsChanges: ViewsChangeDetail,
   ): TableChange {
@@ -81,7 +81,7 @@ export class TableChangeMapper {
   }
 
   private extractSchemaMigrations(
-    migrations: Prisma.JsonValue[],
+    migrations: JsonValue[],
   ): SchemaMigrationDetail[] {
     return this.schemaImpactService.extractMigrationDetails(migrations);
   }

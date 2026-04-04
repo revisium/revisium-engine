@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { Row, Table } from 'src/__generated__/client';
-import { getRowChangesPaginatedBetweenRevisions } from 'src/__generated__/client/sql/getRowChangesPaginatedBetweenRevisions';
+import type { Row, Table } from 'src/engine-prisma-types';
+import type { GetRowChangesPaginatedResult } from 'src/engine-sql-queries';
 import {
   RowChange,
   AddedRowChange,
@@ -10,7 +10,7 @@ import {
 import { ChangeType } from '../types/enums';
 import { FieldChange } from '../types/field-change.types';
 
-export type RawRowChangeData = getRowChangesPaginatedBetweenRevisions.Result;
+export type RawRowChangeData = GetRowChangesPaginatedResult;
 
 @Injectable()
 export class RowChangeMapper {

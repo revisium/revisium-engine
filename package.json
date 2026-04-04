@@ -4,6 +4,10 @@
   "description": "Revisium version engine — core versioning logic for branches, revisions, tables, and rows",
   "author": "Revisium",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/revisium/revisium-engine"
+  },
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "publishConfig": {

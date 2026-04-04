@@ -7,7 +7,7 @@ This document explains how to integrate `@revisium/engine` into a host applicati
 ### Option A: Import AppModule (all modules at once)
 
 ```typescript
-import { AppModule as EngineModule } from '@revisium/engine';
+import { EngineModule } from '@revisium/engine';
 
 @Module({
   imports: [EngineModule],

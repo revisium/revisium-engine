@@ -92,8 +92,7 @@ Returns: `{ edges: [{ cursor, node }], pageInfo, totalCount }`
 
 ```typescript
 engine.getCountRowsInTable({
-  revisionId: string;
-  tableId: string;
+  tableVersionId: string;  // table's versionId (from getTable result)
 })
 ```
 
@@ -318,7 +317,6 @@ engine.searchRows({
   query: string;
   first?: number;
   after?: string;
-  tableId?: string;  // optional: scope to one table
 })
 ```
 
@@ -392,7 +390,6 @@ Apply schema migrations to draft tables.
 ```typescript
 engine.applyMigrations({
   revisionId: string;
-  tableId: string;
   migrations: Migration[];
 })
 ```
@@ -465,11 +462,10 @@ Create a new branch from a committed revision.
 engine.createBranch({
   revisionId: string;  // source revision (must be committed, not draft)
   branchName: string;
-  projectId: string;
 })
 ```
 
-Returns: `string` (new branch ID)
+Returns: `Branch` (Prisma Branch object with id, name, projectId, etc.)
 
 ### deleteBranch
 
@@ -529,8 +525,7 @@ engine.uploadFile({
   revisionId: string;
   tableId: string;
   rowId: string;
-  fieldId: string;
-  fileIndex?: number;
+  fileId: string;
   file: Express.Multer.File;
 })
 ```
@@ -556,7 +551,7 @@ Returns: `TableViewsData` — views with columns, filters, sorts
 engine.updateTableViews({
   revisionId: string;
   tableId: string;
-  views: TableViewsData;
+  viewsData: TableViewsData;
 })
 ```
 

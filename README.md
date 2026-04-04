@@ -48,6 +48,7 @@ Branch (projectId: string, no FK)
 ### Import and inject
 
 ```typescript
+import { Module, Injectable } from '@nestjs/common';
 import { EngineModule, EngineApiService } from '@revisium/engine';
 
 @Module({

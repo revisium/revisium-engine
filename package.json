@@ -50,7 +50,7 @@
     "@revisium/schema-toolkit": "^0.24.0",
     "ajv": "^8.18.0",
     "lru-cache": "^11.2.7",
-    "nanoid": "^5.1.7",
+    "nanoid": "^3.3.11",
     "object-hash": "^3.0.0",
     "sharp": "^0.34.5"
   },
@@ -156,9 +156,6 @@
     "setupFiles": [
       "<rootDir>/jest.setup.ts"
     ],
-    "testTimeout": 30000,
-    "transformIgnorePatterns": [
-      "node_modules/(?!nanoid)"
-    ]
+    "testTimeout": 30000
   }
 }

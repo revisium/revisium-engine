@@ -27,6 +27,7 @@ import { ShareModule } from 'src/features/share/share.module';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import { TableModule } from 'src/features/table/table.module';
+import { ViewsModule } from 'src/features/views/views.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
@@ -95,6 +96,7 @@ export const createTestingModule = async () => {
       RowModule,
       DraftRevisionModule,
       DraftModule,
+      ViewsModule,
       CacheModule.register(),
     ],
   })

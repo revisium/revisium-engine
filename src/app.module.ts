@@ -10,6 +10,7 @@ import { TableModule } from 'src/features/table/table.module';
 import { RowModule } from 'src/features/row/row.module';
 import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
 import { DraftModule } from 'src/features/draft/draft.module';
+import { RevisionChangesModule } from 'src/features/revision-changes/revision-changes.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { DraftModule } from 'src/features/draft/draft.module';
     RowModule,
     DraftRevisionModule,
     DraftModule,
+    RevisionChangesModule,
   ],
 })
 export class AppModule {}

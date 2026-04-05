@@ -90,6 +90,68 @@ export type {
   TableViewsData,
 } from './features/views/types';
 
+// Draft Command Data Types
+export type { ApiCreateRevisionCommandData } from './features/draft/commands/impl/api-create-revision.command';
+export type { ApiCreateRevisionCommandReturnType } from './features/draft/commands/impl/api-create-revision.command';
+export type { ApiCreateRowCommandData } from './features/draft/commands/impl/api-create-row.command';
+export type { ApiCreateRowsCommandData } from './features/draft/commands/impl/api-create-rows.command';
+export type { ApiCreateTableCommandData } from './features/draft/commands/impl/api-create-table.command';
+export type { ApiPatchRowCommandData } from './features/draft/commands/impl/api-patch-row.command';
+export type { ApiPatchRowsCommandData } from './features/draft/commands/impl/api-patch-rows.command';
+export type { ApiRemoveRowCommandData } from './features/draft/commands/impl/api-remove-row.command';
+export type { ApiRemoveRowsCommandData } from './features/draft/commands/impl/api-remove-rows.command';
+export type { ApiRemoveTableCommandData } from './features/draft/commands/impl/api-remove-table.command';
+export type { ApiRenameRowCommandData } from './features/draft/commands/impl/api-rename-row.command';
+export type { ApiRenameTableCommandData } from './features/draft/commands/impl/api-rename-table.command';
+export type { ApiRevertChangesCommandData } from './features/draft/commands/impl/api-revert-changes.command';
+export type { ApiUpdateRowCommandData } from './features/draft/commands/impl/api-update-row.command';
+export type { ApiUpdateRowsCommandData } from './features/draft/commands/impl/api-update-rows.command';
+export type { ApiUpdateTableCommandData } from './features/draft/commands/impl/api-update-table.command';
+export type { ApiUploadFileCommandData } from './features/draft/commands/impl/api-upload-file.command';
+export type { ApplyMigrationCommandData } from './features/draft/commands/impl/migration';
+
+// Row Query Data Types
+export type { GetRowQueryData } from './features/row/queries/impl';
+export type { GetRowByIdQueryData } from './features/row/queries/impl';
+export type { GetRowsQueryData } from './features/row/queries/impl';
+export type { SearchRowsQueryData } from './features/row/queries/impl';
+export type { ResolveRowForeignKeysByQueryData } from './features/row/queries/impl';
+export type { ResolveRowForeignKeysToQueryData } from './features/row/queries/impl';
+export type { ResolveRowCountForeignKeysByQueryData } from './features/row/queries/impl';
+export type { ResolveRowCountForeignKeysToQueryData } from './features/row/queries/impl';
+
+// Table Query Data Types
+export type { GetTableQueryData } from './features/table/queries/impl';
+export type { GetTablesQueryData } from './features/table/queries/impl';
+export type { GetCountRowsInTableQueryData } from './features/table/queries/impl';
+export type { ResolveTableSchemaQueryData } from './features/table/queries/impl';
+export type { ResolveTableForeignKeysByQueryData } from './features/table/queries/impl';
+export type { ResolveTableForeignKeysToQueryData } from './features/table/queries/impl';
+export type { ResolveTableCountForeignKeysByQueryData } from './features/table/queries/impl';
+export type { ResolveTableCountForeignKeysToQueryData } from './features/table/queries/impl';
+
+// Revision Query Data Types
+export type { GetRevisionQueryData } from './features/revision/queries/impl';
+export type { GetChildrenByRevisionQueryData } from './features/revision/queries/impl';
+export type { GetTablesByRevisionIdQueryData } from './features/revision/queries/impl';
+export type { GetMigrationsQueryData } from './features/revision/queries/impl';
+export type { ResolveParentByRevisionQueryData } from './features/revision/queries/impl';
+export type { ResolveChildByRevisionQueryData } from './features/revision/queries/impl';
+export type { ResolveChildBranchesByRevisionQueryData } from './features/revision/queries/impl';
+export type { ResolveBranchByRevisionQueryData } from './features/revision/queries/impl';
+
+// Branch Query Data Types
+export type { GetBranchQueryData } from './features/branch/quieries/impl';
+export type { GetBranchByIdQueryData } from './features/branch/quieries/impl';
+export type { GetBranchesQueryData } from './features/branch/quieries/impl';
+export type { GetRevisionsByBranchIdQueryData } from './features/branch/quieries/impl';
+export type { ResolveParentBranchByBranchQueryData } from './features/branch/quieries/impl';
+
+// Revision Changes Query Data Types
+export type { GetRevisionChangesQueryData } from './features/revision-changes/queries/impl';
+export type { GetRowChangesQueryData } from './features/revision-changes/queries/impl';
+export type { GetTableChangesQueryData } from './features/revision-changes/queries/impl';
+
 // Engine Prisma Types — for consumers to use without generated client
 export type {
   Branch,

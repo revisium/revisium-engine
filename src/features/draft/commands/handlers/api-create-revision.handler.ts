@@ -20,7 +20,10 @@ export class ApiCreateRevisionHandler implements ICommandHandler<
   ) {}
 
   async execute({ data }: ApiCreateRevisionCommand) {
-    const { previousDraftRevisionId }: CreateRevisionHandlerReturnType =
+    const {
+      previousDraftRevisionId,
+      previousHeadRevisionId,
+    }: CreateRevisionHandlerReturnType =
       await this.transactionService.runSerializable(async () =>
         this.commandBus.execute<
           CreateRevisionCommand,
@@ -28,6 +31,14 @@ export class ApiCreateRevisionHandler implements ICommandHandler<
         >(new CreateRevisionCommand(data)),
       );
 
-    return this.revisionApi.revision({ revisionId: previousDraftRevisionId });
+    const revision = await this.revisionApi.revision({
+      revisionId: previousDraftRevisionId,
+    });
+
+    return {
+      ...revision,
+      previousHeadRevisionId,
+      previousDraftRevisionId,
+    };
   }
 }

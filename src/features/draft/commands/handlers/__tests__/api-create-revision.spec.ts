@@ -34,7 +34,12 @@ describe('ApiCreateRevisionHandler', () => {
       });
     expect(committedHeadRevision.isHead).toBe(true);
     expect(committedHeadRevision.isDraft).toBe(false);
-    expect(result).toStrictEqual(committedHeadRevision);
+
+    const { previousHeadRevisionId, previousDraftRevisionId, ...revision } =
+      result;
+    expect(revision).toStrictEqual(committedHeadRevision);
+    expect(previousDraftRevisionId).toBe(draftRevisionId);
+    expect(typeof previousHeadRevisionId).toBe('string');
   });
 
   let prismaService: PrismaService;

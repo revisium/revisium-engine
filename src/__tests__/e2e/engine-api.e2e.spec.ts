@@ -138,6 +138,8 @@ describe('EngineApi E2E', () => {
     });
 
     it('should commit revision', async () => {
+      const previousDraft = draftRevisionId;
+
       const result = await api.createRevision({
         projectId,
         branchName,
@@ -145,6 +147,8 @@ describe('EngineApi E2E', () => {
       });
 
       expect(result).toBeDefined();
+      expect(result.previousDraftRevisionId).toBe(previousDraft);
+      expect(typeof result.previousHeadRevisionId).toBe('string');
       await refreshDraftRevisionId();
     });
 

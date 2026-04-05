@@ -346,7 +346,7 @@ engine.createRevision({
 })
 ```
 
-Returns: branch data with new head/draft revision IDs
+Returns: `{ id, sequence, createdAt, comment, isHead, isDraft, isStart, hasChanges, previousHeadRevisionId, previousDraftRevisionId }` — the committed revision plus the IDs of the head and draft revisions that existed before the commit
 
 ### revertChanges
 
@@ -585,7 +585,7 @@ Returns: `{ edges: [{ cursor, node }], pageInfo, totalCount }`
 Delete orphaned tables (no revision connections) and rows (no table connections). Call from your own cron.
 
 ```typescript
-engine.cleanOrphanedData()
+engine.cleanOrphanedData();
 ```
 
 Returns: `{ tables: number, rows: number }` — counts of deleted entities

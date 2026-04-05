@@ -12,4 +12,7 @@ export class ApiCreateRevisionCommand {
 
 export type ApiCreateRevisionCommandData = ApiCreateRevisionCommand['data'];
 
-export type ApiCreateRevisionCommandReturnType = GetRevisionQueryReturnType;
+export type ApiCreateRevisionCommandReturnType = GetRevisionQueryReturnType & {
+  previousHeadRevisionId: string;
+  previousDraftRevisionId: string;
+};

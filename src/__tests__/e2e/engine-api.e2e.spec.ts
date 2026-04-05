@@ -35,7 +35,7 @@ describe('EngineApi E2E', () => {
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      imports: [AppModule],
+      imports: [AppModule.forRoot()],
     })
       .overrideProvider(STORAGE_SERVICE)
       .useValue(mockStorage)

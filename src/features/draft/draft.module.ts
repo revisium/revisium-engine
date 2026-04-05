@@ -12,8 +12,6 @@ import { DraftContextService } from 'src/features/draft/draft-context.service';
 import { DRAFT_REQUEST_DTO } from 'src/features/draft/draft-request-dto';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { ShareModule } from 'src/features/share/share.module';
-import { StorageModule } from 'src/infrastructure/storage/storage.module';
-
 @Module({
   imports: [
     DatabaseModule,
@@ -23,7 +21,6 @@ import { StorageModule } from 'src/infrastructure/storage/storage.module';
     RowModule,
     RevisionModule,
     DraftRevisionModule,
-    StorageModule,
   ],
   providers: [
     DraftTransactionalCommands,

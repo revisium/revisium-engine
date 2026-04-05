@@ -1,6 +1,7 @@
 // Engine Module
 export { AppModule } from './app.module';
 export { AppModule as EngineModule } from './app.module';
+export type { EngineModuleOptions } from './app.module';
 
 // Engine API (unified facade)
 export { EngineApiService } from './engine-api.service';

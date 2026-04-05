@@ -6,10 +6,8 @@ import { PluginListService } from 'src/features/plugin/plugin.list.service';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { ShareModule } from 'src/features/share/share.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
-import { StorageModule } from 'src/infrastructure/storage/storage.module';
-
 @Module({
-  imports: [DatabaseModule, ShareModule, ConfigModule, StorageModule],
+  imports: [DatabaseModule, ShareModule, ConfigModule],
   providers: [
     ...PLUGINS,
     PluginListService,

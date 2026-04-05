@@ -22,7 +22,7 @@ Extracted from [@revisium/core](https://github.com/revisium/revisium-core). No a
 ```typescript
 import { EngineModule, EngineApiService } from '@revisium/engine';
 
-@Module({ imports: [EngineModule] })
+@Module({ imports: [EngineModule.forRoot()] })
 export class AppModule {}
 
 @Injectable()
@@ -39,6 +39,26 @@ export class MyService {
   }
 }
 ```
+
+### With file storage
+
+Provide your own `IStorageService` implementation (S3, local filesystem, etc.):
+
+```typescript
+import { EngineModule, IStorageService } from '@revisium/engine';
+
+const myStorage: IStorageService = {
+  isAvailable: true,
+  canServeFiles: false,
+  uploadFile: (file, path) => s3Client.upload(file, path),
+  getPublicUrl: (key) => `https://cdn.example.com/${key}`,
+};
+
+@Module({ imports: [EngineModule.forRoot({ storage: myStorage })] })
+export class AppModule {}
+```
+
+Without a storage provider, file operations throw "Storage is not configured".
 
 ## Data Model
 
@@ -65,12 +85,12 @@ npm run prisma:generate
 npm run start:dev
 ```
 
-| Script | Description |
-|--------|-------------|
-| `npm run tsc` | Type check |
-| `npm run lint:ci` | ESLint (0 warnings) |
-| `npm test` | Run tests (1100+ tests) |
-| `npm run build` | Production build |
+| Script            | Description             |
+| ----------------- | ----------------------- |
+| `npm run tsc`     | Type check              |
+| `npm run lint:ci` | ESLint (0 warnings)     |
+| `npm test`        | Run tests (1100+ tests) |
+| `npm run build`   | Production build        |
 
 ## Tech Stack
 

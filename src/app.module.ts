@@ -35,17 +35,7 @@ const FEATURE_MODULES = [
   ViewsModule,
 ];
 
-@Module({
-  imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
-    CqrsModule,
-    DatabaseModule,
-    StorageModule.forRoot(),
-    ...FEATURE_MODULES,
-  ],
-  providers: [EngineApiService],
-  exports: [EngineApiService],
-})
+@Module({})
 export class AppModule {
   static forRoot(options?: EngineModuleOptions): DynamicModule {
     return {

@@ -10,7 +10,7 @@ This document explains how to integrate `@revisium/engine` into a host applicati
 import { EngineModule, EngineApiService } from '@revisium/engine';
 
 @Module({
-  imports: [EngineModule],
+  imports: [EngineModule.forRoot()],
 })
 export class CoreModule {}
 
@@ -22,6 +22,31 @@ export class MyService {
 
 `EngineApiService` is a flat facade over all engine services. See [api.md](api.md) for the full method reference.
 
+### With file storage
+
+The engine accepts an `IStorageService` implementation via `forRoot()`. Without it, file operations (uploadFile, file plugin) are disabled.
+
+```typescript
+import { EngineModule, IStorageService } from '@revisium/engine';
+
+const s3Storage: IStorageService = {
+  isAvailable: true,
+  canServeFiles: false,
+  async uploadFile(file, path) {
+    /* your S3/GCS/Azure logic */
+    return { key: path };
+  },
+  getPublicUrl(key) {
+    return `https://cdn.example.com/${key}`;
+  },
+};
+
+@Module({
+  imports: [EngineModule.forRoot({ storage: s3Storage })],
+})
+export class CoreModule {}
+```
+
 ### Alternative: Import individual modules
 
 ```typescript
@@ -29,7 +54,6 @@ import {
   DatabaseModule,
   ShareModule,
   PluginModule,
-  StorageModule,
   RevisionModule,
   BranchModule,
   TableModule,
@@ -109,10 +133,12 @@ export class EventEmittingDraftApiService {
   async apiCreateRevision(data: ApiCreateRevisionCommandData) {
     const result = await this.draftApi.apiCreateRevision(data);
 
-    this.eventBus.publish(new RevisionCommittedEvent({
-      revisionId: result.id,
-      branchId: data.branchId,
-    }));
+    this.eventBus.publish(
+      new RevisionCommittedEvent({
+        revisionId: result.id,
+        branchId: data.branchId,
+      }),
+    );
 
     return result;
   }
@@ -120,11 +146,13 @@ export class EventEmittingDraftApiService {
   async apiCreateRow(data: ApiCreateRowCommandData) {
     const result = await this.draftApi.apiCreateRow(data);
 
-    this.eventBus.publish(new RowCreatedEvent({
-      revisionId: data.revisionId,
-      tableId: data.tableId,
-      rowId: result.row.id,
-    }));
+    this.eventBus.publish(
+      new RowCreatedEvent({
+        revisionId: data.revisionId,
+        tableId: data.tableId,
+        rowId: result.row.id,
+      }),
+    );
 
     return result;
   }
@@ -160,22 +188,33 @@ At runtime, the consumer provides the full `PrismaClient` (with all models inclu
 
 The engine's own Prisma schema (4 models, no FKs to Project) exists solely for running the engine's test suite in CI.
 
-## Storage Service Override
+## Storage
 
-The engine includes `StorageModule` with S3, Local, and Null implementations. To override:
+The engine does not include storage implementations (no S3, no local filesystem). Instead, it accepts an `IStorageService` via `EngineModule.forRoot({ storage })`.
+
+The `IStorageService` interface:
 
 ```typescript
-@Module({
-  imports: [StorageModule],
-})
-export class AppModule {}
+interface IStorageService {
+  readonly isAvailable: boolean;
+  readonly canServeFiles: boolean;
+  uploadFile(file: Express.Multer.File, path: string): Promise<{ key: string }>;
+  getPublicUrl(key: string): string;
+}
+```
 
-// Or override the provider:
+If no storage is provided, the engine uses `NullStorageService` (throws on upload, returns empty URLs).
+
+In tests, override the storage token:
+
+```typescript
+import { STORAGE_SERVICE } from '@revisium/engine';
+
 Test.createTestingModule({
-  imports: [StorageModule],
+  imports: [EngineModule.forRoot()],
 })
   .overrideProvider(STORAGE_SERVICE)
-  .useValue(myCustomStorage)
+  .useValue(mockStorage)
   .compile();
 ```
 
@@ -202,13 +241,13 @@ export class AppCleanupService {
 
 ## What the Engine Provides vs What the Consumer Adds
 
-| Layer | Engine | Consumer |
-|-------|--------|----------|
-| Data model | Branch, Revision, Table, Row | Project, Organization, User, Role, Endpoint |
-| Mutations | Create/update/delete/rename rows, tables; commit; revert; migrations | Billing limit enforcement, event emission |
-| Queries | Get rows/tables/revisions, search, diffs, foreign keys | Caching, auth-scoped queries |
-| Schema | JSON Schema validation, plugins, formula evaluation | API schema (GraphQL/REST/MCP) |
-| Storage | S3/Local/Null file storage | Storage config, CDN |
-| Auth | None | JWT, OAuth, CASL, guards |
-| Notifications | None | Endpoint notification, webhooks |
-| Cache | None | BentoCache, Redis, in-memory |
+| Layer         | Engine                                                               | Consumer                                    |
+| ------------- | -------------------------------------------------------------------- | ------------------------------------------- |
+| Data model    | Branch, Revision, Table, Row                                         | Project, Organization, User, Role, Endpoint |
+| Mutations     | Create/update/delete/rename rows, tables; commit; revert; migrations | Billing limit enforcement, event emission   |
+| Queries       | Get rows/tables/revisions, search, diffs, foreign keys               | Caching, auth-scoped queries                |
+| Schema        | JSON Schema validation, plugins, formula evaluation                  | API schema (GraphQL/REST/MCP)               |
+| Storage       | IStorageService interface, NullStorageService default                | S3/Local/custom implementation, CDN         |
+| Auth          | None                                                                 | JWT, OAuth, CASL, guards                    |
+| Notifications | None                                                                 | Endpoint notification, webhooks             |
+| Cache         | None                                                                 | BentoCache, Redis, in-memory                |

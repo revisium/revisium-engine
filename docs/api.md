@@ -518,7 +518,7 @@ Returns: `boolean`
 
 ### uploadFile
 
-Upload a file to a row's file field.
+Upload a file to a row's file field. Requires `IStorageService` to be provided via `EngineModule.forRoot({ storage })`.
 
 ```typescript
 engine.uploadFile({

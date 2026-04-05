@@ -116,6 +116,11 @@ export type { GetRowQueryData } from './features/row/queries/impl';
 export type { GetRowByIdQueryData } from './features/row/queries/impl';
 export type { GetRowsQueryData } from './features/row/queries/impl';
 export type { SearchRowsQueryData } from './features/row/queries/impl';
+export type {
+  SearchMatch,
+  SearchRowsResponse,
+  SearchRowResult,
+} from './features/row/queries/impl';
 export type { ResolveRowForeignKeysByQueryData } from './features/row/queries/impl';
 export type { ResolveRowForeignKeysToQueryData } from './features/row/queries/impl';
 export type { ResolveRowCountForeignKeysByQueryData } from './features/row/queries/impl';
@@ -139,7 +144,9 @@ export type { GetMigrationsQueryData } from './features/revision/queries/impl';
 export type { ResolveParentByRevisionQueryData } from './features/revision/queries/impl';
 export type { ResolveChildByRevisionQueryData } from './features/revision/queries/impl';
 export type { ResolveChildBranchesByRevisionQueryData } from './features/revision/queries/impl';
+export type { ResolveChildBranchesByRevisionQueryReturnType } from './features/revision/queries/impl';
 export type { ResolveBranchByRevisionQueryData } from './features/revision/queries/impl';
+export type { ResolveBranchByRevisionQueryReturnType } from './features/revision/queries/impl';
 
 // Branch Query Data Types
 export type { GetBranchQueryData } from './features/branch/quieries/impl';

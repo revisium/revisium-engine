@@ -402,6 +402,26 @@ Traverse the revision chain.
 
 Get all tables for a specific revision (without pagination).
 
+### resolveChildBranchesByRevision
+
+Find branches that were created from a specific revision.
+
+```typescript
+engine.resolveChildBranchesByRevision(revisionId: string)
+```
+
+Returns: `Array<{ branch: { id: string }, revision: { id: string } }>`
+
+### resolveBranchByRevision
+
+Find the branch that contains a specific revision.
+
+```typescript
+engine.resolveBranchByRevision(revisionId: string)
+```
+
+Returns: `Branch`
+
 ---
 
 ## Revision Changes (Diffs)
@@ -511,6 +531,26 @@ engine.getTouchedByBranchId(branchId: string)
 ```
 
 Returns: `boolean`
+
+### resolveParentBranch
+
+Find the parent branch and source revision for a child branch.
+
+```typescript
+engine.resolveParentBranch({ branchId: string })
+```
+
+Returns: `{ branch: { id: string }, revision: { id: string } } | undefined`
+
+### getProjectByBranch
+
+Find which project a branch belongs to.
+
+```typescript
+engine.getProjectByBranch(branchId: string)
+```
+
+Returns: `{ id: string }`
 
 ---
 

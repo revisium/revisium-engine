@@ -874,6 +874,42 @@ describe('EngineApi E2E', () => {
       expect(revisions.edges.length).toBeGreaterThanOrEqual(1);
     });
 
+    it('should resolveParentBranch for child branch', async () => {
+      const result = await api.resolveParentBranch({ branchId: newBranchId });
+
+      expect(result).toBeDefined();
+      expect(result?.branch.id).toBe(branchId);
+      expect(result?.revision).toBeDefined();
+    });
+
+    it('should getProjectByBranch', async () => {
+      const result = await api.getProjectByBranch(newBranchId);
+
+      expect(result).toBeDefined();
+      expect(result.id).toBe(projectId);
+    });
+
+    it('should resolveChildBranchesByRevision', async () => {
+      const head = await api.getHeadRevision(branchId);
+
+      const result = await api.resolveChildBranchesByRevision(head.id);
+
+      expect(Array.isArray(result)).toBe(true);
+      const branchIds = result.map(
+        (item: { branch: { id: string } }) => item.branch.id,
+      );
+      expect(branchIds).toContain(newBranchId);
+    });
+
+    it('should resolveBranchByRevision', async () => {
+      const draft = await api.getDraftRevision(newBranchId);
+
+      const result = await api.resolveBranchByRevision(draft.id);
+
+      expect(result).toBeDefined();
+      expect(result.id).toBe(newBranchId);
+    });
+
     it('should deleteBranch', async () => {
       const result = await api.deleteBranch({
         projectId,

@@ -219,6 +219,18 @@ export class EngineApiService {
     return this.revisionApi.getTablesByRevisionId(...args);
   }
 
+  resolveChildBranchesByRevision(
+    ...args: Parameters<RevisionsApiService['resolveChildBranchesByRevision']>
+  ) {
+    return this.revisionApi.resolveChildBranchesByRevision(...args);
+  }
+
+  resolveBranchByRevision(
+    ...args: Parameters<RevisionsApiService['resolveBranchByRevision']>
+  ) {
+    return this.revisionApi.resolveBranchByRevision(...args);
+  }
+
   // --- Revision Changes ---
 
   revisionChanges(
@@ -281,6 +293,18 @@ export class EngineApiService {
     ...args: Parameters<BranchApiService['getTouchedByBranchId']>
   ) {
     return this.branchApi.getTouchedByBranchId(...args);
+  }
+
+  resolveParentBranch(
+    ...args: Parameters<BranchApiService['resolveParentBranch']>
+  ) {
+    return this.branchApi.resolveParentBranch(...args);
+  }
+
+  getProjectByBranch(
+    ...args: Parameters<BranchApiService['getProjectByBranch']>
+  ) {
+    return this.branchApi.getProjectByBranch(...args);
   }
 
   // --- Files ---

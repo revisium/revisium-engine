@@ -123,6 +123,18 @@ describe('getOffsetPagination', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should treat after=null as no cursor (same as undefined)', async () => {
+      const result = await getOffsetPagination({
+        pageData: { first: 2, after: null as unknown as undefined },
+        findMany: mockFindMany,
+        count: mockCount,
+      });
+
+      expect(result.edges).toHaveLength(2);
+      expect(result.edges[0]?.node.id).toBe('1');
+      expect(result.pageInfo.hasPreviousPage).toBe(false);
+    });
+
     it('should accept first=0 as a valid value', async () => {
       const result = await getOffsetPagination({
         pageData: { first: 0 },

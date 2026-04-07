@@ -31,7 +31,7 @@ export async function getOffsetPagination<T>({
     );
   }
 
-  if (pageData.after !== undefined) {
+  if (pageData.after != null) {
     if (
       !/^\d+$/.test(pageData.after) ||
       !Number.isSafeInteger(Number(pageData.after))

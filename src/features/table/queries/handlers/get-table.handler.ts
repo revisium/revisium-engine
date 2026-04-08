@@ -1,5 +1,4 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { GetTableQuery } from 'src/features/table/queries/impl/get-table.query';
@@ -20,9 +19,9 @@ export class GetTableHandler implements IQueryHandler<
   }
 
   async execute({ data }: GetTableQuery): Promise<GetTableReturnType> {
-    return this.transactionService.run(() => this.transactionHandler(data), {
-      isolationLevel: TransactionIsolationLevel.Serializable,
-    });
+    return this.transactionService.runSerializable(() =>
+      this.transactionHandler(data),
+    );
   }
 
   private async transactionHandler(data: GetTableQuery['data']) {

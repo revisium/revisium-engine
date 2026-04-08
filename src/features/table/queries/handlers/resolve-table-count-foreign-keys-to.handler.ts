@@ -1,5 +1,4 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
@@ -20,9 +19,9 @@ export class ResolveTableCountForeignKeysToHandler implements IQueryHandler<Reso
   }
 
   async execute({ data }: ResolveTableCountForeignKeysToQuery) {
-    return this.transactionService.run(() => this.transactionHandler(data), {
-      isolationLevel: TransactionIsolationLevel.Serializable,
-    });
+    return this.transactionService.runSerializable(() =>
+      this.transactionHandler(data),
+    );
   }
 
   private async transactionHandler(

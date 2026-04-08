@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { SortOrder, TransactionIsolationLevel } from 'src/engine-prisma-types';
+import { SortOrder } from 'src/engine-prisma-types';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -35,9 +35,9 @@ export class ResolveRowForeignKeysToHandler implements IQueryHandler<
   async execute({
     data,
   }: ResolveRowForeignKeysToQuery): Promise<ResolveRowForeignKeysToReturnType> {
-    return this.transactionService.run(() => this.transactionHandler(data), {
-      isolationLevel: TransactionIsolationLevel.Serializable,
-    });
+    return this.transactionService.runSerializable(() =>
+      this.transactionHandler(data),
+    );
   }
 
   async getRows(

@@ -1,5 +1,4 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { GetTouchedByBranchIdQuery } from 'src/features/branch/quieries/impl';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
@@ -16,11 +15,8 @@ export class GetTouchedByBranchIdHandler implements IQueryHandler<GetTouchedByBr
   }
 
   async execute({ branchId }: GetTouchedByBranchIdQuery): Promise<boolean> {
-    return this.transactionService.run(
-      () => this.transactionHandler(branchId),
-      {
-        isolationLevel: TransactionIsolationLevel.Serializable,
-      },
+    return this.transactionService.runSerializable(() =>
+      this.transactionHandler(branchId),
     );
   }
 

@@ -1,5 +1,4 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ResolveRowCountForeignKeysToQuery } from 'src/features/row/queries/impl';
@@ -27,9 +26,9 @@ export class ResolveRowCountForeignKeysToHandler implements IQueryHandler<
   }
 
   async execute({ data }: ResolveRowCountForeignKeysToQuery) {
-    return this.transactionService.run(() => this.transactionHandler(data), {
-      isolationLevel: TransactionIsolationLevel.Serializable,
-    });
+    return this.transactionService.runSerializable(() =>
+      this.transactionHandler(data),
+    );
   }
 
   private async transactionHandler(

@@ -45,21 +45,18 @@ describe('TransactionPrismaService.isRetryableError', () => {
     expect(callIsRetryable(err)).toBe(true);
   });
 
-  it('should retry in_failed_sql_transaction (25P02)', () => {
+  it('should NOT retry in_failed_sql_transaction (25P02) — too broad, can mask permanent errors', () => {
     const err = Object.assign(
       new Error(
         'current transaction is aborted, commands ignored until end of transaction block',
       ),
       { code: '25P02' },
     );
-    expect(callIsRetryable(err)).toBe(true);
+    expect(callIsRetryable(err)).toBe(false);
   });
 
   it('should retry by message even without code', () => {
     expect(callIsRetryable(new Error('could not serialize access'))).toBe(true);
-    expect(callIsRetryable(new Error('current transaction is aborted'))).toBe(
-      true,
-    );
   });
 
   it('should NOT retry unrelated errors', () => {

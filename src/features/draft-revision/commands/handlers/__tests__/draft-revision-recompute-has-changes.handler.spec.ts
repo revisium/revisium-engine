@@ -347,6 +347,108 @@ describe('DraftRevisionRecomputeHasChangesHandler', () => {
     });
   });
 
+  describe('hasChanges computation with schema changes', () => {
+    it('regression: should preserve hasChanges=true when user table reverts but schema table differs', async () => {
+      const { draftRevisionId, headRevisionId } =
+        await prepareDraftRevisionTest(prismaService);
+
+      const userTableId = 'user-table';
+      const userTableHeadVersionId = nanoid();
+      const userTableDraftVersionId = nanoid();
+      const userTableCreatedId = nanoid();
+      const tempRowVersionId = nanoid();
+
+      await prismaService.table.create({
+        data: {
+          id: userTableId,
+          versionId: userTableHeadVersionId,
+          createdId: userTableCreatedId,
+          system: false,
+          readonly: true,
+          revisions: { connect: { id: headRevisionId } },
+        },
+      });
+
+      await prismaService.table.create({
+        data: {
+          id: userTableId,
+          versionId: userTableDraftVersionId,
+          createdId: userTableCreatedId,
+          system: false,
+          readonly: false,
+          revisions: { connect: { id: draftRevisionId } },
+          rows: {
+            create: {
+              id: 'temp-row',
+              versionId: tempRowVersionId,
+              createdId: nanoid(),
+              data: { ver: 1 },
+              hash: 'temp-hash',
+              schemaHash: 'schema-hash',
+              readonly: false,
+            },
+          },
+        },
+      });
+
+      const schemaTableHeadVersionId = nanoid();
+      const schemaTableDraftVersionId = nanoid();
+      const schemaTableCreatedId = nanoid();
+
+      await prismaService.table.create({
+        data: {
+          id: 'revisium_schema_table',
+          versionId: schemaTableHeadVersionId,
+          createdId: schemaTableCreatedId,
+          system: true,
+          readonly: true,
+          revisions: { connect: { id: headRevisionId } },
+        },
+      });
+
+      await prismaService.table.create({
+        data: {
+          id: 'revisium_schema_table',
+          versionId: schemaTableDraftVersionId,
+          createdId: schemaTableCreatedId,
+          system: true,
+          readonly: false,
+          revisions: { connect: { id: draftRevisionId } },
+        },
+      });
+
+      await prismaService.revision.update({
+        where: { id: draftRevisionId },
+        data: { hasChanges: true },
+      });
+
+      await prismaService.row.delete({
+        where: { versionId: tempRowVersionId },
+      });
+
+      const command = new DraftRevisionRecomputeHasChangesCommand({
+        revisionId: draftRevisionId,
+        tableId: userTableId,
+      });
+
+      await runInTransaction(command);
+
+      const userTableInDraft = await prismaService.table.findFirst({
+        where: {
+          id: userTableId,
+          revisions: { some: { id: draftRevisionId } },
+        },
+      });
+      expect(userTableInDraft?.versionId).toBe(userTableHeadVersionId);
+
+      const revision = await prismaService.revision.findUnique({
+        where: { id: draftRevisionId },
+        select: { hasChanges: true },
+      });
+      expect(revision?.hasChanges).toBe(true);
+    });
+  });
+
   describe('hasChanges computation', () => {
     it('should set hasChanges to false when no table diffs', async () => {
       const { draftRevisionId } = await prepareDraftRevisionTest(prismaService);

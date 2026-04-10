@@ -25,6 +25,7 @@ import {
 import { UpdateTableCommand } from 'src/features/draft/commands/impl/update-table.command';
 import { UpdateTableHandlerReturnType } from 'src/features/draft/commands/types/update-table.handler.types';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
+import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { RowApiService } from 'src/features/row/row-api.service';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TableApiService } from 'src/features/table/table-api.service';
@@ -280,6 +281,7 @@ describe('UpdateTableHandler', () => {
   let viewsMigrationService: ViewsMigrationService;
   let rowApiService: RowApiService;
   let tableApiService: TableApiService;
+  let draftApiService: DraftApiService;
   beforeAll(async () => {
     const result = await createTestingModule();
     prismaService = result.prismaService;
@@ -289,6 +291,7 @@ describe('UpdateTableHandler', () => {
     viewsMigrationService = result.viewsMigrationService;
     rowApiService = result.module.get<RowApiService>(RowApiService);
     tableApiService = result.module.get<TableApiService>(TableApiService);
+    draftApiService = result.draftApiService;
   });
 
   beforeEach(() => {
@@ -297,6 +300,106 @@ describe('UpdateTableHandler', () => {
 
   afterAll(async () => {
     await prismaService.$disconnect();
+  });
+
+  it('should set hasChanges to true after schema update', async () => {
+    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+
+    await prismaService.revision.update({
+      where: { id: draftRevisionId },
+      data: { hasChanges: false },
+    });
+
+    await runTransaction(
+      new UpdateTableCommand({
+        revisionId: draftRevisionId,
+        tableId,
+        patches: [
+          {
+            op: 'add',
+            path: '/properties/newField',
+            value: { type: JsonSchemaTypeName.String, default: '' },
+          },
+        ],
+      }),
+    );
+
+    const revisionAfter = await prismaService.revision.findUniqueOrThrow({
+      where: { id: draftRevisionId },
+      select: { hasChanges: true },
+    });
+    expect(revisionAfter.hasChanges).toBe(true);
+  });
+
+  it('regression: should preserve hasChanges=true when create+remove row follows a schema update', async () => {
+    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+
+    await prismaService.revision.update({
+      where: { id: draftRevisionId },
+      data: { hasChanges: false },
+    });
+
+    await runTransaction(
+      new UpdateTableCommand({
+        revisionId: draftRevisionId,
+        tableId,
+        patches: [
+          {
+            op: 'add',
+            path: '/properties/newField',
+            value: { type: JsonSchemaTypeName.String, default: '' },
+          },
+        ],
+      }),
+    );
+
+    const revisionAfterSchemaUpdate =
+      await prismaService.revision.findUniqueOrThrow({
+        where: { id: draftRevisionId },
+        select: { hasChanges: true },
+      });
+    expect(revisionAfterSchemaUpdate.hasChanges).toBe(true);
+
+    await draftApiService.apiCreateRow({
+      revisionId: draftRevisionId,
+      tableId,
+      rowId: 'temp-row',
+      data: { ver: 1, newField: '' },
+    });
+
+    await draftApiService.apiRemoveRow({
+      revisionId: draftRevisionId,
+      tableId,
+      rowId: 'temp-row',
+    });
+
+    const revisionAfter = await prismaService.revision.findUniqueOrThrow({
+      where: { id: draftRevisionId },
+      select: { hasChanges: true },
+    });
+    expect(revisionAfter.hasChanges).toBe(true);
+  });
+
+  it('should throw error when foreignKey is an object instead of string', async () => {
+    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+
+    const command = new UpdateTableCommand({
+      revisionId: draftRevisionId,
+      tableId,
+      patches: [
+        {
+          op: 'add',
+          path: '/properties/ref',
+          value: {
+            type: JsonSchemaTypeName.String,
+            default: '',
+            foreignKey: { tableId: 'someTable' },
+          } as unknown as JsonStringSchema,
+        },
+      ],
+    });
+
+    await expect(runTransaction(command)).rejects.toThrow(BadRequestException);
   });
 
   describe('views migration on schema changes', () => {

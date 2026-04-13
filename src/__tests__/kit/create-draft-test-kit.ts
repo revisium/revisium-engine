@@ -76,7 +76,9 @@ export async function createDraftTestKit(): Promise<DraftTestKit> {
     commandBus: module.get(CommandBus),
     draftApiService: module.get(DraftApiService),
     draftTransactionalCommands: module.get(DraftTransactionalCommands),
-    migrationContextService: module.get(MigrationContextService),
+    migrationContextService: module
+      .select(DraftModule)
+      .get(MigrationContextService, { strict: true }),
     viewsMigrationService: module.get(ViewsMigrationService),
     async close() {
       await module.close();

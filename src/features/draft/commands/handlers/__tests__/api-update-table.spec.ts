@@ -58,6 +58,8 @@ describe('ApiUpdateTableHandler', () => {
   });
 
   afterAll(async () => {
-    await kit.close();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

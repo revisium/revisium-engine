@@ -220,6 +220,7 @@ export async function prepareRow({
   prismaService,
   headTableVersionId,
   draftTableVersionId,
+  rowId,
   data,
   dataDraft,
   schema,
@@ -227,11 +228,12 @@ export async function prepareRow({
   prismaService: PrismaService;
   headTableVersionId: string;
   draftTableVersionId: string;
+  rowId?: string;
   data: object;
   dataDraft: object;
   schema: JsonSchema;
 }) {
-  const rowId = `row-${nanoid()}`;
+  const resolvedRowId = rowId ?? `row-${nanoid()}`;
   const rowCreatedId = nanoid();
   const headRowVersionId = nanoid();
   const draftRowVersionId = nanoid();
@@ -242,7 +244,7 @@ export async function prepareRow({
       createdAt: now,
       updatedAt: now,
       publishedAt: now,
-      id: rowId,
+      id: resolvedRowId,
       versionId: headRowVersionId,
       createdId: rowCreatedId,
       readonly: true,
@@ -261,7 +263,7 @@ export async function prepareRow({
       createdAt: row.createdAt,
       updatedAt: new Date(),
       publishedAt: row.publishedAt,
-      id: rowId,
+      id: resolvedRowId,
       versionId: draftRowVersionId,
       createdId: rowCreatedId,
       readonly: false,
@@ -279,7 +281,7 @@ export async function prepareRow({
   return {
     row,
     rowDraft,
-    rowId,
+    rowId: resolvedRowId,
     rowCreatedId,
     headRowVersionId,
     draftRowVersionId,

@@ -19,6 +19,7 @@ import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
+import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { CommandBus } from '@nestjs/cqrs';
 import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-revert-changes.command';
@@ -76,6 +77,7 @@ describe('Atomic swap — schema consistency', () => {
   let prisma: PrismaService;
   let draftApi: DraftApiService;
   let migrationApi: MigrationApiService;
+  let migrationBatchService: MigrationBatchService;
   let commandBus: CommandBus;
 
   beforeAll(async () => {
@@ -108,6 +110,7 @@ describe('Atomic swap — schema consistency', () => {
     prisma = module.get(PrismaService);
     draftApi = module.get(DraftApiService);
     migrationApi = module.get(MigrationApiService);
+    migrationBatchService = module.get(MigrationBatchService);
     commandBus = module.get(CommandBus);
   });
 
@@ -116,7 +119,7 @@ describe('Atomic swap — schema consistency', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await module.close();
   });
 
   async function prepareTableWithRows(rowCount = ROW_COUNT) {
@@ -173,9 +176,58 @@ describe('Atomic swap — schema consistency', () => {
     throw new Error(`Migration did not complete within ${maxWaitMs}ms`);
   }
 
+  async function waitForMigrationStatus(
+    revisionId: string,
+    tableId: string,
+    targetStatus: MigrationStatus,
+    maxWaitMs = 10000,
+  ) {
+    const pollInterval = 50;
+    let waited = 0;
+
+    while (waited < maxWaitMs) {
+      const status = await migrationApi.getMigrationStatus({
+        revisionId,
+        tableId,
+      });
+
+      if (status?.status === targetStatus) {
+        return status;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      waited += pollInterval;
+    }
+
+    throw new Error(
+      `Migration did not reach ${targetStatus} within ${maxWaitMs}ms`,
+    );
+  }
+
   describe('schema unchanged during copy', () => {
     it('schema row should NOT have new field while migration is in progress', async () => {
       const { draftRevisionId, tableId } = await prepareTableWithRows();
+      let releaseFirstBatch: (() => void) | undefined;
+      const firstBatchGate = new Promise<void>((resolve) => {
+        releaseFirstBatch = resolve;
+      });
+      const originalLoadBatchRows = migrationBatchService.loadBatchRows.bind(
+        migrationBatchService,
+      );
+      let shouldPauseFirstBatch = true;
+
+      jest
+        .spyOn(migrationBatchService, 'loadBatchRows')
+        .mockImplementation(async (...args) => {
+          const rows = await originalLoadBatchRows(...args);
+
+          if (shouldPauseFirstBatch) {
+            shouldPauseFirstBatch = false;
+            await firstBatchGate;
+          }
+
+          return rows;
+        });
 
       const schemaBefore = await getSchemaData(
         prisma,
@@ -198,16 +250,26 @@ describe('Atomic swap — schema consistency', () => {
       });
       expect(result.migrationId).toBeDefined();
 
-      const schemaDuringCopy = await getSchemaData(
-        prisma,
-        draftRevisionId,
-        tableId,
-      );
-      const duringParsed = schemaDuringCopy as Record<string, unknown> | null;
-      const duringProps = duringParsed?.properties as
-        | Record<string, unknown>
-        | undefined;
-      expect(duringProps).not.toHaveProperty('newField');
+      try {
+        await waitForMigrationStatus(
+          draftRevisionId,
+          tableId,
+          MigrationStatus.COPYING,
+        );
+
+        const schemaDuringCopy = await getSchemaData(
+          prisma,
+          draftRevisionId,
+          tableId,
+        );
+        const duringParsed = schemaDuringCopy as Record<string, unknown> | null;
+        const duringProps = duringParsed?.properties as
+          | Record<string, unknown>
+          | undefined;
+        expect(duringProps).not.toHaveProperty('newField');
+      } finally {
+        releaseFirstBatch?.();
+      }
 
       await waitForMigration(draftRevisionId, tableId);
     });

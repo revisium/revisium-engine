@@ -16,26 +16,8 @@ import { MigrationModule } from 'src/features/migration/migration.module';
 import { RevisionChangesModule } from 'src/features/revision-changes/revision-changes.module';
 import { SubSchemaModule } from 'src/features/sub-schema/sub-schema.module';
 import { ViewsModule } from 'src/features/views/views.module';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { IStorageService } from 'src/infrastructure/storage/storage.interface';
-
-export interface MigrationOptions {
-  /** Row count threshold for async migration. Default: 1000. */
-  threshold?: number;
-  /** Worker mode. Default: 'inline'. */
-  workerMode?: 'inline' | 'polling' | 'disabled';
-  /** Rows per batch. Default: 1000 */
-  batchSize?: number;
-  /** Polling interval in ms (polling mode only). Default: 5000 */
-  pollIntervalMs?: number;
-  /** Heartbeat interval in ms (polling mode). Default: 30000 */
-  heartbeatIntervalMs?: number;
-  /** Stale lock timeout in ms. Default: 60000 */
-  lockTimeoutMs?: number;
-  /** Auto-abort if no progress for this duration in ms. Default: 600000 (10 min) */
-  stallTimeoutMs?: number;
-  /** Max retry count on failure. Default: 3 */
-  maxRetries?: number;
-}
 
 export interface EngineModuleOptions {
   storage?: IStorageService;

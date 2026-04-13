@@ -116,7 +116,7 @@ describe('Async Update Table', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await module.close();
   });
 
   async function prepareTableWithRows() {
@@ -427,11 +427,15 @@ describe('Async Update Table', () => {
         return null;
       }
       if (
-        status.status === MigrationStatus.COMPLETED ||
         status.status === MigrationStatus.FAILED ||
         status.status === MigrationStatus.CANCELLED
       ) {
         return status;
+      }
+      if (status.status === MigrationStatus.COMPLETED) {
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        waited += pollInterval;
+        continue;
       }
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
       waited += pollInterval;

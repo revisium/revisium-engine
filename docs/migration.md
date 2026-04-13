@@ -8,7 +8,7 @@ The main intentional v1 deviation is lock scope: the engine currently applies a 
 
 ## v1 Deviations from ADR-0010
 
-This implementation is a pragmatic v1 subset of [ADR-0010](../../architecture/adr/ADR-0010-async-row-migration.md). Key differences:
+This implementation is a pragmatic v1 subset of ADR-0010. Key differences:
 
 | ADR-0010                                         | v1 Implementation                                |
 | ------------------------------------------------ | ------------------------------------------------ |
@@ -251,6 +251,7 @@ model TableMigration {
   @@unique([revisionId, tableId])
   @@index([status])
   @@index([lockedBy])
+  @@index([status, heartbeatAt])
 }
 ```
 
@@ -270,7 +271,7 @@ The schema row in `revisium_schema_table` stays unchanged until swap completes.
 
 ```text
 src/features/migration/
-  migration.module.ts              MigrationModule.forRoot(options?) — @Global
+  migration.module.ts              MigrationModule.forRoot(options?) — global module
   migration-api.service.ts         Facade over CommandBus/QueryBus
   migration.consts.ts              Defaults and DI tokens
   types/migration.types.ts         Status/Phase enums, result interfaces

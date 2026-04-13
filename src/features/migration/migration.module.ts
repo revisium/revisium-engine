@@ -12,7 +12,7 @@ import { MigrationApiService } from 'src/features/migration/migration-api.servic
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MIGRATION_QUERY_HANDLERS } from 'src/features/migration/queries/handlers';
 import { MIGRATION_COMMAND_HANDLERS } from 'src/features/migration/commands/handlers';
-import type { MigrationOptions } from 'src/app.module';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 
 const SERVICES = [
   MigrationLockService,
@@ -33,7 +33,6 @@ export class MigrationModule {
   static forRoot(options?: MigrationOptions): DynamicModule {
     return {
       module: MigrationModule,
-      global: true,
       imports: [DatabaseModule, CqrsModule, ShareModule, PluginModule],
       providers: [
         {

@@ -24,7 +24,7 @@ engine.createTable({
 })
 ```
 
-Returns: `{ table, previousTableVersionId }`
+Returns: `{ table, previousVersionTableId }`
 
 ### updateTable
 
@@ -52,7 +52,7 @@ engine.renameTable({
 })
 ```
 
-Returns: `{ table, previousTableVersionId }`
+Returns: `{ table, previousVersionTableId }`
 
 ### removeTable
 
@@ -539,7 +539,7 @@ Returns: `boolean`
 Find the parent branch and source revision for a child branch.
 
 ```typescript
-engine.resolveParentBranch({ branchId: string })
+engine.resolveParentBranch({ branchId: string });
 ```
 
 Returns: `{ branch: { id: string }, revision: { id: string } } | undefined`
@@ -654,9 +654,18 @@ Returns: `MigrationStatusResult | null`
   migrationId: string;
   revisionId: string;
   tableId: string;
-  status: 'PENDING' | 'COPYING' | 'SWAPPING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  status: 'PENDING' |
+    'COPYING' |
+    'SWAPPING' |
+    'COMPLETED' |
+    'FAILED' |
+    'CANCELLED';
   phase: 'INIT' | 'COPYING' | 'VALIDATING' | 'SWAPPING' | 'CLEANUP' | 'DONE';
-  progress: { percentage: number; copiedRows: number; totalRows: number };
+  progress: {
+    percentage: number;
+    copiedRows: number;
+    totalRows: number;
+  }
   createdAt: Date;
   startedAt: Date | null;
   completedAt: Date | null;

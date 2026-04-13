@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import type { TransactionPrismaClient } from 'src/features/share/types';
 import {
   MigrationPhase,
   MigrationStatus,
@@ -9,6 +10,10 @@ import {
 export class MigrationProgressService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private getClient(client?: TransactionPrismaClient) {
+    return client ?? this.prisma;
+  }
+
   async updateProgress(
     migrationId: string,
     data: {
@@ -16,8 +21,9 @@ export class MigrationProgressService {
       lastCopiedRowId: string;
       currentBatch: number;
     },
+    client?: TransactionPrismaClient,
   ) {
-    await this.prisma.tableMigration.update({
+    await this.getClient(client).tableMigration.update({
       where: { id: migrationId },
       data: {
         copiedRows: data.copiedRows,
@@ -55,8 +61,9 @@ export class MigrationProgressService {
   async setShadowTableVersionId(
     migrationId: string,
     shadowTableVersionId: string,
+    client?: TransactionPrismaClient,
   ) {
-    await this.prisma.tableMigration.update({
+    await this.getClient(client).tableMigration.update({
       where: { id: migrationId },
       data: { shadowTableVersionId },
     });

@@ -16,7 +16,8 @@ import {
 } from 'src/features/migration/migration.consts';
 import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
-import type { MigrationOptions } from 'src/app.module';
+import type { TransactionPrismaClient } from 'src/features/share/types';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import objectHash from 'object-hash';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
@@ -104,8 +105,11 @@ export class MigrationService {
     return table?.versionId ?? null;
   }
 
-  async countRows(tableVersionId: string): Promise<number> {
-    return this.prisma.row.count({
+  async countRows(
+    tableVersionId: string,
+    client?: Pick<TransactionPrismaClient, 'row'>,
+  ): Promise<number> {
+    return (client ?? this.prisma).row.count({
       where: {
         tables: { some: { versionId: tableVersionId } },
       },
@@ -156,9 +160,12 @@ export class MigrationService {
 
   async processMigration(migrationId: string): Promise<void> {
     for (let attempt = 0; ; attempt++) {
-      const migration = await this.prisma.tableMigration.findUniqueOrThrow({
+      const migration = await this.prisma.tableMigration.findUnique({
         where: { id: migrationId },
       });
+      if (!migration) {
+        return;
+      }
 
       try {
         await this.initPhase(migration);
@@ -168,32 +175,46 @@ export class MigrationService {
         await this.cleanupPhase(migration.id);
         return;
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-
-        const current = await this.prisma.tableMigration.findUnique({
-          where: { id: migrationId },
-        });
-
-        if (!current || current.status === MigrationStatus.CANCELLED) {
+        const shouldRetry = await this.handleMigrationFailure(
+          migrationId,
+          attempt,
+          error,
+        );
+        if (!shouldRetry) {
           return;
         }
-
-        if (current.retryCount < current.maxRetries) {
-          this.logger.warn(
-            `Migration ${migrationId} attempt ${attempt + 1} failed: ${msg}`,
-          );
-          await this.progressService.incrementRetry(migrationId);
-          continue;
-        }
-
-        this.logger.error(
-          `Migration ${migrationId} failed after ${attempt + 1} attempts: ${msg}`,
-          error instanceof Error ? error.stack : undefined,
-        );
-        await this.progressService.setFailed(migrationId, msg);
-        return;
       }
     }
+  }
+
+  private async handleMigrationFailure(
+    migrationId: string,
+    attempt: number,
+    error: unknown,
+  ) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const current = await this.prisma.tableMigration.findUnique({
+      where: { id: migrationId },
+    });
+
+    if (!current || current.status === MigrationStatus.CANCELLED) {
+      return false;
+    }
+
+    if (current.retryCount < current.maxRetries) {
+      this.logger.warn(
+        `Migration ${migrationId} attempt ${attempt + 1} failed: ${msg}`,
+      );
+      await this.progressService.incrementRetry(migrationId);
+      return true;
+    }
+
+    this.logger.error(
+      `Migration ${migrationId} failed after ${attempt + 1} attempts: ${msg}`,
+      error instanceof Error ? error.stack : undefined,
+    );
+    await this.progressService.setFailed(migrationId, msg);
+    return false;
   }
 
   private async initPhase(migration: {
@@ -217,20 +238,33 @@ export class MigrationService {
     });
 
     const shadowVersionId = nanoid();
-    await this.prisma.table.create({
-      data: {
-        versionId: shadowVersionId,
-        createdId: sourceTable.createdId,
-        id: migration.tableId,
-        readonly: false,
-        system: false,
-      },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.table.create({
+        data: {
+          versionId: shadowVersionId,
+          createdId: sourceTable.createdId,
+          id: migration.tableId,
+          readonly: false,
+          system: false,
+        },
+      });
 
-    await this.progressService.setShadowTableVersionId(
-      migration.id,
-      shadowVersionId,
-    );
+      const result = await tx.tableMigration.updateMany({
+        where: {
+          id: migration.id,
+          shadowTableVersionId: null,
+        },
+        data: {
+          shadowTableVersionId: shadowVersionId,
+        },
+      });
+
+      if (result.count !== 1) {
+        throw new Error(
+          `Failed to claim shadow table for migration ${migration.id}`,
+        );
+      }
+    });
   }
 
   private async copyPhase(migrationId: string): Promise<void> {
@@ -271,22 +305,31 @@ export class MigrationService {
         throw new Error(`Shadow table not set for migration ${migrationId}`);
       }
 
-      await this.batchService.insertBatchIntoShadow(
-        processedRows,
-        migration.shadowTableVersionId,
-        migration.targetSchemaHash,
-      );
-
       const lastRow = rows.at(-1);
       if (!lastRow) break;
+      const nextLastCopiedRowId = lastRow.id;
       copiedRows += rows.length;
       currentBatch += 1;
-      lastCopiedRowId = lastRow.id;
+      lastCopiedRowId = nextLastCopiedRowId;
+      const shadowTableVersionId = migration.shadowTableVersionId;
 
-      await this.progressService.updateProgress(migrationId, {
-        copiedRows,
-        lastCopiedRowId,
-        currentBatch,
+      await this.prisma.$transaction(async (tx) => {
+        await this.batchService.insertBatchIntoShadow(
+          processedRows,
+          shadowTableVersionId,
+          migration.targetSchemaHash,
+          tx,
+        );
+
+        await this.progressService.updateProgress(
+          migrationId,
+          {
+            copiedRows,
+            lastCopiedRowId: nextLastCopiedRowId,
+            currentBatch,
+          },
+          tx,
+        );
       });
 
       migration = await this.prisma.tableMigration.findUniqueOrThrow({
@@ -408,6 +451,7 @@ export class MigrationService {
       where: { versionId: schemaRow.versionId },
       data: {
         data: targetSchema as InputJsonValue,
+        hash: objectHash(targetSchema as objectHash.NotUndefined),
         updatedAt: new Date(),
       },
     });

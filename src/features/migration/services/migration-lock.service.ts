@@ -58,6 +58,13 @@ export class MigrationLockService {
 
     for (const migration of migrations) {
       if (migration.shadowTableVersionId) {
+        await client.row.deleteMany({
+          where: {
+            tables: {
+              some: { versionId: migration.shadowTableVersionId },
+            },
+          },
+        });
         await client.table
           .delete({
             where: { versionId: migration.shadowTableVersionId },
@@ -68,9 +75,15 @@ export class MigrationLockService {
             }
           });
       }
-      await client.tableMigration.delete({
-        where: { id: migration.id },
-      });
+      await client.tableMigration
+        .delete({
+          where: { id: migration.id },
+        })
+        .catch((err: Error & { code?: string }) => {
+          if (err.code !== 'P2025') {
+            throw err;
+          }
+        });
     }
   }
 
@@ -98,7 +111,7 @@ export class MigrationLockService {
       const details: MigrationLockedDetails = {
         migrationId: migration.id,
         tableId: migration.tableId,
-        status: migration.status,
+        status: migration.status as MigrationStatus,
         progress: {
           percentage:
             migration.totalRows > 0

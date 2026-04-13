@@ -20,7 +20,7 @@ import {
   MIGRATION_OPTIONS,
   WORKER_ID_SUFFIX_LENGTH,
 } from 'src/features/migration/migration.consts';
-import type { MigrationOptions } from 'src/app.module';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 
 @Injectable()
 export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -37,6 +37,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
   private pollingTimer?: ReturnType<typeof setInterval>;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private activeMigrationId?: string;
+  private activeProcessingPromise?: Promise<void>;
   private isShuttingDown = false;
   private pollingInProgress = false;
 
@@ -75,10 +76,14 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy() {
     this.isShuttingDown = true;
     this.stopPolling();
-    this.stopHeartbeat();
 
-    if (this.activeMigrationId) {
-      await this.releaseLock(this.activeMigrationId);
+    try {
+      if (this.activeProcessingPromise) {
+        await this.activeProcessingPromise;
+      }
+    } finally {
+      this.stopHeartbeat();
+      MigrationWorkerService.inlineRecoveryPromise = undefined;
     }
   }
 
@@ -91,7 +96,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.workerMode === 'inline') {
-      this.runInlineMigration(migrationId);
+      await this.triggerClaimedInlineMigration(migrationId);
     }
   }
 
@@ -102,13 +107,20 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      await this.processAcquiredMigration(migration.id);
+      await this.runClaimedMigration(migration.id);
     }
   }
 
   private async resumeInlineMigrationsOnce() {
-    MigrationWorkerService.inlineRecoveryPromise ??=
-      this.resumeInlineMigrations();
+    if (!MigrationWorkerService.inlineRecoveryPromise) {
+      const recoveryPromise = this.resumeInlineMigrations();
+      MigrationWorkerService.inlineRecoveryPromise = recoveryPromise.catch(
+        (error) => {
+          MigrationWorkerService.inlineRecoveryPromise = undefined;
+          throw error;
+        },
+      );
+    }
 
     await MigrationWorkerService.inlineRecoveryPromise;
   }
@@ -134,8 +146,20 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
     return false;
   }
 
+  private async triggerClaimedInlineMigration(migrationId: string) {
+    const claimed = await this.claimMigration(migrationId);
+    if (!claimed) {
+      this.logger.debug(
+        `Skipping inline migration ${migrationId}: lock already held or migration is no longer active`,
+      );
+      return;
+    }
+
+    this.runInlineMigration(migrationId);
+  }
+
   private runInlineMigration(migrationId: string) {
-    this.migrationService.processMigration(migrationId).catch((err) => {
+    void this.runClaimedMigration(migrationId).catch((err) => {
       this.logger.error(
         `Inline migration ${migrationId} failed: ${err.message}`,
       );
@@ -179,21 +203,47 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      await this.processAcquiredMigration(migration.id);
+      await this.runClaimedMigration(migration.id);
     } finally {
       this.pollingInProgress = false;
     }
   }
 
+  private async claimMigration(migrationId: string) {
+    const staleThreshold = new Date(Date.now() - this.lockTimeoutMs);
+
+    const result = await this.prisma.tableMigration.updateMany({
+      where: {
+        id: migrationId,
+        status: { in: [...ACTIVE_MIGRATION_STATUSES] },
+        OR: [
+          { lockedBy: null },
+          { heartbeatAt: null },
+          { heartbeatAt: { lt: staleThreshold } },
+        ],
+      },
+      data: {
+        lockedBy: this.workerId,
+        lockedAt: new Date(),
+        heartbeatAt: new Date(),
+      },
+    });
+
+    return result.count === 1;
+  }
+
   private async acquirePendingMigration() {
     const staleThreshold = new Date(Date.now() - this.lockTimeoutMs);
+    const [pendingStatus, copyingStatus, swappingStatus] = [
+      ...ACTIVE_MIGRATION_STATUSES,
+    ];
 
     const result = await this.prisma.$queryRawUnsafe<{ id: string }[]>(
       `UPDATE "TableMigration"
        SET "lockedBy" = $1, "lockedAt" = NOW(), "heartbeatAt" = NOW()
        WHERE id = (
          SELECT id FROM "TableMigration"
-         WHERE status IN ('PENDING', 'COPYING', 'SWAPPING')
+         WHERE status IN ($3, $4, $5)
          AND ("lockedBy" IS NULL OR "heartbeatAt" IS NULL OR "heartbeatAt" < $2)
          ORDER BY "createdAt" ASC
          LIMIT 1
@@ -202,6 +252,9 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
        RETURNING id`,
       this.workerId,
       staleThreshold,
+      pendingStatus,
+      copyingStatus,
+      swappingStatus,
     );
 
     return result[0] ?? null;
@@ -266,6 +319,19 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
       this.stopHeartbeat();
       await this.releaseLock(migration.id);
       this.activeMigrationId = undefined;
+    }
+  }
+
+  private async runClaimedMigration(migrationId: string) {
+    const processingPromise = this.processAcquiredMigration(migrationId);
+    this.activeProcessingPromise = processingPromise;
+
+    try {
+      await processingPromise;
+    } finally {
+      if (this.activeProcessingPromise === processingPromise) {
+        this.activeProcessingPromise = undefined;
+      }
     }
   }
 

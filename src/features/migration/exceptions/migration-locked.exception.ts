@@ -1,10 +1,13 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { MigrationProgress } from 'src/features/migration/types/migration.types';
+import {
+  MigrationProgress,
+  MigrationStatus,
+} from 'src/features/migration/types/migration.types';
 
 export interface MigrationLockedDetails {
   migrationId: string;
   tableId: string;
-  status: string;
+  status: MigrationStatus;
   progress: MigrationProgress;
 }
 

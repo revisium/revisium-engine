@@ -52,12 +52,19 @@ export class StartAsyncMigrationHandler implements ICommandHandler<
             tableId,
           );
 
-        const schemaTable = new SchemaTable(
-          previousSchema,
-          this.jsonSchemaStore.refs,
-        );
-        schemaTable.applyPatches(patches);
-        const targetSchema = schemaTable.getSchema();
+        let targetSchema: ReturnType<SchemaTable['getSchema']>;
+        try {
+          const schemaTable = new SchemaTable(
+            previousSchema,
+            this.jsonSchemaStore.refs,
+          );
+          schemaTable.applyPatches(patches);
+          targetSchema = schemaTable.getSchema();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          throw new BadRequestException(`invalid schema patches: ${message}`);
+        }
 
         const { result, errors } = this.jsonSchemaValidator.validateMetaSchema(
           targetSchema as InputJsonValue,
@@ -74,6 +81,7 @@ export class StartAsyncMigrationHandler implements ICommandHandler<
 
         const totalRows = await this.migrationService.countRows(
           table.versionId,
+          tx,
         );
 
         const id = await this.migrationService.createMigrationRecord({

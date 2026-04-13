@@ -43,7 +43,7 @@ describe('AbortMigrationHandler', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await module.close();
   });
 
   it('should cancel a PENDING migration', async () => {
@@ -72,7 +72,12 @@ describe('AbortMigrationHandler', () => {
     );
 
     const updated = await prisma.tableMigration.findUnique({
-      where: { id: migration.id },
+      where: {
+        revisionId_tableId: {
+          revisionId: migration.revisionId,
+          tableId: migration.tableId,
+        },
+      },
     });
     expect(updated).toBeNull();
   });
@@ -171,7 +176,7 @@ describe('AbortMigrationHandler', () => {
     ).rejects.toThrow(/already completed/);
   });
 
-  it('should throw error when no migration exists', async () => {
+  it('should return without error when no migration exists', async () => {
     const { draftRevisionId } = await prepareBranch(prisma);
 
     await expect(
@@ -181,6 +186,6 @@ describe('AbortMigrationHandler', () => {
           tableId: 'nonexistent-table',
         }),
       ),
-    ).rejects.toThrow(BadRequestException);
+    ).resolves.toBeUndefined();
   });
 });

@@ -9,6 +9,7 @@ import {
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import type { TransactionPrismaClient } from 'src/features/share/types';
 import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import {
   JsonPatch,
@@ -84,28 +85,37 @@ export class MigrationBatchService {
     rows: Row[],
     shadowTableVersionId: string,
     targetSchemaHash: string,
+    client?: TransactionPrismaClient,
   ) {
-    await this.prisma.$transaction(
-      rows.map((row) =>
-        this.prisma.row.create({
-          data: {
-            versionId: nanoid(),
-            createdId: row.createdId,
-            id: row.id,
-            readonly: false,
-            data: row.data as InputJsonValue,
-            meta: row.meta as InputJsonValue,
-            hash: objectHash(row.data as objectHash.NotUndefined),
-            schemaHash: targetSchemaHash,
-            createdAt: row.createdAt,
-            updatedAt: new Date(),
-            publishedAt: row.publishedAt,
-            tables: {
-              connect: { versionId: shadowTableVersionId },
+    const runInsert = (db: TransactionPrismaClient | PrismaService) =>
+      Promise.all(
+        rows.map((row) =>
+          db.row.create({
+            data: {
+              versionId: nanoid(),
+              createdId: row.createdId,
+              id: row.id,
+              readonly: false,
+              data: row.data as InputJsonValue,
+              meta: row.meta as InputJsonValue,
+              hash: objectHash(row.data as objectHash.NotUndefined),
+              schemaHash: targetSchemaHash,
+              createdAt: row.createdAt,
+              updatedAt: new Date(),
+              publishedAt: row.publishedAt,
+              tables: {
+                connect: { versionId: shadowTableVersionId },
+              },
             },
-          },
-        }),
-      ),
-    );
+          }),
+        ),
+      );
+
+    if (client) {
+      await runInsert(client);
+      return;
+    }
+
+    await this.prisma.$transaction((tx) => runInsert(tx));
   }
 }

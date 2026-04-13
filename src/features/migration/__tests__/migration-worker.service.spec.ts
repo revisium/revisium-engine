@@ -78,9 +78,10 @@ describe('MigrationWorkerService', () => {
 
   describe('triggerInline', () => {
     it('should call processMigration in inline mode', async () => {
-      const { worker, migrationService } = createWorker({
+      const { worker, migrationService, prisma } = createWorker({
         workerMode: 'inline',
       });
+      prisma.tableMigration.updateMany.mockResolvedValue({ count: 1 });
 
       await worker.triggerInline('mig-1');
 
@@ -116,10 +117,11 @@ describe('MigrationWorkerService', () => {
       migrationService.processMigration.mockRejectedValue(
         new Error('processing failed'),
       );
-      const { worker } = createWorker({
+      const { worker, prisma } = createWorker({
         workerMode: 'inline',
         migrationService,
       });
+      prisma.tableMigration.updateMany.mockResolvedValue({ count: 1 });
 
       await worker.triggerInline('mig-1');
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -245,31 +247,33 @@ describe('MigrationWorkerService', () => {
   });
 
   describe('onModuleDestroy', () => {
-    it('should release active migration lock on destroy', async () => {
+    it('should wait for active processing on destroy instead of releasing directly', async () => {
       const prisma = createMockPrisma();
-      prisma.$queryRawUnsafe.mockResolvedValue([{ id: 'mig-active' }]);
-
       const { worker } = createWorker({
         workerMode: 'polling',
         prisma,
         pollIntervalMs: 100_000,
       });
+      let releaseProcessing: (() => void) | undefined;
+      const activeProcessingPromise = new Promise<void>((resolve) => {
+        releaseProcessing = resolve;
+      });
 
-      // Simulate that pollForWork acquired a migration
-      await worker.onModuleInit();
-
-      // Force internal state: set activeMigrationId via pollForWork
-      // We need to trigger one poll cycle. Let's use the internal approach.
-      // Access private field via cast
       (worker as unknown as { activeMigrationId: string }).activeMigrationId =
         'mig-active';
+      (
+        worker as unknown as {
+          activeProcessingPromise?: Promise<void>;
+        }
+      ).activeProcessingPromise = activeProcessingPromise;
 
-      await worker.onModuleDestroy();
+      const destroyPromise = worker.onModuleDestroy();
 
-      expect(prisma.tableMigration.update).toHaveBeenCalledWith({
-        where: { id: 'mig-active' },
-        data: { lockedBy: null, lockedAt: null },
-      });
+      expect(prisma.tableMigration.update).not.toHaveBeenCalled();
+      releaseProcessing?.();
+      await destroyPromise;
+
+      expect(prisma.tableMigration.update).not.toHaveBeenCalled();
     });
 
     it('should stop polling timer on destroy', async () => {

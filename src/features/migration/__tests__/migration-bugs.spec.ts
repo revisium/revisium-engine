@@ -125,7 +125,7 @@ describe('Migration bugs', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await module.close();
   });
 
   async function prepareTableWithRows(rowCount = ROW_COUNT) {
@@ -171,11 +171,15 @@ describe('Migration bugs', () => {
         return null;
       }
       if (
-        status.status === MigrationStatus.COMPLETED ||
         status.status === MigrationStatus.FAILED ||
         status.status === MigrationStatus.CANCELLED
       ) {
         return status;
+      }
+      if (status.status === MigrationStatus.COMPLETED) {
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        waited += pollInterval;
+        continue;
       }
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
       waited += pollInterval;
@@ -199,7 +203,9 @@ describe('Migration bugs', () => {
         ],
       });
       expect(result1.migrationId).toBeDefined();
-      await waitForMigration(draftRevisionId, tableId);
+      await expect(
+        waitForMigration(draftRevisionId, tableId),
+      ).resolves.toBeNull();
 
       const result2 = await draftApi.apiUpdateTable({
         revisionId: draftRevisionId,
@@ -214,7 +220,9 @@ describe('Migration bugs', () => {
       });
       expect(result2.migrationId).toBeDefined();
 
-      await waitForMigration(draftRevisionId, tableId);
+      await expect(
+        waitForMigration(draftRevisionId, tableId),
+      ).resolves.toBeNull();
     });
   });
 

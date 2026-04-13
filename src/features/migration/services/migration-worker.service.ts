@@ -107,10 +107,8 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async resumeInlineMigrationsOnce() {
-    if (!MigrationWorkerService.inlineRecoveryPromise) {
-      MigrationWorkerService.inlineRecoveryPromise =
-        this.resumeInlineMigrations();
-    }
+    MigrationWorkerService.inlineRecoveryPromise ??=
+      this.resumeInlineMigrations();
 
     await MigrationWorkerService.inlineRecoveryPromise;
   }

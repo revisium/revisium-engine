@@ -54,7 +54,8 @@ export const ModelName = {
   Branch: 'Branch',
   Revision: 'Revision',
   Table: 'Table',
-  Row: 'Row'
+  Row: 'Row',
+  TableMigration: 'TableMigration'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -128,6 +129,39 @@ export const RowScalarFieldEnum = {
 } as const
 
 export type RowScalarFieldEnum = (typeof RowScalarFieldEnum)[keyof typeof RowScalarFieldEnum]
+
+
+export const TableMigrationScalarFieldEnum = {
+  id: 'id',
+  revisionId: 'revisionId',
+  tableId: 'tableId',
+  sourceTableVersionId: 'sourceTableVersionId',
+  shadowTableVersionId: 'shadowTableVersionId',
+  status: 'status',
+  phase: 'phase',
+  patches: 'patches',
+  previousSchema: 'previousSchema',
+  previousSchemaHash: 'previousSchemaHash',
+  targetSchemaHash: 'targetSchemaHash',
+  totalRows: 'totalRows',
+  copiedRows: 'copiedRows',
+  lastCopiedRowId: 'lastCopiedRowId',
+  batchSize: 'batchSize',
+  currentBatch: 'currentBatch',
+  totalBatches: 'totalBatches',
+  createdAt: 'createdAt',
+  startedAt: 'startedAt',
+  completedAt: 'completedAt',
+  lastProgressAt: 'lastProgressAt',
+  lockedBy: 'lockedBy',
+  lockedAt: 'lockedAt',
+  heartbeatAt: 'heartbeatAt',
+  errorMessage: 'errorMessage',
+  retryCount: 'retryCount',
+  maxRetries: 'maxRetries'
+} as const
+
+export type TableMigrationScalarFieldEnum = (typeof TableMigrationScalarFieldEnum)[keyof typeof TableMigrationScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -207,4 +241,22 @@ export const RowOrderByRelevanceFieldEnum = {
 } as const
 
 export type RowOrderByRelevanceFieldEnum = (typeof RowOrderByRelevanceFieldEnum)[keyof typeof RowOrderByRelevanceFieldEnum]
+
+
+export const TableMigrationOrderByRelevanceFieldEnum = {
+  id: 'id',
+  revisionId: 'revisionId',
+  tableId: 'tableId',
+  sourceTableVersionId: 'sourceTableVersionId',
+  shadowTableVersionId: 'shadowTableVersionId',
+  status: 'status',
+  phase: 'phase',
+  previousSchemaHash: 'previousSchemaHash',
+  targetSchemaHash: 'targetSchemaHash',
+  lastCopiedRowId: 'lastCopiedRowId',
+  lockedBy: 'lockedBy',
+  errorMessage: 'errorMessage'
+} as const
+
+export type TableMigrationOrderByRelevanceFieldEnum = (typeof TableMigrationOrderByRelevanceFieldEnum)[keyof typeof TableMigrationOrderByRelevanceFieldEnum]
 

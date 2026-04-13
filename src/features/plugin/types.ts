@@ -3,6 +3,7 @@ import {
   JsonSchemaStore,
   JsonValueStore,
 } from '@revisium/schema-toolkit/model';
+import { JsonSchema } from '@revisium/schema-toolkit/types';
 
 export interface FormulaFieldError {
   field: string;
@@ -46,6 +47,7 @@ export type AfterMigrateRowsOptions = {
   revisionId: string;
   tableId: string;
   rows: Row[];
+  targetSchema?: JsonSchema;
 };
 
 export type InternalAfterCreateRowOptions = AfterCreateRowOptions & {

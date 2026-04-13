@@ -23,6 +23,7 @@ import { PluginModule } from 'src/features/plugin/plugin.module';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { RevisionModule } from 'src/features/revision/revision.module';
 import { RowModule } from 'src/features/row/row.module';
+import { MigrationModule } from 'src/features/migration/migration.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
@@ -90,6 +91,7 @@ export const createTestingModule = async () => {
       StorageModule.forRoot(),
       ShareModule,
       PluginModule,
+      MigrationModule.forRoot(),
       RevisionModule,
       BranchModule,
       TableModule,

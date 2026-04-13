@@ -120,6 +120,37 @@ export interface RowWhereInput {
   [key: string]: unknown;
 }
 
+export interface TableMigration {
+  id: string;
+  revisionId: string;
+  tableId: string;
+  sourceTableVersionId: string;
+  shadowTableVersionId: string | null;
+  status: string;
+  phase: string;
+  patches: _JsonValue;
+  previousSchema: _JsonValue;
+  previousSchemaHash: string;
+  targetSchemaHash: string;
+  totalRows: number;
+  copiedRows: number;
+  lastCopiedRowId: string | null;
+  batchSize: number;
+  currentBatch: number;
+  totalBatches: number;
+  createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  lastProgressAt: Date | null;
+  lockedBy: string | null;
+  lockedAt: Date | null;
+  heartbeatAt: Date | null;
+  errorMessage: string | null;
+  retryCount: number;
+  maxRetries: number;
+  [key: string]: unknown;
+}
+
 // ---------------------------------------------------------------------------
 // TransactionPrismaClient is re-exported from src/features/share/types.ts
 // because it depends on the generated Prisma client for model-specific

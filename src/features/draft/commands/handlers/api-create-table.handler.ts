@@ -10,6 +10,7 @@ import { ApiCreateTableCommand } from 'src/features/draft/commands/impl/api-crea
 import { CreateTableCommand } from 'src/features/draft/commands/impl/create-table.command';
 import { ApiCreateTableHandlerReturnType } from 'src/features/draft/commands/types/api-create-table.handler.types';
 import { CreateTableHandlerReturnType } from 'src/features/draft/commands/types/create-table.handler.types';
+import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { GetTableByIdQuery } from 'src/features/table/queries/impl/get-table-by-id.query';
 
@@ -23,9 +24,11 @@ export class ApiCreateTableHandler implements ICommandHandler<
     private readonly queryBus: QueryBus,
     private readonly transactionService: TransactionPrismaService,
     private readonly shareCommands: ShareCommands,
+    private readonly migrationLockService: MigrationLockService,
   ) {}
 
   async execute({ data }: ApiCreateTableCommand) {
+    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const { branchId, tableVersionId }: CreateTableHandlerReturnType =
       await this.transactionService.runSerializable(async () =>
         this.commandBus.execute<

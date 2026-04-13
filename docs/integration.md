@@ -22,6 +22,25 @@ export class MyService {
 
 `EngineApiService` is a flat facade over all engine services. See [api.md](api.md) for the full method reference.
 
+### With async migration config
+
+```typescript
+@Module({
+  imports: [
+    EngineModule.forRoot({
+      migration: {
+        threshold: 5000,      // rows before async kicks in (default: 1000)
+        batchSize: 2000,      // rows per batch (default: 1000)
+        workerMode: 'inline', // 'inline' | 'polling' | 'disabled'
+      },
+    }),
+  ],
+})
+export class CoreModule {}
+```
+
+See [migration.md](migration.md) for full migration system documentation.
+
 ### With file storage
 
 The engine accepts an `IStorageService` implementation via `forRoot()`. Without it, file operations (uploadFile, file plugin) are disabled.

@@ -37,3 +37,8 @@ export type Table = Prisma.TableModel
  * 
  */
 export type Row = Prisma.RowModel
+/**
+ * Model TableMigration
+ * 
+ */
+export type TableMigration = Prisma.TableMigrationModel

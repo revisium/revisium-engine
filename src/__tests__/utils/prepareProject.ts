@@ -25,31 +25,35 @@ export async function prepareBranch(prismaService: PrismaService) {
   const headRevisionId = nanoid();
   const draftRevisionId = nanoid();
 
-  await prismaService.branch.create({
-    data: {
-      id: branchId,
-      name: branchName,
-      isRoot: true,
-      projectId,
-      revisions: {
-        createMany: {
-          data: [
-            {
-              id: headRevisionId,
-              isStart: true,
-              isHead: true,
-              hasChanges: false,
-            },
-            {
-              id: draftRevisionId,
-              parentId: headRevisionId,
-              hasChanges: true,
-              isDraft: true,
-            },
-          ],
-        },
+  await prismaService.$transaction(async (tx) => {
+    await tx.branch.create({
+      data: {
+        id: branchId,
+        name: branchName,
+        isRoot: true,
+        projectId,
       },
-    },
+    });
+
+    await tx.revision.create({
+      data: {
+        id: headRevisionId,
+        branchId,
+        isStart: true,
+        isHead: true,
+        hasChanges: false,
+      },
+    });
+
+    await tx.revision.create({
+      data: {
+        id: draftRevisionId,
+        branchId,
+        parentId: headRevisionId,
+        hasChanges: true,
+        isDraft: true,
+      },
+    });
   });
 
   // schema table

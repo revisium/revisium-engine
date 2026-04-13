@@ -12,6 +12,7 @@ import {
   RenameTableCommand,
   RenameTableCommandReturnType,
 } from 'src/features/draft/commands/impl/rename-table.command';
+import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { GetTableByIdQuery } from 'src/features/table/queries/impl/get-table-by-id.query';
@@ -27,9 +28,11 @@ export class ApiRenameTableHandler implements ICommandHandler<
     private readonly queryBus: QueryBus,
     private readonly transactionService: TransactionPrismaService,
     private readonly shareCommands: ShareCommands,
+    private readonly migrationLockService: MigrationLockService,
   ) {}
 
   async execute({ data }: ApiRenameTableCommand) {
+    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const {
       tableVersionId,
       previousTableVersionId,

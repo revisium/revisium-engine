@@ -12,6 +12,7 @@ import { ApiCreateRowCommand } from 'src/features/draft/commands/impl/api-create
 import { CreateRowsCommand } from 'src/features/draft/commands/impl/create-rows.command';
 import { ApiCreateRowHandlerReturnType } from 'src/features/draft/commands/types/api-create-row.handler.types';
 import { CreateRowsHandlerReturnType } from 'src/features/draft/commands/types/create-rows.handler.types';
+import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 
 @CommandHandler(ApiCreateRowCommand)
@@ -25,11 +26,13 @@ export class ApiCreateRowHandler
     protected readonly transactionService: TransactionPrismaService,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
+    protected readonly migrationLockService: MigrationLockService,
   ) {
     super(queryBus, shareCommands, rowApi);
   }
 
   async execute({ data }: ApiCreateRowCommand) {
+    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const result: CreateRowsHandlerReturnType =
       await this.transactionService.runSerializable(async () =>
         this.commandBus.execute(

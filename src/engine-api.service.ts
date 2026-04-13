@@ -8,6 +8,7 @@ import { RowApiService } from 'src/features/row/row-api.service';
 import { SubSchemaApiService } from 'src/features/sub-schema/sub-schema-api.service';
 import { TableApiService } from 'src/features/table/table-api.service';
 import { ViewsApiService } from 'src/features/views/views-api.service';
+import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 import {
   ApiRevertChangesCommand,
@@ -28,6 +29,7 @@ export class EngineApiService {
     private readonly viewsApi: ViewsApiService,
     private readonly subSchemaApi: SubSchemaApiService,
     private readonly cleanupService: CleanupService,
+    private readonly migrationApi: MigrationApiService,
   ) {}
 
   // --- Tables ---
@@ -335,5 +337,23 @@ export class EngineApiService {
 
   cleanOrphanedData() {
     return this.cleanupService.cleanOrphanedData();
+  }
+
+  // --- Migrations ---
+
+  getMigrationStatus(
+    ...args: Parameters<MigrationApiService['getMigrationStatus']>
+  ) {
+    return this.migrationApi.getMigrationStatus(...args);
+  }
+
+  getActiveMigrations(
+    ...args: Parameters<MigrationApiService['getActiveMigrations']>
+  ) {
+    return this.migrationApi.getActiveMigrations(...args);
+  }
+
+  abortMigration(...args: Parameters<MigrationApiService['abortMigration']>) {
+    return this.migrationApi.abortMigration(...args);
   }
 }

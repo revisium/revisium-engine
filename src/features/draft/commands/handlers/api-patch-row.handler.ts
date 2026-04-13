@@ -13,6 +13,7 @@ import {
 import { PatchRowsCommand } from 'src/features/draft/commands/impl/patch-rows.command';
 import { PatchRowsHandlerReturnType } from 'src/features/draft/commands/types/patch-rows.handler.types';
 import { RowApiService } from 'src/features/row/row-api.service';
+import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -27,11 +28,13 @@ export class ApiPatchRowHandler
     protected readonly transactionService: TransactionPrismaService,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
+    protected readonly migrationLockService: MigrationLockService,
   ) {
     super(queryBus, shareCommands, rowApi);
   }
 
   async execute({ data }: ApiPatchRowCommand) {
+    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const result: PatchRowsHandlerReturnType =
       await this.transactionService.runSerializable(async () =>
         this.commandBus.execute(

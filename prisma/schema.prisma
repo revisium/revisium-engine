@@ -82,3 +82,37 @@ model Row {
   @@index([schemaHash])
   @@index([publishedAt])
 }
+
+model TableMigration {
+  id                   String    @id @default(cuid())
+  revisionId           String
+  tableId              String
+  sourceTableVersionId String
+  shadowTableVersionId String?
+  status               String    @default("PENDING")
+  phase                String    @default("INIT")
+  patches              Json
+  previousSchema       Json
+  previousSchemaHash   String
+  targetSchemaHash     String
+  totalRows            Int
+  copiedRows           Int       @default(0)
+  lastCopiedRowId      String?
+  batchSize            Int       @default(1000)
+  currentBatch         Int       @default(0)
+  totalBatches         Int       @default(0)
+  createdAt            DateTime  @default(now())
+  startedAt            DateTime?
+  completedAt          DateTime?
+  lastProgressAt       DateTime?
+  lockedBy             String?
+  lockedAt             DateTime?
+  heartbeatAt          DateTime?
+  errorMessage         String?
+  retryCount           Int       @default(0)
+  maxRetries           Int       @default(3)
+
+  @@unique([revisionId, tableId])
+  @@index([status])
+  @@index([lockedBy])
+}

@@ -387,7 +387,8 @@ export const ModelName = {
   Branch: 'Branch',
   Revision: 'Revision',
   Table: 'Table',
-  Row: 'Row'
+  Row: 'Row',
+  TableMigration: 'TableMigration'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -403,7 +404,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "branch" | "revision" | "table" | "row"
+    modelProps: "branch" | "revision" | "table" | "row" | "tableMigration"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -703,6 +704,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    TableMigration: {
+      payload: Prisma.$TableMigrationPayload<ExtArgs>
+      fields: Prisma.TableMigrationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.TableMigrationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.TableMigrationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>
+        }
+        findFirst: {
+          args: Prisma.TableMigrationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.TableMigrationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>
+        }
+        findMany: {
+          args: Prisma.TableMigrationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>[]
+        }
+        create: {
+          args: Prisma.TableMigrationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>
+        }
+        createMany: {
+          args: Prisma.TableMigrationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.TableMigrationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>[]
+        }
+        delete: {
+          args: Prisma.TableMigrationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>
+        }
+        update: {
+          args: Prisma.TableMigrationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>
+        }
+        deleteMany: {
+          args: Prisma.TableMigrationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.TableMigrationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.TableMigrationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>[]
+        }
+        upsert: {
+          args: Prisma.TableMigrationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TableMigrationPayload>
+        }
+        aggregate: {
+          args: Prisma.TableMigrationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateTableMigration>
+        }
+        groupBy: {
+          args: Prisma.TableMigrationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TableMigrationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.TableMigrationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TableMigrationCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -803,6 +878,39 @@ export const RowScalarFieldEnum = {
 export type RowScalarFieldEnum = (typeof RowScalarFieldEnum)[keyof typeof RowScalarFieldEnum]
 
 
+export const TableMigrationScalarFieldEnum = {
+  id: 'id',
+  revisionId: 'revisionId',
+  tableId: 'tableId',
+  sourceTableVersionId: 'sourceTableVersionId',
+  shadowTableVersionId: 'shadowTableVersionId',
+  status: 'status',
+  phase: 'phase',
+  patches: 'patches',
+  previousSchema: 'previousSchema',
+  previousSchemaHash: 'previousSchemaHash',
+  targetSchemaHash: 'targetSchemaHash',
+  totalRows: 'totalRows',
+  copiedRows: 'copiedRows',
+  lastCopiedRowId: 'lastCopiedRowId',
+  batchSize: 'batchSize',
+  currentBatch: 'currentBatch',
+  totalBatches: 'totalBatches',
+  createdAt: 'createdAt',
+  startedAt: 'startedAt',
+  completedAt: 'completedAt',
+  lastProgressAt: 'lastProgressAt',
+  lockedBy: 'lockedBy',
+  lockedAt: 'lockedAt',
+  heartbeatAt: 'heartbeatAt',
+  errorMessage: 'errorMessage',
+  retryCount: 'retryCount',
+  maxRetries: 'maxRetries'
+} as const
+
+export type TableMigrationScalarFieldEnum = (typeof TableMigrationScalarFieldEnum)[keyof typeof TableMigrationScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -880,6 +988,24 @@ export const RowOrderByRelevanceFieldEnum = {
 } as const
 
 export type RowOrderByRelevanceFieldEnum = (typeof RowOrderByRelevanceFieldEnum)[keyof typeof RowOrderByRelevanceFieldEnum]
+
+
+export const TableMigrationOrderByRelevanceFieldEnum = {
+  id: 'id',
+  revisionId: 'revisionId',
+  tableId: 'tableId',
+  sourceTableVersionId: 'sourceTableVersionId',
+  shadowTableVersionId: 'shadowTableVersionId',
+  status: 'status',
+  phase: 'phase',
+  previousSchemaHash: 'previousSchemaHash',
+  targetSchemaHash: 'targetSchemaHash',
+  lastCopiedRowId: 'lastCopiedRowId',
+  lockedBy: 'lockedBy',
+  errorMessage: 'errorMessage'
+} as const
+
+export type TableMigrationOrderByRelevanceFieldEnum = (typeof TableMigrationOrderByRelevanceFieldEnum)[keyof typeof TableMigrationOrderByRelevanceFieldEnum]
 
 
 
@@ -1063,6 +1189,7 @@ export type GlobalOmitConfig = {
   revision?: Prisma.RevisionOmit
   table?: Prisma.TableOmit
   row?: Prisma.RowOmit
+  tableMigration?: Prisma.TableMigrationOmit
 }
 
 /* Types for Logging */

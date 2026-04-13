@@ -38,7 +38,9 @@ engine.updateTable({
 })
 ```
 
-Returns: `{ table, previousTableVersionId }`
+Returns: `{ table, previousVersionTableId, migrationId?, migrationStatus? }`
+
+When the table exceeds the async migration threshold, `migrationId` and `migrationStatus: 'migrating'` are included. Rows are migrated asynchronously via the shadow table pattern.
 
 ### renameTable
 
@@ -629,3 +631,62 @@ engine.cleanOrphanedData();
 ```
 
 Returns: `{ tables: number, rows: number }` — counts of deleted entities
+
+---
+
+## Migrations (Async Row Migration)
+
+### getMigrationStatus
+
+Get the status of an active or recent migration for a table.
+
+```typescript
+engine.getMigrationStatus({
+  revisionId: string;
+  tableId: string;
+})
+```
+
+Returns: `MigrationStatusResult | null`
+
+```typescript
+{
+  migrationId: string;
+  revisionId: string;
+  tableId: string;
+  status: 'PENDING' | 'COPYING' | 'SWAPPING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  phase: 'INIT' | 'COPYING' | 'VALIDATING' | 'SWAPPING' | 'CLEANUP' | 'DONE';
+  progress: { percentage: number; copiedRows: number; totalRows: number };
+  createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  errorMessage: string | null;
+}
+```
+
+Returns `null` when no migration exists (including after successful completion, since records are deleted on cleanup).
+
+### getActiveMigrations
+
+Get all active migrations for a revision.
+
+```typescript
+engine.getActiveMigrations({
+  revisionId: string;
+})
+```
+
+Returns: `ActiveMigrationResult[]`
+
+### abortMigration
+
+Cancel an in-progress migration. Throws if the migration is in the SWAPPING phase.
+
+```typescript
+engine.abortMigration({
+  revisionId: string;
+  tableId: string;
+})
+```
+
+Returns: `void`

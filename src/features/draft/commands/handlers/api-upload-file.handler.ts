@@ -14,6 +14,7 @@ import {
   UploadFileCommandReturnType,
 } from 'src/features/draft/commands/impl/update-file.command';
 import { RowApiService } from 'src/features/row/row-api.service';
+import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -29,11 +30,13 @@ export class ApiUploadFileHandler
     protected readonly transactionService: TransactionPrismaService,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
+    protected readonly migrationLockService: MigrationLockService,
   ) {
     super(queryBus, shareCommands, rowApi);
   }
 
   async execute({ data }: ApiUploadFileCommand) {
+    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const {
       tableVersionId,
       previousTableVersionId,

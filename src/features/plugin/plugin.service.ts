@@ -172,7 +172,11 @@ export class PluginService {
   public async afterMigrateRows(
     options: AfterMigrateRowsOptions,
   ): Promise<void> {
-    const { schemaStore } = await this.prepareSchemaContext(options);
+    const { schemaStore } = options.targetSchema
+      ? {
+          schemaStore: this.jsonSchemaStore.create(options.targetSchema),
+        }
+      : await this.prepareSchemaContext(options);
 
     const internalOptions: InternalComputeRowsOptions = {
       ...options,

@@ -8,6 +8,7 @@ import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
+import { MigrationModule } from 'src/features/migration/migration.module';
 import { DraftModule } from 'src/features/draft/draft.module';
 import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { SUB_SCHEMA_QUERIES_HANDLERS } from 'src/features/sub-schema/queries/handlers';
@@ -120,6 +121,7 @@ export const createSubSchemaTestingModule = async () => {
       StorageModule.forRoot(),
       ShareModule,
       PluginModule,
+      MigrationModule.forRoot(),
       RevisionModule,
       BranchModule,
       TableModule,

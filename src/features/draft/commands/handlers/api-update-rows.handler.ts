@@ -11,6 +11,7 @@ import { ApiUpdateRowsCommand } from 'src/features/draft/commands/impl/api-updat
 import { UpdateRowsCommand } from 'src/features/draft/commands/impl/update-rows.command';
 import { ApiUpdateRowsHandlerReturnType } from 'src/features/draft/commands/types/api-update-rows.handler.types';
 import { UpdateRowsHandlerReturnType } from 'src/features/draft/commands/types/update-rows.handler.types';
+import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 
 @CommandHandler(ApiUpdateRowsCommand)
@@ -25,11 +26,13 @@ export class ApiUpdateRowsHandler
     protected readonly transactionService: TransactionPrismaService,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
+    protected readonly migrationLockService: MigrationLockService,
   ) {
     super(queryBus, shareCommands, rowApi);
   }
 
   async execute({ data }: ApiUpdateRowsCommand) {
+    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const result: UpdateRowsHandlerReturnType =
       await this.transactionService.runSerializable(async () =>
         this.commandBus.execute(

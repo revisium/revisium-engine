@@ -1,30 +1,30 @@
-import { CommandBus } from '@nestjs/cqrs';
 import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import { ApiUpdateRowCommand } from 'src/features/draft/commands/impl/api-update-row.command';
 import { ApiUpdateRowHandlerReturnType } from 'src/features/draft/commands/types/api-update-row.handler.types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiUpdateRowHandler', () => {
+  let kit: DraftTestKit;
+
   it('should update the row', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId, rowId } =
-      await prepareProject(prismaService);
+    const draft = await prepareProject(kit.prismaService);
 
     const command = new ApiUpdateRowCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rowId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rowId: draft.rowId,
       data: { ver: 2 },
     });
 
     const result = await execute(command);
 
-    const row = await prismaService.row.findFirstOrThrow({
+    const row = await kit.prismaService.row.findFirstOrThrow({
       where: {
-        id: rowId,
+        id: draft.rowId,
         tables: {
           some: {
-            versionId: draftTableVersionId,
+            versionId: draft.draftTableVersionId,
           },
         },
       },
@@ -33,20 +33,20 @@ describe('ApiUpdateRowHandler', () => {
       ...row,
       data: { ver: 2 },
       context: {
-        revisionId: draftRevisionId,
-        tableId,
+        revisionId: draft.draftRevisionId,
+        tableId: draft.tableId,
       },
     });
-    expect(result.table?.versionId).toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table?.versionId).toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
 
   it('should notify endpoints if a new table was created', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId, rowId } =
-      await prepareProject(prismaService);
-    await prismaService.table.update({
+    const draft = await prepareProject(kit.prismaService);
+
+    await kit.prismaService.table.update({
       where: {
-        versionId: draftTableVersionId,
+        versionId: draft.draftTableVersionId,
       },
       data: {
         readonly: true,
@@ -54,31 +54,26 @@ describe('ApiUpdateRowHandler', () => {
     });
 
     const command = new ApiUpdateRowCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rowId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rowId: draft.rowId,
       data: { ver: 2 },
     });
 
     const result = await execute(command);
 
-    expect(result.table?.versionId).not.toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table?.versionId).not.toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
 
   function execute(
     command: ApiUpdateRowCommand,
   ): Promise<ApiUpdateRowHandlerReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -86,6 +81,6 @@ describe('ApiUpdateRowHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

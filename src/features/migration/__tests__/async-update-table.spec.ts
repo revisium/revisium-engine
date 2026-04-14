@@ -4,6 +4,11 @@ import objectHash from 'object-hash';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { givenMigrationTableWithRows } from 'src/__tests__/fixtures/scenarios/given-migration-table-with-rows';
+import {
+  expectMigrationAbsent,
+  expectRowsToHaveProperties,
+  waitForMigration,
+} from 'src/__tests__/assertions/migration';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
@@ -211,25 +216,11 @@ describe('Async Update Table', () => {
 
     expect(result.migrationId).toBeDefined();
 
-    await waitForMigrationComplete(draftRevisionId, tableId);
-
-    const status = await kit.migrationApi.getMigrationStatus({
-      revisionId: draftRevisionId,
-      tableId,
-    });
-    expect(status).toBeNull();
-
-    for (const rowId of rowIds) {
-      const row = await kit.rowApi.getRow({
-        revisionId: draftRevisionId,
-        tableId,
-        rowId,
-      });
-      expect(row).not.toBeNull();
-      const data = row?.data as Record<string, unknown>;
-      expect(data).toHaveProperty('label');
-      expect(typeof data.label).toBe('string');
-    }
+    await waitForMigration(kit, draftRevisionId, tableId);
+    await expectMigrationAbsent(kit, draftRevisionId, tableId);
+    await expectRowsToHaveProperties(kit, draftRevisionId, tableId, rowIds, [
+      'label',
+    ]);
   });
 
   it('should migrate table views during async swap', async () => {
@@ -250,7 +241,7 @@ describe('Async Update Table', () => {
 
     expect(result.migrationId).toBeDefined();
 
-    await waitForMigrationComplete(draftRevisionId, tableId);
+    await waitForMigration(kit, draftRevisionId, tableId);
 
     const viewsData = await getViewsData(draftRevisionId, tableId);
     expect(viewsData?.views[0]?.columns).toEqual([
@@ -316,42 +307,6 @@ describe('Async Update Table', () => {
       tableId: 'abort-test-table',
     });
 
-    const status = await kit.migrationApi.getMigrationStatus({
-      revisionId: draftRevisionId,
-      tableId: 'abort-test-table',
-    });
-    expect(status).toBeNull();
+    await expectMigrationAbsent(kit, draftRevisionId, 'abort-test-table');
   });
-
-  async function waitForMigrationComplete(
-    revisionId: string,
-    tableId: string,
-    maxWaitMs = 10000,
-  ) {
-    const pollInterval = 100;
-    let waited = 0;
-    while (waited < maxWaitMs) {
-      const status = await kit.migrationApi.getMigrationStatus({
-        revisionId,
-        tableId,
-      });
-      if (!status) {
-        return null;
-      }
-      if (
-        status.status === MigrationStatus.FAILED ||
-        status.status === MigrationStatus.CANCELLED
-      ) {
-        return status;
-      }
-      if (status.status === MigrationStatus.COMPLETED) {
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
-        waited += pollInterval;
-        continue;
-      }
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-      waited += pollInterval;
-    }
-    throw new Error(`Migration did not complete within ${maxWaitMs}ms`);
-  }
 });

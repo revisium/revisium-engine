@@ -11,8 +11,9 @@ import {
   prepareTableWithSchema,
   prepareRow,
 } from 'src/__tests__/utils/prepareProject';
+import type { QueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
+import { createQueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
 import { givenDraftProjectWithSchema } from 'src/__tests__/fixtures/scenarios/given-draft-project';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import {
   SearchRowsQuery,
   SearchRowsResponse,
@@ -34,6 +35,7 @@ const searchTestSchema = getObjectSchema({
 });
 
 describe('SearchRowsHandler', () => {
+  let kit: QueryTestKit;
   let prismaService: PrismaService;
   let queryBus: QueryBus;
   let transactionService: TransactionPrismaService;
@@ -45,14 +47,14 @@ describe('SearchRowsHandler', () => {
   };
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    queryBus = result.queryBus;
-    transactionService = result.transactionService;
+    kit = await createQueryTestKit();
+    prismaService = kit.prismaService;
+    queryBus = kit.queryBus;
+    transactionService = kit.transactionService;
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 
   const updateSchemaForTest = async (schemaRowVersionId: string) => {

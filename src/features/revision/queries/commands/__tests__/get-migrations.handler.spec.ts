@@ -1,10 +1,9 @@
 import { QueryBus } from '@nestjs/cqrs';
 import objectHash from 'object-hash';
 import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
-import {
-  createTestingModule,
-  testSchema,
-} from 'src/features/draft/commands/handlers/__tests__/utils';
+import type { QueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
+import { createQueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
+import { testSchema } from 'src/features/draft/commands/handlers/__tests__/utils';
 import {
   GetMigrationsQuery,
   GetMigrationsQueryReturnType,
@@ -39,18 +38,19 @@ describe('GetMigrationsHandler', () => {
     return transactionService.run(async () => queryBus.execute(query));
   }
 
+  let kit: QueryTestKit;
   let prismaService: PrismaService;
   let transactionService: TransactionPrismaService;
   let queryBus: QueryBus;
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    transactionService = result.transactionService;
-    queryBus = result.queryBus;
+    kit = await createQueryTestKit();
+    prismaService = kit.prismaService;
+    transactionService = kit.transactionService;
+    queryBus = kit.queryBus;
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

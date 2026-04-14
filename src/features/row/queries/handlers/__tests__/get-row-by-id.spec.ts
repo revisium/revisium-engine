@@ -3,7 +3,8 @@ import {
   createPreviousFile,
   prepareTableAndRowWithFile,
 } from 'src/__tests__/utils/prepareProject';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
+import type { QueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
+import { createQueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
 import { FileStatus } from 'src/features/plugin/file/consts';
 import {
   GetRowByIdQuery,
@@ -46,18 +47,19 @@ describe('getRowById', () => {
     return transactionService.run(async () => queryBus.execute(query));
   }
 
+  let kit: QueryTestKit;
   let prismaService: PrismaService;
   let transactionService: TransactionPrismaService;
   let queryBus: QueryBus;
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    transactionService = result.transactionService;
-    queryBus = result.queryBus;
+    kit = await createQueryTestKit();
+    prismaService = kit.prismaService;
+    transactionService = kit.transactionService;
+    queryBus = kit.queryBus;
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

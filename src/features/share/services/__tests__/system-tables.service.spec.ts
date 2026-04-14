@@ -1,4 +1,4 @@
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { SystemTablesService } from 'src/features/share/system-tables.service';
@@ -8,7 +8,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 describe('SystemTablesService', () => {
   describe('ensureSystemTable', () => {
     it('should create system table with system: true', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(prismaService);
 
       await runTransaction(async () => {
         const result = await systemTablesService.ensureSystemTable(
@@ -35,7 +35,7 @@ describe('SystemTablesService', () => {
     });
 
     it('should return existing table if already created', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(prismaService);
 
       // Create first time
       const firstResult = await runTransaction(async () => {
@@ -58,7 +58,7 @@ describe('SystemTablesService', () => {
     });
 
     it('should NOT create row in revisium_schema_table for system table', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(prismaService);
 
       await runTransaction(async () => {
         await systemTablesService.ensureSystemTable(
@@ -91,7 +91,7 @@ describe('SystemTablesService', () => {
     });
 
     it('should not appear in tables query (system tables filtered)', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(prismaService);
 
       // Create views system table
       await runTransaction(async () => {

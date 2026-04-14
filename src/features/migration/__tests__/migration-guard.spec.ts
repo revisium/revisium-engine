@@ -1,79 +1,30 @@
 import { HttpStatus } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigModule } from '@nestjs/config';
-import { CacheModule } from '@nestjs/cache-manager';
-import { CqrsModule } from '@nestjs/cqrs';
 import {
   getObjectSchema,
   getNumberSchema,
 } from '@revisium/schema-toolkit/mocks';
 import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
-import { ShareModule } from 'src/features/share/share.module';
-import { PluginModule } from 'src/features/plugin/plugin.module';
-import { MigrationModule } from 'src/features/migration/migration.module';
-import { DraftModule } from 'src/features/draft/draft.module';
-import { RevisionModule } from 'src/features/revision/revision.module';
-import { BranchModule } from 'src/features/branch/branch.module';
-import { TableModule } from 'src/features/table/table.module';
-import { RowModule } from 'src/features/row/row.module';
-import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
-import { ViewsModule } from 'src/features/views/views.module';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
-import { StorageModule } from 'src/infrastructure/storage/storage.module';
-import { DraftApiService } from 'src/features/draft/draft-api.service';
+import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
-
-const mockStorage = {
-  isAvailable: true,
-  canServeFiles: false,
-  uploadFile: jest.fn().mockResolvedValue({ key: 'uploads/fake.png' }),
-  getPublicUrl: jest.fn((key: string) => `http://test-files/${key}`),
-};
 
 describe('Migration Guard (integration)', () => {
-  let module: TestingModule;
-  let prisma: PrismaService;
-  let draftApi: DraftApiService;
+  let kit: MigrationTestKit;
 
   beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
-        DatabaseModule,
-        CqrsModule,
-        StorageModule.forRoot(),
-        ShareModule,
-        PluginModule,
-        MigrationModule.forRoot(),
-        RevisionModule,
-        BranchModule,
-        TableModule,
-        RowModule,
-        DraftRevisionModule,
-        DraftModule,
-        ViewsModule,
-        CacheModule.register(),
-      ],
-    })
-      .overrideProvider(STORAGE_SERVICE)
-      .useValue(mockStorage)
-      .compile();
-
-    await module.init();
-    prisma = module.get(PrismaService);
-    draftApi = module.get(DraftApiService);
+    kit = await createMigrationTestKit();
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 
   async function createActiveMigration(draftRevisionId: string) {
-    return prisma.tableMigration.create({
+    return kit.prisma.tableMigration.create({
       data: {
         revisionId: draftRevisionId,
         tableId: 'migrating-table',
@@ -91,11 +42,11 @@ describe('Migration Guard (integration)', () => {
   }
 
   it('apiCreateRow should return 423 during active migration', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prisma);
+    const { draftRevisionId, tableId } = await givenDraftProject(kit.prisma);
     await createActiveMigration(draftRevisionId);
 
     await expect(
-      draftApi.apiCreateRow({
+      kit.draftApi.apiCreateRow({
         revisionId: draftRevisionId,
         tableId,
         rowId: 'new-row',
@@ -105,11 +56,13 @@ describe('Migration Guard (integration)', () => {
   });
 
   it('apiUpdateRow should return 423 during active migration', async () => {
-    const { draftRevisionId, tableId, rowId } = await prepareProject(prisma);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prisma,
+    );
     await createActiveMigration(draftRevisionId);
 
     await expect(
-      draftApi.apiUpdateRow({
+      kit.draftApi.apiUpdateRow({
         revisionId: draftRevisionId,
         tableId,
         rowId,
@@ -119,11 +72,11 @@ describe('Migration Guard (integration)', () => {
   });
 
   it('apiCreateTable should return 423 during active migration', async () => {
-    const { draftRevisionId } = await prepareProject(prisma);
+    const { draftRevisionId } = await givenDraftProject(kit.prisma);
     await createActiveMigration(draftRevisionId);
 
     await expect(
-      draftApi.apiCreateTable({
+      kit.draftApi.apiCreateTable({
         revisionId: draftRevisionId,
         tableId: 'new-table',
         schema: getObjectSchema({ name: getNumberSchema() }),
@@ -132,11 +85,11 @@ describe('Migration Guard (integration)', () => {
   });
 
   it('apiUpdateTable should return 423 during active migration', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prisma);
+    const { draftRevisionId, tableId } = await givenDraftProject(kit.prisma);
     await createActiveMigration(draftRevisionId);
 
     await expect(
-      draftApi.apiUpdateTable({
+      kit.draftApi.apiUpdateTable({
         revisionId: draftRevisionId,
         tableId,
         patches: [
@@ -151,11 +104,13 @@ describe('Migration Guard (integration)', () => {
   });
 
   it('apiRemoveRow should return 423 during active migration', async () => {
-    const { draftRevisionId, tableId, rowId } = await prepareProject(prisma);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prisma,
+    );
     await createActiveMigration(draftRevisionId);
 
     await expect(
-      draftApi.apiRemoveRow({
+      kit.draftApi.apiRemoveRow({
         revisionId: draftRevisionId,
         tableId,
         rowId,
@@ -164,11 +119,11 @@ describe('Migration Guard (integration)', () => {
   });
 
   it('apiRemoveTable should return 423 during active migration', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prisma);
+    const { draftRevisionId, tableId } = await givenDraftProject(kit.prisma);
     await createActiveMigration(draftRevisionId);
 
     await expect(
-      draftApi.apiRemoveTable({
+      kit.draftApi.apiRemoveTable({
         revisionId: draftRevisionId,
         tableId,
       }),
@@ -176,11 +131,13 @@ describe('Migration Guard (integration)', () => {
   });
 
   it('apiRenameRow should return 423 during active migration', async () => {
-    const { draftRevisionId, tableId, rowId } = await prepareProject(prisma);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prisma,
+    );
     await createActiveMigration(draftRevisionId);
 
     await expect(
-      draftApi.apiRenameRow({
+      kit.draftApi.apiRenameRow({
         revisionId: draftRevisionId,
         tableId,
         rowId,
@@ -190,11 +147,11 @@ describe('Migration Guard (integration)', () => {
   });
 
   it('apiRenameTable should return 423 during active migration', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prisma);
+    const { draftRevisionId, tableId } = await givenDraftProject(kit.prisma);
     await createActiveMigration(draftRevisionId);
 
     await expect(
-      draftApi.apiRenameTable({
+      kit.draftApi.apiRenameTable({
         revisionId: draftRevisionId,
         tableId,
         nextTableId: 'renamed-table',

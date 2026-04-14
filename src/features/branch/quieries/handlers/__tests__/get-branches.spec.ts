@@ -1,13 +1,11 @@
-import { CqrsModule, QueryBus } from '@nestjs/cqrs';
-import { Test } from '@nestjs/testing';
+import { QueryBus } from '@nestjs/cqrs';
 import { nanoid } from 'nanoid';
+import type { BranchTestKit } from 'src/__tests__/kit/create-branch-test-kit';
+import { createBranchTestKit } from 'src/__tests__/kit/create-branch-test-kit';
 import {
   GetBranchesQuery,
   GetBranchesQueryReturnType,
 } from 'src/features/branch/quieries/impl';
-import { BRANCH_QUERIES_HANDLERS } from 'src/features/branch/quieries/handlers';
-import { ShareModule } from 'src/features/share/share.module';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -61,24 +59,19 @@ describe('GetBranchesHandler', () => {
     return transactionService.run(async () => queryBus.execute(query));
   }
 
+  let kit: BranchTestKit;
   let prismaService: PrismaService;
   let transactionService: TransactionPrismaService;
   let queryBus: QueryBus;
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [DatabaseModule, CqrsModule, ShareModule],
-      providers: [...BRANCH_QUERIES_HANDLERS],
-    }).compile();
-
-    await module.init();
-
-    prismaService = module.get(PrismaService);
-    transactionService = module.get(TransactionPrismaService);
-    queryBus = module.get(QueryBus);
+    kit = await createBranchTestKit();
+    prismaService = kit.prismaService;
+    transactionService = kit.transactionService;
+    queryBus = kit.queryBus;
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

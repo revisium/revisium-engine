@@ -1,34 +1,15 @@
-import { CommandBus, CqrsModule } from '@nestjs/cqrs';
-import { Test, TestingModule } from '@nestjs/testing';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { nanoid } from 'nanoid';
-import { BRANCH_COMMANDS_HANDLERS } from 'src/features/branch/commands/handlers';
-import { ShareModule } from 'src/features/share/share.module';
+import { createBranchTestKit } from 'src/__tests__/kit/create-branch-test-kit';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 
 export const createTestingModule = async () => {
-  const module: TestingModule = await Test.createTestingModule({
-    imports: [DatabaseModule, CqrsModule, ShareModule],
-    providers: [
-      {
-        provide: AsyncLocalStorage,
-        useValue: new AsyncLocalStorage(),
-      },
-      ...BRANCH_COMMANDS_HANDLERS,
-    ],
-  }).compile();
-
-  await module.init();
-
-  const prismaService = module.get(PrismaService);
-  const commandBus = module.get(CommandBus);
+  const kit = await createBranchTestKit();
 
   return {
-    module,
-    prismaService,
-    commandBus,
+    module: kit.module,
+    prismaService: kit.prismaService,
+    commandBus: kit.commandBus,
   };
 };
 

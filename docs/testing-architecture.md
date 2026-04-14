@@ -11,6 +11,15 @@ The goal is to keep real Prisma-backed database tests while making the test suit
 - easier to extend
 - more consistent in abstraction level
 
+This document describes the intended default architecture for the repository.
+It does not require every historical test file to be rewritten line-for-line into
+the same shape. A refactor is considered complete when:
+
+- the main feature areas follow these patterns by default
+- new tests naturally use shared kits, scenarios, and assertion helpers
+- the old primitive-heavy style is no longer the normal entrypoint for feature work
+- the suite runs cleanly without process-forcing workarounds
+
 ## Principles
 
 ### Meaningful reading order first
@@ -110,6 +119,8 @@ Feature and integration tests should continue to use the real Prisma database la
 The refactor is about better structure and lower setup cost, not replacing database
 coverage with mocks.
 
+The repository now keeps that approach across the main feature areas.
+
 ### One abstraction level per test
 
 A test should primarily express business intent, not low-level fixture plumbing.
@@ -205,6 +216,41 @@ Bad:
 - generic helper names that only describe implementation mechanics
 - giant setup helpers returning many unrelated ids
 - helpers whose names hide side effects
+
+## Current State
+
+The repository now has shared builders and helpers that cover the main feature
+areas:
+
+- draft test kit
+- migration test kit
+- query test kit
+- branch test kit
+- database-service test kit
+- engine e2e test kit
+- scenario helpers for draft, migration, views, revision-changes, and row-query setup
+- shared migration assertion helpers
+
+The full Jest suite also exits cleanly without `--forceExit`.
+
+This means the main goals of the refactor are achieved:
+
+- shared setup is the default in the major feature areas
+- repeated branch/revision/table/row wiring moved behind reusable helpers
+- feature tests are generally written in behavior terms first
+- e2e setup is isolated instead of inlined into the test file
+
+Some low-level tests remain intentionally direct.
+That is acceptable when:
+
+- the test is already small and readable
+- the test is about an internal invariant or a pure utility
+- introducing another shared helper would hide the real subject of the test
+- rewriting the file would only create stylistic churn without improving speed,
+  readability, or maintenance
+
+The goal is not uniformity for its own sake. The goal is to make the default test
+style better and keep low-level tests explicit when explicitness is the right tradeoff.
 
 ## What Good Tests Should Look Like
 
@@ -327,6 +373,8 @@ Small presets over `createDbTestModule()` for feature slices such as:
 - migration
 - views
 - row queries
+- branch
+- database-backed service tests
 
 Presets should import only what is necessary for that feature's tests.
 
@@ -337,6 +385,8 @@ Reserved for true end-to-end tests that need:
 - `AppModule.forRoot()`
 - public service facade validation
 - full integration across module boundaries
+
+This repository now uses a dedicated engine e2e helper for that role.
 
 ## 2. Fixture Layers
 
@@ -459,3 +509,11 @@ After the refactor:
 - runtime and maintenance cost both improve without losing Prisma-backed confidence
 - new tests are easier to write in a TDD flow because setup and assertions match
   feature language rather than storage internals
+
+In practice, this now means:
+
+- large feature areas should not introduce new ad hoc Nest module builders
+- new feature tests should start from shared kits or scenario helpers unless the
+  test is deliberately low-level
+- direct primitive setup is still acceptable for small invariant tests and pure
+  utility tests when it keeps the intent clearer

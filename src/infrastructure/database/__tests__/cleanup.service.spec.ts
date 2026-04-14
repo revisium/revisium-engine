@@ -1,17 +1,23 @@
 import { nanoid } from 'nanoid';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
+import type { DatabaseServiceTestKit } from 'src/__tests__/kit/create-database-service-test-kit';
+import { createDatabaseServiceTestKit } from 'src/__tests__/kit/create-database-service-test-kit';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 
 describe('CleanupService', () => {
+  let kit: DatabaseServiceTestKit;
   let prismaService: PrismaService;
   let cleanupService: CleanupService;
   const testPrefix = `cleanup-test-${nanoid(6)}`;
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    cleanupService = result.module.get(CleanupService);
+    kit = await createDatabaseServiceTestKit([CleanupService]);
+    prismaService = kit.prismaService;
+    cleanupService = kit.module.get(CleanupService);
+  });
+
+  afterAll(async () => {
+    await kit.close();
   });
 
   it('should delete orphaned tables', async () => {

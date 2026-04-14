@@ -1,14 +1,19 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
+import type { BranchTestKit } from 'src/__tests__/kit/create-branch-test-kit';
+import { createBranchTestKit } from 'src/__tests__/kit/create-branch-test-kit';
 import {
   createChildBranch,
-  createTestingModule,
   prepareProjectWithBranches,
 } from 'src/features/branch/commands/handlers/__tests__/utils';
 import { DeleteBranchCommand } from 'src/features/branch/commands/impl';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 
 describe('DeleteBranchHandler', () => {
+  function execute(command: DeleteBranchCommand): Promise<boolean> {
+    return commandBus.execute(command);
+  }
+
   it('should delete non-root branch', async () => {
     const { projectId, childBranchId, childBranchName } =
       await prepareProjectWithBranches(prismaService);
@@ -145,20 +150,17 @@ describe('DeleteBranchHandler', () => {
     await expect(promise).rejects.toThrow(grandchild2);
   });
 
+  let kit: BranchTestKit;
   let prismaService: PrismaService;
   let commandBus: CommandBus;
 
-  function execute(command: DeleteBranchCommand): Promise<boolean> {
-    return commandBus.execute(command);
-  }
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createBranchTestKit();
+    prismaService = kit.prismaService;
+    commandBus = kit.commandBus;
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

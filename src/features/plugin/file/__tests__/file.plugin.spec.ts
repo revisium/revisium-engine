@@ -4,39 +4,35 @@ import {
   createExpressFile,
   createExpressImageFile,
 } from 'src/__tests__/utils/file';
-import {
-  createEmptyFile,
-  prepareProject,
-  prepareRow,
-  prepareTableWithSchema,
-} from 'src/__tests__/utils/prepareProject';
-import {
-  getArraySchema,
-  getObjectSchema,
-  getRefSchema,
-} from '@revisium/schema-toolkit/mocks';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
+import { createEmptyFile } from 'src/__tests__/utils/prepareProject';
 import { FileStatus } from 'src/features/plugin/file/consts';
 import { FilePlugin } from 'src/features/plugin/file/file.plugin';
-import { PluginService } from 'src/features/plugin/plugin.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { createJsonValueStore } from '@revisium/schema-toolkit/lib';
 import { JsonValue } from '@revisium/schema-toolkit/types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import {
+  createFilePluginTestKit,
+  createPreviousFile,
+  givenFilePluginRow,
+  givenFilePluginScenario,
+} from './file-plugin.spec-helper';
 
 describe('file.plugin', () => {
   describe('afterCreateRow', () => {
     it('should update files', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const emptyFile = createEmptyFile();
       const data = {
         file: emptyFile,
         files: [emptyFile, emptyFile, emptyFile],
       };
 
-      const result = (await pluginService.afterCreateRow({
+      const result = (await kit.pluginService.afterCreateRow({
         revisionId: draftRevisionId,
         tableId: table.tableId,
         rowId: nanoid(),
@@ -53,7 +49,10 @@ describe('file.plugin', () => {
     });
 
     it('should throw error if the data is invalid', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const emptyFile = createEmptyFile();
 
       const data = {
@@ -69,7 +68,7 @@ describe('file.plugin', () => {
       };
 
       await expect(
-        pluginService.afterCreateRow({
+        kit.pluginService.afterCreateRow({
           revisionId: draftRevisionId,
           tableId: table.tableId,
           rowId: nanoid(),
@@ -81,7 +80,10 @@ describe('file.plugin', () => {
 
   describe('afterUpdateRow', () => {
     it('should update files', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const previousData = {
         file: createPreviousFile(),
@@ -93,18 +95,15 @@ describe('file.plugin', () => {
         files: [...previousData.files, createEmptyFile(), createEmptyFile()],
       };
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: previousData,
-        dataDraft: previousData,
       });
 
-      const result = (await pluginService.afterUpdateRow({
-        revisionId: draftRevisionId,
-        tableId: table.tableId,
+      const result = (await kit.pluginService.afterUpdateRow({
+        revisionId: scenario.draftRevisionId,
+        tableId: scenario.table.tableId,
         rowId: rowDraft.id,
         data,
       })) as typeof data;
@@ -121,7 +120,10 @@ describe('file.plugin', () => {
     });
 
     it('should throw error if the data is invalid', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const previousData = {
         file: createPreviousFile(),
@@ -133,19 +135,16 @@ describe('file.plugin', () => {
         files: [...previousData.files, createEmptyFile(), createEmptyFile()],
       };
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: previousData,
-        dataDraft: previousData,
       });
 
       await expect(
-        pluginService.afterUpdateRow({
-          revisionId: draftRevisionId,
-          tableId: table.tableId,
+        kit.pluginService.afterUpdateRow({
+          revisionId: scenario.draftRevisionId,
+          tableId: scenario.table.tableId,
           rowId: rowDraft.id,
           data,
         }),
@@ -153,7 +152,10 @@ describe('file.plugin', () => {
     });
 
     it('should throw error if the file does not exist', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const previousData = {
         file: createPreviousFile(),
@@ -165,19 +167,16 @@ describe('file.plugin', () => {
         files: [createPreviousFile()],
       } as const;
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: previousData,
-        dataDraft: previousData,
       });
 
       await expect(
-        pluginService.afterUpdateRow({
-          revisionId: draftRevisionId,
-          tableId: table.tableId,
+        kit.pluginService.afterUpdateRow({
+          revisionId: scenario.draftRevisionId,
+          tableId: scenario.table.tableId,
           rowId: rowDraft.id,
           data,
         }),
@@ -187,7 +186,10 @@ describe('file.plugin', () => {
 
   describe('computeRows', () => {
     it('should compute rows', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const data = {
         file: {
@@ -205,18 +207,15 @@ describe('file.plugin', () => {
         ],
       };
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: data,
-        dataDraft: data,
       });
 
-      await pluginService.computeRows({
-        revisionId: draftRevisionId,
-        tableId: table.tableId,
+      await kit.pluginService.computeRows({
+        revisionId: scenario.draftRevisionId,
+        tableId: scenario.table.tableId,
         rows: [rowDraft],
       });
 
@@ -229,7 +228,10 @@ describe('file.plugin', () => {
     });
 
     it('should not compute rows for system table', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const data = {
         file: {
@@ -240,17 +242,14 @@ describe('file.plugin', () => {
         files: [],
       };
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: data,
-        dataDraft: data,
       });
 
-      await pluginService.computeRows({
-        revisionId: draftRevisionId,
+      await kit.pluginService.computeRows({
+        revisionId: scenario.draftRevisionId,
         tableId: SystemTables.Schema,
         rows: [rowDraft],
       });
@@ -263,25 +262,25 @@ describe('file.plugin', () => {
 
   describe('afterMigrateRows', () => {
     it('should migrate files', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const data = {
         file: createPreviousFile(),
         files: [createPreviousFile(), createEmptyFile(), createEmptyFile()],
       } as const;
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: data,
-        dataDraft: data,
       });
 
-      await pluginService.afterMigrateRows({
-        revisionId: draftRevisionId,
-        tableId: table.tableId,
+      await kit.pluginService.afterMigrateRows({
+        revisionId: scenario.draftRevisionId,
+        tableId: scenario.table.tableId,
         rows: [rowDraft],
       });
 
@@ -296,7 +295,10 @@ describe('file.plugin', () => {
 
   describe('uploadFile', () => {
     it('should upload file', async () => {
-      const { table, schemaStore } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const previousData = {
         file: createPreviousFile(),
@@ -308,17 +310,14 @@ describe('file.plugin', () => {
         files: [],
       };
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: previousData,
-        dataDraft: previousData,
       });
 
       const valueStore = createJsonValueStore(
-        schemaStore,
+        scenario.schemaStore,
         '',
         rowDraft.data as JsonValue,
       );
@@ -345,7 +344,10 @@ describe('file.plugin', () => {
     });
 
     it('should upload image file', async () => {
-      const { table, schemaStore } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const previousData = {
         file: createPreviousFile(),
@@ -357,17 +359,14 @@ describe('file.plugin', () => {
         files: [],
       };
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: previousData,
-        dataDraft: previousData,
       });
 
       const valueStore = createJsonValueStore(
-        schemaStore,
+        scenario.schemaStore,
         '',
         rowDraft.data as JsonValue,
       );
@@ -394,26 +393,26 @@ describe('file.plugin', () => {
     });
 
     it('should throw error if file not found', async () => {
-      const { table, schemaStore } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const previousData = {
         file: createPreviousFile(),
         files: [],
       };
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: previousData,
-        dataDraft: previousData,
       });
 
       await expect(
         filePlugin.uploadFile({
           valueStore: createJsonValueStore(
-            schemaStore,
+            scenario.schemaStore,
             '',
             rowDraft.data as JsonValue,
           ),
@@ -424,7 +423,10 @@ describe('file.plugin', () => {
     });
 
     it('should throw error if there is same id', async () => {
-      const { table, schemaStore } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
 
       const file = createPreviousFile();
 
@@ -433,19 +435,16 @@ describe('file.plugin', () => {
         files: [file],
       };
 
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: previousData,
-        dataDraft: previousData,
       });
 
       await expect(
         filePlugin.uploadFile({
           valueStore: createJsonValueStore(
-            schemaStore,
+            scenario.schemaStore,
             '',
             rowDraft.data as JsonValue,
           ),
@@ -456,54 +455,17 @@ describe('file.plugin', () => {
     });
   });
 
-  let prismaService: PrismaService;
-  let pluginService: PluginService;
+  let kit: DraftTestKit;
   let filePlugin: FilePlugin;
   let jsonSchemaStore: JsonSchemaStoreService;
 
-  const setupProjectWithFileSchema = async () => {
-    const {
-      headRevisionId,
-      draftRevisionId,
-      schemaTableVersionId,
-      migrationTableVersionId,
-    } = await prepareProject(prismaService);
-
-    const schema = getObjectSchema({
-      file: getRefSchema(SystemSchemaIds.File),
-      files: getArraySchema(getRefSchema(SystemSchemaIds.File)),
-    });
-
-    const schemaStore = jsonSchemaStore.create(schema);
-
-    const table = await prepareTableWithSchema({
-      prismaService,
-      headRevisionId,
-      draftRevisionId,
-      schemaTableVersionId,
-      migrationTableVersionId,
-      schema,
-    });
-
-    return { draftRevisionId, table, schema, schemaStore };
-  };
-
-  const createPreviousFile = () => {
-    const file = createEmptyFile();
-    file.status = FileStatus.ready;
-    file.fileId = nanoid();
-    return file;
-  };
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    pluginService = result.module.get(PluginService);
-    filePlugin = result.module.get(FilePlugin);
-    jsonSchemaStore = result.module.get(JsonSchemaStoreService);
+    kit = await createFilePluginTestKit();
+    filePlugin = kit.module.get(FilePlugin);
+    jsonSchemaStore = kit.module.get(JsonSchemaStoreService);
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

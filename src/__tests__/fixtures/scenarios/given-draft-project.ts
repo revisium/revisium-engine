@@ -1,4 +1,9 @@
-import { prepareProject, prepareRow } from 'src/__tests__/utils/prepareProject';
+import {
+  prepareBranch,
+  prepareProject,
+  prepareRow,
+  prepareTableWithSchema,
+} from 'src/__tests__/utils/prepareProject';
 import type { PrismaService } from 'src/infrastructure/database/prisma.service';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 
@@ -9,9 +14,12 @@ export interface DraftProjectScenario {
   headRevisionId: string;
   draftRevisionId: string;
   tableId: string;
+  schemaRowVersionId: string;
   headTableVersionId: string;
   draftTableVersionId: string;
   rowId: string;
+  headRowVersionId: string;
+  draftRowVersionId: string;
 }
 
 export interface DraftProjectWithRowsScenario extends DraftProjectScenario {
@@ -22,6 +30,12 @@ interface ExtraRowInput {
   rowId?: string;
   data: Record<string, unknown>;
   draftData?: Record<string, unknown>;
+}
+
+interface GivenDraftProjectWithSchemaOptions {
+  prismaService: PrismaService;
+  schema: JsonSchema;
+  row?: ExtraRowInput;
 }
 
 export async function givenDraftProject(
@@ -36,9 +50,52 @@ export async function givenDraftProject(
     headRevisionId: project.headRevisionId,
     draftRevisionId: project.draftRevisionId,
     tableId: project.tableId,
+    schemaRowVersionId: project.schemaRowVersionId,
     headTableVersionId: project.headTableVersionId,
     draftTableVersionId: project.draftTableVersionId,
     rowId: project.rowId,
+    headRowVersionId: project.headRowVersionId,
+    draftRowVersionId: project.draftRowVersionId,
+  };
+}
+
+export async function givenDraftProjectWithSchema({
+  prismaService,
+  schema,
+  row,
+}: GivenDraftProjectWithSchemaOptions): Promise<DraftProjectScenario> {
+  const branch = await prepareBranch(prismaService);
+  const table = await prepareTableWithSchema({
+    prismaService,
+    headRevisionId: branch.headRevisionId,
+    draftRevisionId: branch.draftRevisionId,
+    schemaTableVersionId: branch.schemaTableVersionId,
+    migrationTableVersionId: branch.migrationTableVersionId,
+    schema,
+  });
+  const createdRow = await prepareRow({
+    prismaService,
+    headTableVersionId: table.headTableVersionId,
+    draftTableVersionId: table.draftTableVersionId,
+    rowId: row?.rowId,
+    data: row?.data ?? { ver: 1 },
+    dataDraft: row?.draftData ?? row?.data ?? { ver: 2 },
+    schema,
+  });
+
+  return {
+    projectId: branch.projectId,
+    branchId: branch.branchId,
+    branchName: branch.branchName,
+    headRevisionId: branch.headRevisionId,
+    draftRevisionId: branch.draftRevisionId,
+    tableId: table.tableId,
+    schemaRowVersionId: table.schemaRowVersionId,
+    headTableVersionId: table.headTableVersionId,
+    draftTableVersionId: table.draftTableVersionId,
+    rowId: createdRow.rowId,
+    headRowVersionId: createdRow.headRowVersionId,
+    draftRowVersionId: createdRow.draftRowVersionId,
   };
 }
 

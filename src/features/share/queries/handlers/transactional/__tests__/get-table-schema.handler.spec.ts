@@ -1,4 +1,4 @@
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { metaSchema } from 'src/features/share/schema/meta-schema';
 import { SystemTables } from 'src/features/share/system-tables.consts';
@@ -8,7 +8,7 @@ import { PrismaService } from 'src/infrastructure/database/prisma.service';
 describe('GetTableSchemaHandler', () => {
   describe('system tables', () => {
     it('should return schema for system table without row in revisium_schema_table', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(prismaService);
 
       const result = await shareTransactionalQueries.getTableSchema(
         draftRevisionId,

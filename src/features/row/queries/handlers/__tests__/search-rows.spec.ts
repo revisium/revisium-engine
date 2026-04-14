@@ -11,6 +11,7 @@ import {
   prepareTableWithSchema,
   prepareRow,
 } from 'src/__tests__/utils/prepareProject';
+import { givenDraftProjectWithSchema } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import {
   SearchRowsQuery,
@@ -67,14 +68,11 @@ describe('SearchRowsHandler', () => {
 
   describe('basic search functionality', () => {
     it('should find rows with matching content', async () => {
-      const {
-        draftRevisionId,
-        draftRowVersionId,
-        tableId,
-        schemaRowVersionId,
-      } = await prepareProject(prismaService);
-
-      await updateSchemaForTest(schemaRowVersionId);
+      const { draftRevisionId, draftRowVersionId, tableId } =
+        await givenDraftProjectWithSchema({
+          prismaService,
+          schema: searchTestSchema,
+        });
 
       const newData = {
         ver: 123,
@@ -107,10 +105,11 @@ describe('SearchRowsHandler', () => {
     });
 
     it('should find rows with case-insensitive search', async () => {
-      const { draftRevisionId, draftRowVersionId, schemaRowVersionId } =
-        await prepareProject(prismaService);
-
-      await updateSchemaForTest(schemaRowVersionId);
+      const { draftRevisionId, draftRowVersionId } =
+        await givenDraftProjectWithSchema({
+          prismaService,
+          schema: searchTestSchema,
+        });
 
       const newData = { ver: 456, content: 'UPPERCASE TEXT' };
       await prismaService.row.update({
@@ -135,10 +134,11 @@ describe('SearchRowsHandler', () => {
     });
 
     it('should return empty result for non-matching query', async () => {
-      const { draftRevisionId, draftRowVersionId, schemaRowVersionId } =
-        await prepareProject(prismaService);
-
-      await updateSchemaForTest(schemaRowVersionId);
+      const { draftRevisionId, draftRowVersionId } =
+        await givenDraftProjectWithSchema({
+          prismaService,
+          schema: searchTestSchema,
+        });
 
       const newData = { ver: 789, title: 'Test Document' };
       await prismaService.row.update({
@@ -228,10 +228,10 @@ describe('SearchRowsHandler', () => {
         draftRevisionId,
         headRowVersionId,
         draftRowVersionId,
-        schemaRowVersionId,
-      } = await prepareProject(prismaService);
-
-      await updateSchemaForTest(schemaRowVersionId);
+      } = await givenDraftProjectWithSchema({
+        prismaService,
+        schema: searchTestSchema,
+      });
 
       const headData = {
         ver: 1,
@@ -294,11 +294,11 @@ describe('SearchRowsHandler', () => {
 
   describe('system tables exclusion', () => {
     it('should not search in system tables', async () => {
-      const projectData = await prepareProject(prismaService);
-      const { draftRevisionId, draftTableVersionId, schemaRowVersionId } =
-        projectData;
-
-      await updateSchemaForTest(schemaRowVersionId);
+      const { draftRevisionId, draftTableVersionId } =
+        await givenDraftProjectWithSchema({
+          prismaService,
+          schema: searchTestSchema,
+        });
 
       await prismaService.row.create({
         data: {

@@ -14,11 +14,56 @@ import {
 } from '@revisium/schema-toolkit/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 
+export interface BranchGraph {
+  projectId: string;
+  branchId: string;
+  branchName: string;
+  headRevisionId: string;
+  draftRevisionId: string;
+  schemaTableVersionId: string;
+  schemaTableCreatedId: string;
+  migrationTableVersionId: string;
+  migrationTableCreatedId: string;
+}
+
+export interface TableWithSchemaResult {
+  schemaRowVersionId: string;
+  tableId: string;
+  createdIdForTableInSchemaTable: string;
+  tableCreatedId: string;
+  headTableVersionId: string;
+  draftTableVersionId: string;
+  schema: JsonSchema;
+}
+
+export interface RowVersionPairResult {
+  row: Awaited<ReturnType<PrismaService['row']['create']>>;
+  rowDraft: Awaited<ReturnType<PrismaService['row']['create']>>;
+  rowId: string;
+  rowCreatedId: string;
+  headRowVersionId: string;
+  draftRowVersionId: string;
+}
+
 export type PrepareProjectReturnType = Awaited<
   ReturnType<typeof prepareProject>
 >;
 
-export async function prepareBranch(prismaService: PrismaService) {
+export const defaultDraftProjectSchema: JsonObjectSchema = {
+  type: JsonSchemaTypeName.Object,
+  required: ['ver'],
+  properties: {
+    ver: {
+      type: JsonSchemaTypeName.Number,
+      default: 0,
+    },
+  },
+  additionalProperties: false,
+};
+
+export async function prepareBranch(
+  prismaService: PrismaService,
+): Promise<BranchGraph> {
   const projectId = `project-${nanoid()}`;
   const branchId = `branch-${nanoid()}`;
   const branchName = `name-${branchId}`;
@@ -117,7 +162,7 @@ export async function prepareTableWithSchema({
   schemaTableVersionId: string;
   migrationTableVersionId: string;
   schema: JsonSchema;
-}) {
+}): Promise<TableWithSchemaResult> {
   const schemaRowVersionId = nanoid();
   const migrationRowVersionId = nanoid();
   const tableId = `table-${nanoid()}`;
@@ -232,7 +277,7 @@ export async function prepareRow({
   data: object;
   dataDraft: object;
   schema: JsonSchema;
-}) {
+}): Promise<RowVersionPairResult> {
   const resolvedRowId = rowId ?? `row-${nanoid()}`;
   const rowCreatedId = nanoid();
   const headRowVersionId = nanoid();
@@ -308,18 +353,6 @@ export const prepareProject = async (
   prismaService: PrismaService,
   options?: PrepareProjectOptions,
 ) => {
-  const testSchema: JsonObjectSchema = {
-    type: JsonSchemaTypeName.Object,
-    required: ['ver'],
-    properties: {
-      ver: {
-        type: JsonSchemaTypeName.Number,
-        default: 0,
-      },
-    },
-    additionalProperties: false,
-  };
-
   const prepareBranchResult = await prepareBranch(prismaService);
   const {
     headRevisionId,
@@ -333,7 +366,7 @@ export const prepareProject = async (
     draftRevisionId,
     schemaTableVersionId,
     migrationTableVersionId,
-    schema: testSchema,
+    schema: defaultDraftProjectSchema,
   });
   const { headTableVersionId, draftTableVersionId, tableId } =
     resultPrepareTableWithSchema;
@@ -343,7 +376,7 @@ export const prepareProject = async (
     draftTableVersionId,
     data: { ver: 1 },
     dataDraft: { ver: 2 },
-    schema: testSchema,
+    schema: defaultDraftProjectSchema,
   });
 
   let linkedTable: LinkedTableResult | undefined;

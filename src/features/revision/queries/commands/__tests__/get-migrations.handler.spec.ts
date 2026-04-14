@@ -1,6 +1,6 @@
 import { QueryBus } from '@nestjs/cqrs';
 import objectHash from 'object-hash';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   createTestingModule,
   testSchema,
@@ -14,7 +14,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 
 describe('GetMigrationsHandler', () => {
   it('should get migrations', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(prismaService);
 
     const result = await runTransaction(
       new GetMigrationsQuery({

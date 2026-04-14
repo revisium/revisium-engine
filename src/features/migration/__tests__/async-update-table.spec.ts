@@ -1,34 +1,13 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigModule } from '@nestjs/config';
-import { CacheModule } from '@nestjs/cache-manager';
-import { CqrsModule } from '@nestjs/cqrs';
 import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
 import { nanoid } from 'nanoid';
 import objectHash from 'object-hash';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
-import { ShareModule } from 'src/features/share/share.module';
-import { PluginModule } from 'src/features/plugin/plugin.module';
-import { MigrationModule } from 'src/features/migration/migration.module';
-import { DraftModule } from 'src/features/draft/draft.module';
-import { RevisionModule } from 'src/features/revision/revision.module';
-import { BranchModule } from 'src/features/branch/branch.module';
-import { TableModule } from 'src/features/table/table.module';
-import { RowModule } from 'src/features/row/row.module';
-import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
-import { ViewsModule } from 'src/features/views/views.module';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
-import { StorageModule } from 'src/infrastructure/storage/storage.module';
-import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
-import { MigrationService } from 'src/features/migration/services/migration.service';
+import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import { givenMigrationTableWithRows } from 'src/__tests__/fixtures/scenarios/given-migration-table-with-rows';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
-import { MigrationApiService } from 'src/features/migration/migration-api.service';
-import { DraftApiService } from 'src/features/draft/draft-api.service';
-import { RowApiService } from 'src/features/row/row-api.service';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
   prepareBranch,
-  prepareRow,
   prepareTableWithSchema,
 } from 'src/__tests__/utils/prepareProject';
 import { SystemTables } from 'src/features/share/system-tables.consts';
@@ -37,13 +16,6 @@ import type { TableViewsData } from 'src/features/views/types';
 
 const TEST_THRESHOLD = 10;
 const ROW_COUNT = 15;
-
-const mockStorage = {
-  isAvailable: true,
-  canServeFiles: false,
-  uploadFile: jest.fn().mockResolvedValue({ key: 'uploads/fake.png' }),
-  getPublicUrl: jest.fn((key: string) => `http://test-files/${key}`),
-};
 
 const testSchema = {
   type: JsonSchemaTypeName.Object as const,
@@ -74,87 +46,27 @@ function createViewsData(): TableViewsData {
 }
 
 describe('Async Update Table', () => {
-  let module: TestingModule;
-  let prisma: PrismaService;
-  let draftApi: DraftApiService;
-  let rowApi: RowApiService;
-  let migrationService: MigrationService;
-  let migrationApi: MigrationApiService;
+  let kit: MigrationTestKit;
 
   beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
-        DatabaseModule,
-        CqrsModule,
-        StorageModule.forRoot(),
-        ShareModule,
-        PluginModule,
-        MigrationModule.forRoot(),
-        RevisionModule,
-        BranchModule,
-        TableModule,
-        RowModule,
-        DraftRevisionModule,
-        DraftModule,
-        ViewsModule,
-        CacheModule.register(),
-      ],
-    })
-      .overrideProvider(STORAGE_SERVICE)
-      .useValue(mockStorage)
-      .overrideProvider(MIGRATION_OPTIONS)
-      .useValue({ threshold: TEST_THRESHOLD, batchSize: 5 })
-      .compile();
-
-    await module.init();
-    prisma = module.get(PrismaService);
-    draftApi = module.get(DraftApiService);
-    rowApi = module.get(RowApiService);
-    migrationService = module.get(MigrationService);
-    migrationApi = module.get(MigrationApiService);
+    kit = await createMigrationTestKit({
+      threshold: TEST_THRESHOLD,
+      batchSize: 5,
+    });
   });
 
   afterAll(async () => {
-    await module.close();
+    if (kit) {
+      await kit.close();
+    }
   });
 
   async function prepareTableWithRows() {
-    const branchData = await prepareBranch(prisma);
-    const {
-      headRevisionId,
-      draftRevisionId,
-      schemaTableVersionId,
-      migrationTableVersionId,
-    } = branchData;
-
-    const tableResult = await prepareTableWithSchema({
-      prismaService: prisma,
-      headRevisionId,
-      draftRevisionId,
-      schemaTableVersionId,
-      migrationTableVersionId,
+    return givenMigrationTableWithRows({
+      prisma: kit.prisma,
       schema: testSchema,
+      rowCount: ROW_COUNT,
     });
-
-    const rowIds: string[] = [];
-    for (let i = 0; i < ROW_COUNT; i++) {
-      const result = await prepareRow({
-        prismaService: prisma,
-        headTableVersionId: tableResult.headTableVersionId,
-        draftTableVersionId: tableResult.draftTableVersionId,
-        data: { ver: i },
-        dataDraft: { ver: i },
-        schema: testSchema,
-      });
-      rowIds.push(result.rowId);
-    }
-
-    return {
-      ...branchData,
-      ...tableResult,
-      rowIds,
-    };
   }
 
   async function setupViews(
@@ -162,7 +74,7 @@ describe('Async Update Table', () => {
     tableId: string,
     viewsData: TableViewsData,
   ) {
-    let viewsTable = await prisma.table.findFirst({
+    let viewsTable = await kit.prisma.table.findFirst({
       where: {
         id: SystemTables.Views,
         revisions: { some: { id: revisionId } },
@@ -170,7 +82,7 @@ describe('Async Update Table', () => {
     });
 
     if (!viewsTable) {
-      viewsTable = await prisma.table.create({
+      viewsTable = await kit.prisma.table.create({
         data: {
           id: SystemTables.Views,
           versionId: nanoid(),
@@ -184,7 +96,7 @@ describe('Async Update Table', () => {
       });
     }
 
-    await prisma.row.create({
+    await kit.prisma.row.create({
       data: {
         id: tableId,
         versionId: nanoid(),
@@ -204,7 +116,7 @@ describe('Async Update Table', () => {
     revisionId: string,
     tableId: string,
   ): Promise<TableViewsData | null> {
-    const viewsTable = await prisma.table.findFirst({
+    const viewsTable = await kit.prisma.table.findFirst({
       where: {
         id: SystemTables.Views,
         revisions: { some: { id: revisionId } },
@@ -214,7 +126,7 @@ describe('Async Update Table', () => {
       return null;
     }
 
-    const viewsRow = await prisma.row.findFirst({
+    const viewsRow = await kit.prisma.row.findFirst({
       where: {
         id: tableId,
         tables: { some: { versionId: viewsTable.versionId } },
@@ -225,9 +137,9 @@ describe('Async Update Table', () => {
   }
 
   it('should use sync path for table below threshold', async () => {
-    const branchData = await prepareBranch(prisma);
+    const branchData = await prepareBranch(kit.prisma);
     const tableResult = await prepareTableWithSchema({
-      prismaService: prisma,
+      prismaService: kit.prisma,
       headRevisionId: branchData.headRevisionId,
       draftRevisionId: branchData.draftRevisionId,
       schemaTableVersionId: branchData.schemaTableVersionId,
@@ -236,7 +148,7 @@ describe('Async Update Table', () => {
     });
 
     // 0 rows — below threshold
-    const result = await draftApi.apiUpdateTable({
+    const result = await kit.draftApi.apiUpdateTable({
       revisionId: branchData.draftRevisionId,
       tableId: tableResult.tableId,
       patches: [
@@ -255,18 +167,18 @@ describe('Async Update Table', () => {
   it('should detect threshold correctly with row count', async () => {
     const { draftTableVersionId } = await prepareTableWithRows();
 
-    const count = await migrationService.countRows(draftTableVersionId);
+    const count = await kit.migrationService.countRows(draftTableVersionId);
     expect(count).toBe(ROW_COUNT);
 
     const shouldAsync =
-      await migrationService.shouldUseAsyncMigration(draftTableVersionId);
+      await kit.migrationService.shouldUseAsyncMigration(draftTableVersionId);
     expect(shouldAsync).toBe(true);
   });
 
   it('should trigger async path for table above threshold', async () => {
     const { draftRevisionId, tableId } = await prepareTableWithRows();
 
-    const result = await draftApi.apiUpdateTable({
+    const result = await kit.draftApi.apiUpdateTable({
       revisionId: draftRevisionId,
       tableId,
       patches: [
@@ -285,7 +197,7 @@ describe('Async Update Table', () => {
   it('should complete async migration and produce correct rows', async () => {
     const { draftRevisionId, tableId, rowIds } = await prepareTableWithRows();
 
-    const result = await draftApi.apiUpdateTable({
+    const result = await kit.draftApi.apiUpdateTable({
       revisionId: draftRevisionId,
       tableId,
       patches: [
@@ -301,14 +213,14 @@ describe('Async Update Table', () => {
 
     await waitForMigrationComplete(draftRevisionId, tableId);
 
-    const status = await migrationApi.getMigrationStatus({
+    const status = await kit.migrationApi.getMigrationStatus({
       revisionId: draftRevisionId,
       tableId,
     });
     expect(status).toBeNull();
 
     for (const rowId of rowIds) {
-      const row = await rowApi.getRow({
+      const row = await kit.rowApi.getRow({
         revisionId: draftRevisionId,
         tableId,
         rowId,
@@ -324,7 +236,7 @@ describe('Async Update Table', () => {
     const { draftRevisionId, tableId } = await prepareTableWithRows();
     await setupViews(draftRevisionId, tableId, createViewsData());
 
-    const result = await draftApi.apiUpdateTable({
+    const result = await kit.draftApi.apiUpdateTable({
       revisionId: draftRevisionId,
       tableId,
       patches: [
@@ -356,7 +268,7 @@ describe('Async Update Table', () => {
     const { draftRevisionId, tableId } = await prepareTableWithRows();
 
     // Create a PENDING migration manually
-    await prisma.tableMigration.create({
+    await kit.prisma.tableMigration.create({
       data: {
         revisionId: draftRevisionId,
         tableId,
@@ -372,7 +284,7 @@ describe('Async Update Table', () => {
       },
     });
 
-    const active = await migrationApi.getActiveMigrations({
+    const active = await kit.migrationApi.getActiveMigrations({
       revisionId: draftRevisionId,
     });
     expect(active.length).toBe(1);
@@ -381,9 +293,9 @@ describe('Async Update Table', () => {
   });
 
   it('should abort an in-progress migration', async () => {
-    const { draftRevisionId } = await prepareBranch(prisma);
+    const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-    await prisma.tableMigration.create({
+    await kit.prisma.tableMigration.create({
       data: {
         revisionId: draftRevisionId,
         tableId: 'abort-test-table',
@@ -399,12 +311,12 @@ describe('Async Update Table', () => {
       },
     });
 
-    await migrationApi.abortMigration({
+    await kit.migrationApi.abortMigration({
       revisionId: draftRevisionId,
       tableId: 'abort-test-table',
     });
 
-    const status = await migrationApi.getMigrationStatus({
+    const status = await kit.migrationApi.getMigrationStatus({
       revisionId: draftRevisionId,
       tableId: 'abort-test-table',
     });
@@ -419,7 +331,7 @@ describe('Async Update Table', () => {
     const pollInterval = 100;
     let waited = 0;
     while (waited < maxWaitMs) {
-      const status = await migrationApi.getMigrationStatus({
+      const status = await kit.migrationApi.getMigrationStatus({
         revisionId,
         tableId,
       });

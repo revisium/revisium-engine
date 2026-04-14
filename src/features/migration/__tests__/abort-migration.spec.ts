@@ -1,55 +1,27 @@
 import { BadRequestException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigModule } from '@nestjs/config';
-import { CqrsModule, CommandBus } from '@nestjs/cqrs';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
-import { StorageModule } from 'src/infrastructure/storage/storage.module';
-import { MigrationModule } from 'src/features/migration/migration.module';
+import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { AbortMigrationCommand } from 'src/features/migration/commands/impl/abort-migration.command';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 
-const mockStorage = {
-  isAvailable: true,
-  canServeFiles: false,
-  uploadFile: jest.fn().mockResolvedValue({ key: 'uploads/fake.png' }),
-  getPublicUrl: jest.fn((key: string) => `http://test-files/${key}`),
-};
-
 describe('AbortMigrationHandler', () => {
-  let module: TestingModule;
-  let prisma: PrismaService;
-  let commandBus: CommandBus;
+  let kit: MigrationTestKit;
 
   beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
-        DatabaseModule,
-        CqrsModule,
-        StorageModule.forRoot(),
-        MigrationModule.forRoot(),
-      ],
-    })
-      .overrideProvider(STORAGE_SERVICE)
-      .useValue(mockStorage)
-      .compile();
-
-    await module.init();
-    prisma = module.get(PrismaService);
-    commandBus = module.get(CommandBus);
+    kit = await createMigrationTestKit();
   });
 
   afterAll(async () => {
-    await module.close();
+    if (kit) {
+      await kit.close();
+    }
   });
 
   it('should cancel a PENDING migration', async () => {
-    const { draftRevisionId } = await prepareBranch(prisma);
+    const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-    const migration = await prisma.tableMigration.create({
+    const migration = await kit.prisma.tableMigration.create({
       data: {
         revisionId: draftRevisionId,
         tableId: 'test-table',
@@ -64,14 +36,14 @@ describe('AbortMigrationHandler', () => {
       },
     });
 
-    await commandBus.execute(
+    await kit.commandBus.execute(
       new AbortMigrationCommand({
         revisionId: draftRevisionId,
         tableId: 'test-table',
       }),
     );
 
-    const updated = await prisma.tableMigration.findUnique({
+    const updated = await kit.prisma.tableMigration.findUnique({
       where: {
         revisionId_tableId: {
           revisionId: migration.revisionId,
@@ -83,9 +55,9 @@ describe('AbortMigrationHandler', () => {
   });
 
   it('should cancel a COPYING migration', async () => {
-    const { draftRevisionId } = await prepareBranch(prisma);
+    const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-    await prisma.tableMigration.create({
+    await kit.prisma.tableMigration.create({
       data: {
         revisionId: draftRevisionId,
         tableId: 'test-table',
@@ -101,14 +73,14 @@ describe('AbortMigrationHandler', () => {
       },
     });
 
-    await commandBus.execute(
+    await kit.commandBus.execute(
       new AbortMigrationCommand({
         revisionId: draftRevisionId,
         tableId: 'test-table',
       }),
     );
 
-    const updated = await prisma.tableMigration.findUnique({
+    const updated = await kit.prisma.tableMigration.findUnique({
       where: {
         revisionId_tableId: {
           revisionId: draftRevisionId,
@@ -120,9 +92,9 @@ describe('AbortMigrationHandler', () => {
   });
 
   it('should throw error when aborting during SWAPPING phase', async () => {
-    const { draftRevisionId } = await prepareBranch(prisma);
+    const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-    await prisma.tableMigration.create({
+    await kit.prisma.tableMigration.create({
       data: {
         revisionId: draftRevisionId,
         tableId: 'test-table',
@@ -138,7 +110,7 @@ describe('AbortMigrationHandler', () => {
     });
 
     await expect(
-      commandBus.execute(
+      kit.commandBus.execute(
         new AbortMigrationCommand({
           revisionId: draftRevisionId,
           tableId: 'test-table',
@@ -148,9 +120,9 @@ describe('AbortMigrationHandler', () => {
   });
 
   it('should throw error when migration is already completed', async () => {
-    const { draftRevisionId } = await prepareBranch(prisma);
+    const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-    await prisma.tableMigration.create({
+    await kit.prisma.tableMigration.create({
       data: {
         revisionId: draftRevisionId,
         tableId: 'test-table',
@@ -167,7 +139,7 @@ describe('AbortMigrationHandler', () => {
     });
 
     await expect(
-      commandBus.execute(
+      kit.commandBus.execute(
         new AbortMigrationCommand({
           revisionId: draftRevisionId,
           tableId: 'test-table',
@@ -177,10 +149,10 @@ describe('AbortMigrationHandler', () => {
   });
 
   it('should return without error when no migration exists', async () => {
-    const { draftRevisionId } = await prepareBranch(prisma);
+    const { draftRevisionId } = await prepareBranch(kit.prisma);
 
     await expect(
-      commandBus.execute(
+      kit.commandBus.execute(
         new AbortMigrationCommand({
           revisionId: draftRevisionId,
           tableId: 'nonexistent-table',

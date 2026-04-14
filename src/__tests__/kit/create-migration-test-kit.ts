@@ -1,6 +1,6 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule } from '@nestjs/config';
-import { CqrsModule } from '@nestjs/cqrs';
+import { CommandBus, CqrsModule } from '@nestjs/cqrs';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
@@ -10,6 +10,8 @@ import { MigrationApiService } from 'src/features/migration/migration-api.servic
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MigrationModule } from 'src/features/migration/migration.module';
 import { MigrationProgressService } from 'src/features/migration/services/migration-progress.service';
+import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
+import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
@@ -37,9 +39,12 @@ export interface MigrationTestKit {
   module: TestingModule;
   prisma: PrismaService;
   draftApi: DraftApiService;
+  commandBus: CommandBus;
   rowApi: RowApiService;
   tableApi: TableApiService;
   migrationApi: MigrationApiService;
+  migrationBatchService: MigrationBatchService;
+  migrationLockService: MigrationLockService;
   migrationService: MigrationService;
   migrationProgressService: MigrationProgressService;
   close(): Promise<void>;
@@ -82,9 +87,12 @@ export async function createMigrationTestKit(
     module,
     prisma: module.get(PrismaService),
     draftApi: module.get(DraftApiService),
+    commandBus: module.get(CommandBus),
     rowApi: module.get(RowApiService),
     tableApi: module.get(TableApiService),
     migrationApi: module.get(MigrationApiService),
+    migrationBatchService: module.get(MigrationBatchService),
+    migrationLockService: module.get(MigrationLockService),
     migrationService: module.get(MigrationService),
     migrationProgressService: module.get(MigrationProgressService),
     async close() {

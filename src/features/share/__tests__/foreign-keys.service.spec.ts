@@ -1,32 +1,26 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { nanoid } from 'nanoid';
 import hash from 'object-hash';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
+import type { DatabaseServiceTestKit } from 'src/__tests__/kit/create-database-service-test-kit';
+import { createDatabaseServiceTestKit } from 'src/__tests__/kit/create-database-service-test-kit';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ForeignKeysService } from '../foreign-keys.service';
 
 describe('ForeignKeysService', () => {
-  let module: TestingModule;
+  let kit: DatabaseServiceTestKit;
   let service: ForeignKeysService;
   let prismaService: PrismaService;
   let transactionPrismaService: TransactionPrismaService;
 
   beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [DatabaseModule],
-      providers: [ForeignKeysService],
-    }).compile();
-
-    service = module.get<ForeignKeysService>(ForeignKeysService);
-    prismaService = module.get<PrismaService>(PrismaService);
-    transactionPrismaService = module.get<TransactionPrismaService>(
-      TransactionPrismaService,
-    );
+    kit = await createDatabaseServiceTestKit([ForeignKeysService]);
+    service = kit.module.get(ForeignKeysService);
+    prismaService = kit.prismaService;
+    transactionPrismaService = kit.transactionService;
   });
 
   afterAll(async () => {
-    await module.close();
+    await kit.close();
   });
 
   describe('findRowsByKeyValueInData', () => {

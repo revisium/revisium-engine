@@ -1,14 +1,14 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { nanoid } from 'nanoid';
+import type { DatabaseServiceTestKit } from 'src/__tests__/kit/create-database-service-test-kit';
+import { createDatabaseServiceTestKit } from 'src/__tests__/kit/create-database-service-test-kit';
 import {
   DiffService,
   TableDiffChangeType,
 } from 'src/features/share/diff.service';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 
 describe('DiffService', () => {
-  let module: TestingModule;
+  let kit: DatabaseServiceTestKit;
 
   describe('diffTables', () => {
     it('modified table', async () => {
@@ -1059,16 +1059,12 @@ describe('DiffService', () => {
   }
 
   beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [DatabaseModule],
-      providers: [DiffService],
-    }).compile();
-
-    diffService = module.get(DiffService);
-    prismaService = module.get(PrismaService);
+    kit = await createDatabaseServiceTestKit([DiffService]);
+    diffService = kit.module.get(DiffService);
+    prismaService = kit.prismaService;
   });
 
   afterAll(async () => {
-    await module.close();
+    await kit.close();
   });
 });

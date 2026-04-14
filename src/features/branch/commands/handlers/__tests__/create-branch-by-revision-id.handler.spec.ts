@@ -1,30 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
+import type { BranchTestKit } from 'src/__tests__/kit/create-branch-test-kit';
+import { createBranchTestKit } from 'src/__tests__/kit/create-branch-test-kit';
 import {
   createChildBranch,
-  createTestingModule,
   prepareProjectWithBranches,
 } from 'src/features/branch/commands/handlers/__tests__/utils';
 import { CreateBranchByRevisionIdCommand } from 'src/features/branch/commands/impl';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 
 describe('CreateBranchByRevisionIdHandler', () => {
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-
   function execute(command: CreateBranchByRevisionIdCommand): Promise<string> {
     return commandBus.execute(command);
   }
-
-  beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-  });
-
-  afterAll(async () => {
-    await prismaService.$disconnect();
-  });
 
   describe('validation', () => {
     it('should throw an error if branch already exists', async () => {
@@ -105,5 +93,19 @@ describe('CreateBranchByRevisionIdHandler', () => {
       expect(branch?.projectId).toBe(projectId);
       expect(branch?.isRoot).toBe(false);
     });
+  });
+
+  let kit: BranchTestKit;
+  let prismaService: PrismaService;
+  let commandBus: CommandBus;
+
+  beforeAll(async () => {
+    kit = await createBranchTestKit();
+    prismaService = kit.prismaService;
+    commandBus = kit.commandBus;
+  });
+
+  afterAll(async () => {
+    await kit.close();
   });
 });

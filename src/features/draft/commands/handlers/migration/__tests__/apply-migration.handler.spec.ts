@@ -1,9 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { CommandBus } from '@nestjs/cqrs';
 import { ICommand } from '@nestjs/cqrs/dist/interfaces/commands/command.interface';
-import { Prisma } from 'src/__generated__/client';
 import objectHash from 'object-hash';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import {
   createTestingModule,
   testSchema,
@@ -12,14 +10,15 @@ import {
   ApplyMigrationCommandReturnType,
   ApplyMigrationsCommand,
 } from 'src/features/draft/commands/impl/migration';
-import { SystemTables } from 'src/features/share/system-tables.consts';
 import { RemoveMigration } from '@revisium/schema-toolkit/types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import {
+  findLatestMigrationRowByTableId,
+  givenDraftMigrationProject,
+} from './migration.spec-helper';
 
 describe('ApplyMigration', () => {
   it('should throw an error if revision is not a draft revision', async () => {
-    const { headRevisionId } = await prepareProject(prismaService);
+    const { headRevisionId } = await givenDraftMigrationProject(kit);
 
     const command = new ApplyMigrationsCommand({
       revisionId: headRevisionId,
@@ -33,7 +32,7 @@ describe('ApplyMigration', () => {
   });
 
   it('should throw an error if migration is invalid', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftMigrationProject(kit);
 
     const command = new ApplyMigrationsCommand({
       revisionId: draftRevisionId,
@@ -49,7 +48,7 @@ describe('ApplyMigration', () => {
   });
 
   it('should throw an error if id (date) is less than previous', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftMigrationProject(kit);
 
     const removeMigrationId = '1970-01-01T00:00:00Z';
 
@@ -76,28 +75,12 @@ describe('ApplyMigration', () => {
   });
 
   it('should apply migrations', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftMigrationProject(kit);
 
-    const migrationRow = await prismaService.row.findFirstOrThrow({
-      where: {
-        data: {
-          path: ['tableId'],
-          equals: tableId,
-        },
-        tables: {
-          some: {
-            id: SystemTables.Migration,
-            revisions: {
-              some: {
-                id: draftRevisionId,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        id: Prisma.SortOrder.desc,
-      },
+    const migrationRow = await findLatestMigrationRowByTableId({
+      kit,
+      draftRevisionId,
+      tableId,
     });
 
     const renameMigrationId1 = '2025-01-02T00:00:00Z';
@@ -188,21 +171,18 @@ describe('ApplyMigration', () => {
   function runTransaction(
     command: ICommand,
   ): Promise<ApplyMigrationCommandReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
+  let kit: DraftTestKit;
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

@@ -1,9 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { CommandBus } from '@nestjs/cqrs';
 import { ICommand } from '@nestjs/cqrs/dist/interfaces/commands/command.interface';
-import { Prisma } from 'src/__generated__/client';
 import objectHash from 'object-hash';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import {
   createTestingModule,
   testSchema,
@@ -14,7 +12,6 @@ import {
   CreateRenameMigrationCommand,
   CreateUpdateMigrationCommand,
 } from 'src/features/draft/commands/impl/migration';
-import { MigrationContextService } from 'src/features/draft/migration-context.service';
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import {
@@ -24,14 +21,17 @@ import {
   UpdateMigration,
 } from '@revisium/schema-toolkit/types';
 import { JsonSchema, JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import {
+  findLatestMigrationRowByTableId,
+  findMigrationRowById,
+  givenDraftMigrationProject,
+} from './migration.spec-helper';
 
 describe('Migrations', () => {
   const newTableId = 'newTable';
 
   it('should throw an error if revision is not a draft revision', async () => {
-    const { headRevisionId } = await prepareProject(prismaService);
+    const { headRevisionId } = await givenDraftMigrationProject(kit);
 
     const command = new CreateInitMigrationCommand({
       revisionId: headRevisionId,
@@ -46,10 +46,10 @@ describe('Migrations', () => {
   });
 
   it('should  not create a new migration if there is not migration table', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await givenDraftMigrationProject(kit);
     const { draftRevisionId } = ids;
 
-    await prismaService.table.deleteMany({
+    await kit.prismaService.table.deleteMany({
       where: {
         id: SystemTables.Migration,
         revisions: {
@@ -69,7 +69,7 @@ describe('Migrations', () => {
     const result = await runTransaction(command);
     expect(result).toBe(false);
 
-    const migrationRow = await prismaService.row.findFirst({
+    const migrationRow = await kit.prismaService.row.findFirst({
       where: {
         tables: {
           some: {
@@ -88,7 +88,7 @@ describe('Migrations', () => {
   });
 
   it('should create a new init migration', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await givenDraftMigrationProject(kit);
     const { draftRevisionId } = ids;
 
     const command = new CreateInitMigrationCommand({
@@ -100,23 +100,10 @@ describe('Migrations', () => {
     const result = await runTransaction(command);
     expect(result).toBe(true);
 
-    const migrationRow = await prismaService.row.findFirstOrThrow({
-      where: {
-        data: {
-          path: ['tableId'],
-          equals: newTableId,
-        },
-        tables: {
-          some: {
-            id: SystemTables.Migration,
-            revisions: {
-              some: {
-                id: draftRevisionId,
-              },
-            },
-          },
-        },
-      },
+    const migrationRow = await findLatestMigrationRowByTableId({
+      kit,
+      draftRevisionId,
+      tableId: newTableId,
     });
 
     expect(migrationRow.data as InitMigration).toStrictEqual({
@@ -130,7 +117,7 @@ describe('Migrations', () => {
   });
 
   it('should create a new update migration', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await givenDraftMigrationProject(kit);
     const { draftRevisionId, tableId } = ids;
 
     const schema = {
@@ -172,26 +159,10 @@ describe('Migrations', () => {
     const result = await runTransaction(command);
     expect(result).toBe(true);
 
-    const migrationRow = await prismaService.row.findFirstOrThrow({
-      where: {
-        data: {
-          path: ['tableId'],
-          equals: tableId,
-        },
-        tables: {
-          some: {
-            id: SystemTables.Migration,
-            revisions: {
-              some: {
-                id: draftRevisionId,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        id: Prisma.SortOrder.desc,
-      },
+    const migrationRow = await findLatestMigrationRowByTableId({
+      kit,
+      draftRevisionId,
+      tableId,
     });
 
     expect(migrationRow.data as UpdateMigration).toStrictEqual({
@@ -216,7 +187,7 @@ describe('Migrations', () => {
   });
 
   it('should create a new rename migration', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await givenDraftMigrationProject(kit);
     const { draftRevisionId, tableId } = ids;
 
     const nextTableId = 'nextTableId';
@@ -230,26 +201,10 @@ describe('Migrations', () => {
     const result = await runTransaction(command);
     expect(result).toBe(true);
 
-    const migrationRow = await prismaService.row.findFirstOrThrow({
-      where: {
-        data: {
-          path: ['tableId'],
-          equals: tableId,
-        },
-        tables: {
-          some: {
-            id: SystemTables.Migration,
-            revisions: {
-              some: {
-                id: draftRevisionId,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        id: Prisma.SortOrder.desc,
-      },
+    const migrationRow = await findLatestMigrationRowByTableId({
+      kit,
+      draftRevisionId,
+      tableId,
     });
 
     expect(migrationRow.data as RenameMigration).toStrictEqual({
@@ -262,7 +217,7 @@ describe('Migrations', () => {
   });
 
   it('should create a new remove migration', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await givenDraftMigrationProject(kit);
     const { draftRevisionId, tableId } = ids;
 
     const command = new CreateRemoveMigrationCommand({
@@ -273,26 +228,10 @@ describe('Migrations', () => {
     const result = await runTransaction(command);
     expect(result).toBe(true);
 
-    const migrationRow = await prismaService.row.findFirstOrThrow({
-      where: {
-        data: {
-          path: ['tableId'],
-          equals: tableId,
-        },
-        tables: {
-          some: {
-            id: SystemTables.Migration,
-            revisions: {
-              some: {
-                id: draftRevisionId,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        id: Prisma.SortOrder.desc,
-      },
+    const migrationRow = await findLatestMigrationRowByTableId({
+      kit,
+      draftRevisionId,
+      tableId,
     });
 
     expect(migrationRow.data as RemoveMigration).toStrictEqual({
@@ -304,7 +243,7 @@ describe('Migrations', () => {
   });
 
   it('should create a new migration with custom id', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await givenDraftMigrationProject(kit);
     const { draftRevisionId, tableId } = ids;
 
     const migrationId = '1990-01-01T00:00:00Z';
@@ -314,31 +253,16 @@ describe('Migrations', () => {
       tableId,
     });
 
-    const result: boolean = await migrationContextService.run(migrationId, () =>
-      runTransaction(command),
+    const result: boolean = await kit.migrationContextService.run(
+      migrationId,
+      () => runTransaction(command),
     );
     expect(result).toBe(true);
 
-    const migrationRow = await prismaService.row.findFirstOrThrow({
-      where: {
-        data: {
-          path: ['id'],
-          equals: migrationId,
-        },
-        tables: {
-          some: {
-            id: SystemTables.Migration,
-            revisions: {
-              some: {
-                id: draftRevisionId,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        id: Prisma.SortOrder.desc,
-      },
+    const migrationRow = await findMigrationRowById({
+      kit,
+      draftRevisionId,
+      migrationId,
     });
 
     expect(migrationRow.data as RemoveMigration).toStrictEqual({
@@ -350,23 +274,18 @@ describe('Migrations', () => {
   });
 
   function runTransaction(command: ICommand): Promise<boolean> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let migrationContextService: MigrationContextService;
+  let kit: DraftTestKit;
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    migrationContextService = result.migrationContextService;
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

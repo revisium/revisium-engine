@@ -1,4 +1,3 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { ViewsComparisonService } from '../views-comparison.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { TableViewsData, View } from 'src/features/views/types';
@@ -6,24 +5,6 @@ import { ChangeType } from '../../types/enums';
 import { ViewChange, ViewsChangeDetail } from '../../types/views-change.types';
 
 describe('ViewsComparisonService', () => {
-  let service: ViewsComparisonService;
-
-  beforeAll(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ViewsComparisonService,
-        {
-          provide: TransactionPrismaService,
-          useValue: {
-            getTransactionOrPrisma: jest.fn(),
-          },
-        },
-      ],
-    }).compile();
-
-    service = module.get<ViewsComparisonService>(ViewsComparisonService);
-  });
-
   describe('compareViewsData (private method tested via reflection)', () => {
     const compareViewsData = (
       fromData: TableViewsData | null,
@@ -543,4 +524,8 @@ describe('ViewsComparisonService', () => {
       expect(isViewModified(fromView, toView)).toBe(false);
     });
   });
+
+  const service = new ViewsComparisonService({
+    getTransactionOrPrisma: jest.fn(),
+  } as unknown as TransactionPrismaService);
 });

@@ -1,12 +1,16 @@
 import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
 import {
+  expectDraftSchemaToHaveProperties,
+  expectMigrationToFinish,
+  getDraftSchemaData,
+} from 'src/__tests__/assertions/migration';
+import {
   MigrationStatus,
   MigrationPhase,
 } from 'src/features/migration/types/migration.types';
 import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { givenDraftWithRows } from 'src/__tests__/fixtures/scenarios/given-draft-with-rows';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
-import type { PrismaService } from 'src/infrastructure/database/prisma.service';
 
 const TEST_THRESHOLD = 10;
 const ROW_COUNT = 15;
@@ -133,8 +137,8 @@ describe('Migration bugs', () => {
         rows: (index) => ({ ver: index }),
       });
 
-      const schemaBefore = await getSchemaData(
-        kit.prisma,
+      const schemaBefore = await getDraftSchemaData(
+        kit,
         draft.draftRevisionId,
         draft.tableId,
       );
@@ -159,8 +163,8 @@ describe('Migration bugs', () => {
         // expected to throw
       }
 
-      const schemaAfter = await getSchemaData(
-        kit.prisma,
+      const schemaAfter = await getDraftSchemaData(
+        kit,
         draft.draftRevisionId,
         draft.tableId,
       );
@@ -192,11 +196,12 @@ describe('Migration bugs', () => {
 
       await expectMigrationToFinish(kit, draft.draftRevisionId, draft.tableId);
 
-      const tableSchema = (await kit.tableApi.resolveTableSchema({
-        revisionId: draft.draftRevisionId,
-        tableId: draft.tableId,
-      })) as { properties?: Record<string, unknown> } | null;
-      expect(tableSchema?.properties).toHaveProperty('validated');
+      await expectDraftSchemaToHaveProperties(
+        kit,
+        draft.draftRevisionId,
+        draft.tableId,
+        ['validated'],
+      );
 
       for (const rowId of draft.rowIds) {
         const row = await kit.rowApi.getRow({
@@ -227,90 +232,3 @@ describe('Migration bugs', () => {
     await kit.close();
   });
 });
-
-async function expectMigrationToFinish(
-  kit: MigrationTestKit,
-  revisionId: string,
-  tableId: string,
-): Promise<void> {
-  const status = await waitForMigration(kit, revisionId, tableId);
-
-  if (status?.status === MigrationStatus.FAILED) {
-    throw new Error(`Migration failed: ${status.errorMessage}`);
-  }
-
-  if (status?.status === MigrationStatus.CANCELLED) {
-    throw new Error('Migration was cancelled unexpectedly');
-  }
-
-  expect(status).toBeNull();
-}
-
-async function waitForMigration(
-  kit: MigrationTestKit,
-  revisionId: string,
-  tableId: string,
-  maxWaitMs = 10000,
-) {
-  const pollInterval = 50;
-  let waited = 0;
-
-  while (waited < maxWaitMs) {
-    const status = await kit.migrationApi.getMigrationStatus({
-      revisionId,
-      tableId,
-    });
-
-    if (!status) {
-      return null;
-    }
-
-    if (
-      status.status === MigrationStatus.FAILED ||
-      status.status === MigrationStatus.CANCELLED
-    ) {
-      return status;
-    }
-
-    if (status.status === MigrationStatus.COMPLETED) {
-      await sleep(pollInterval);
-      waited += pollInterval;
-      continue;
-    }
-
-    await sleep(pollInterval);
-    waited += pollInterval;
-  }
-
-  throw new Error(`Migration did not complete within ${maxWaitMs}ms`);
-}
-
-async function getSchemaData(
-  prisma: PrismaService,
-  revisionId: string,
-  tableId: string,
-) {
-  const schemaTable = await prisma.table.findFirst({
-    where: {
-      id: 'revisium_schema_table',
-      revisions: { some: { id: revisionId } },
-    },
-  });
-
-  if (!schemaTable) {
-    return null;
-  }
-
-  const schemaRow = await prisma.row.findFirst({
-    where: {
-      id: tableId,
-      tables: { some: { versionId: schemaTable.versionId } },
-    },
-  });
-
-  return schemaRow?.data ?? null;
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

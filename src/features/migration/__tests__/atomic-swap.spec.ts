@@ -2,6 +2,13 @@ import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { givenMigrationTableWithRows } from 'src/__tests__/fixtures/scenarios/given-migration-table-with-rows';
+import {
+  expectDraftSchemaToHaveProperties,
+  expectMigrationAbsent,
+  getDraftSchemaData,
+  waitForMigration,
+  waitForMigrationStatus,
+} from 'src/__tests__/assertions/migration';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-revert-changes.command';
 
@@ -16,29 +23,6 @@ const testSchema = {
   },
   additionalProperties: false as const,
 };
-
-async function getSchemaData(
-  prisma: MigrationTestKit['prisma'],
-  revisionId: string,
-  tableId: string,
-) {
-  const schemaTable = await prisma.table.findFirst({
-    where: {
-      id: 'revisium_schema_table',
-      revisions: { some: { id: revisionId } },
-    },
-  });
-  if (!schemaTable) {
-    return null;
-  }
-  const schemaRow = await prisma.row.findFirst({
-    where: {
-      id: tableId,
-      tables: { some: { versionId: schemaTable.versionId } },
-    },
-  });
-  return schemaRow?.data ?? null;
-}
 
 describe('Atomic swap — schema consistency', () => {
   let kit: MigrationTestKit;
@@ -68,61 +52,6 @@ describe('Atomic swap — schema consistency', () => {
     });
   }
 
-  async function waitForMigration(
-    revisionId: string,
-    tableId: string,
-    maxWaitMs = 10000,
-  ) {
-    const pollInterval = 50;
-    let waited = 0;
-    while (waited < maxWaitMs) {
-      const status = await kit.migrationApi.getMigrationStatus({
-        revisionId,
-        tableId,
-      });
-      if (!status) {
-        return null;
-      }
-      if (
-        status.status === MigrationStatus.FAILED ||
-        status.status === MigrationStatus.CANCELLED
-      ) {
-        return status;
-      }
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-      waited += pollInterval;
-    }
-    throw new Error(`Migration did not complete within ${maxWaitMs}ms`);
-  }
-
-  async function waitForMigrationStatus(
-    revisionId: string,
-    tableId: string,
-    targetStatus: MigrationStatus,
-    maxWaitMs = 10000,
-  ) {
-    const pollInterval = 50;
-    let waited = 0;
-
-    while (waited < maxWaitMs) {
-      const status = await kit.migrationApi.getMigrationStatus({
-        revisionId,
-        tableId,
-      });
-
-      if (status?.status === targetStatus) {
-        return status;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-      waited += pollInterval;
-    }
-
-    throw new Error(
-      `Migration did not reach ${targetStatus} within ${maxWaitMs}ms`,
-    );
-  }
-
   describe('schema unchanged during copy', () => {
     it('schema row should NOT have new field while migration is in progress', async () => {
       const { draftRevisionId, tableId } = await prepareTableWithRows();
@@ -147,8 +76,8 @@ describe('Atomic swap — schema consistency', () => {
           return rows;
         });
 
-      const schemaBefore = await getSchemaData(
-        kit.prisma,
+      const schemaBefore = await getDraftSchemaData(
+        kit,
         draftRevisionId,
         tableId,
       );
@@ -170,13 +99,14 @@ describe('Atomic swap — schema consistency', () => {
 
       try {
         await waitForMigrationStatus(
+          kit,
           draftRevisionId,
           tableId,
           MigrationStatus.COPYING,
         );
 
-        const schemaDuringCopy = await getSchemaData(
-          kit.prisma,
+        const schemaDuringCopy = await getDraftSchemaData(
+          kit,
           draftRevisionId,
           tableId,
         );
@@ -189,7 +119,7 @@ describe('Atomic swap — schema consistency', () => {
         releaseFirstBatch?.();
       }
 
-      await waitForMigration(draftRevisionId, tableId);
+      await waitForMigration(kit, draftRevisionId, tableId);
     });
 
     it('schema row should have new field only AFTER swap completes', async () => {
@@ -207,18 +137,10 @@ describe('Atomic swap — schema consistency', () => {
         ],
       });
 
-      await waitForMigration(draftRevisionId, tableId);
-
-      const schemaAfter = await getSchemaData(
-        kit.prisma,
-        draftRevisionId,
-        tableId,
-      );
-      const afterParsed = schemaAfter as Record<string, unknown> | null;
-      const afterProps = afterParsed?.properties as
-        | Record<string, unknown>
-        | undefined;
-      expect(afterProps).toHaveProperty('swapped');
+      await waitForMigration(kit, draftRevisionId, tableId);
+      await expectDraftSchemaToHaveProperties(kit, draftRevisionId, tableId, [
+        'swapped',
+      ]);
     });
   });
 
@@ -226,8 +148,8 @@ describe('Atomic swap — schema consistency', () => {
     it('after migration: schema correct, rows correct, record deleted, table accessible', async () => {
       const { draftRevisionId, tableId, rowIds } = await prepareTableWithRows();
 
-      const schemaBefore = await getSchemaData(
-        kit.prisma,
+      const schemaBefore = await getDraftSchemaData(
+        kit,
         draftRevisionId,
         tableId,
       );
@@ -248,23 +170,12 @@ describe('Atomic swap — schema consistency', () => {
       });
       expect(result.migrationId).toBeDefined();
 
-      await waitForMigration(draftRevisionId, tableId);
-
-      const status = await kit.migrationApi.getMigrationStatus({
-        revisionId: draftRevisionId,
-        tableId,
-      });
-      expect(status).toBeNull();
-
-      const schemaAfter = await getSchemaData(
-        kit.prisma,
-        draftRevisionId,
-        tableId,
-      );
-      const afterProps = (schemaAfter as Record<string, unknown>)
-        ?.properties as Record<string, unknown> | undefined;
-      expect(afterProps).toHaveProperty('completed');
-      expect(afterProps).toHaveProperty('ver');
+      await waitForMigration(kit, draftRevisionId, tableId);
+      await expectMigrationAbsent(kit, draftRevisionId, tableId);
+      await expectDraftSchemaToHaveProperties(kit, draftRevisionId, tableId, [
+        'completed',
+        'ver',
+      ]);
 
       for (const rowId of rowIds) {
         const row = await kit.prisma.row.findFirst({
@@ -290,8 +201,8 @@ describe('Atomic swap — schema consistency', () => {
     it('schema should be unchanged after abort', async () => {
       const { draftRevisionId, tableId } = await prepareTableWithRows();
 
-      const schemaBefore = await getSchemaData(
-        kit.prisma,
+      const schemaBefore = await getDraftSchemaData(
+        kit,
         draftRevisionId,
         tableId,
       );
@@ -314,10 +225,10 @@ describe('Atomic swap — schema consistency', () => {
         tableId,
       });
 
-      await waitForMigration(draftRevisionId, tableId);
+      await waitForMigration(kit, draftRevisionId, tableId);
 
-      const schemaAfterAbort = await getSchemaData(
-        kit.prisma,
+      const schemaAfterAbort = await getDraftSchemaData(
+        kit,
         draftRevisionId,
         tableId,
       );

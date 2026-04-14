@@ -1,6 +1,10 @@
-import { CommandBus } from '@nestjs/cqrs';
 import hash from 'object-hash';
 import { prepareProject, prepareRow } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import {
+  givenDraftProject,
+  givenDraftProjectWithRows,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   getArraySchema,
   getNumberSchema,
@@ -13,37 +17,32 @@ import {
 } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { PatchRowsCommand } from 'src/features/draft/commands/impl/patch-rows.command';
 import { PatchRowsHandlerReturnType } from 'src/features/draft/commands/types/patch-rows.handler.types';
-import { RowApiService } from 'src/features/row/row-api.service';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('PatchRowsHandler', () => {
-  it('should throw an error if any data is invalid', async () => {
-    const ids = await prepareProject(prismaService);
-    const {
-      draftRevisionId,
-      tableId,
-      rowId,
-      headTableVersionId,
-      draftTableVersionId,
-    } = ids;
+  let kit: DraftTestKit;
 
-    const row2 = await prepareRow({
-      prismaService,
-      headTableVersionId,
-      draftTableVersionId,
-      data: { ver: 10 },
-      dataDraft: { ver: 20 },
+  it('should throw an error if any data is invalid', async () => {
+    const draft = await givenDraftProjectWithRows({
+      prismaService: kit.prismaService,
       schema: testSchema,
+      rows: [{ data: { ver: 10 }, draftData: { ver: 20 } }],
     });
+    const row2Id = draft.extraRowIds[0];
+
+    if (!row2Id) {
+      throw new Error('Expected an extra row to be created');
+    }
 
     const command = new PatchRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
       rows: [
-        { rowId, patches: [{ op: 'replace', path: 'ver', value: 100 }] },
         {
-          rowId: row2.rowId,
+          rowId: draft.rowId,
+          patches: [{ op: 'replace', path: 'ver', value: 100 }],
+        },
+        {
+          rowId: row2Id,
           patches: [{ op: 'replace', path: 'ver', value: true }],
         },
       ],
@@ -53,31 +52,27 @@ describe('PatchRowsHandler', () => {
   });
 
   it('should throw an error if any path is invalid', async () => {
-    const ids = await prepareProject(prismaService);
-    const {
-      draftRevisionId,
-      tableId,
-      rowId,
-      headTableVersionId,
-      draftTableVersionId,
-    } = ids;
-
-    const row2 = await prepareRow({
-      prismaService,
-      headTableVersionId,
-      draftTableVersionId,
-      data: { ver: 10 },
-      dataDraft: { ver: 20 },
+    const draft = await givenDraftProjectWithRows({
+      prismaService: kit.prismaService,
       schema: testSchema,
+      rows: [{ data: { ver: 10 }, draftData: { ver: 20 } }],
     });
+    const row2Id = draft.extraRowIds[0];
+
+    if (!row2Id) {
+      throw new Error('Expected an extra row to be created');
+    }
 
     const command = new PatchRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
       rows: [
-        { rowId, patches: [{ op: 'replace', path: 'ver', value: 100 }] },
         {
-          rowId: row2.rowId,
+          rowId: draft.rowId,
+          patches: [{ op: 'replace', path: 'ver', value: 100 }],
+        },
+        {
+          rowId: row2Id,
           patches: [{ op: 'replace', path: 'invalid', value: 1 }],
         },
       ],
@@ -89,8 +84,9 @@ describe('PatchRowsHandler', () => {
   });
 
   it('should throw an error if any row does not exist', async () => {
-    const ids = await prepareProject(prismaService);
-    const { draftRevisionId, tableId, rowId } = ids;
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new PatchRowsCommand({
       revisionId: draftRevisionId,
@@ -108,7 +104,7 @@ describe('PatchRowsHandler', () => {
   });
 
   it('should patch multiple rows if conditions are met', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await prepareProject(kit.prismaService);
     const {
       draftRevisionId,
       tableId,
@@ -125,12 +121,12 @@ describe('PatchRowsHandler', () => {
       list: getArraySchema(getNumberSchema()),
     });
 
-    await prismaService.row.update({
+    await kit.prismaService.row.update({
       where: { versionId: schemaRowVersionId },
       data: { data: newSchema, hash: hash(newSchema) },
     });
 
-    await prismaService.row.update({
+    await kit.prismaService.row.update({
       where: { versionId: draftRowVersionId },
       data: {
         data: { str: 'str1', num: 1, list: [1, 2, 3] },
@@ -139,9 +135,10 @@ describe('PatchRowsHandler', () => {
     });
 
     const row2 = await prepareRow({
-      prismaService,
+      prismaService: kit.prismaService,
       headTableVersionId,
       draftTableVersionId,
+      rowId: 'row-2',
       data: { str: 'str2', num: 10, list: [10] },
       dataDraft: { str: 'str2', num: 10, list: [10] },
       schema: newSchema,
@@ -171,12 +168,12 @@ describe('PatchRowsHandler', () => {
     const result = await runTransaction(command);
     expect(result.patchedRows).toHaveLength(2);
 
-    const updatedRow1 = await rowApiService.getRow({
+    const updatedRow1 = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
     });
-    const updatedRow2 = await rowApiService.getRow({
+    const updatedRow2 = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: row2.rowId,
@@ -195,8 +192,9 @@ describe('PatchRowsHandler', () => {
   });
 
   it('should patch a single row via bulk operation', async () => {
-    const ids = await prepareProject(prismaService);
-    const { draftRevisionId, tableId, rowId } = ids;
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new PatchRowsCommand({
       revisionId: draftRevisionId,
@@ -208,7 +206,7 @@ describe('PatchRowsHandler', () => {
 
     expect(result.patchedRows).toHaveLength(1);
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
@@ -219,20 +217,13 @@ describe('PatchRowsHandler', () => {
   function runTransaction(
     command: PatchRowsCommand,
   ): Promise<PatchRowsHandlerReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let rowApiService: RowApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    rowApiService = result.module.get<RowApiService>(RowApiService);
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -240,6 +231,8 @@ describe('PatchRowsHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

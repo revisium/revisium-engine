@@ -1,23 +1,19 @@
-import { CommandBus } from '@nestjs/cqrs';
-import {
-  prepareProject,
-  PrepareProjectReturnType,
-} from 'src/__tests__/utils/prepareProject';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { CreateRevisionCommand } from 'src/features/draft/commands/impl/create-revision.command';
 import { CreateRevisionHandlerReturnType } from 'src/features/draft/commands/types/create-revision.handler.types';
-import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 
 describe('CreateRevisionHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if the branch does not exist in the project', async () => {
-    const ids = await prepareProject(prismaService);
-    const { projectId, branchName } = ids;
-    await prepareRevision(ids);
+    const draft = await givenDraftProject(kit.prismaService);
+    const { projectId, branchName } = draft;
+    await prepareRevision(draft.draftRevisionId);
 
     jest
-      .spyOn(shareTransactionalQueries, 'findBranchInProjectOrThrow')
+      .spyOn(kit.shareTransactionalQueries, 'findBranchInProjectOrThrow')
       .mockRejectedValue(new Error('Branch not found'));
 
     const command = new CreateRevisionCommand({
@@ -29,9 +25,9 @@ describe('CreateRevisionHandler', () => {
   });
 
   it('should create a new draft revision if there are changes', async () => {
-    const ids = await prepareProject(prismaService);
-    const { projectId, branchName, headRevisionId, draftRevisionId } = ids;
-    await prepareRevision(ids);
+    const draft = await givenDraftProject(kit.prismaService);
+    const { projectId, branchName, headRevisionId, draftRevisionId } = draft;
+    await prepareRevision(draftRevisionId);
 
     const command = new CreateRevisionCommand({
       projectId,
@@ -45,30 +41,23 @@ describe('CreateRevisionHandler', () => {
     expect(result.nextDraftRevisionId).not.toEqual(draftRevisionId);
   });
 
-  async function prepareRevision(ids: PrepareProjectReturnType) {
-    await prismaService.revision.update({
-      where: { id: ids.draftRevisionId },
+  async function prepareRevision(draftRevisionId: string) {
+    await kit.prismaService.revision.update({
+      where: { id: draftRevisionId },
       data: { hasChanges: true },
     });
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let shareTransactionalQueries: ShareTransactionalQueries;
-
   function runTransaction(
     command: CreateRevisionCommand,
   ): Promise<CreateRevisionHandlerReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    shareTransactionalQueries = result.shareTransactionalQueries;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -76,6 +65,8 @@ describe('CreateRevisionHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

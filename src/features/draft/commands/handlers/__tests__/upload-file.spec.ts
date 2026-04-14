@@ -1,4 +1,3 @@
-import { CommandBus } from '@nestjs/cqrs';
 import { nanoid } from 'nanoid';
 import hash from 'object-hash';
 import { createExpressImageFile } from 'src/__tests__/utils/file';
@@ -7,6 +6,7 @@ import {
   prepareRow,
   prepareTableWithSchema,
 } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import {
   getArraySchema,
   getObjectSchema,
@@ -18,14 +18,13 @@ import {
   UploadFileCommandReturnType,
 } from 'src/features/draft/commands/impl/update-file.command';
 import { FileStatus } from 'src/features/plugin/file/consts';
-import { RowApiService } from 'src/features/row/row-api.service';
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('UploadFileHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw error when row not found', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await prepareProject(kit.prismaService);
     const {
       headRevisionId,
       draftRevisionId,
@@ -34,7 +33,7 @@ describe('UploadFileHandler', () => {
     } = ids;
 
     const table = await prepareTableWithSchema({
-      prismaService,
+      prismaService: kit.prismaService,
       headRevisionId,
       draftRevisionId,
       schemaTableVersionId,
@@ -56,7 +55,7 @@ describe('UploadFileHandler', () => {
   });
 
   it('should upload file', async () => {
-    const ids = await prepareProject(prismaService);
+    const ids = await prepareProject(kit.prismaService);
     const {
       headRevisionId,
       draftRevisionId,
@@ -65,7 +64,7 @@ describe('UploadFileHandler', () => {
     } = ids;
 
     const table = await prepareTableWithSchema({
-      prismaService,
+      prismaService: kit.prismaService,
       headRevisionId,
       draftRevisionId,
       schemaTableVersionId,
@@ -94,7 +93,7 @@ describe('UploadFileHandler', () => {
     };
 
     const { rowDraft } = await prepareRow({
-      prismaService,
+      prismaService: kit.prismaService,
       headTableVersionId: table.headTableVersionId,
       draftTableVersionId: table.draftTableVersionId,
       schema: table.schema,
@@ -113,7 +112,7 @@ describe('UploadFileHandler', () => {
     const result = await runTransaction(command);
     expect(result.rowVersionId).toBeTruthy();
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId: table.tableId,
       rowId: rowDraft.id,
@@ -138,23 +137,18 @@ describe('UploadFileHandler', () => {
   function runTransaction(
     command: UploadFileCommand,
   ): Promise<UploadFileCommandReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let rowApiService: RowApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    rowApiService = result.module.get<RowApiService>(RowApiService);
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

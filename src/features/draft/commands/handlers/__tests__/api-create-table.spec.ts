@@ -1,53 +1,49 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { ApiCreateTableCommand } from 'src/features/draft/commands/impl/api-create-table.command';
 import { ApiCreateTableHandlerReturnType } from 'src/features/draft/commands/types/api-create-table.handler.types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import {
   createTestingModule,
   testSchema,
 } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiCreateTableHandler', () => {
+  let kit: DraftTestKit;
+
   it('should create a new table', async () => {
-    const { draftRevisionId, branchId } = await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const newTableId = 'newTableId';
     const command = new ApiCreateTableCommand({
-      revisionId: draftRevisionId,
+      revisionId: draft.draftRevisionId,
       tableId: newTableId,
       schema: testSchema,
     });
 
     const result = await execute(command);
 
-    const table = await prismaService.table.findFirstOrThrow({
+    const table = await kit.prismaService.table.findFirstOrThrow({
       where: {
         id: newTableId,
         revisions: {
           some: {
-            id: draftRevisionId,
+            id: draft.draftRevisionId,
           },
         },
       },
     });
-    expect(result.branch.id).toBe(branchId);
+    expect(result.branch.id).toBe(draft.branchId);
     expect(result.table.versionId).toBe(table.versionId);
   });
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
 
   function execute(
     command: ApiCreateTableCommand,
   ): Promise<ApiCreateTableHandlerReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -55,6 +51,8 @@ describe('ApiCreateTableHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

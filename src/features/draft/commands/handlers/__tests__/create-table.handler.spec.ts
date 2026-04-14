@@ -1,21 +1,19 @@
 import { BadRequestException } from '@nestjs/common';
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   createTestingModule,
   testSchemaWithRef,
 } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { CreateTableCommand } from 'src/features/draft/commands/impl/create-table.command';
 import { CreateTableHandlerReturnType } from 'src/features/draft/commands/types/create-table.handler.types';
-import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
-import { TableApiService } from 'src/features/table/table-api.service';
 import { FormulaValidationException } from 'src/features/share/exceptions';
 
 describe('CreateTableHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if the tableId is shorter than 1 character', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -30,10 +28,10 @@ describe('CreateTableHandler', () => {
   });
 
   it('should throw an error if the revision does not exist', async () => {
-    await prepareProject(prismaService);
+    await givenDraftProject(kit.prismaService);
 
     jest
-      .spyOn(draftTransactionalCommands, 'resolveDraftRevision')
+      .spyOn(kit.draftTransactionalCommands, 'resolveDraftRevision')
       .mockRejectedValue(new Error('Revision not found'));
 
     const command = new CreateTableCommand({
@@ -46,7 +44,9 @@ describe('CreateTableHandler', () => {
   });
 
   it('should throw an error if a similar table already exists', async () => {
-    const { tableId, draftRevisionId } = await prepareProject(prismaService);
+    const { tableId, draftRevisionId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -60,7 +60,7 @@ describe('CreateTableHandler', () => {
   });
 
   it('should throw an error if the schema is invalid', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -74,7 +74,7 @@ describe('CreateTableHandler', () => {
   });
 
   it('should throw an error if the schema contains self-referencing foreignKey', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -97,7 +97,7 @@ describe('CreateTableHandler', () => {
   });
 
   it('should throw an error if the schema contains nested self-referencing foreignKey', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -130,7 +130,9 @@ describe('CreateTableHandler', () => {
   });
 
   it('should create a new table if conditions are met', async () => {
-    const { draftRevisionId, branchId } = await prepareProject(prismaService);
+    const { draftRevisionId, branchId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -144,7 +146,7 @@ describe('CreateTableHandler', () => {
     expect(result.revisionId).toBe(draftRevisionId);
     expect(result.tableVersionId).toBeTruthy();
 
-    const table = await tableApiService.getTable({
+    const table = await kit.tableApiService.getTable({
       revisionId: draftRevisionId,
       tableId: 'config',
     });
@@ -152,7 +154,9 @@ describe('CreateTableHandler', () => {
   });
 
   it('should create table with ref', async () => {
-    const { draftRevisionId, branchId } = await prepareProject(prismaService);
+    const { draftRevisionId, branchId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -166,7 +170,7 @@ describe('CreateTableHandler', () => {
     expect(result.revisionId).toBe(draftRevisionId);
     expect(result.tableVersionId).toBeTruthy();
 
-    const table = await tableApiService.getTable({
+    const table = await kit.tableApiService.getTable({
       revisionId: draftRevisionId,
       tableId: 'config',
     });
@@ -175,7 +179,7 @@ describe('CreateTableHandler', () => {
 
   describe('formula validation', () => {
     it('should create table with valid formula', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
       const command = new CreateTableCommand({
         revisionId: draftRevisionId,
@@ -202,7 +206,7 @@ describe('CreateTableHandler', () => {
     });
 
     it('should throw error for invalid formula syntax', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
       const command = new CreateTableCommand({
         revisionId: draftRevisionId,
@@ -229,7 +233,7 @@ describe('CreateTableHandler', () => {
     });
 
     it('should throw error for formula referencing non-existent field', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
       const command = new CreateTableCommand({
         revisionId: draftRevisionId,
@@ -256,7 +260,7 @@ describe('CreateTableHandler', () => {
     });
 
     it('should throw error for circular dependency in formulas', async () => {
-      const { draftRevisionId } = await prepareProject(prismaService);
+      const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
       const command = new CreateTableCommand({
         revisionId: draftRevisionId,
@@ -288,7 +292,9 @@ describe('CreateTableHandler', () => {
     });
 
     it('should throw error for field with both x-formula and foreignKey', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new CreateTableCommand({
         revisionId: draftRevisionId,
@@ -322,22 +328,13 @@ describe('CreateTableHandler', () => {
   function runTransaction(
     command: CreateTableCommand,
   ): Promise<CreateTableHandlerReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let draftTransactionalCommands: DraftTransactionalCommands;
-  let tableApiService: TableApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    draftTransactionalCommands = result.draftTransactionalCommands;
-    tableApiService = result.module.get<TableApiService>(TableApiService);
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -345,6 +342,8 @@ describe('CreateTableHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

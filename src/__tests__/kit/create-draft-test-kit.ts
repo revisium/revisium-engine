@@ -6,16 +6,19 @@ import { BranchModule } from 'src/features/branch/branch.module';
 import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
 import { DraftModule } from 'src/features/draft/draft.module';
 import { DraftApiService } from 'src/features/draft/draft-api.service';
+import { DraftContextService } from 'src/features/draft/draft-context.service';
 import { MigrationContextService } from 'src/features/draft/migration-context.service';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { MigrationModule } from 'src/features/migration/migration.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { RevisionModule } from 'src/features/revision/revision.module';
+import { RowApiService } from 'src/features/row/row-api.service';
 import { RowModule } from 'src/features/row/row.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
+import { TableApiService } from 'src/features/table/table-api.service';
 import { TableModule } from 'src/features/table/table.module';
 import { ViewsModule } from 'src/features/views/views.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
@@ -31,9 +34,12 @@ export interface DraftTestKit {
   transactionService: TransactionPrismaService;
   shareTransactionalQueries: ShareTransactionalQueries;
   pluginService: PluginService;
+  rowApiService: RowApiService;
+  tableApiService: TableApiService;
   queryBus: QueryBus;
   commandBus: CommandBus;
   draftApiService: DraftApiService;
+  draftContextService: DraftContextService;
   draftTransactionalCommands: DraftTransactionalCommands;
   migrationContextService: MigrationContextService;
   viewsMigrationService: ViewsMigrationService;
@@ -72,9 +78,12 @@ export async function createDraftTestKit(): Promise<DraftTestKit> {
     transactionService: module.get(TransactionPrismaService),
     shareTransactionalQueries: module.get(ShareTransactionalQueries),
     pluginService: module.get(PluginService),
+    rowApiService: module.get(RowApiService),
+    tableApiService: module.get(TableApiService),
     queryBus: module.get(QueryBus),
     commandBus: module.get(CommandBus),
     draftApiService: module.get(DraftApiService),
+    draftContextService: module.get(DraftContextService),
     draftTransactionalCommands: module.get(DraftTransactionalCommands),
     migrationContextService: module
       .select(DraftModule)

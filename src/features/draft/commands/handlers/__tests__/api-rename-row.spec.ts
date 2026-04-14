@@ -1,36 +1,38 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import {
+  givenDraftProject,
+  givenReadonlyDraftTable,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   ApiRenameRowCommand,
   ApiRenameRowCommandReturnType,
 } from 'src/features/draft/commands/impl/api-rename-row.command';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiRenameRowHandler', () => {
   const nextRowId = 'nextRowId';
+  let kit: DraftTestKit;
 
   it('should update the row', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId, rowId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const command = new ApiRenameRowCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rowId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rowId: draft.rowId,
       nextRowId,
     });
 
     const result = await execute(command);
 
-    const row = await prismaService.row.findFirstOrThrow({
+    const row = await kit.prismaService.row.findFirstOrThrow({
       where: {
         id: nextRowId,
         tables: {
           some: {
             revisions: {
               some: {
-                id: draftRevisionId,
+                id: draft.draftRevisionId,
               },
             },
           },
@@ -41,52 +43,42 @@ describe('ApiRenameRowHandler', () => {
       ...row,
       data: { ver: 2 },
       context: {
-        revisionId: draftRevisionId,
-        tableId,
+        revisionId: draft.draftRevisionId,
+        tableId: draft.tableId,
       },
     });
-    expect(result.table?.versionId).toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table?.versionId).toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
 
   it('should notify endpoints if a new table was created', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId, rowId } =
-      await prepareProject(prismaService);
-    await prismaService.table.update({
-      where: {
-        versionId: draftTableVersionId,
-      },
-      data: {
-        readonly: true,
-      },
+    const draft = await givenDraftProject(kit.prismaService);
+    await givenReadonlyDraftTable({
+      prismaService: kit.prismaService,
+      draftTableVersionId: draft.draftTableVersionId,
     });
 
     const command = new ApiRenameRowCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rowId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rowId: draft.rowId,
       nextRowId,
     });
 
     const result = await execute(command);
 
-    expect(result.table?.versionId).not.toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table?.versionId).not.toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
 
   function execute(
     command: ApiRenameRowCommand,
   ): Promise<ApiRenameRowCommandReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -94,6 +86,8 @@ describe('ApiRenameRowHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

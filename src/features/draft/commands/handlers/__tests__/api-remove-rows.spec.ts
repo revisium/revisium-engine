@@ -1,139 +1,121 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject, prepareRow } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import {
+  givenDraftProject,
+  givenDraftProjectWithRows,
+  givenReadonlyDraftTable,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { ApiRemoveRowsCommand } from 'src/features/draft/commands/impl/api-remove-rows.command';
 import { ApiRemoveRowsHandlerReturnType } from 'src/features/draft/commands/types/api-remove-rows.handler.types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import {
   createTestingModule,
   testSchema,
 } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiRemoveRowsHandler', () => {
-  it('should remove multiple rows', async () => {
-    const {
-      branchId,
-      draftRevisionId,
-      tableId,
-      draftTableVersionId,
-      headTableVersionId,
-      rowId,
-    } = await prepareProject(prismaService);
+  let kit: DraftTestKit;
 
-    const row2 = await prepareRow({
-      prismaService,
-      headTableVersionId,
-      draftTableVersionId,
-      data: { ver: 10 },
-      dataDraft: { ver: 20 },
+  it('should remove multiple rows', async () => {
+    const draft = await givenDraftProjectWithRows({
+      prismaService: kit.prismaService,
       schema: testSchema,
+      rows: [{ data: { ver: 10 }, draftData: { ver: 20 } }],
     });
+    const row2Id = draft.extraRowIds[0];
+
+    if (!row2Id) {
+      throw new Error('Expected an extra row to be created');
+    }
 
     const command = new ApiRemoveRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rowIds: [rowId, row2.rowId],
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rowIds: [draft.rowId, row2Id],
     });
 
     const result = await execute(command);
 
-    const remainingRows = await prismaService.row.findMany({
+    const remainingRows = await kit.prismaService.row.findMany({
       where: {
         id: {
-          in: [rowId, row2.rowId],
+          in: [draft.rowId, row2Id],
         },
         tables: {
           some: {
-            versionId: draftTableVersionId,
+            versionId: draft.draftTableVersionId,
           },
         },
       },
     });
     expect(remainingRows).toHaveLength(0);
-    expect(result.table?.versionId).toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
-    expect(result.branch.id).toBe(branchId);
+    expect(result.table?.versionId).toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
+    expect(result.branch.id).toBe(draft.branchId);
   });
 
   it('should notify endpoints if a new table was created', async () => {
-    const {
-      draftRevisionId,
-      tableId,
-      draftTableVersionId,
-      headTableVersionId,
-      rowId,
-    } = await prepareProject(prismaService);
-
-    const row2 = await prepareRow({
-      prismaService,
-      headTableVersionId,
-      draftTableVersionId,
-      data: { ver: 10 },
-      dataDraft: { ver: 20 },
+    const draft = await givenDraftProjectWithRows({
+      prismaService: kit.prismaService,
       schema: testSchema,
+      rows: [{ data: { ver: 10 }, draftData: { ver: 20 } }],
     });
+    const row2Id = draft.extraRowIds[0];
 
-    await prismaService.table.update({
-      where: {
-        versionId: draftTableVersionId,
-      },
-      data: {
-        readonly: true,
-      },
+    if (!row2Id) {
+      throw new Error('Expected an extra row to be created');
+    }
+
+    await givenReadonlyDraftTable({
+      prismaService: kit.prismaService,
+      draftTableVersionId: draft.draftTableVersionId,
     });
 
     const command = new ApiRemoveRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rowIds: [rowId, row2.rowId],
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rowIds: [draft.rowId, row2Id],
     });
 
     const result = await execute(command);
 
-    expect(result.table?.versionId).not.toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table?.versionId).not.toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
 
   it('should remove a single row', async () => {
-    const { branchId, draftRevisionId, tableId, draftTableVersionId, rowId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const command = new ApiRemoveRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rowIds: [rowId],
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rowIds: [draft.rowId],
     });
 
     const result = await execute(command);
 
-    const row = await prismaService.row.findFirst({
+    const row = await kit.prismaService.row.findFirst({
       where: {
-        id: rowId,
+        id: draft.rowId,
         tables: {
           some: {
-            versionId: draftTableVersionId,
+            versionId: draft.draftTableVersionId,
           },
         },
       },
     });
     expect(row).toBeNull();
-    expect(result.table?.versionId).toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
-    expect(result.branch.id).toBe(branchId);
+    expect(result.table?.versionId).toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
+    expect(result.branch.id).toBe(draft.branchId);
   });
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
 
   function execute(
     command: ApiRemoveRowsCommand,
   ): Promise<ApiRemoveRowsHandlerReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -141,6 +123,8 @@ describe('ApiRemoveRowsHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

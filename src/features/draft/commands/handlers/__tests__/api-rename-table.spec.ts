@@ -1,60 +1,54 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   ApiRenameTableCommand,
   ApiRenameTableCommandReturnType,
 } from 'src/features/draft/commands/impl/api-rename-table.command';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiRenameTableHandler', () => {
   const nextTableId = 'nextTableId';
+  let kit: DraftTestKit;
 
   it('should rename the table', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const command = new ApiRenameTableCommand({
-      revisionId: draftRevisionId,
-      tableId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
       nextTableId,
     });
 
     const result = await execute(command);
 
-    const table = await prismaService.table.findFirstOrThrow({
+    const table = await kit.prismaService.table.findFirstOrThrow({
       where: {
         id: nextTableId,
         revisions: {
           some: {
-            id: draftRevisionId,
+            id: draft.draftRevisionId,
           },
         },
       },
     });
 
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
     expect(result.table).toStrictEqual({
       ...table,
       context: {
-        revisionId: draftRevisionId,
+        revisionId: draft.draftRevisionId,
       },
     });
   });
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-
   function execute(
     command: ApiRenameTableCommand,
   ): Promise<ApiRenameTableCommandReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -62,6 +56,8 @@ describe('ApiRenameTableHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

@@ -1,38 +1,33 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { ApiRemoveTableCommand } from 'src/features/draft/commands/impl/api-remove-table.command';
 import { ApiRemoveTableHandlerReturnType } from 'src/features/draft/commands/types/api-remove-table.handler.types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiRemoveTableHandler', () => {
+  let kit: DraftTestKit;
+
   it('should remove the table', async () => {
-    const { draftRevisionId, tableId, branchId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const command = new ApiRemoveTableCommand({
-      revisionId: draftRevisionId,
-      tableId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
     });
 
     const result = await execute(command);
 
-    expect(result.branch.id).toBe(branchId);
+    expect(result.branch.id).toBe(draft.branchId);
   });
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
 
   function execute(
     command: ApiRemoveTableCommand,
   ): Promise<ApiRemoveTableHandlerReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -40,6 +35,8 @@ describe('ApiRemoveTableHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

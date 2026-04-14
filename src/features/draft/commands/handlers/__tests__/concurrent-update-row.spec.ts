@@ -1,13 +1,11 @@
-import { CommandBus } from '@nestjs/cqrs';
 import { nanoid } from 'nanoid';
 import hash from 'object-hash';
 import {
   prepareBranch,
   prepareTableWithSchema,
 } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import { testSchema } from 'src/features/draft/commands/handlers/__tests__/utils';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { UpdateRowsCommand } from 'src/features/draft/commands/impl/update-rows.command';
 
@@ -23,9 +21,11 @@ import { UpdateRowsCommand } from 'src/features/draft/commands/impl/update-rows.
  * with automatic retry on serialization failures.
  */
 describe('Concurrent UpdateRow', () => {
+  let kit: DraftTestKit;
+
   it('should prevent race condition with runSerializable()', async () => {
     // Setup: create a readonly table with multiple rows
-    const branchData = await prepareBranch(prismaService);
+    const branchData = await prepareBranch(kit.prismaService);
     const {
       headRevisionId,
       draftRevisionId,
@@ -34,7 +34,7 @@ describe('Concurrent UpdateRow', () => {
     } = branchData;
 
     const tableData = await prepareTableWithSchema({
-      prismaService,
+      prismaService: kit.prismaService,
       headRevisionId,
       draftRevisionId,
       schemaTableVersionId,
@@ -52,7 +52,7 @@ describe('Concurrent UpdateRow', () => {
       const rowId = `row-${nanoid()}`;
       rowIds.push(rowId);
 
-      await prismaService.row.create({
+      await kit.prismaService.row.create({
         data: {
           id: rowId,
           versionId: nanoid(),
@@ -67,12 +67,12 @@ describe('Concurrent UpdateRow', () => {
     }
 
     // Make table and rows readonly to trigger copy-on-write
-    await prismaService.table.update({
+    await kit.prismaService.table.update({
       where: { versionId: draftTableVersionId },
       data: { readonly: true },
     });
 
-    await prismaService.row.updateMany({
+    await kit.prismaService.row.updateMany({
       where: { id: { in: rowIds } },
       data: { readonly: true },
     });
@@ -90,14 +90,16 @@ describe('Concurrent UpdateRow', () => {
     // Execute ALL updates in parallel using runSerializable
     const results = await Promise.allSettled(
       commands.map((cmd) =>
-        transactionService.runSerializable(async () => commandBus.execute(cmd)),
+        kit.transactionService.runSerializable(async () =>
+          kit.commandBus.execute(cmd),
+        ),
       ),
     );
 
     const fulfilled = results.filter((r) => r.status === 'fulfilled').length;
 
     // Check final state - should have exactly ONE table connected to revision
-    const tablesAfter = await prismaService.table.findMany({
+    const tablesAfter = await kit.prismaService.table.findMany({
       where: {
         id: tableId,
         revisions: { some: { id: draftRevisionId } },
@@ -110,18 +112,13 @@ describe('Concurrent UpdateRow', () => {
     expect(fulfilled).toBeGreaterThanOrEqual(rowCount - 1);
   });
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

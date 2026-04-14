@@ -1,39 +1,37 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject, prepareRow } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import {
+  givenDraftProject,
+  givenDraftProjectWithRows,
+  givenReadonlyDraftTable,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { ApiUpdateRowsCommand } from 'src/features/draft/commands/impl/api-update-rows.command';
 import { ApiUpdateRowsHandlerReturnType } from 'src/features/draft/commands/types/api-update-rows.handler.types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import {
   createTestingModule,
   testSchema,
 } from 'src/features/draft/commands/handlers/__tests__/utils';
-import { PluginService } from 'src/features/plugin/plugin.service';
 
 describe('ApiUpdateRowsHandler', () => {
-  it('should update multiple rows', async () => {
-    const {
-      draftRevisionId,
-      tableId,
-      draftTableVersionId,
-      headTableVersionId,
-      rowId,
-    } = await prepareProject(prismaService);
+  let kit: DraftTestKit;
 
-    const row2 = await prepareRow({
-      prismaService,
-      headTableVersionId,
-      draftTableVersionId,
-      data: { ver: 10 },
-      dataDraft: { ver: 20 },
+  it('should update multiple rows', async () => {
+    const draft = await givenDraftProjectWithRows({
+      prismaService: kit.prismaService,
       schema: testSchema,
+      rows: [{ data: { ver: 10 }, draftData: { ver: 20 } }],
     });
+    const row2Id = draft.extraRowIds[0];
+
+    if (!row2Id) {
+      throw new Error('Expected an extra row to be created');
+    }
 
     const command = new ApiUpdateRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
       rows: [
-        { rowId, data: { ver: 100 } },
-        { rowId: row2.rowId, data: { ver: 200 } },
+        { rowId: draft.rowId, data: { ver: 100 } },
+        { rowId: row2Id, data: { ver: 200 } },
       ],
     });
 
@@ -42,80 +40,68 @@ describe('ApiUpdateRowsHandler', () => {
     expect(result.rows).toHaveLength(2);
     expect(result.rows[0]?.data).toEqual({ ver: 100 });
     expect(result.rows[1]?.data).toEqual({ ver: 200 });
-    expect(result.table.versionId).toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table.versionId).toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
 
   it('should update a single row via bulk operation', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId, rowId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const command = new ApiUpdateRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rows: [{ rowId, data: { ver: 999 } }],
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rows: [{ rowId: draft.rowId, data: { ver: 999 } }],
     });
 
     const result = await execute(command);
 
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0]?.id).toBe(rowId);
+    expect(result.rows[0]?.id).toBe(draft.rowId);
     expect(result.rows[0]?.data).toEqual({ ver: 999 });
-    expect(result.table.versionId).toBe(draftTableVersionId);
+    expect(result.table.versionId).toBe(draft.draftTableVersionId);
   });
 
   it('should notify endpoints if a new table was created', async () => {
-    const {
-      draftRevisionId,
-      tableId,
-      draftTableVersionId,
-      headTableVersionId,
-      rowId,
-    } = await prepareProject(prismaService);
-
-    const row2 = await prepareRow({
-      prismaService,
-      headTableVersionId,
-      draftTableVersionId,
-      data: { ver: 10 },
-      dataDraft: { ver: 20 },
+    const draft = await givenDraftProjectWithRows({
+      prismaService: kit.prismaService,
       schema: testSchema,
+      rows: [{ data: { ver: 10 }, draftData: { ver: 20 } }],
     });
+    const row2Id = draft.extraRowIds[0];
 
-    await prismaService.table.update({
-      where: {
-        versionId: draftTableVersionId,
-      },
-      data: {
-        readonly: true,
-      },
+    if (!row2Id) {
+      throw new Error('Expected an extra row to be created');
+    }
+
+    await givenReadonlyDraftTable({
+      prismaService: kit.prismaService,
+      draftTableVersionId: draft.draftTableVersionId,
     });
 
     const command = new ApiUpdateRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
       rows: [
-        { rowId, data: { ver: 100 } },
-        { rowId: row2.rowId, data: { ver: 200 } },
+        { rowId: draft.rowId, data: { ver: 100 } },
+        { rowId: row2Id, data: { ver: 200 } },
       ],
     });
 
     const result = await execute(command);
 
-    expect(result.table.versionId).not.toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table.versionId).not.toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
 
   it('should pass isRestore=true to plugin service', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
-    const afterUpdateRowSpy = jest.spyOn(pluginService, 'afterUpdateRow');
+    const afterUpdateRowSpy = jest.spyOn(kit.pluginService, 'afterUpdateRow');
 
     const command = new ApiUpdateRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rows: [{ rowId, data: { ver: 42 } }],
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rows: [{ rowId: draft.rowId, data: { ver: 42 } }],
       isRestore: true,
     });
 
@@ -129,15 +115,14 @@ describe('ApiUpdateRowsHandler', () => {
   });
 
   it('should pass isRestore=false (undefined) to plugin service by default', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
-    const afterUpdateRowSpy = jest.spyOn(pluginService, 'afterUpdateRow');
+    const afterUpdateRowSpy = jest.spyOn(kit.pluginService, 'afterUpdateRow');
 
     const command = new ApiUpdateRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rows: [{ rowId, data: { ver: 42 } }],
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rows: [{ rowId: draft.rowId, data: { ver: 42 } }],
     });
 
     await execute(command);
@@ -149,21 +134,14 @@ describe('ApiUpdateRowsHandler', () => {
     );
   });
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let pluginService: PluginService;
-
   function execute(
     command: ApiUpdateRowsCommand,
   ): Promise<ApiUpdateRowsHandlerReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    pluginService = result.module.get<PluginService>(PluginService);
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -171,6 +149,8 @@ describe('ApiUpdateRowsHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

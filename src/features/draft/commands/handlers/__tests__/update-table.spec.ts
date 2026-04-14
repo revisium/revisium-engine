@@ -1,5 +1,4 @@
 import { BadRequestException } from '@nestjs/common';
-import { CommandBus } from '@nestjs/cqrs';
 import { nanoid } from 'nanoid';
 import {
   prepareBranch,
@@ -7,6 +6,8 @@ import {
   prepareRow,
   prepareTableWithSchema,
 } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { getArraySchema, getRefSchema } from '@revisium/schema-toolkit/mocks';
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { tableViewsSchema } from 'src/features/share/schema/table-views-schema';
@@ -16,32 +17,26 @@ import {
   JsonStringSchema,
 } from '@revisium/schema-toolkit/types';
 import { Prisma } from 'src/__generated__/client';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import {
   createTestingModule,
   testSchema,
 } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { UpdateTableCommand } from 'src/features/draft/commands/impl/update-table.command';
 import { UpdateTableHandlerReturnType } from 'src/features/draft/commands/types/update-table.handler.types';
-import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
-import { RowApiService } from 'src/features/row/row-api.service';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { TableApiService } from 'src/features/table/table-api.service';
-import {
-  ViewsMigrationService,
-  ViewsMigrationError,
-} from 'src/features/share/views-migration.service';
+import { ViewsMigrationError } from 'src/features/share/views-migration.service';
 import { TableViewsData } from 'src/features/views/types';
 import objectHash from 'object-hash';
 import { FormulaValidationException } from 'src/features/share/exceptions';
 
 describe('UpdateTableHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if the revision does not exist', async () => {
-    const { tableId } = await prepareProject(prismaService);
+    const { tableId } = await givenDraftProject(kit.prismaService);
 
     jest
-      .spyOn(draftTransactionalCommands, 'resolveDraftRevision')
+      .spyOn(kit.draftTransactionalCommands, 'resolveDraftRevision')
       .mockRejectedValue(new Error('Revision not found'));
 
     const command = new UpdateTableCommand({
@@ -63,7 +58,9 @@ describe('UpdateTableHandler', () => {
   });
 
   it('should throw an error if patches length is less than 1', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new UpdateTableCommand({
       revisionId: draftRevisionId,
@@ -78,7 +75,9 @@ describe('UpdateTableHandler', () => {
   });
 
   it('should throw an error if the patches are invalid', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     // the first "replace" patch is invalid
     let command = new UpdateTableCommand({
@@ -132,10 +131,12 @@ describe('UpdateTableHandler', () => {
   });
 
   it('should throw an error if findTableInRevisionOrThrow fails', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     jest
-      .spyOn(draftTransactionalCommands, 'resolveDraftRevision')
+      .spyOn(kit.draftTransactionalCommands, 'resolveDraftRevision')
       .mockRejectedValue(new Error('Table not found'));
 
     const command = new UpdateTableCommand({
@@ -157,7 +158,9 @@ describe('UpdateTableHandler', () => {
   });
 
   it('should throw an error if itself foreign keys are found in checkItselfForeignKey', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new UpdateTableCommand({
       revisionId: draftRevisionId,
@@ -181,7 +184,7 @@ describe('UpdateTableHandler', () => {
   });
 
   it('should throw an error if the table is a system table', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const command = new UpdateTableCommand({
       revisionId: draftRevisionId,
@@ -204,8 +207,9 @@ describe('UpdateTableHandler', () => {
   });
 
   it('should apply patches to the row in the table', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new UpdateTableCommand({
       revisionId: draftRevisionId,
@@ -225,7 +229,7 @@ describe('UpdateTableHandler', () => {
     const result = await runTransaction(command);
     expect(result.tableVersionId).toBeTruthy();
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
@@ -233,7 +237,7 @@ describe('UpdateTableHandler', () => {
     expect(row).not.toBeNull();
     expect(row?.data).toStrictEqual({ ver: '2' });
 
-    const table = await tableApiService.getTable({
+    const table = await kit.tableApiService.getTable({
       revisionId: draftRevisionId,
       tableId,
     });
@@ -241,7 +245,9 @@ describe('UpdateTableHandler', () => {
   });
 
   it('should save the schema correctly with ref', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new UpdateTableCommand({
       revisionId: draftRevisionId,
@@ -258,7 +264,7 @@ describe('UpdateTableHandler', () => {
     const result = await runTransaction(command);
     expect(result.tableVersionId).toBeTruthy();
 
-    const tableSchema = (await tableApiService.resolveTableSchema({
+    const tableSchema = (await kit.tableApiService.resolveTableSchema({
       revisionId: draftRevisionId,
       tableId,
     })) as { type: string; properties: Record<string, unknown> } | null;
@@ -270,25 +276,12 @@ describe('UpdateTableHandler', () => {
   function runTransaction(
     command: UpdateTableCommand,
   ): Promise<UpdateTableHandlerReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let draftTransactionalCommands: DraftTransactionalCommands;
-  let viewsMigrationService: ViewsMigrationService;
-  let rowApiService: RowApiService;
-  let tableApiService: TableApiService;
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    draftTransactionalCommands = result.draftTransactionalCommands;
-    viewsMigrationService = result.viewsMigrationService;
-    rowApiService = result.module.get<RowApiService>(RowApiService);
-    tableApiService = result.module.get<TableApiService>(TableApiService);
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -296,7 +289,9 @@ describe('UpdateTableHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 
   describe('views migration on schema changes', () => {
@@ -325,7 +320,7 @@ describe('UpdateTableHandler', () => {
       tableId: string,
       viewsData: TableViewsData,
     ) => {
-      let viewsTable = await prismaService.table.findFirst({
+      let viewsTable = await kit.prismaService.table.findFirst({
         where: {
           id: SystemTables.Views,
           revisions: { some: { id: revisionId } },
@@ -334,7 +329,7 @@ describe('UpdateTableHandler', () => {
 
       if (!viewsTable) {
         const viewsTableVersionId = nanoid();
-        viewsTable = await prismaService.table.create({
+        viewsTable = await kit.prismaService.table.create({
           data: {
             id: SystemTables.Views,
             versionId: viewsTableVersionId,
@@ -348,7 +343,7 @@ describe('UpdateTableHandler', () => {
         });
       }
 
-      await prismaService.row.create({
+      await kit.prismaService.row.create({
         data: {
           id: tableId,
           versionId: nanoid(),
@@ -368,7 +363,7 @@ describe('UpdateTableHandler', () => {
       revisionId: string,
       tableId: string,
     ): Promise<TableViewsData | null> => {
-      const viewsTable = await prismaService.table.findFirst({
+      const viewsTable = await kit.prismaService.table.findFirst({
         where: {
           id: SystemTables.Views,
           revisions: { some: { id: revisionId } },
@@ -376,7 +371,7 @@ describe('UpdateTableHandler', () => {
       });
       if (!viewsTable) return null;
 
-      const viewsRow = await prismaService.row.findFirst({
+      const viewsRow = await kit.prismaService.row.findFirst({
         where: {
           id: tableId,
           tables: { some: { versionId: viewsTable.versionId } },
@@ -386,7 +381,9 @@ describe('UpdateTableHandler', () => {
     };
 
     it('should migrate views on move patch (field rename)', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
       await setupViews(draftRevisionId, tableId, createViewsData());
 
       await runTransaction(
@@ -417,7 +414,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should migrate views on remove patch (field deletion)', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
       await setupViews(
         draftRevisionId,
         tableId,
@@ -445,7 +444,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should migrate views on replace patch (type change)', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
       await setupViews(
         draftRevisionId,
         tableId,
@@ -483,7 +484,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should not modify views when no views exist', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       await runTransaction(
         new UpdateTableCommand({
@@ -504,7 +507,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should throw BadRequestException when views migration fails', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
       await setupViews(
         draftRevisionId,
         tableId,
@@ -512,7 +517,7 @@ describe('UpdateTableHandler', () => {
       );
 
       jest
-        .spyOn(viewsMigrationService, 'migrateViews')
+        .spyOn(kit.viewsMigrationService, 'migrateViews')
         .mockImplementation(() => {
           throw new ViewsMigrationError(
             'Test migration error',
@@ -538,7 +543,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should use tableViewsSchema hash for migrated views row', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
       await setupViews(draftRevisionId, tableId, createViewsData());
 
       await runTransaction(
@@ -555,7 +562,7 @@ describe('UpdateTableHandler', () => {
         }),
       );
 
-      const viewsTableRow = await prismaService.row.findFirst({
+      const viewsTableRow = await kit.prismaService.row.findFirst({
         where: {
           id: tableId,
           tables: {
@@ -580,7 +587,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should update table with valid formula in patch', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new UpdateTableCommand({
         revisionId: draftRevisionId,
@@ -599,7 +608,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should throw error for invalid formula syntax in patch', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new UpdateTableCommand({
         revisionId: draftRevisionId,
@@ -619,7 +630,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should throw error for formula referencing non-existent field after rename', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new UpdateTableCommand({
         revisionId: draftRevisionId,
@@ -644,7 +657,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should allow formula referencing renamed field with correct name', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new UpdateTableCommand({
         revisionId: draftRevisionId,
@@ -668,7 +683,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should throw error for formula referencing deleted field', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const addFormulaCommand = new UpdateTableCommand({
         revisionId: draftRevisionId,
@@ -705,7 +722,9 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should allow update without x-formula', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new UpdateTableCommand({
         revisionId: draftRevisionId,
@@ -727,7 +746,7 @@ describe('UpdateTableHandler', () => {
   describe('foreign key validation on schema migration', () => {
     it('should throw error when adding FK field to table with existing rows', async () => {
       const { draftRevisionId, tableId, linkedTable } = await prepareProject(
-        prismaService,
+        kit.prismaService,
         {
           createLinkedTable: true,
         },
@@ -755,7 +774,7 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should allow adding FK field to empty table', async () => {
-      const branchData = await prepareBranch(prismaService);
+      const branchData = await prepareBranch(kit.prismaService);
       const {
         headRevisionId,
         draftRevisionId,
@@ -764,7 +783,7 @@ describe('UpdateTableHandler', () => {
       } = branchData;
 
       const linkedTableResult = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -773,7 +792,7 @@ describe('UpdateTableHandler', () => {
       });
 
       const emptyTableResult = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -809,7 +828,7 @@ describe('UpdateTableHandler', () => {
     });
 
     it('should allow adding FK field when all existing rows have valid references', async () => {
-      const branchData = await prepareBranch(prismaService);
+      const branchData = await prepareBranch(kit.prismaService);
       const {
         headRevisionId,
         draftRevisionId,
@@ -818,7 +837,7 @@ describe('UpdateTableHandler', () => {
       } = branchData;
 
       const referencedTableResult = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -827,7 +846,7 @@ describe('UpdateTableHandler', () => {
       });
 
       const targetRowResult = await prepareRow({
-        prismaService,
+        prismaService: kit.prismaService,
         headTableVersionId: referencedTableResult.headTableVersionId,
         draftTableVersionId: referencedTableResult.draftTableVersionId,
         data: { ver: 1 },
@@ -836,7 +855,7 @@ describe('UpdateTableHandler', () => {
       });
 
       const sourceTableResult = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -852,7 +871,7 @@ describe('UpdateTableHandler', () => {
       });
 
       await prepareRow({
-        prismaService,
+        prismaService: kit.prismaService,
         headTableVersionId: sourceTableResult.headTableVersionId,
         draftTableVersionId: sourceTableResult.draftTableVersionId,
         data: { refValue: targetRowResult.rowId },

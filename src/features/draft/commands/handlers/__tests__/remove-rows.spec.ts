@@ -1,18 +1,24 @@
-import { CommandBus } from '@nestjs/cqrs';
 import { nanoid } from 'nanoid';
 import { prepareProject } from 'src/__tests__/utils/prepareProject';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import {
+  givenDraftProject,
+  givenDraftProjectWithRows,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
+import {
+  createTestingModule,
+  testSchema,
+} from 'src/features/draft/commands/handlers/__tests__/utils';
 import { RemoveRowsCommand } from 'src/features/draft/commands/impl/remove-rows.command';
 import { RemoveRowsHandlerReturnType } from 'src/features/draft/commands/types/remove-rows.handler.types';
-import { RowApiService } from 'src/features/row/row-api.service';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('RemoveRowsHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if the revision does not exist', async () => {
-    const { tableId, rowId } = await prepareProject(prismaService);
+    const { tableId, rowId } = await givenDraftProject(kit.prismaService);
 
     const command = new RemoveRowsCommand({
       revisionId: 'unreal',
@@ -24,7 +30,9 @@ describe('RemoveRowsHandler', () => {
   });
 
   it('should throw an error if row does not exist', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RemoveRowsCommand({
       revisionId: draftRevisionId,
@@ -38,7 +46,9 @@ describe('RemoveRowsHandler', () => {
   });
 
   it('should throw an error if the table is a system table', async () => {
-    const { draftRevisionId, rowId } = await prepareProject(prismaService);
+    const { draftRevisionId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RemoveRowsCommand({
       revisionId: draftRevisionId,
@@ -53,14 +63,14 @@ describe('RemoveRowsHandler', () => {
 
   it('should throw an error if the foreignKey exists', async () => {
     const { draftRevisionId, schemaTableVersionId, tableId, rowId } =
-      await prepareProject(prismaService);
+      await prepareProject(kit.prismaService);
     const anotherTableId = nanoid();
     const anotherTableVersionId = nanoid();
     const anotherRowId = nanoid();
     const anotherRowVersionId = nanoid();
 
     // table
-    await prismaService.table.create({
+    await kit.prismaService.table.create({
       data: {
         id: anotherTableId,
         createdId: nanoid(),
@@ -74,7 +84,7 @@ describe('RemoveRowsHandler', () => {
       },
     });
     // schema for table
-    await prismaService.row.create({
+    await kit.prismaService.row.create({
       data: {
         id: anotherTableId,
         readonly: false,
@@ -101,7 +111,7 @@ describe('RemoveRowsHandler', () => {
       },
     });
     // row for another table
-    await prismaService.row.create({
+    await kit.prismaService.row.create({
       data: {
         id: anotherRowId,
         readonly: false,
@@ -132,8 +142,9 @@ describe('RemoveRowsHandler', () => {
   });
 
   it('should remove the row if conditions are met', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RemoveRowsCommand({
       revisionId: draftRevisionId,
@@ -144,7 +155,7 @@ describe('RemoveRowsHandler', () => {
     const result = await runTransaction(command);
     expect(result.tableVersionId).toBeTruthy();
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
@@ -153,7 +164,9 @@ describe('RemoveRowsHandler', () => {
   });
 
   it('should remove the row if conditions are met and if the table is a system table and skipCheckingNotSystemTable = true', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RemoveRowsCommand({
       revisionId: draftRevisionId,
@@ -170,53 +183,30 @@ describe('RemoveRowsHandler', () => {
   // ==================== Multiple rows tests ====================
 
   it('should remove multiple rows successfully', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId, rowId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProjectWithRows({
+      prismaService: kit.prismaService,
+      schema: testSchema,
+      rows: [{ data: { ver: 10 } }, { data: { ver: 20 } }],
+    });
+    const [row2Id, row3Id] = draft.extraRowIds;
 
-    const row2Id = nanoid();
-    const row3Id = nanoid();
-    await prismaService.row.create({
-      data: {
-        id: row2Id,
-        versionId: nanoid(),
-        createdId: nanoid(),
-        readonly: false,
-        data: {},
-        hash: '',
-        schemaHash: '',
-        tables: {
-          connect: { versionId: draftTableVersionId },
-        },
-      },
-    });
-    await prismaService.row.create({
-      data: {
-        id: row3Id,
-        versionId: nanoid(),
-        createdId: nanoid(),
-        readonly: false,
-        data: {},
-        hash: '',
-        schemaHash: '',
-        tables: {
-          connect: { versionId: draftTableVersionId },
-        },
-      },
-    });
+    if (!row2Id || !row3Id) {
+      throw new Error('Expected two extra rows to be created');
+    }
 
     const command = new RemoveRowsCommand({
-      revisionId: draftRevisionId,
-      tableId,
-      rowIds: [rowId, row2Id, row3Id],
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
+      rowIds: [draft.rowId, row2Id, row3Id],
     });
 
     const result = await runTransaction(command);
     expect(result.tableVersionId).toBeTruthy();
 
-    for (const id of [rowId, row2Id, row3Id]) {
-      const row = await rowApiService.getRow({
-        revisionId: draftRevisionId,
-        tableId,
+    for (const id of [draft.rowId, row2Id, row3Id]) {
+      const row = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId: draft.tableId,
         rowId: id,
       });
       expect(row).toBeNull();
@@ -224,8 +214,9 @@ describe('RemoveRowsHandler', () => {
   });
 
   it('should throw an error if one row exists but another does not', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RemoveRowsCommand({
       revisionId: draftRevisionId,
@@ -237,7 +228,7 @@ describe('RemoveRowsHandler', () => {
       'Rows not found in table: non-existent-row',
     );
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
@@ -252,10 +243,10 @@ describe('RemoveRowsHandler', () => {
       tableId,
       rowId,
       draftTableVersionId,
-    } = await prepareProject(prismaService);
+    } = await prepareProject(kit.prismaService);
 
     const row2Id = nanoid();
-    await prismaService.row.create({
+    await kit.prismaService.row.create({
       data: {
         id: row2Id,
         versionId: nanoid(),
@@ -272,7 +263,7 @@ describe('RemoveRowsHandler', () => {
 
     const anotherTableId = nanoid();
     const anotherTableVersionId = nanoid();
-    await prismaService.table.create({
+    await kit.prismaService.table.create({
       data: {
         id: anotherTableId,
         createdId: nanoid(),
@@ -281,7 +272,7 @@ describe('RemoveRowsHandler', () => {
         revisions: { connect: { id: draftRevisionId } },
       },
     });
-    await prismaService.row.create({
+    await kit.prismaService.row.create({
       data: {
         id: anotherTableId,
         readonly: false,
@@ -303,7 +294,7 @@ describe('RemoveRowsHandler', () => {
         schemaHash: '',
       },
     });
-    await prismaService.row.create({
+    await kit.prismaService.row.create({
       data: {
         id: nanoid(),
         readonly: false,
@@ -326,12 +317,12 @@ describe('RemoveRowsHandler', () => {
       'The row is related to other rows',
     );
 
-    const row1 = await rowApiService.getRow({
+    const row1 = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
     });
-    const row2 = await rowApiService.getRow({
+    const row2 = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: row2Id,
@@ -343,7 +334,9 @@ describe('RemoveRowsHandler', () => {
   // ==================== Edge case tests ====================
 
   it('should throw an error if rowIds is empty', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RemoveRowsCommand({
       revisionId: draftRevisionId,
@@ -357,8 +350,9 @@ describe('RemoveRowsHandler', () => {
   });
 
   it('should handle duplicate rowIds correctly', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RemoveRowsCommand({
       revisionId: draftRevisionId,
@@ -369,7 +363,7 @@ describe('RemoveRowsHandler', () => {
     const result = await runTransaction(command);
     expect(result.tableVersionId).toBeTruthy();
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
@@ -378,11 +372,11 @@ describe('RemoveRowsHandler', () => {
   });
 
   it('should keep draft-only table when all rows removed (not in head)', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const newTableId = nanoid();
     const newTableVersionId = nanoid();
-    await prismaService.table.create({
+    await kit.prismaService.table.create({
       data: {
         id: newTableId,
         versionId: newTableVersionId,
@@ -395,7 +389,7 @@ describe('RemoveRowsHandler', () => {
     });
 
     const rowId = nanoid();
-    await prismaService.row.create({
+    await kit.prismaService.row.create({
       data: {
         id: rowId,
         versionId: nanoid(),
@@ -420,7 +414,7 @@ describe('RemoveRowsHandler', () => {
     const result = await runTransaction(command);
     expect(result.tableVersionId).toBeTruthy();
 
-    const row = await prismaService.row.findFirst({
+    const row = await kit.prismaService.row.findFirst({
       where: {
         id: rowId,
         tables: {
@@ -433,7 +427,7 @@ describe('RemoveRowsHandler', () => {
     });
     expect(row).toBeNull();
 
-    const table = await prismaService.table.findFirst({
+    const table = await kit.prismaService.table.findFirst({
       where: {
         id: newTableId,
         revisions: { some: { id: draftRevisionId } },
@@ -446,20 +440,13 @@ describe('RemoveRowsHandler', () => {
   function runTransaction(
     command: RemoveRowsCommand,
   ): Promise<RemoveRowsHandlerReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let rowApiService: RowApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    rowApiService = result.module.get<RowApiService>(RowApiService);
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -467,6 +454,8 @@ describe('RemoveRowsHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

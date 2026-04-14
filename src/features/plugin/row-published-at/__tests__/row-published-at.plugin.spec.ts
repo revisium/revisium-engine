@@ -1,30 +1,30 @@
 import { nanoid } from 'nanoid';
-import {
-  prepareProject,
-  prepareRow,
-  prepareTableWithSchema,
-} from 'src/__tests__/utils/prepareProject';
-import { getObjectSchema, getRefSchema } from '@revisium/schema-toolkit/mocks';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
-import { PluginService } from 'src/features/plugin/plugin.service';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import { SystemTables } from 'src/features/share/system-tables.consts';
+import { getObjectSchema, getRefSchema } from '@revisium/schema-toolkit/mocks';
 import { createJsonValueStore } from '@revisium/schema-toolkit/lib';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { SystemTables } from 'src/features/share/system-tables.consts';
+import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { RowPublishedAtPlugin } from '../row-published-at.plugin';
+import {
+  createRowMetadataPluginTestKit,
+  givenRowMetadataPluginRow,
+  givenRowMetadataPluginTable,
+} from 'src/features/plugin/__tests__/row-metadata-plugin.spec-helper';
 
 describe('row-published-at.plugin', () => {
   describe('afterCreateRow', () => {
     it('should not save row-published-at', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
-      const data = {
-        customPublishedAt: '2025-05-22T05:59:51.079Z',
-      };
+      const scenario = await givenRowMetadataPluginTable({
+        prismaService: kit.prismaService,
+        fieldName: 'customPublishedAt',
+        schemaRef: SystemSchemaIds.RowPublishedAt,
+      });
+      const data = { customPublishedAt: '2025-05-22T05:59:51.079Z' };
 
-      const result = (await pluginService.afterCreateRow({
-        revisionId: draftRevisionId,
-        tableId: table.tableId,
+      const result = (await kit.pluginService.afterCreateRow({
+        revisionId: scenario.draftRevisionId,
+        tableId: scenario.table.tableId,
         rowId: nanoid(),
         data,
       })) as typeof data;
@@ -35,28 +35,22 @@ describe('row-published-at.plugin', () => {
 
   describe('afterUpdateRow', () => {
     it('should not save row-published-at', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
-
-      const previousData = {
-        customPublishedAt: '',
-      };
-
-      const data = {
-        customPublishedAt: '2025-05-22T05:59:51.079Z',
-      };
-
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const scenario = await givenRowMetadataPluginTable({
+        prismaService: kit.prismaService,
+        fieldName: 'customPublishedAt',
+        schemaRef: SystemSchemaIds.RowPublishedAt,
+      });
+      const previousData = { customPublishedAt: '' };
+      const data = { customPublishedAt: '2025-05-22T05:59:51.079Z' };
+      const { rowDraft } = await givenRowMetadataPluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: previousData,
-        dataDraft: previousData,
       });
 
-      const result = (await pluginService.afterUpdateRow({
-        revisionId: draftRevisionId,
-        tableId: table.tableId,
+      const result = (await kit.pluginService.afterUpdateRow({
+        revisionId: scenario.draftRevisionId,
+        tableId: scenario.table.tableId,
         rowId: rowDraft.id,
         data,
       })) as typeof data;
@@ -67,99 +61,79 @@ describe('row-published-at.plugin', () => {
 
   describe('computeRows', () => {
     it('should compute rows', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
-
-      const data = {
-        customPublishedAt: '',
-      };
-
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
-        data: data,
-        dataDraft: data,
+      const scenario = await givenRowMetadataPluginTable({
+        prismaService: kit.prismaService,
+        fieldName: 'customPublishedAt',
+        schemaRef: SystemSchemaIds.RowPublishedAt,
+      });
+      const data = { customPublishedAt: '' };
+      const { rowDraft } = await givenRowMetadataPluginRow({
+        prismaService: kit.prismaService,
+        scenario,
+        data,
       });
 
-      await pluginService.computeRows({
-        revisionId: draftRevisionId,
-        tableId: table.tableId,
+      await kit.pluginService.computeRows({
+        revisionId: scenario.draftRevisionId,
+        tableId: scenario.table.tableId,
         rows: [rowDraft],
       });
 
-      const result = rowDraft.data as typeof data;
-
-      expect(result.customPublishedAt).toBe(rowDraft.publishedAt.toISOString());
+      expect((rowDraft.data as typeof data).customPublishedAt).toBe(
+        rowDraft.publishedAt.toISOString(),
+      );
     });
 
     it('should not compute rows for system table', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
-
-      const data = {
-        customPublishedAt: '',
-      };
-
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
-        data: data,
-        dataDraft: data,
+      const scenario = await givenRowMetadataPluginTable({
+        prismaService: kit.prismaService,
+        fieldName: 'customPublishedAt',
+        schemaRef: SystemSchemaIds.RowPublishedAt,
+      });
+      const data = { customPublishedAt: '' };
+      const { rowDraft } = await givenRowMetadataPluginRow({
+        prismaService: kit.prismaService,
+        scenario,
+        data,
       });
 
-      await pluginService.computeRows({
-        revisionId: draftRevisionId,
+      await kit.pluginService.computeRows({
+        revisionId: scenario.draftRevisionId,
         tableId: SystemTables.Schema,
         rows: [rowDraft],
       });
 
-      const result = rowDraft.data as typeof data;
-
-      expect(result.customPublishedAt).toBe('');
+      expect((rowDraft.data as typeof data).customPublishedAt).toBe('');
     });
   });
 
   describe('afterMigrateRows', () => {
-    it('should migrate files', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
-
+    it('should clear row-published-at during migration', async () => {
+      const scenario = await givenRowMetadataPluginTable({
+        prismaService: kit.prismaService,
+        fieldName: 'customPublishedAt',
+        schemaRef: SystemSchemaIds.RowPublishedAt,
+      });
       const data = {
         customPublishedAt: '2025-05-22T05:59:51.079Z',
       } as const;
-
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
-        data: data,
-        dataDraft: data,
+      const { rowDraft } = await givenRowMetadataPluginRow({
+        prismaService: kit.prismaService,
+        scenario,
+        data,
       });
 
-      await pluginService.afterMigrateRows({
-        revisionId: draftRevisionId,
-        tableId: table.tableId,
+      await kit.pluginService.afterMigrateRows({
+        revisionId: scenario.draftRevisionId,
+        tableId: scenario.table.tableId,
         rows: [rowDraft],
       });
 
-      const result = rowDraft.data as unknown as typeof data;
-
-      expect(result.customPublishedAt).toBe('');
+      expect((rowDraft.data as typeof data).customPublishedAt).toBe('');
     });
   });
 
   describe('getPublishedAt', () => {
-    let rowPublishedAtPlugin: RowPublishedAtPlugin;
-    let jsonSchemaStore: JsonSchemaStoreService;
-
-    beforeAll(async () => {
-      const result = await createTestingModule();
-      rowPublishedAtPlugin = result.module.get(RowPublishedAtPlugin);
-      jsonSchemaStore = result.module.get(JsonSchemaStoreService);
-    });
-
     it('should return undefined when no publishedAt fields exist', async () => {
       const schema = getObjectSchema({});
       const valueStore = createJsonValueStore(
@@ -177,7 +151,6 @@ describe('row-published-at.plugin', () => {
         customPublishedAt: getRefSchema(SystemSchemaIds.RowPublishedAt),
       });
       const publishedAt = '2025-05-22T05:59:51.079Z';
-
       const valueStore = createJsonValueStore(
         jsonSchemaStore.create(schema),
         '',
@@ -188,13 +161,12 @@ describe('row-published-at.plugin', () => {
       expect(result).toBe(publishedAt);
     });
 
-    it('should return first publishedAt value when multiple existо', async () => {
+    it('should return first publishedAt value when multiple exist', async () => {
       const schema = getObjectSchema({
         customPublishedAt1: getRefSchema(SystemSchemaIds.RowPublishedAt),
         customPublishedAt2: getRefSchema(SystemSchemaIds.RowPublishedAt),
       });
       const firstPublishedAt = '2025-05-22T05:59:51.079Z';
-
       const valueStore = createJsonValueStore(
         jsonSchemaStore.create(schema),
         '',
@@ -212,7 +184,6 @@ describe('row-published-at.plugin', () => {
       const schema = getObjectSchema({
         customPublishedAt: getRefSchema(SystemSchemaIds.RowPublishedAt),
       });
-
       const valueStore = createJsonValueStore(
         jsonSchemaStore.create(schema),
         '',
@@ -224,44 +195,17 @@ describe('row-published-at.plugin', () => {
     });
   });
 
-  let prismaService: PrismaService;
-  let pluginService: PluginService;
+  let kit: DraftTestKit;
   let jsonSchemaStore: JsonSchemaStoreService;
-
-  const setupProjectWithFileSchema = async () => {
-    const {
-      headRevisionId,
-      draftRevisionId,
-      schemaTableVersionId,
-      migrationTableVersionId,
-    } = await prepareProject(prismaService);
-
-    const schema = getObjectSchema({
-      customPublishedAt: getRefSchema(SystemSchemaIds.RowPublishedAt),
-    });
-
-    const schemaStore = jsonSchemaStore.create(schema);
-
-    const table = await prepareTableWithSchema({
-      prismaService,
-      headRevisionId,
-      draftRevisionId,
-      schemaTableVersionId,
-      migrationTableVersionId,
-      schema,
-    });
-
-    return { draftRevisionId, table, schema, schemaStore };
-  };
+  let rowPublishedAtPlugin: RowPublishedAtPlugin;
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    pluginService = result.module.get(PluginService);
-    jsonSchemaStore = result.module.get(JsonSchemaStoreService);
+    kit = await createRowMetadataPluginTestKit();
+    jsonSchemaStore = kit.module.get(JsonSchemaStoreService);
+    rowPublishedAtPlugin = kit.module.get(RowPublishedAtPlugin);
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

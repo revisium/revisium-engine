@@ -1,26 +1,23 @@
 import { QueryBus } from '@nestjs/cqrs';
-import { nanoid } from 'nanoid';
-import hash from 'object-hash';
 import {
   getObjectSchema,
-  getStringSchema,
   getNumberSchema,
+  getStringSchema,
 } from '@revisium/schema-toolkit/mocks';
-import {
-  prepareProject,
-  prepareTableWithSchema,
-  prepareRow,
-} from 'src/__tests__/utils/prepareProject';
 import type { QueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
 import { createQueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
-import { givenDraftProjectWithSchema } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   SearchRowsQuery,
   SearchRowsResponse,
 } from 'src/features/row/queries/impl';
-import { metaSchema } from 'src/features/share/schema/meta-schema';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import {
+  createSearchRow,
+  createSearchTable,
+  givenSearchRowsProject,
+  updateSearchRow,
+  updateSearchSchema,
+} from './row-query.spec-helper';
 
 const searchTestSchema = getObjectSchema({
   ver: getNumberSchema(),
@@ -35,59 +32,35 @@ const searchTestSchema = getObjectSchema({
 });
 
 describe('SearchRowsHandler', () => {
-  let kit: QueryTestKit;
-  let prismaService: PrismaService;
-  let queryBus: QueryBus;
-  let transactionService: TransactionPrismaService;
-
   const runTransaction = async <T>(query: SearchRowsQuery): Promise<T> => {
     return transactionService.run(async () => {
       return queryBus.execute(query);
     });
   };
 
-  beforeAll(async () => {
-    kit = await createQueryTestKit();
-    prismaService = kit.prismaService;
-    queryBus = kit.queryBus;
-    transactionService = kit.transactionService;
-  });
-
-  afterAll(async () => {
-    await kit.close();
-  });
-
-  const updateSchemaForTest = async (schemaRowVersionId: string) => {
-    await prismaService.row.update({
-      where: { versionId: schemaRowVersionId },
-      data: {
-        data: searchTestSchema,
-        hash: hash(searchTestSchema),
-        schemaHash: hash(metaSchema),
-      },
-    });
-  };
-
   describe('basic search functionality', () => {
     it('should find rows with matching content', async () => {
-      const { draftRevisionId, draftRowVersionId, tableId } =
-        await givenDraftProjectWithSchema({
-          prismaService,
-          schema: searchTestSchema,
-        });
-
+      const {
+        draftRevisionId,
+        draftRowVersionId,
+        tableId,
+        schemaRowVersionId,
+      } = await givenSearchRowsProject(kit);
       const newData = {
         ver: 123,
         title: 'Hello World',
         description: 'Test document',
       };
-      await prismaService.row.update({
-        where: { versionId: draftRowVersionId },
-        data: {
-          data: newData,
-          hash: hash(newData),
-          schemaHash: hash(searchTestSchema),
-        },
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
+        schema: searchTestSchema,
+      });
+      await updateSearchRow({
+        kit,
+        rowVersionId: draftRowVersionId,
+        data: newData,
+        schema: searchTestSchema,
       });
 
       const result = await runTransaction<SearchRowsResponse>(
@@ -107,20 +80,19 @@ describe('SearchRowsHandler', () => {
     });
 
     it('should find rows with case-insensitive search', async () => {
-      const { draftRevisionId, draftRowVersionId } =
-        await givenDraftProjectWithSchema({
-          prismaService,
-          schema: searchTestSchema,
-        });
-
+      const { draftRevisionId, draftRowVersionId, schemaRowVersionId } =
+        await givenSearchRowsProject(kit);
       const newData = { ver: 456, content: 'UPPERCASE TEXT' };
-      await prismaService.row.update({
-        where: { versionId: draftRowVersionId },
-        data: {
-          data: newData,
-          hash: hash(newData),
-          schemaHash: hash(searchTestSchema),
-        },
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
+        schema: searchTestSchema,
+      });
+      await updateSearchRow({
+        kit,
+        rowVersionId: draftRowVersionId,
+        data: newData,
+        schema: searchTestSchema,
       });
 
       const result = await runTransaction<SearchRowsResponse>(
@@ -136,20 +108,19 @@ describe('SearchRowsHandler', () => {
     });
 
     it('should return empty result for non-matching query', async () => {
-      const { draftRevisionId, draftRowVersionId } =
-        await givenDraftProjectWithSchema({
-          prismaService,
-          schema: searchTestSchema,
-        });
-
+      const { draftRevisionId, draftRowVersionId, schemaRowVersionId } =
+        await givenSearchRowsProject(kit);
       const newData = { ver: 789, title: 'Test Document' };
-      await prismaService.row.update({
-        where: { versionId: draftRowVersionId },
-        data: {
-          data: newData,
-          hash: hash(newData),
-          schemaHash: hash(searchTestSchema),
-        },
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
+        schema: searchTestSchema,
+      });
+      await updateSearchRow({
+        kit,
+        rowVersionId: draftRowVersionId,
+        data: newData,
+        schema: searchTestSchema,
       });
 
       const result = await runTransaction<SearchRowsResponse>(
@@ -168,42 +139,41 @@ describe('SearchRowsHandler', () => {
   describe('search across multiple tables', () => {
     it('should find rows from different tables in the same revision', async () => {
       const {
+        headRevisionId,
         draftRevisionId,
         draftRowVersionId,
         tableId,
         schemaTableVersionId,
         migrationTableVersionId,
         schemaRowVersionId,
-      } = await prepareProject(prismaService);
-
-      await updateSchemaForTest(schemaRowVersionId);
-
-      const data1 = { ver: 1, name: 'Product Apple', category: 'Fruits' };
-      await prismaService.row.update({
-        where: { versionId: draftRowVersionId },
-        data: {
-          data: data1,
-          hash: hash(data1),
-          schemaHash: hash(searchTestSchema),
-        },
+      } = await givenSearchRowsProject(kit);
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
+        schema: searchTestSchema,
       });
 
-      const secondTable = await prepareTableWithSchema({
-        prismaService,
-        headRevisionId: draftRevisionId,
+      const data1 = { ver: 1, name: 'Product Apple', category: 'Fruits' };
+      await updateSearchRow({
+        kit,
+        rowVersionId: draftRowVersionId,
+        data: data1,
+        schema: searchTestSchema,
+      });
+
+      const secondTable = await createSearchTable({
+        kit,
+        headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
         migrationTableVersionId,
         schema: searchTestSchema,
       });
 
-      await prepareRow({
-        prismaService,
-        headTableVersionId: secondTable.draftTableVersionId,
-        draftTableVersionId: secondTable.draftTableVersionId,
+      await createSearchRow({
+        kit,
+        tableVersionId: secondTable.draftTableVersionId,
         data: { ver: 2, brand: 'Apple Inc', type: 'Technology' },
-        dataDraft: { ver: 2, brand: 'Apple Inc', type: 'Technology' },
-        schema: searchTestSchema,
       });
 
       const result = await runTransaction<SearchRowsResponse>(
@@ -214,8 +184,8 @@ describe('SearchRowsHandler', () => {
         }),
       );
 
-      expect(result.totalCount).toBe(3);
-      expect(result.edges).toHaveLength(3);
+      expect(result.totalCount).toBe(2);
+      expect(result.edges).toHaveLength(2);
 
       const tableIds = result.edges.map((edge) => edge.node.table.id);
       expect(tableIds).toContain(tableId);
@@ -230,8 +200,11 @@ describe('SearchRowsHandler', () => {
         draftRevisionId,
         headRowVersionId,
         draftRowVersionId,
-      } = await givenDraftProjectWithSchema({
-        prismaService,
+        schemaRowVersionId,
+      } = await givenSearchRowsProject(kit);
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
         schema: searchTestSchema,
       });
 
@@ -239,26 +212,22 @@ describe('SearchRowsHandler', () => {
         ver: 1,
         content: 'Head revision content with keyword',
       };
-      await prismaService.row.update({
-        where: { versionId: headRowVersionId },
-        data: {
-          data: headData,
-          hash: hash(headData),
-          schemaHash: hash(searchTestSchema),
-        },
+      await updateSearchRow({
+        kit,
+        rowVersionId: headRowVersionId,
+        data: headData,
+        schema: searchTestSchema,
       });
 
       const draftData = {
         ver: 2,
         content: 'Draft revision content with keyword',
       };
-      await prismaService.row.update({
-        where: { versionId: draftRowVersionId },
-        data: {
-          data: draftData,
-          hash: hash(draftData),
-          schemaHash: hash(searchTestSchema),
-        },
+      await updateSearchRow({
+        kit,
+        rowVersionId: draftRowVersionId,
+        data: draftData,
+        schema: searchTestSchema,
       });
 
       const headResult = await runTransaction<SearchRowsResponse>(
@@ -296,31 +265,26 @@ describe('SearchRowsHandler', () => {
 
   describe('system tables exclusion', () => {
     it('should not search in system tables', async () => {
-      const { draftRevisionId, draftTableVersionId } =
-        await givenDraftProjectWithSchema({
-          prismaService,
-          schema: searchTestSchema,
-        });
-
-      await prismaService.row.create({
+      const { draftRevisionId, draftTableVersionId, schemaRowVersionId } =
+        await givenSearchRowsProject(kit);
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
+        schema: searchTestSchema,
+      });
+      await createSearchRow({
+        kit,
+        tableVersionId: draftTableVersionId,
         data: {
-          tables: { connect: { versionId: draftTableVersionId } },
-          id: nanoid(),
-          versionId: nanoid(),
-          createdId: nanoid(),
-          hash: '',
-          schemaHash: '',
-          data: {
-            ver: 1,
-            content: 'Regular content with searchable text',
-            title: '',
-            description: '',
-            name: '',
-            category: '',
-            brand: '',
-            type: '',
-            order: 0,
-          },
+          ver: 1,
+          content: 'Regular content with searchable text',
+          title: '',
+          description: '',
+          name: '',
+          category: '',
+          brand: '',
+          type: '',
+          order: 0,
         },
       });
 
@@ -341,32 +305,28 @@ describe('SearchRowsHandler', () => {
 
   describe('pagination', () => {
     it('should paginate search results correctly', async () => {
-      const projectData = await prepareProject(prismaService);
       const { draftRevisionId, draftTableVersionId, schemaRowVersionId } =
-        projectData;
-
-      await updateSchemaForTest(schemaRowVersionId);
+        await givenSearchRowsProject(kit);
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
+        schema: searchTestSchema,
+      });
 
       for (let i = 1; i <= 5; i++) {
-        await prismaService.row.create({
+        await createSearchRow({
+          kit,
+          tableVersionId: draftTableVersionId,
           data: {
-            tables: { connect: { versionId: draftTableVersionId } },
-            id: nanoid(),
-            versionId: nanoid(),
-            createdId: nanoid(),
-            hash: '',
-            schemaHash: '',
-            data: {
-              ver: i,
-              title: `Document ${i} with search term`,
-              description: '',
-              content: '',
-              name: '',
-              category: '',
-              brand: '',
-              type: '',
-              order: i,
-            },
+            ver: i,
+            title: `Document ${i} with search term`,
+            description: '',
+            content: '',
+            name: '',
+            category: '',
+            brand: '',
+            type: '',
+            order: i,
           },
         });
       }
@@ -412,31 +372,26 @@ describe('SearchRowsHandler', () => {
 
   describe('complex data types', () => {
     it('should search in nested JSON structures', async () => {
-      const projectData = await prepareProject(prismaService);
       const { draftRevisionId, draftTableVersionId, schemaRowVersionId } =
-        projectData;
-
-      await updateSchemaForTest(schemaRowVersionId);
-
-      await prismaService.row.create({
+        await givenSearchRowsProject(kit);
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
+        schema: searchTestSchema,
+      });
+      await createSearchRow({
+        kit,
+        tableVersionId: draftTableVersionId,
         data: {
-          tables: { connect: { versionId: draftTableVersionId } },
-          id: nanoid(),
-          versionId: nanoid(),
-          createdId: nanoid(),
-          hash: '',
-          schemaHash: '',
-          data: {
-            ver: 1,
-            title: '',
-            description: 'Software developer interested in databases',
-            content: '',
-            name: '',
-            category: '',
-            brand: '',
-            type: '',
-            order: 0,
-          },
+          ver: 1,
+          title: '',
+          description: 'Software developer interested in databases',
+          content: '',
+          name: '',
+          category: '',
+          brand: '',
+          type: '',
+          order: 0,
         },
       });
 
@@ -455,31 +410,26 @@ describe('SearchRowsHandler', () => {
     });
 
     it('should search in arrays', async () => {
-      const projectData = await prepareProject(prismaService);
       const { draftRevisionId, draftTableVersionId, schemaRowVersionId } =
-        projectData;
-
-      await updateSchemaForTest(schemaRowVersionId);
-
-      await prismaService.row.create({
+        await givenSearchRowsProject(kit);
+      await updateSearchSchema({
+        kit,
+        schemaRowVersionId,
+        schema: searchTestSchema,
+      });
+      await createSearchRow({
+        kit,
+        tableVersionId: draftTableVersionId,
         data: {
-          tables: { connect: { versionId: draftTableVersionId } },
-          id: nanoid(),
-          versionId: nanoid(),
-          createdId: nanoid(),
-          hash: '',
-          schemaHash: '',
-          data: {
-            ver: 1,
-            title: '',
-            description: '',
-            content: 'javascript typescript nodejs react',
-            name: '',
-            category: '',
-            brand: '',
-            type: '',
-            order: 0,
-          },
+          ver: 1,
+          title: '',
+          description: '',
+          content: 'javascript typescript nodejs react',
+          name: '',
+          category: '',
+          brand: '',
+          type: '',
+          order: 0,
         },
       });
 
@@ -495,5 +445,19 @@ describe('SearchRowsHandler', () => {
       const edge0 = result.edges[0] as (typeof result.edges)[number];
       expect(edge0.node.matches).toBeDefined();
     });
+  });
+
+  let kit: QueryTestKit;
+  let queryBus: QueryBus;
+  let transactionService: TransactionPrismaService;
+
+  beforeAll(async () => {
+    kit = await createQueryTestKit();
+    queryBus = kit.queryBus;
+    transactionService = kit.transactionService;
+  });
+
+  afterAll(async () => {
+    await kit.close();
   });
 });

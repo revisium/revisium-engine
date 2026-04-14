@@ -252,6 +252,18 @@ That is acceptable when:
 The goal is not uniformity for its own sake. The goal is to make the default test
 style better and keep low-level tests explicit when explicitness is the right tradeoff.
 
+## Ongoing Use
+
+The refactor is complete enough that this architecture is now the default.
+
+From this point:
+
+- new tests should follow these patterns
+- existing tests should be cleaned up opportunistically when feature work touches them
+- low-level tests should stay direct when direct setup is the clearest expression of the invariant
+
+The goal is steady-state maintenance, not another broad rewrite campaign.
+
 ## What Good Tests Should Look Like
 
 ### Example: feature integration test
@@ -353,7 +365,7 @@ Avoid exposing internal setup state unless the test is explicitly about internal
 
 The builder layer should be split by scope.
 
-#### `createDbTestModule()`
+#### Shared test kits
 
 Minimal shared foundation:
 
@@ -362,12 +374,20 @@ Minimal shared foundation:
 - explicit feature imports/providers only
 - shared storage override when needed
 
-This should be the default builder for most Prisma-backed tests.
-It should not eagerly import modules that the current test does not exercise.
+The repository now provides concrete kits for the main scopes:
 
-#### `createFeatureTestModule(...)`
+- `createDraftTestKit`
+- `createMigrationTestKit`
+- `createQueryTestKit`
+- `createBranchTestKit`
+- `createDatabaseServiceTestKit`
 
-Small presets over `createDbTestModule()` for feature slices such as:
+These should be the default entrypoint for most Prisma-backed feature and service
+tests. They should not eagerly import modules that the current test does not exercise.
+
+#### Feature-specific presets
+
+Small presets should exist for feature slices such as:
 
 - draft
 - migration
@@ -378,7 +398,7 @@ Small presets over `createDbTestModule()` for feature slices such as:
 
 Presets should import only what is necessary for that feature's tests.
 
-#### `createEngineE2eModule()`
+#### `createEngineE2eTestKit()`
 
 Reserved for true end-to-end tests that need:
 
@@ -386,7 +406,7 @@ Reserved for true end-to-end tests that need:
 - public service facade validation
 - full integration across module boundaries
 
-This repository now uses a dedicated engine e2e helper for that role.
+This repository now uses a dedicated engine e2e test kit for that role.
 
 ## 2. Fixture Layers
 
@@ -471,33 +491,6 @@ They should verify:
 - main business flows
 
 They should not be the default way to test a single handler or internal service.
-
-## Phase 1
-
-Phase 1 is the pilot slice. It should prove the new architecture before wider rollout.
-
-Scope:
-
-- create a minimal shared DB-backed test kit
-- add scenario helpers for draft/table/rows setup
-- refactor migration tests first
-- keep compatibility with current tests while the new layer stabilizes
-
-Phase 1 rules:
-
-- prefer refactoring one spec at a time
-- keep behavior unchanged while improving names and structure
-- remove duplication only after a clearer pattern has appeared at least twice
-- preserve real Prisma coverage
-- keep tests readable before chasing micro-optimizations
-- prefer meaningful file structure over local convenience
-
-Success criteria:
-
-- migration tests become shorter and easier to read
-- repeated module setup is removed
-- repeated row creation/setup loops move into shared helpers
-- affected suites run at least as reliably as before
 
 ## Expected Outcomes
 

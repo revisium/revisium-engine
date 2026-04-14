@@ -32,6 +32,7 @@
     "test": "jest --maxWorkers=50% --passWithNoTests",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --silent --maxWorkers=50% --passWithNoTests",
+    "test:ci": "jest --coverage --silent --runInBand --passWithNoTests",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "prisma:generate": "prisma generate && npm run prisma:postgenerate",
     "prisma:postgenerate": "echo \"export * from './client';\" > src/__generated__/client/index.ts",

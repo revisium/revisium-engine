@@ -1,23 +1,9 @@
 import { Prisma } from 'src/__generated__/client';
 import { nanoid } from 'nanoid';
-import {
-  createEmptyFile,
-  prepareProject,
-  prepareRow,
-  prepareTableWithSchema,
-} from 'src/__tests__/utils/prepareProject';
-import {
-  getArraySchema,
-  getObjectSchema,
-  getRefSchema,
-} from '@revisium/schema-toolkit/mocks';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
+import { createEmptyFile } from 'src/__tests__/utils/prepareProject';
 import { FileStatus } from 'src/features/plugin/file/consts';
-import { FilePlugin } from 'src/features/plugin/file/file.plugin';
-import { PluginService } from 'src/features/plugin/plugin.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import {
   createValidFileData,
   createReadyFileData,
@@ -27,6 +13,11 @@ import {
   uploadedFileConsistencyScenarios,
   FileTestData,
 } from './file-restore.test-utils';
+import {
+  createFilePluginTestKit,
+  givenFilePluginRow,
+  givenFilePluginScenario,
+} from './file-plugin.spec-helper';
 
 interface FilePluginResult {
   file: FileTestData;
@@ -34,45 +25,19 @@ interface FilePluginResult {
 }
 
 describe('file.plugin restore mode', () => {
-  let prismaService: PrismaService;
-  let pluginService: PluginService;
-  let _filePlugin: FilePlugin;
+  let kit: DraftTestKit;
   let jsonSchemaStore: JsonSchemaStoreService;
-
-  const setupProjectWithFileSchema = async () => {
-    const {
-      headRevisionId,
-      draftRevisionId,
-      schemaTableVersionId,
-      migrationTableVersionId,
-    } = await prepareProject(prismaService);
-
-    const schema = getObjectSchema({
-      file: getRefSchema(SystemSchemaIds.File),
-      files: getArraySchema(getRefSchema(SystemSchemaIds.File)),
-    });
-
-    const schemaStore = jsonSchemaStore.create(schema);
-
-    const table = await prepareTableWithSchema({
-      prismaService,
-      headRevisionId,
-      draftRevisionId,
-      schemaTableVersionId,
-      migrationTableVersionId,
-      schema,
-    });
-
-    return { draftRevisionId, table, schema, schemaStore };
-  };
 
   describe('afterCreateRow with isRestore=true', () => {
     it('should validate and accept valid restore data', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const validFileData = createValidFileData();
       const data = createTestData(validFileData);
 
-      const result = (await pluginService.afterCreateRow({
+      const result = (await kit.pluginService.afterCreateRow({
         revisionId: draftRevisionId,
         tableId: table.tableId,
         rowId: nanoid(),
@@ -87,11 +52,14 @@ describe('file.plugin restore mode', () => {
     });
 
     it('should validate and accept ready status files', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const readyFileData = createReadyFileData();
       const data = createTestData(readyFileData);
 
-      const result = (await pluginService.afterCreateRow({
+      const result = (await kit.pluginService.afterCreateRow({
         revisionId: draftRevisionId,
         tableId: table.tableId,
         rowId: nanoid(),
@@ -105,12 +73,15 @@ describe('file.plugin restore mode', () => {
     });
 
     it('should throw error for invalid fileId format', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const invalidFileData = createReadyFileData({ fileId: 'invalid-id' });
       const data = createTestData(invalidFileData);
 
       await expect(
-        pluginService.afterCreateRow({
+        kit.pluginService.afterCreateRow({
           revisionId: draftRevisionId,
           tableId: table.tableId,
           rowId: nanoid(),
@@ -123,13 +94,16 @@ describe('file.plugin restore mode', () => {
     });
 
     it('should throw error for duplicate fileIds', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const duplicateFileId = nanoid();
       const fileData = createReadyFileData({ fileId: duplicateFileId });
       const data = createTestData(fileData, [fileData]);
 
       await expect(
-        pluginService.afterCreateRow({
+        kit.pluginService.afterCreateRow({
           revisionId: draftRevisionId,
           tableId: table.tableId,
           rowId: nanoid(),
@@ -142,7 +116,10 @@ describe('file.plugin restore mode', () => {
     });
 
     it('should throw error for uploaded file without required fields', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const incompleteFileData = createValidFileData({
         hash: '',
         mimeType: '',
@@ -151,7 +128,7 @@ describe('file.plugin restore mode', () => {
       const data = createTestData(incompleteFileData);
 
       await expect(
-        pluginService.afterCreateRow({
+        kit.pluginService.afterCreateRow({
           revisionId: draftRevisionId,
           tableId: table.tableId,
           rowId: nanoid(),
@@ -162,14 +139,17 @@ describe('file.plugin restore mode', () => {
     });
 
     it('should throw error for invalid hash format', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const invalidHashData = createValidFileData({
         hash: 'invalid-hash-format',
       });
       const data = createTestData(invalidHashData);
 
       await expect(
-        pluginService.afterCreateRow({
+        kit.pluginService.afterCreateRow({
           revisionId: draftRevisionId,
           tableId: table.tableId,
           rowId: nanoid(),
@@ -182,14 +162,17 @@ describe('file.plugin restore mode', () => {
     });
 
     it('should throw error for invalid file dimensions', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const invalidDimensionsData = createValidFileData({
         width: -100,
       });
       const data = createTestData(invalidDimensionsData);
 
       await expect(
-        pluginService.afterCreateRow({
+        kit.pluginService.afterCreateRow({
           revisionId: draftRevisionId,
           tableId: table.tableId,
           rowId: nanoid(),
@@ -200,7 +183,10 @@ describe('file.plugin restore mode', () => {
     });
 
     it('should throw error for non-image file with dimensions', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const nonImageWithDimensions = createValidFileData({
         mimeType: 'application/pdf',
         extension: 'pdf',
@@ -210,7 +196,7 @@ describe('file.plugin restore mode', () => {
       const data = createTestData(nonImageWithDimensions);
 
       await expect(
-        pluginService.afterCreateRow({
+        kit.pluginService.afterCreateRow({
           revisionId: draftRevisionId,
           tableId: table.tableId,
           rowId: nanoid(),
@@ -223,23 +209,23 @@ describe('file.plugin restore mode', () => {
 
   describe('afterUpdateRow with isRestore=true', () => {
     it('should validate restore data for update', async () => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
+      const scenario = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
       const validFileData = createValidFileData();
       const data = createTestData(validFileData);
 
-      // Create row first for update test
-      const { rowDraft } = await prepareRow({
-        prismaService,
-        headTableVersionId: table.headTableVersionId,
-        draftTableVersionId: table.draftTableVersionId,
-        schema: table.schema,
+      const { rowDraft } = await givenFilePluginRow({
+        prismaService: kit.prismaService,
+        scenario,
         data: { file: createEmptyFile(), files: [] },
-        dataDraft: { file: createEmptyFile(), files: [] },
+        draftData: { file: createEmptyFile(), files: [] },
       });
 
-      const result = (await pluginService.afterUpdateRow({
-        revisionId: draftRevisionId,
-        tableId: table.tableId,
+      const result = (await kit.pluginService.afterUpdateRow({
+        revisionId: scenario.draftRevisionId,
+        tableId: scenario.table.tableId,
         rowId: rowDraft.id,
         data: data as unknown as Prisma.InputJsonValue,
         isRestore: true,
@@ -256,8 +242,11 @@ describe('file.plugin restore mode', () => {
       data: Prisma.InputJsonValue,
       isRestore: boolean,
     ) => {
-      const { draftRevisionId, table } = await setupProjectWithFileSchema();
-      return pluginService.afterCreateRow({
+      const { draftRevisionId, table } = await givenFilePluginScenario(
+        kit.prismaService,
+        jsonSchemaStore,
+      );
+      return kit.pluginService.afterCreateRow({
         revisionId: draftRevisionId,
         tableId: table.tableId,
         rowId: nanoid(),
@@ -308,7 +297,10 @@ describe('file.plugin restore mode', () => {
     validMimeTypes.forEach(
       ({ mimeType, extension, fileName, width, height }) => {
         it(`should accept ${mimeType} MIME type`, async () => {
-          const { draftRevisionId, table } = await setupProjectWithFileSchema();
+          const { draftRevisionId, table } = await givenFilePluginScenario(
+            kit.prismaService,
+            jsonSchemaStore,
+          );
           const validFileData = createValidFileData({
             mimeType,
             extension,
@@ -318,7 +310,7 @@ describe('file.plugin restore mode', () => {
           });
           const data = createTestData(validFileData);
 
-          const result = (await pluginService.afterCreateRow({
+          const result = (await kit.pluginService.afterCreateRow({
             revisionId: draftRevisionId,
             tableId: table.tableId,
             rowId: nanoid(),
@@ -334,14 +326,11 @@ describe('file.plugin restore mode', () => {
   });
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    pluginService = result.module.get(PluginService);
-    _filePlugin = result.module.get(FilePlugin);
-    jsonSchemaStore = result.module.get(JsonSchemaStoreService);
+    kit = await createFilePluginTestKit();
+    jsonSchemaStore = kit.module.get(JsonSchemaStoreService);
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

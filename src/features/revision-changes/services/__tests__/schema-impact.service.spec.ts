@@ -1,4 +1,3 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { SchemaImpactService } from '../schema-impact.service';
 import {
   MigrationType,
@@ -9,16 +8,6 @@ import {
 } from '../../types';
 
 describe('SchemaImpactService', () => {
-  let service: SchemaImpactService;
-
-  beforeAll(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [SchemaImpactService],
-    }).compile();
-
-    service = module.get<SchemaImpactService>(SchemaImpactService);
-  });
-
   describe('analyzeSchemaImpact', () => {
     it('returns null when fromSchemaHash is null', () => {
       const result = service.analyzeSchemaImpact(null, 'schema-hash-2', []);
@@ -465,4 +454,6 @@ describe('SchemaImpactService', () => {
       expect(copyPatch.op).toBe(JsonPatchOp.Copy);
     });
   });
+
+  const service = new SchemaImpactService();
 });

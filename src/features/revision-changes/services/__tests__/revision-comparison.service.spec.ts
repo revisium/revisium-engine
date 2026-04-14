@@ -1,41 +1,25 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { nanoid } from 'nanoid';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { RevisionComparisonService } from '../revision-comparison.service';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { RevisionComparisonService } from '../revision-comparison.service';
+import { createRevisionChangesTestKit } from 'src/features/revision-changes/__tests__/revision-changes-test-kit';
+import type { Prisma } from 'src/__generated__/client';
+import {
+  createRevision,
+  createRevisionPair,
+  createTableVersion,
+  createRowVersion,
+  createBranch,
+} from 'src/features/revision-changes/__tests__/revision-changes.fixtures';
 
 describe('RevisionComparisonService', () => {
-  let module: TestingModule;
-  let service: RevisionComparisonService;
-  let prismaService: PrismaService;
-
-  beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [DatabaseModule],
-      providers: [RevisionComparisonService],
-    }).compile();
-
-    service = module.get(RevisionComparisonService);
-    prismaService = module.get(PrismaService);
-  });
-
-  afterAll(async () => {
-    await module.close();
-  });
-
   describe('getMigrationsForTable', () => {
     it('should return migrations from the migration table for a specific table', async () => {
-      // Setup
       const { revision, table, migrationData } = await prepareMigrationData();
 
-      // Execute
       const result = await service.getMigrationsForTable(
         revision.id,
         table.createdId,
       );
 
-      // Validate
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
         id: migrationData.id,
@@ -46,11 +30,10 @@ describe('RevisionComparisonService', () => {
 
     it('should return empty array when no migrations exist for table', async () => {
       const { revision } = await prepareRevisionWithMigrationTable();
-      const nonExistentTableCreatedId = nanoid();
 
       const result = await service.getMigrationsForTable(
         revision.id,
-        nonExistentTableCreatedId,
+        'non-existent-created-id',
       );
 
       expect(result).toEqual([]);
@@ -58,6 +41,7 @@ describe('RevisionComparisonService', () => {
 
     it('should return multiple migrations for the same table ordered by publishedAt desc', async () => {
       const { revision, table, migrations } = await prepareMultipleMigrations();
+      const [firstMigration, secondMigration] = migrations;
 
       const result = await service.getMigrationsForTable(
         revision.id,
@@ -65,13 +49,10 @@ describe('RevisionComparisonService', () => {
       );
 
       expect(result).toHaveLength(2);
-      // Should be ordered by publishedAt desc
       expect((result[0] as Record<string, unknown>).id).toBe(
-        (migrations[1] as (typeof migrations)[number]).id,
+        secondMigration.id,
       );
-      expect((result[1] as Record<string, unknown>).id).toBe(
-        (migrations[0] as (typeof migrations)[number]).id,
-      );
+      expect((result[1] as Record<string, unknown>).id).toBe(firstMigration.id);
     });
   });
 
@@ -103,342 +84,209 @@ describe('RevisionComparisonService', () => {
     });
   });
 
-  // Helper functions
-  async function createBranchAndProject() {
-    return prismaService.branch.create({
-      data: {
-        id: nanoid(),
-        name: nanoid(),
-        projectId: nanoid(),
-      },
-    });
-  }
-
-  async function createMigrationTable(revisionId: string) {
-    return prismaService.table.create({
-      data: {
-        id: SystemTables.Migration,
-        createdId: nanoid(),
-        versionId: nanoid(),
-        system: true,
-        readonly: true,
-        revisions: {
-          connect: { id: revisionId },
-        },
-      },
-    });
-  }
-
-  async function createTable(revisionId: string, tableId: string) {
-    return prismaService.table.create({
-      data: {
-        id: tableId,
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: revisionId },
-        },
-      },
-    });
-  }
-
   async function prepareMigrationData() {
-    const branch = await createBranchAndProject();
-
-    const revision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
-    });
-
+    const branch = await createBranch(kit.prismaService);
+    const revision = await createRevision(kit.prismaService, branch.id);
     const migrationTable = await createMigrationTable(revision.id);
-    const table = await createTable(revision.id, 'test-table');
+    const table = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: revision.id,
+      id: 'test-table',
+    });
 
     const migrationData = {
-      id: nanoid(),
+      id: 'migration-' + table.id,
       tableId: table.id,
       changeType: 'init',
     };
 
-    await prismaService.row.create({
-      data: {
-        id: migrationData.id,
-        createdId: nanoid(),
-        versionId: nanoid(),
-        publishedAt: new Date(),
-        tables: {
-          connect: { versionId: migrationTable.versionId },
-        },
-        data: migrationData,
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
+    await createMigrationRow({
+      tableVersionId: migrationTable.versionId,
+      data: migrationData,
     });
 
-    return { revision, table, migrationData, migrationTable };
+    return { revision, table, migrationData };
   }
 
   async function prepareRevisionWithMigrationTable() {
-    const branch = await createBranchAndProject();
-
-    const revision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
-    });
-
+    const branch = await createBranch(kit.prismaService);
+    const revision = await createRevision(kit.prismaService, branch.id);
     await createMigrationTable(revision.id);
 
     return { revision };
   }
 
   async function prepareMultipleMigrations() {
-    const branch = await createBranchAndProject();
-
-    const revision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
-    });
-
+    const branch = await createBranch(kit.prismaService);
+    const revision = await createRevision(kit.prismaService, branch.id);
     const migrationTable = await createMigrationTable(revision.id);
-    const table = await createTable(revision.id, 'test-table');
+    const table = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: revision.id,
+      id: 'test-table',
+    });
     const now = new Date();
 
     const migrations = [
-      { id: nanoid(), tableId: table.id, changeType: 'init' },
-      { id: nanoid(), tableId: table.id, changeType: 'update' },
-    ];
+      { id: 'migration-1', tableId: table.id, changeType: 'init' },
+      { id: 'migration-2', tableId: table.id, changeType: 'update' },
+    ] as const;
+    const [firstMigration, secondMigration] = migrations;
 
-    const migration0 = migrations[0] as (typeof migrations)[number];
-    const migration1 = migrations[1] as (typeof migrations)[number];
-
-    // Create first migration (earlier)
-    await prismaService.row.create({
-      data: {
-        id: migration0.id,
-        createdId: nanoid(),
-        versionId: nanoid(),
-        publishedAt: new Date(now.getTime() - 1000),
-        tables: {
-          connect: { versionId: migrationTable.versionId },
-        },
-        data: migration0,
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
+    await createMigrationRow({
+      tableVersionId: migrationTable.versionId,
+      data: firstMigration,
+      publishedAt: new Date(now.getTime() - 1000),
     });
-
-    // Create second migration (later)
-    await prismaService.row.create({
-      data: {
-        id: migration1.id,
-        createdId: nanoid(),
-        versionId: nanoid(),
-        publishedAt: now,
-        tables: {
-          connect: { versionId: migrationTable.versionId },
-        },
-        data: migration1,
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
+    await createMigrationRow({
+      tableVersionId: migrationTable.versionId,
+      data: secondMigration,
+      publishedAt: now,
     });
 
     return { revision, table, migrations };
   }
 
   async function prepareMigrationsBetweenRevisions() {
-    const branch = await createBranchAndProject();
-
-    const fromRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
-    });
-
-    const toRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        parentId: fromRevision.id,
-        branchId: branch.id,
-      },
-    });
-
+    const { fromRevision, toRevision } = await createRevisionPair(
+      kit.prismaService,
+    );
     const fromMigrationTable = await createMigrationTable(fromRevision.id);
-    const table = await createTable(fromRevision.id, 'test-table');
-
-    const toMigrationTable = await prismaService.table.create({
-      data: {
-        id: SystemTables.Migration,
-        createdId: fromMigrationTable.createdId,
-        versionId: nanoid(),
-        system: true,
-        readonly: true,
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    const toMigrationTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      id: SystemTables.Migration,
+      createdId: fromMigrationTable.createdId,
+      system: true,
+      readonly: true,
+    });
+    const fromTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
+      id: 'test-table',
+    });
+    const table = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      id: fromTable.id,
+      createdId: fromTable.createdId,
     });
 
-    // Connect table to toRevision as well
-    const toTable = await prismaService.table.create({
-      data: {
-        id: table.id,
-        createdId: table.createdId,
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
-    });
-
-    const now = new Date();
-
-    const existingMigration = {
-      id: nanoid(),
+    const oldMigration = {
+      id: 'migration-old',
       tableId: table.id,
       changeType: 'init',
     };
-
     const newMigration = {
-      id: nanoid(),
+      id: 'migration-new',
       tableId: table.id,
       changeType: 'update',
     };
 
-    // Create existing migration in fromRevision
-    const existingMigrationRow = await prismaService.row.create({
-      data: {
-        id: existingMigration.id,
-        createdId: nanoid(),
-        versionId: nanoid(),
-        publishedAt: new Date(now.getTime() - 1000),
-        tables: {
-          connect: { versionId: fromMigrationTable.versionId },
-        },
-        data: existingMigration,
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
+    await createMigrationRow({
+      tableVersionId: fromMigrationTable.versionId,
+      data: oldMigration,
+      publishedAt: new Date('2025-01-01T00:00:00.000Z'),
+    });
+    await createMigrationRow({
+      tableVersionId: toMigrationTable.versionId,
+      data: oldMigration,
+      publishedAt: new Date('2025-01-01T00:00:00.000Z'),
+    });
+    await createMigrationRow({
+      tableVersionId: toMigrationTable.versionId,
+      data: newMigration,
+      publishedAt: new Date('2025-01-02T00:00:00.000Z'),
     });
 
-    // Connect existing migration to toRevision's migration table as well
-    await prismaService.row.update({
-      where: { versionId: existingMigrationRow.versionId },
-      data: {
-        tables: {
-          connect: { versionId: toMigrationTable.versionId },
-        },
-      },
-    });
-
-    // Create new migration only in toRevision
-    await prismaService.row.create({
-      data: {
-        id: newMigration.id,
-        createdId: nanoid(),
-        versionId: nanoid(),
-        publishedAt: now,
-        tables: {
-          connect: { versionId: toMigrationTable.versionId },
-        },
-        data: newMigration,
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
-    });
-
-    return {
-      fromRevision,
-      toRevision,
-      table: toTable,
-      existingMigration,
-      newMigration,
-    };
+    return { fromRevision, toRevision, table, newMigration };
   }
 
   async function prepareSameMigrations() {
-    const branch = await createBranchAndProject();
-
-    const fromRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
-    });
-
-    const toRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        parentId: fromRevision.id,
-        branchId: branch.id,
-      },
-    });
-
+    const { fromRevision, toRevision } = await createRevisionPair(
+      kit.prismaService,
+    );
     const fromMigrationTable = await createMigrationTable(fromRevision.id);
-    const table = await createTable(fromRevision.id, 'test-table');
-
-    const toMigrationTable = await prismaService.table.create({
-      data: {
-        id: SystemTables.Migration,
-        createdId: fromMigrationTable.createdId,
-        versionId: nanoid(),
-        system: true,
-        readonly: true,
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    const toMigrationTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      id: SystemTables.Migration,
+      createdId: fromMigrationTable.createdId,
+      system: true,
+      readonly: true,
     });
-
-    // Connect table to toRevision
-    const toTable = await prismaService.table.create({
-      data: {
-        id: table.id,
-        createdId: table.createdId,
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    const fromTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
+      id: 'test-table',
+    });
+    const table = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      id: fromTable.id,
+      createdId: fromTable.createdId,
     });
 
     const migration = {
-      id: nanoid(),
+      id: 'migration-shared',
       tableId: table.id,
       changeType: 'init',
     };
 
-    // Create migration and connect to both revisions
-    const migrationRow = await prismaService.row.create({
-      data: {
-        id: migration.id,
-        createdId: nanoid(),
-        versionId: nanoid(),
-        publishedAt: new Date(),
-        tables: {
-          connect: { versionId: fromMigrationTable.versionId },
-        },
-        data: migration,
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
+    await createMigrationRow({
+      tableVersionId: fromMigrationTable.versionId,
+      data: migration,
+      publishedAt: new Date('2025-01-01T00:00:00.000Z'),
+    });
+    await createMigrationRow({
+      tableVersionId: toMigrationTable.versionId,
+      data: migration,
+      publishedAt: new Date('2025-01-01T00:00:00.000Z'),
     });
 
-    await prismaService.row.update({
-      where: { versionId: migrationRow.versionId },
-      data: {
-        tables: {
-          connect: { versionId: toMigrationTable.versionId },
-        },
-      },
-    });
-
-    return { fromRevision, toRevision, table: toTable };
+    return { fromRevision, toRevision, table };
   }
+
+  async function createMigrationTable(revisionId: string) {
+    return createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId,
+      id: SystemTables.Migration,
+      system: true,
+      readonly: true,
+    });
+  }
+
+  async function createMigrationRow({
+    tableVersionId,
+    data,
+    publishedAt = new Date(),
+  }: {
+    tableVersionId: string;
+    data: Prisma.InputJsonValue & Record<string, unknown>;
+    publishedAt?: Date;
+  }) {
+    return createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId,
+      id: String(data.id),
+      data,
+      publishedAt,
+    });
+  }
+
+  let kit: Awaited<ReturnType<typeof createRevisionChangesTestKit>>;
+  let service: RevisionComparisonService;
+
+  beforeAll(async () => {
+    kit = await createRevisionChangesTestKit({
+      imports: [],
+      providers: [RevisionComparisonService],
+    });
+    service = kit.module.get(RevisionComparisonService);
+  });
+
+  afterAll(async () => {
+    await kit.close();
+  });
 });

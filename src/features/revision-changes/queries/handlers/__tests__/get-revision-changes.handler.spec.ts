@@ -1,36 +1,18 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { CqrsModule } from '@nestjs/cqrs';
-import { nanoid } from 'nanoid';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { GetRevisionChangesHandler } from '../get-revision-changes.handler';
-import { GetRevisionChangesQuery } from '../../impl/get-revision-changes.query';
 import { DiffService } from 'src/features/share/diff.service';
+import { GetRevisionChangesQuery } from '../../impl/get-revision-changes.query';
+import { GetRevisionChangesHandler } from '../get-revision-changes.handler';
 import { RevisionComparisonService } from '../../../services/revision-comparison.service';
+import { createRevisionChangesTestKit } from 'src/features/revision-changes/__tests__/revision-changes-test-kit';
+import {
+  createBranch,
+  createRevision,
+  createRevisionPair,
+  createRevisionTriple,
+  createRowVersion,
+  createTableVersion,
+} from 'src/features/revision-changes/__tests__/revision-changes.fixtures';
 
 describe('GetRevisionChangesHandler', () => {
-  let module: TestingModule;
-  let handler: GetRevisionChangesHandler;
-  let prismaService: PrismaService;
-
-  beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [DatabaseModule, CqrsModule],
-      providers: [
-        GetRevisionChangesHandler,
-        DiffService,
-        RevisionComparisonService,
-      ],
-    }).compile();
-
-    handler = module.get(GetRevisionChangesHandler);
-    prismaService = module.get(PrismaService);
-  });
-
-  afterAll(async () => {
-    await module.close();
-  });
-
   describe('execute', () => {
     it('returns empty stats for revision without parent', async () => {
       const { revision } = await prepareRevisionWithoutParent();
@@ -71,22 +53,14 @@ describe('GetRevisionChangesHandler', () => {
         }),
       );
 
-      // Tables: 1 renamed+modified, 1 "pure renamed" (becomes renamed+modified due to versionId),
-      // 1 pure modified, 1 common table (modified for row changes), 1 added, 1 removed = 6 total
       expect(result.tablesSummary.total).toBe(6);
-      // renamed count includes both pure renamed AND renamed+modified (2 + 0 = 2)
       expect(result.tablesSummary.renamed).toBe(2);
-      // modified count includes pure modified, common table AND renamed+modified (2 + 2 = 4)
       expect(result.tablesSummary.modified).toBe(4);
       expect(result.tablesSummary.added).toBe(1);
       expect(result.tablesSummary.removed).toBe(1);
 
-      // Rows: 1 renamed+modified (different id AND hash), 1 pure renamed (different id, same hash),
-      // 1 pure modified (same id, different hash), 1 added, 1 removed = 5 total
       expect(result.rowsSummary.total).toBe(5);
-      // renamed count includes pure renamed AND renamed+modified (1 + 1 = 2)
       expect(result.rowsSummary.renamed).toBe(2);
-      // modified count includes pure modified AND renamed+modified (1 + 1 = 2)
       expect(result.rowsSummary.modified).toBe(2);
       expect(result.rowsSummary.added).toBe(1);
       expect(result.rowsSummary.removed).toBe(1);
@@ -130,7 +104,6 @@ describe('GetRevisionChangesHandler', () => {
         }),
       );
 
-      // Should only count regular table
       expect(result.tablesSummary.total).toBe(1);
     });
 
@@ -144,7 +117,6 @@ describe('GetRevisionChangesHandler', () => {
         }),
       );
 
-      // Should count both system and regular tables
       expect(result.tablesSummary.total).toBe(2);
     });
 
@@ -164,514 +136,227 @@ describe('GetRevisionChangesHandler', () => {
     });
   });
 
-  // Helper functions
   async function prepareRevisionWithoutParent() {
-    const branch = await prismaService.branch.create({
-      data: {
-        id: nanoid(),
-        name: nanoid(),
-        projectId: nanoid(),
-      },
-    });
-
-    const revision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branch: {
-          connect: { id: branch.id },
-        },
-      },
-    });
+    const branch = await createBranch(kit.prismaService);
+    const revision = await createRevision(kit.prismaService, branch.id);
 
     return { revision };
   }
 
   async function prepareRevisionsWithChanges() {
-    const branch = await prismaService.branch.create({
-      data: {
-        id: nanoid(),
-        name: nanoid(),
-        projectId: nanoid(),
-      },
-    });
+    const { fromRevision, toRevision } = await createRevisionPair(
+      kit.prismaService,
+    );
 
-    const fromRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
-    });
-
-    const toRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        parentId: fromRevision.id,
-        branchId: branch.id,
-      },
-    });
-
-    // Add a table change
-    await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
     });
 
     return { fromRevision, toRevision };
   }
 
   async function prepareMultipleRevisions() {
-    const branch = await prismaService.branch.create({
-      data: {
-        id: nanoid(),
-        name: nanoid(),
-        projectId: nanoid(),
-      },
-    });
-
-    const revision1 = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
-    });
-
-    const revision2 = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        parentId: revision1.id,
-        branchId: branch.id,
-      },
-    });
-
-    const revision3 = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        parentId: revision2.id,
-        branchId: branch.id,
-      },
-    });
-
-    return { revision1, revision2, revision3 };
+    return createRevisionTriple(kit.prismaService);
   }
 
   async function prepareRevisionsWithSystemTables() {
-    const branch = await prismaService.branch.create({
-      data: {
-        id: nanoid(),
-        name: nanoid(),
-        projectId: nanoid(),
-      },
-    });
+    const { fromRevision, toRevision } = await createRevisionPair(
+      kit.prismaService,
+    );
 
-    const fromRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      system: true,
     });
-
-    const toRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        parentId: fromRevision.id,
-        branchId: branch.id,
-      },
-    });
-
-    // Add system table
-    await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        system: true,
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
-    });
-
-    // Add regular table
-    await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        system: false,
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      system: false,
     });
 
     return { fromRevision, toRevision };
   }
 
   async function prepareComplexChanges() {
-    const branch = await prismaService.branch.create({
-      data: {
-        id: nanoid(),
-        name: nanoid(),
-        projectId: nanoid(),
-      },
+    const { fromRevision, toRevision } = await createRevisionPair(
+      kit.prismaService,
+    );
+
+    const addedTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
     });
 
-    const fromRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
     });
 
-    const toRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        parentId: fromRevision.id,
-        branchId: branch.id,
-      },
+    const modifiedFrom = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
+    });
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      id: modifiedFrom.id,
+      createdId: modifiedFrom.createdId,
     });
 
-    // Added table
-    const addedTable = await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
-    });
-
-    // Removed table
-    await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: fromRevision.id },
-        },
-      },
-    });
-
-    // Modified table
-    const fromTable = await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: fromRevision.id },
-        },
-      },
-    });
-
-    await prismaService.table.create({
-      data: {
-        id: fromTable.id,
-        createdId: fromTable.createdId,
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
-    });
-
-    // Add row to the added table
-    await prismaService.row.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: addedTable.versionId },
-        },
-        data: { name: 'test' },
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: addedTable.versionId,
     });
 
     return { fromRevision, toRevision };
   }
 
   async function prepareRenamedAndModifiedChanges() {
-    const branch = await prismaService.branch.create({
-      data: {
-        id: nanoid(),
-        name: nanoid(),
-        projectId: nanoid(),
-      },
+    const { fromRevision, toRevision } = await createRevisionPair(
+      kit.prismaService,
+    );
+
+    const addedTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
     });
 
-    const fromRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        branchId: branch.id,
-      },
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
     });
 
-    const toRevision = await prismaService.revision.create({
-      data: {
-        id: nanoid(),
-        parentId: fromRevision.id,
-        branchId: branch.id,
-      },
+    const modifiedTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
+    });
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      id: modifiedTable.id,
+      createdId: modifiedTable.createdId,
     });
 
-    // TABLE CHANGES
-    // 1. Added table
-    const addedTable = await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    const renamedAndModifiedTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
+    });
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      createdId: renamedAndModifiedTable.createdId,
     });
 
-    // 2. Removed table
-    await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: fromRevision.id },
-        },
-      },
+    const renamedTable = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
+    });
+    await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      createdId: renamedTable.createdId,
     });
 
-    // 3. Pure modified table (same id, different versionId)
-    const modifiedTable = await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: fromRevision.id },
-        },
-      },
+    const commonTableFrom = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: fromRevision.id,
+    });
+    const commonTableTo = await createTableVersion({
+      prismaService: kit.prismaService,
+      revisionId: toRevision.id,
+      id: commonTableFrom.id,
+      createdId: commonTableFrom.createdId,
     });
 
-    await prismaService.table.create({
-      data: {
-        id: modifiedTable.id, // Same id
-        createdId: modifiedTable.createdId,
-        versionId: nanoid(), // Different versionId = modified
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: addedTable.versionId,
+      data: { value: 'added' },
     });
 
-    // 4. Renamed and modified table (different id AND different versionId)
-    const renamedAndModifiedTable = await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: fromRevision.id },
-        },
-      },
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: commonTableFrom.versionId,
+      data: { value: 'removed' },
     });
 
-    await prismaService.table.create({
-      data: {
-        id: nanoid(), // Different id = renamed
-        createdId: renamedAndModifiedTable.createdId,
-        versionId: nanoid(), // Different versionId = modified
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    const sameRowId = 'same-row';
+    const sameRowCreatedId = 'same-row-created';
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: commonTableFrom.versionId,
+      id: sameRowId,
+      createdId: sameRowCreatedId,
+      data: { value: 'old' },
+      hash: 'hash1',
+      schemaHash: 'schema1',
+    });
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: commonTableTo.versionId,
+      id: sameRowId,
+      createdId: sameRowCreatedId,
+      data: { value: 'new' },
+      hash: 'hash2',
+      schemaHash: 'schema1',
     });
 
-    // 5. "Pure renamed" table (different id, but different versionId too due to constraint)
-    // This will actually be counted as renamed+modified because versionId must be unique
-    const renamedTable = await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: fromRevision.id },
-        },
-      },
+    const renamedRowCreatedId = 'renamed-row-created';
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: commonTableFrom.versionId,
+      createdId: renamedRowCreatedId,
+      data: { value: 'unchanged' },
+      hash: 'sameHash123',
+      schemaHash: 'sameSchemaHash456',
+    });
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: commonTableTo.versionId,
+      createdId: renamedRowCreatedId,
+      data: { value: 'unchanged' },
+      hash: 'sameHash123',
+      schemaHash: 'sameSchemaHash456',
     });
 
-    await prismaService.table.create({
-      data: {
-        id: nanoid(), // Different id = renamed
-        createdId: renamedTable.createdId,
-        versionId: nanoid(), // Must be different due to unique constraint
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
+    const renamedAndModifiedRowCreatedId = 'renamed-modified-row-created';
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: commonTableFrom.versionId,
+      createdId: renamedAndModifiedRowCreatedId,
+      data: { value: 'old' },
+      hash: 'oldHash',
+      schemaHash: 'schema1',
     });
-
-    // We need a table for row changes that exists in both revisions
-    const commonTableFrom = await prismaService.table.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: fromRevision.id },
-        },
-      },
-    });
-
-    const commonTableTo = await prismaService.table.create({
-      data: {
-        id: commonTableFrom.id,
-        createdId: commonTableFrom.createdId,
-        versionId: nanoid(),
-        revisions: {
-          connect: { id: toRevision.id },
-        },
-      },
-    });
-
-    // ROW CHANGES
-    // 1. Added row
-    await prismaService.row.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: addedTable.versionId },
-        },
-        data: { value: 'added' },
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
-    });
-
-    // 2. Removed row (exists in fromRevision, not in toRevision)
-    await prismaService.row.create({
-      data: {
-        id: nanoid(),
-        createdId: nanoid(),
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: commonTableFrom.versionId },
-        },
-        data: { value: 'removed' },
-        hash: nanoid(),
-        schemaHash: nanoid(),
-      },
-    });
-
-    // 3. Pure modified row (same id, different hash)
-    const sameRowId = nanoid();
-    const sameRowCreatedId = nanoid();
-
-    await prismaService.row.create({
-      data: {
-        id: sameRowId,
-        createdId: sameRowCreatedId,
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: commonTableFrom.versionId },
-        },
-        data: { value: 'old' },
-        hash: 'hash1',
-        schemaHash: 'schema1',
-      },
-    });
-
-    await prismaService.row.create({
-      data: {
-        id: sameRowId, // Same id
-        createdId: sameRowCreatedId,
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: commonTableTo.versionId },
-        },
-        data: { value: 'new' },
-        hash: 'hash2', // Different hash = modified
-        schemaHash: 'schema1',
-      },
-    });
-
-    // 4. Pure renamed row (different id, same hash)
-    const renamedRowCreatedId = nanoid();
-    const sameHash = 'sameHash123';
-    const sameSchemaHash = 'sameSchemaHash456';
-    const sameData = { value: 'unchanged' };
-
-    await prismaService.row.create({
-      data: {
-        id: nanoid(),
-        createdId: renamedRowCreatedId,
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: commonTableFrom.versionId },
-        },
-        data: sameData,
-        hash: sameHash, // Same hash
-        schemaHash: sameSchemaHash,
-      },
-    });
-
-    await prismaService.row.create({
-      data: {
-        id: nanoid(), // Different id = renamed
-        createdId: renamedRowCreatedId,
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: commonTableTo.versionId },
-        },
-        data: sameData,
-        hash: sameHash, // Same hash = not modified
-        schemaHash: sameSchemaHash,
-      },
-    });
-
-    // 5. Renamed AND modified row (different id AND different hash)
-    const renamedModifiedCreatedId = nanoid();
-
-    await prismaService.row.create({
-      data: {
-        id: nanoid(),
-        createdId: renamedModifiedCreatedId,
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: commonTableFrom.versionId },
-        },
-        data: { value: 'before' },
-        hash: 'hashA',
-        schemaHash: 'schemaA',
-      },
-    });
-
-    await prismaService.row.create({
-      data: {
-        id: nanoid(), // Different id = renamed
-        createdId: renamedModifiedCreatedId,
-        versionId: nanoid(),
-        tables: {
-          connect: { versionId: commonTableTo.versionId },
-        },
-        data: { value: 'after' },
-        hash: 'hashB', // Different hash = modified
-        schemaHash: 'schemaA',
-      },
+    await createRowVersion({
+      prismaService: kit.prismaService,
+      tableVersionId: commonTableTo.versionId,
+      createdId: renamedAndModifiedRowCreatedId,
+      data: { value: 'new' },
+      hash: 'newHash',
+      schemaHash: 'schema1',
     });
 
     return { fromRevision, toRevision };
   }
+
+  let kit: Awaited<ReturnType<typeof createRevisionChangesTestKit>>;
+  let handler: GetRevisionChangesHandler;
+
+  beforeAll(async () => {
+    kit = await createRevisionChangesTestKit({
+      providers: [
+        GetRevisionChangesHandler,
+        DiffService,
+        RevisionComparisonService,
+      ],
+    });
+    handler = kit.module.get(GetRevisionChangesHandler);
+  });
+
+  afterAll(async () => {
+    await kit.close();
+  });
 });

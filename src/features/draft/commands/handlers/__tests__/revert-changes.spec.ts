@@ -1,21 +1,19 @@
-import { CommandBus } from '@nestjs/cqrs';
-import {
-  prepareProject,
-  PrepareProjectReturnType,
-} from 'src/__tests__/utils/prepareProject';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { RevertChangesCommand } from 'src/features/draft/commands/impl/revert-changes.command';
 import { RevertChangesHandlerReturnType } from 'src/features/draft/commands/types/revert-changes.handler.types';
-import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 
 describe('RevertChangesHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if the branch does not exist in the project', async () => {
-    const { projectId, branchName } = await prepareProject(prismaService);
+    const { projectId, branchName } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     jest
-      .spyOn(shareTransactionalQueries, 'findBranchInProjectOrThrow')
+      .spyOn(kit.shareTransactionalQueries, 'findBranchInProjectOrThrow')
       .mockRejectedValue(new Error('Branch not found'));
 
     const command = new RevertChangesCommand({
@@ -27,9 +25,9 @@ describe('RevertChangesHandler', () => {
   });
 
   it('should revert changes if there are changes', async () => {
-    const ids = await prepareProject(prismaService);
-    const { projectId, branchId, branchName, draftRevisionId } = ids;
-    await prepareRevision(ids);
+    const draft = await givenDraftProject(kit.prismaService);
+    const { projectId, branchId, branchName, draftRevisionId } = draft;
+    await prepareRevision(draftRevisionId);
 
     const command = new RevertChangesCommand({
       projectId,
@@ -41,30 +39,23 @@ describe('RevertChangesHandler', () => {
     expect(result.draftRevisionId).toBe(draftRevisionId);
   });
 
-  async function prepareRevision(ids: PrepareProjectReturnType) {
-    await prismaService.revision.update({
-      where: { id: ids.draftRevisionId },
+  async function prepareRevision(draftRevisionId: string) {
+    await kit.prismaService.revision.update({
+      where: { id: draftRevisionId },
       data: { hasChanges: true },
     });
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let shareTransactionalQueries: ShareTransactionalQueries;
-
   function runTransaction(
     command: RevertChangesCommand,
   ): Promise<RevertChangesHandlerReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    shareTransactionalQueries = result.shareTransactionalQueries;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -72,6 +63,8 @@ describe('RevertChangesHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

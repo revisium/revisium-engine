@@ -1,19 +1,19 @@
-import { CommandBus } from '@nestjs/cqrs';
 import objectHash from 'object-hash';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { InternalUpdateRowsCommand } from 'src/features/draft/commands/impl/transactional/internal-update-rows.command';
-import { RowApiService } from 'src/features/row/row-api.service';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import {
   createTestingModule,
   testSchema,
 } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('InternalUpdateRowsHandler', () => {
+  let kit: DraftTestKit;
+
   it('should update the row if conditions are met', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new InternalUpdateRowsCommand({
       revisionId: draftRevisionId,
@@ -30,7 +30,7 @@ describe('InternalUpdateRowsHandler', () => {
 
     await runTransaction(command);
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
@@ -40,23 +40,18 @@ describe('InternalUpdateRowsHandler', () => {
   });
 
   function runTransaction(command: InternalUpdateRowsCommand): Promise<void> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let rowApiService: RowApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    rowApiService = result.module.get<RowApiService>(RowApiService);
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

@@ -1,5 +1,5 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   createTestingModule,
   invalidTestSchema,
@@ -8,12 +8,12 @@ import {
 import { CreateSchemaCommand } from 'src/features/draft/commands/impl/transactional/create-schema.command';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { JsonSchema } from '@revisium/schema-toolkit/types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('CreateSchemaHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if the data is invalid', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const tableId = 'newTableId';
     const command = new CreateSchemaCommand({
@@ -26,7 +26,7 @@ describe('CreateSchemaHandler', () => {
   });
 
   it('should throw an error if there is invalid field name', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const tableId = 'newTableId';
     const command = new CreateSchemaCommand({
@@ -41,8 +41,7 @@ describe('CreateSchemaHandler', () => {
   });
 
   it('should create a new schema if conditions are met', async () => {
-    const ids = await prepareProject(prismaService);
-    const { draftRevisionId } = ids;
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
     const tableId = 'newTableId';
 
     const command = new CreateSchemaCommand({
@@ -54,7 +53,7 @@ describe('CreateSchemaHandler', () => {
     const result = await runTransaction(command);
     expect(result).toBe(true);
 
-    const schemaRow = await prismaService.row.findFirstOrThrow({
+    const schemaRow = await kit.prismaService.row.findFirstOrThrow({
       where: {
         id: tableId,
         tables: {
@@ -73,21 +72,18 @@ describe('CreateSchemaHandler', () => {
   });
 
   function runTransaction(command: CreateSchemaCommand): Promise<boolean> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

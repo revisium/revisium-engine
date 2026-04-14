@@ -1,13 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   InternalCreateRowCommand,
   InternalCreateRowCommandReturnType,
 } from 'src/features/draft/commands/impl/transactional/internal-create-row.command';
-import { RowApiService } from 'src/features/row/row-api.service';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import {
   createTestingModule,
   testSchema,
@@ -15,8 +12,12 @@ import {
 import objectHash from 'object-hash';
 
 describe('InternalCreateRowHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if the rowId is shorter than 1 character', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new InternalCreateRowCommand({
       revisionId: draftRevisionId,
@@ -33,7 +34,7 @@ describe('InternalCreateRowHandler', () => {
   });
 
   it('should throw an error if the revision does not exist', async () => {
-    await prepareProject(prismaService);
+    await givenDraftProject(kit.prismaService);
 
     const command = new InternalCreateRowCommand({
       revisionId: 'unreal',
@@ -47,8 +48,9 @@ describe('InternalCreateRowHandler', () => {
   });
 
   it('should throw an error if a similar row already exists', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new InternalCreateRowCommand({
       revisionId: draftRevisionId,
@@ -64,7 +66,9 @@ describe('InternalCreateRowHandler', () => {
   });
 
   it('should create a new row if conditions are met', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new InternalCreateRowCommand({
       revisionId: draftRevisionId,
@@ -77,7 +81,7 @@ describe('InternalCreateRowHandler', () => {
     const result = await runTransaction(command);
     expect(result.rowVersionId).toBeTruthy();
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: 'newRowId',
@@ -88,7 +92,9 @@ describe('InternalCreateRowHandler', () => {
   });
 
   it('should save the optional publishedAt field', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const publishedAtDate = new Date('2027-01-01T00:00:00.000Z');
 
@@ -104,7 +110,7 @@ describe('InternalCreateRowHandler', () => {
     const result = await runTransaction(command);
     expect(result.rowVersionId).toBeTruthy();
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: 'newRowId',
@@ -117,23 +123,18 @@ describe('InternalCreateRowHandler', () => {
   function runTransaction(
     command: InternalCreateRowCommand,
   ): Promise<InternalCreateRowCommandReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let rowApiService: RowApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    rowApiService = result.module.get<RowApiService>(RowApiService);
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

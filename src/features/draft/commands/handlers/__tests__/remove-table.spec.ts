@@ -1,18 +1,18 @@
-import { CommandBus } from '@nestjs/cqrs';
 import { nanoid } from 'nanoid';
 import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { RemoveTableCommand } from 'src/features/draft/commands/impl/remove-table.command';
 import { RemoveTableHandlerReturnType } from 'src/features/draft/commands/types/remove-table.handler.types';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { TableApiService } from 'src/features/table/table-api.service';
 import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('RemoveTableHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if the revision does not exist', async () => {
-    const { tableId } = await prepareProject(prismaService);
+    const { tableId } = await givenDraftProject(kit.prismaService);
 
     const command = new RemoveTableCommand({
       revisionId: 'unreal',
@@ -23,7 +23,7 @@ describe('RemoveTableHandler', () => {
   });
 
   it('should throw an error if findTableInRevisionOrThrow fails', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const command = new RemoveTableCommand({
       revisionId: draftRevisionId,
@@ -36,7 +36,7 @@ describe('RemoveTableHandler', () => {
   });
 
   it('should throw an error if the table is a system table', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const command = new RemoveTableCommand({
       revisionId: draftRevisionId,
@@ -50,12 +50,12 @@ describe('RemoveTableHandler', () => {
 
   it('should throw an error if the foreign keys exists', async () => {
     const { draftRevisionId, schemaTableVersionId, tableId } =
-      await prepareProject(prismaService);
+      await prepareProject(kit.prismaService);
     const anotherTableId = nanoid();
     const anotherTableVersionId = nanoid();
 
     // table
-    await prismaService.table.create({
+    await kit.prismaService.table.create({
       data: {
         id: anotherTableId,
         createdId: nanoid(),
@@ -79,7 +79,7 @@ describe('RemoveTableHandler', () => {
         },
       },
     };
-    await prismaService.row.create({
+    await kit.prismaService.row.create({
       data: {
         id: anotherTableId,
         readonly: false,
@@ -107,7 +107,9 @@ describe('RemoveTableHandler', () => {
   });
 
   it('should remove the table if conditions are met', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RemoveTableCommand({
       revisionId: draftRevisionId,
@@ -117,7 +119,7 @@ describe('RemoveTableHandler', () => {
     const result = await runTransaction(command);
     expect(result.revisionId).toBe(draftRevisionId);
 
-    const table = await tableApiService.getTable({
+    const table = await kit.tableApiService.getTable({
       revisionId: draftRevisionId,
       tableId,
     });
@@ -126,10 +128,12 @@ describe('RemoveTableHandler', () => {
 
   describe('views integration', () => {
     it('should remove views row when removing table that has views configured', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const viewsTableVersionId = nanoid();
-      await prismaService.table.create({
+      await kit.prismaService.table.create({
         data: {
           id: SystemTables.Views,
           versionId: viewsTableVersionId,
@@ -142,7 +146,7 @@ describe('RemoveTableHandler', () => {
         },
       });
 
-      await prismaService.row.create({
+      await kit.prismaService.row.create({
         data: {
           id: tableId,
           versionId: nanoid(),
@@ -161,7 +165,7 @@ describe('RemoveTableHandler', () => {
         },
       });
 
-      const viewsRowBefore = await prismaService.row.findFirst({
+      const viewsRowBefore = await kit.prismaService.row.findFirst({
         where: {
           id: tableId,
           tables: { some: { versionId: viewsTableVersionId } },
@@ -175,7 +179,7 @@ describe('RemoveTableHandler', () => {
       });
       await runTransaction(command);
 
-      const viewsRowAfter = await prismaService.row.findFirst({
+      const viewsRowAfter = await kit.prismaService.row.findFirst({
         where: {
           id: tableId,
           tables: { some: { versionId: viewsTableVersionId } },
@@ -185,7 +189,9 @@ describe('RemoveTableHandler', () => {
     });
 
     it('should not fail when removing table without views', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new RemoveTableCommand({
         revisionId: draftRevisionId,
@@ -196,9 +202,11 @@ describe('RemoveTableHandler', () => {
     });
 
     it('should not fail when views table exists but no views row for table', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
-      await prismaService.table.create({
+      await kit.prismaService.table.create({
         data: {
           id: SystemTables.Views,
           versionId: nanoid(),
@@ -223,23 +231,18 @@ describe('RemoveTableHandler', () => {
   function runTransaction(
     command: RemoveTableCommand,
   ): Promise<RemoveTableHandlerReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let tableApiService: TableApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    tableApiService = result.module.get<TableApiService>(TableApiService);
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

@@ -1,15 +1,14 @@
-import { CommandBus } from '@nestjs/cqrs';
 import {
   prepareProject,
   prepareTableWithSchema,
 } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   getArraySchema,
   getObjectSchema,
   getStringSchema,
 } from '@revisium/schema-toolkit/mocks';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import {
   ValidateDataCommand,
@@ -21,15 +20,16 @@ import {
   ForeignKeyTableNotFoundException,
   ValidationErrorCode,
 } from 'src/features/share/exceptions';
-import {
-  DraftContextKeys,
-  DraftContextService,
-} from 'src/features/draft/draft-context.service';
+import { DraftContextKeys } from 'src/features/draft/draft-context.service';
 
 describe('ValidateDataHandler', () => {
+  let kit: DraftTestKit;
+
   describe('JSON Schema Validation', () => {
     it('should throw DataValidationException for type mismatch', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new ValidateDataCommand({
         revisionId: draftRevisionId,
@@ -58,7 +58,9 @@ describe('ValidateDataHandler', () => {
     });
 
     it('should throw DataValidationException for missing required property', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new ValidateDataCommand({
         revisionId: draftRevisionId,
@@ -85,7 +87,9 @@ describe('ValidateDataHandler', () => {
     });
 
     it('should pass validation for valid data', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new ValidateDataCommand({
         revisionId: draftRevisionId,
@@ -100,7 +104,7 @@ describe('ValidateDataHandler', () => {
 
   describe('Foreign Key Validation', () => {
     it('should throw ForeignKeyRowsNotFoundException for simple foreign key', async () => {
-      const ids = await prepareProject(prismaService);
+      const ids = await prepareProject(kit.prismaService);
       const {
         draftRevisionId,
         headRevisionId,
@@ -110,7 +114,7 @@ describe('ValidateDataHandler', () => {
       } = ids;
 
       const table = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -153,7 +157,7 @@ describe('ValidateDataHandler', () => {
     });
 
     it('should report correct path for nested foreign key', async () => {
-      const ids = await prepareProject(prismaService);
+      const ids = await prepareProject(kit.prismaService);
       const {
         draftRevisionId,
         headRevisionId,
@@ -163,7 +167,7 @@ describe('ValidateDataHandler', () => {
       } = ids;
 
       const table = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -202,7 +206,7 @@ describe('ValidateDataHandler', () => {
     });
 
     it('should report correct path for foreign key in array', async () => {
-      const ids = await prepareProject(prismaService);
+      const ids = await prepareProject(kit.prismaService);
       const {
         draftRevisionId,
         headRevisionId,
@@ -212,7 +216,7 @@ describe('ValidateDataHandler', () => {
       } = ids;
 
       const table = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -244,7 +248,7 @@ describe('ValidateDataHandler', () => {
     });
 
     it('should throw ForeignKeyTableNotFoundException for non-existent table', async () => {
-      const ids = await prepareProject(prismaService);
+      const ids = await prepareProject(kit.prismaService);
       const {
         draftRevisionId,
         headRevisionId,
@@ -253,7 +257,7 @@ describe('ValidateDataHandler', () => {
       } = ids;
 
       const table = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -278,7 +282,7 @@ describe('ValidateDataHandler', () => {
     });
 
     it('should pass validation for existing foreign key reference', async () => {
-      const ids = await prepareProject(prismaService);
+      const ids = await prepareProject(kit.prismaService);
       const {
         draftRevisionId,
         headRevisionId,
@@ -289,7 +293,7 @@ describe('ValidateDataHandler', () => {
       } = ids;
 
       const table = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -310,7 +314,7 @@ describe('ValidateDataHandler', () => {
     });
 
     it('should throw error for empty foreign key value', async () => {
-      const ids = await prepareProject(prismaService);
+      const ids = await prepareProject(kit.prismaService);
       const {
         draftRevisionId,
         headRevisionId,
@@ -320,7 +324,7 @@ describe('ValidateDataHandler', () => {
       } = ids;
 
       const table = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -363,7 +367,7 @@ describe('ValidateDataHandler', () => {
 
   describe('Multiple Rows Validation', () => {
     it('should validate all rows and collect all errors', async () => {
-      const ids = await prepareProject(prismaService);
+      const ids = await prepareProject(kit.prismaService);
       const {
         draftRevisionId,
         headRevisionId,
@@ -373,7 +377,7 @@ describe('ValidateDataHandler', () => {
       } = ids;
 
       const table = await prepareTableWithSchema({
-        prismaService,
+        prismaService: kit.prismaService,
         headRevisionId,
         draftRevisionId,
         schemaTableVersionId,
@@ -414,28 +418,19 @@ describe('ValidateDataHandler', () => {
     command: ValidateDataCommand,
     draftRevisionId: string,
   ): Promise<ValidateDataCommandReturnType> {
-    return draftContextService.run(() =>
-      transactionService.run(async () => {
-        draftContextService.setKey(
+    return kit.draftContextService.run(() =>
+      kit.transactionService.run(async () => {
+        kit.draftContextService.setKey(
           DraftContextKeys.DraftRevisionId,
           draftRevisionId,
         );
-        return commandBus.execute(command);
+        return kit.commandBus.execute(command);
       }),
     );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let draftContextService: DraftContextService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    draftContextService = result.module.get(DraftContextService);
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -443,6 +438,8 @@ describe('ValidateDataHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

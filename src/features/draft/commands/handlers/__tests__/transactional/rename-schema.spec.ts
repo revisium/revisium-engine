@@ -1,20 +1,21 @@
-import { CommandBus } from '@nestjs/cqrs';
 import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   createTestingModule,
   getTestLinkedSchema,
 } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { RenameSchemaCommand } from 'src/features/draft/commands/impl/transactional/rename-schema.command';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('RenameSchemaHandler', () => {
   const nextTableId = 'nextTableId';
+  let kit: DraftTestKit;
 
   it('should rename the schema if conditions are met', async () => {
-    const ids = await prepareProject(prismaService);
-    const { draftRevisionId, tableId } = ids;
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameSchemaCommand({
       revisionId: draftRevisionId,
@@ -25,7 +26,7 @@ describe('RenameSchemaHandler', () => {
     const result = await runTransaction(command);
     expect(result).toBe(true);
 
-    const oldSchemaRow = await prismaService.row.findFirst({
+    const oldSchemaRow = await kit.prismaService.row.findFirst({
       where: {
         id: tableId,
         tables: {
@@ -42,7 +43,7 @@ describe('RenameSchemaHandler', () => {
     });
     expect(oldSchemaRow).toBeNull();
 
-    const newSchemaRow = await prismaService.row.findFirst({
+    const newSchemaRow = await kit.prismaService.row.findFirst({
       where: {
         id: nextTableId,
         tables: {
@@ -61,7 +62,7 @@ describe('RenameSchemaHandler', () => {
   });
 
   it('should update the linked table', async () => {
-    const ids = await prepareProject(prismaService, {
+    const ids = await prepareProject(kit.prismaService, {
       createLinkedTable: true,
     });
     const { draftRevisionId, tableId, linkedTable } = ids;
@@ -75,7 +76,7 @@ describe('RenameSchemaHandler', () => {
     const result = await runTransaction(command);
     expect(result).toBe(true);
 
-    const schemaRow = await prismaService.row.findFirstOrThrow({
+    const schemaRow = await kit.prismaService.row.findFirstOrThrow({
       where: {
         id: linkedTable?.tableId,
         tables: {
@@ -95,21 +96,18 @@ describe('RenameSchemaHandler', () => {
   });
 
   function runTransaction(command: RenameSchemaCommand): Promise<boolean> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

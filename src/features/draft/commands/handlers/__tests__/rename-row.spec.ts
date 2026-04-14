@@ -1,22 +1,22 @@
 import { BadRequestException } from '@nestjs/common';
-import { CommandBus } from '@nestjs/cqrs';
 import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import {
   RenameRowCommand,
   RenameRowCommandReturnType,
 } from 'src/features/draft/commands/impl/rename-row.command';
-import { RowApiService } from 'src/features/row/row-api.service';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('RenameRowHandler', () => {
   const nextRowId = 'nextRowId';
+  let kit: DraftTestKit;
 
   it('should throw an error if the rowId is shorter than 1 character', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameRowCommand({
       revisionId: draftRevisionId,
@@ -32,8 +32,9 @@ describe('RenameRowHandler', () => {
   });
 
   it('should throw an error if a similar row already exists', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameRowCommand({
       revisionId: draftRevisionId,
@@ -48,7 +49,7 @@ describe('RenameRowHandler', () => {
   });
 
   it('should throw an error if the revision does not exist', async () => {
-    const { tableId, rowId } = await prepareProject(prismaService);
+    const { tableId, rowId } = await givenDraftProject(kit.prismaService);
 
     const command = new RenameRowCommand({
       revisionId: 'unreal',
@@ -61,7 +62,9 @@ describe('RenameRowHandler', () => {
   });
 
   it('should throw an error if the table is a system table', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameRowCommand({
       revisionId: draftRevisionId,
@@ -76,7 +79,9 @@ describe('RenameRowHandler', () => {
   });
 
   it('should throw an error if the row does not exist', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameRowCommand({
       revisionId: draftRevisionId,
@@ -91,8 +96,9 @@ describe('RenameRowHandler', () => {
   });
 
   it('should rename the row if conditions are met', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameRowCommand({
       revisionId: draftRevisionId,
@@ -104,14 +110,14 @@ describe('RenameRowHandler', () => {
     const result = await runTransaction(command);
     expect(result.rowVersionId).toBeTruthy();
 
-    const oldRow = await rowApiService.getRow({
+    const oldRow = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId,
     });
     expect(oldRow).toBeNull();
 
-    const newRow = await rowApiService.getRow({
+    const newRow = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: nextRowId,
@@ -122,7 +128,7 @@ describe('RenameRowHandler', () => {
 
   it('should update the linked row', async () => {
     const { draftRevisionId, tableId, rowId, linkedTable, linkedRow } =
-      await prepareProject(prismaService, { createLinkedTable: true });
+      await prepareProject(kit.prismaService, { createLinkedTable: true });
     const command = new RenameRowCommand({
       revisionId: draftRevisionId,
       tableId,
@@ -134,7 +140,7 @@ describe('RenameRowHandler', () => {
 
     const linkedTableId = linkedTable?.tableId ?? '';
     const linkedRowId = linkedRow?.rowId ?? '';
-    const updatedLinkedRow = await rowApiService.getRow({
+    const updatedLinkedRow = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId: linkedTableId,
       rowId: linkedRowId,
@@ -145,9 +151,9 @@ describe('RenameRowHandler', () => {
 
   it('should not modify publishedAt when renaming row', async () => {
     const { draftRevisionId, tableId, rowId, linkedTable, linkedRow } =
-      await prepareProject(prismaService, { createLinkedTable: true });
+      await prepareProject(kit.prismaService, { createLinkedTable: true });
 
-    const originalRow = await prismaService.row.findFirstOrThrow({
+    const originalRow = await kit.prismaService.row.findFirstOrThrow({
       where: {
         id: linkedRow?.rowId,
         tables: {
@@ -175,7 +181,7 @@ describe('RenameRowHandler', () => {
 
     await runTransaction(command);
 
-    const updatedRow = await prismaService.row.findFirstOrThrow({
+    const updatedRow = await kit.prismaService.row.findFirstOrThrow({
       where: {
         id: linkedRow?.rowId,
         tables: {
@@ -197,23 +203,18 @@ describe('RenameRowHandler', () => {
   function runTransaction(
     command: RenameRowCommand,
   ): Promise<RenameRowCommandReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let rowApiService: RowApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    rowApiService = result.module.get<RowApiService>(RowApiService);
+    kit = await createTestingModule();
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

@@ -1,19 +1,20 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   ApiCreateRevisionCommand,
   ApiCreateRevisionCommandReturnType,
 } from 'src/features/draft/commands/impl/api-create-revision.command';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiCreateRevisionHandler', () => {
+  let kit: DraftTestKit;
+
   it('should create a new draft revision', async () => {
-    const { projectId, branchName, draftRevisionId } =
-      await prepareProject(prismaService);
-    await prismaService.revision.update({
+    const draft = await givenDraftProject(kit.prismaService);
+
+    await kit.prismaService.revision.update({
       where: {
-        id: draftRevisionId,
+        id: draft.draftRevisionId,
       },
       data: {
         hasChanges: true,
@@ -21,16 +22,16 @@ describe('ApiCreateRevisionHandler', () => {
     });
 
     const command = new ApiCreateRevisionCommand({
-      projectId,
-      branchName,
+      projectId: draft.projectId,
+      branchName: draft.branchName,
       comment: 'comment',
     });
 
     const result = await execute(command);
 
     const committedHeadRevision =
-      await prismaService.revision.findUniqueOrThrow({
-        where: { id: draftRevisionId },
+      await kit.prismaService.revision.findUniqueOrThrow({
+        where: { id: draft.draftRevisionId },
       });
     expect(committedHeadRevision.isHead).toBe(true);
     expect(committedHeadRevision.isDraft).toBe(false);
@@ -38,23 +39,18 @@ describe('ApiCreateRevisionHandler', () => {
     const { previousHeadRevisionId, previousDraftRevisionId, ...revision } =
       result;
     expect(revision).toStrictEqual(committedHeadRevision);
-    expect(previousDraftRevisionId).toBe(draftRevisionId);
+    expect(previousDraftRevisionId).toBe(draft.draftRevisionId);
     expect(typeof previousHeadRevisionId).toBe('string');
   });
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
 
   function execute(
     command: ApiCreateRevisionCommand,
   ): Promise<ApiCreateRevisionCommandReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -62,6 +58,8 @@ describe('ApiCreateRevisionHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

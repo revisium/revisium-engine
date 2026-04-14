@@ -1,22 +1,21 @@
-import { CommandBus } from '@nestjs/cqrs';
 import { nanoid } from 'nanoid';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import {
   RenameTableCommand,
   RenameTableCommandReturnType,
 } from 'src/features/draft/commands/impl/rename-table.command';
-import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { TableApiService } from 'src/features/table/table-api.service';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('RenameTableHandler', () => {
   const nextTableId = 'nextTableId';
+  let kit: DraftTestKit;
 
   it('should throw an error if the tableId is shorter than 1 character', async () => {
-    const { tableId, draftRevisionId } = await prepareProject(prismaService);
+    const { tableId, draftRevisionId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameTableCommand({
       revisionId: draftRevisionId,
@@ -30,10 +29,10 @@ describe('RenameTableHandler', () => {
   });
 
   it('should throw an error if the revision does not exist', async () => {
-    const { tableId } = await prepareProject(prismaService);
+    const { tableId } = await givenDraftProject(kit.prismaService);
 
     jest
-      .spyOn(draftTransactionalCommands, 'resolveDraftRevision')
+      .spyOn(kit.draftTransactionalCommands, 'resolveDraftRevision')
       .mockRejectedValue(new Error('Revision not found'));
 
     const command = new RenameTableCommand({
@@ -46,10 +45,12 @@ describe('RenameTableHandler', () => {
   });
 
   it('should throw an error if findTableInRevisionOrThrow fails', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     jest
-      .spyOn(draftTransactionalCommands, 'resolveDraftRevision')
+      .spyOn(kit.draftTransactionalCommands, 'resolveDraftRevision')
       .mockRejectedValue(new Error('Table not found'));
 
     const command = new RenameTableCommand({
@@ -62,7 +63,9 @@ describe('RenameTableHandler', () => {
   });
 
   it('should throw an error if IDs are the same', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameTableCommand({
       revisionId: draftRevisionId,
@@ -76,7 +79,7 @@ describe('RenameTableHandler', () => {
   });
 
   it('should throw an error if the table is a system table', async () => {
-    const { draftRevisionId } = await prepareProject(prismaService);
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
 
     const command = new RenameTableCommand({
       revisionId: draftRevisionId,
@@ -90,7 +93,9 @@ describe('RenameTableHandler', () => {
   });
 
   it('should rename the table', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new RenameTableCommand({
       revisionId: draftRevisionId,
@@ -101,13 +106,13 @@ describe('RenameTableHandler', () => {
     const result = await runTransaction(command);
     expect(result.tableVersionId).toBeTruthy();
 
-    const oldTable = await tableApiService.getTable({
+    const oldTable = await kit.tableApiService.getTable({
       revisionId: draftRevisionId,
       tableId,
     });
     expect(oldTable).toBeNull();
 
-    const newTable = await tableApiService.getTable({
+    const newTable = await kit.tableApiService.getTable({
       revisionId: draftRevisionId,
       tableId: nextTableId,
     });
@@ -118,22 +123,13 @@ describe('RenameTableHandler', () => {
   function runTransaction(
     command: RenameTableCommand,
   ): Promise<RenameTableCommandReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let draftTransactionalCommands: DraftTransactionalCommands;
-  let tableApiService: TableApiService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    draftTransactionalCommands = result.draftTransactionalCommands;
-    tableApiService = result.module.get<TableApiService>(TableApiService);
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -141,15 +137,19 @@ describe('RenameTableHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 
   describe('views integration', () => {
     it('should rename views row when renaming table that has views configured', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const viewsTableVersionId = nanoid();
-      await prismaService.table.create({
+      await kit.prismaService.table.create({
         data: {
           id: SystemTables.Views,
           versionId: viewsTableVersionId,
@@ -163,7 +163,7 @@ describe('RenameTableHandler', () => {
       });
 
       const viewsRowVersionId = nanoid();
-      await prismaService.row.create({
+      await kit.prismaService.row.create({
         data: {
           id: tableId,
           versionId: viewsRowVersionId,
@@ -182,7 +182,7 @@ describe('RenameTableHandler', () => {
         },
       });
 
-      const viewsRowBefore = await prismaService.row.findFirst({
+      const viewsRowBefore = await kit.prismaService.row.findFirst({
         where: {
           id: tableId,
           tables: { some: { versionId: viewsTableVersionId } },
@@ -197,7 +197,7 @@ describe('RenameTableHandler', () => {
       });
       await runTransaction(command);
 
-      const viewsRowAfterOld = await prismaService.row.findFirst({
+      const viewsRowAfterOld = await kit.prismaService.row.findFirst({
         where: {
           id: tableId,
           tables: {
@@ -210,7 +210,7 @@ describe('RenameTableHandler', () => {
       });
       expect(viewsRowAfterOld).toBeNull();
 
-      const viewsRowAfterNew = await prismaService.row.findFirst({
+      const viewsRowAfterNew = await kit.prismaService.row.findFirst({
         where: {
           id: nextTableId,
           tables: {
@@ -230,7 +230,9 @@ describe('RenameTableHandler', () => {
     });
 
     it('should not fail when renaming table without views', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
       const command = new RenameTableCommand({
         revisionId: draftRevisionId,
@@ -242,9 +244,11 @@ describe('RenameTableHandler', () => {
     });
 
     it('should not fail when views table exists but no views row for table', async () => {
-      const { draftRevisionId, tableId } = await prepareProject(prismaService);
+      const { draftRevisionId, tableId } = await givenDraftProject(
+        kit.prismaService,
+      );
 
-      await prismaService.table.create({
+      await kit.prismaService.table.create({
         data: {
           id: SystemTables.Views,
           versionId: nanoid(),

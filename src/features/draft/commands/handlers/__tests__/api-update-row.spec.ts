@@ -1,5 +1,8 @@
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import {
+  givenDraftProject,
+  givenReadonlyDraftTable,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { ApiUpdateRowCommand } from 'src/features/draft/commands/impl/api-update-row.command';
 import { ApiUpdateRowHandlerReturnType } from 'src/features/draft/commands/types/api-update-row.handler.types';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
@@ -8,7 +11,7 @@ describe('ApiUpdateRowHandler', () => {
   let kit: DraftTestKit;
 
   it('should update the row', async () => {
-    const draft = await prepareProject(kit.prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const command = new ApiUpdateRowCommand({
       revisionId: draft.draftRevisionId,
@@ -42,15 +45,10 @@ describe('ApiUpdateRowHandler', () => {
   });
 
   it('should notify endpoints if a new table was created', async () => {
-    const draft = await prepareProject(kit.prismaService);
-
-    await kit.prismaService.table.update({
-      where: {
-        versionId: draft.draftTableVersionId,
-      },
-      data: {
-        readonly: true,
-      },
+    const draft = await givenDraftProject(kit.prismaService);
+    await givenReadonlyDraftTable({
+      prismaService: kit.prismaService,
+      draftTableVersionId: draft.draftTableVersionId,
     });
 
     const command = new ApiUpdateRowCommand({

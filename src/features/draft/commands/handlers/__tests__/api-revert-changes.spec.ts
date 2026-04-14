@@ -1,19 +1,20 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   ApiRevertChangesCommand,
   ApiRevertChangesCommandReturnType,
 } from 'src/features/draft/commands/impl/api-revert-changes.command';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiRevertChangesHandler', () => {
+  let kit: DraftTestKit;
+
   it('should revert changes', async () => {
-    const { branchId, projectId, branchName, draftRevisionId } =
-      await prepareProject(prismaService);
-    await prismaService.revision.update({
+    const draft = await givenDraftProject(kit.prismaService);
+
+    await kit.prismaService.revision.update({
       where: {
-        id: draftRevisionId,
+        id: draft.draftRevisionId,
       },
       data: {
         hasChanges: true,
@@ -21,28 +22,23 @@ describe('ApiRevertChangesHandler', () => {
     });
 
     const command = new ApiRevertChangesCommand({
-      projectId,
-      branchName,
+      projectId: draft.projectId,
+      branchName: draft.branchName,
     });
 
     const result = await execute(command);
 
-    expect(result.id).toStrictEqual(branchId);
+    expect(result.id).toStrictEqual(draft.branchId);
   });
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
 
   function execute(
     command: ApiRevertChangesCommand,
   ): Promise<ApiRevertChangesCommandReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -50,6 +46,8 @@ describe('ApiRevertChangesHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

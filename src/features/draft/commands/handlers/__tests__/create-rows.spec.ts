@@ -1,19 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { CreateRowsCommand } from 'src/features/draft/commands/impl/create-rows.command';
 import { CreateRowsHandlerReturnType } from 'src/features/draft/commands/types/create-rows.handler.types';
-import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { RowApiService } from 'src/features/row/row-api.service';
-import { PluginService } from 'src/features/plugin/plugin.service';
 
 describe('CreateRowsHandler', () => {
+  let kit: DraftTestKit;
+
   it('should throw an error if any rowId is shorter than 1 character', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateRowsCommand({
       revisionId: draftRevisionId,
@@ -31,10 +30,10 @@ describe('CreateRowsHandler', () => {
   });
 
   it('should throw an error if the revision does not exist', async () => {
-    await prepareProject(prismaService);
+    await givenDraftProject(kit.prismaService);
 
     jest
-      .spyOn(draftTransactionalCommands, 'resolveDraftRevision')
+      .spyOn(kit.draftTransactionalCommands, 'resolveDraftRevision')
       .mockRejectedValue(new Error('Revision not found'));
 
     const command = new CreateRowsCommand({
@@ -47,8 +46,9 @@ describe('CreateRowsHandler', () => {
   });
 
   it('should throw an error if any row already exists', async () => {
-    const { draftRevisionId, tableId, rowId } =
-      await prepareProject(prismaService);
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateRowsCommand({
       revisionId: draftRevisionId,
@@ -65,7 +65,9 @@ describe('CreateRowsHandler', () => {
   });
 
   it('should throw an error if any data is not valid', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateRowsCommand({
       revisionId: draftRevisionId,
@@ -80,7 +82,9 @@ describe('CreateRowsHandler', () => {
   });
 
   it('should throw an error if the table is a system table', async () => {
-    const { draftRevisionId, rowId } = await prepareProject(prismaService);
+    const { draftRevisionId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateRowsCommand({
       revisionId: draftRevisionId,
@@ -94,7 +98,9 @@ describe('CreateRowsHandler', () => {
   });
 
   it('should create multiple rows if conditions are met', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateRowsCommand({
       revisionId: draftRevisionId,
@@ -113,17 +119,17 @@ describe('CreateRowsHandler', () => {
     expect(result.createdRows[1]?.rowVersionId).toBeTruthy();
     expect(result.createdRows[2]?.rowVersionId).toBeTruthy();
 
-    const row1 = await rowApiService.getRow({
+    const row1 = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: 'newRow1',
     });
-    const row2 = await rowApiService.getRow({
+    const row2 = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: 'newRow2',
     });
-    const row3 = await rowApiService.getRow({
+    const row3 = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: 'newRow3',
@@ -138,7 +144,9 @@ describe('CreateRowsHandler', () => {
   });
 
   it('should create a single row via bulk operation', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateRowsCommand({
       revisionId: draftRevisionId,
@@ -150,7 +158,7 @@ describe('CreateRowsHandler', () => {
 
     expect(result.createdRows).toHaveLength(1);
 
-    const row = await rowApiService.getRow({
+    const row = await kit.rowApiService.getRow({
       revisionId: draftRevisionId,
       tableId,
       rowId: 'singleRow',
@@ -160,9 +168,11 @@ describe('CreateRowsHandler', () => {
   });
 
   it('should pass isRestore=true to plugin service', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
-    const afterCreateRowSpy = jest.spyOn(pluginService, 'afterCreateRow');
+    const afterCreateRowSpy = jest.spyOn(kit.pluginService, 'afterCreateRow');
 
     const command = new CreateRowsCommand({
       revisionId: draftRevisionId,
@@ -181,9 +191,11 @@ describe('CreateRowsHandler', () => {
   });
 
   it('should pass isRestore=false (undefined) to plugin service by default', async () => {
-    const { draftRevisionId, tableId } = await prepareProject(prismaService);
+    const { draftRevisionId, tableId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
-    const afterCreateRowSpy = jest.spyOn(pluginService, 'afterCreateRow');
+    const afterCreateRowSpy = jest.spyOn(kit.pluginService, 'afterCreateRow');
 
     const command = new CreateRowsCommand({
       revisionId: draftRevisionId,
@@ -203,24 +215,13 @@ describe('CreateRowsHandler', () => {
   function runTransaction(
     command: CreateRowsCommand,
   ): Promise<CreateRowsHandlerReturnType> {
-    return transactionService.run(async () => commandBus.execute(command));
+    return kit.transactionService.run(async () =>
+      kit.commandBus.execute(command),
+    );
   }
 
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
-  let transactionService: TransactionPrismaService;
-  let draftTransactionalCommands: DraftTransactionalCommands;
-  let rowApiService: RowApiService;
-  let pluginService: PluginService;
-
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
-    transactionService = result.transactionService;
-    draftTransactionalCommands = result.draftTransactionalCommands;
-    rowApiService = result.module.get(RowApiService);
-    pluginService = result.module.get(PluginService);
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -228,6 +229,8 @@ describe('CreateRowsHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

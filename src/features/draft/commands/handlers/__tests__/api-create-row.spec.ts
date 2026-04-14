@@ -1,31 +1,34 @@
-import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import {
+  givenDraftProject,
+  givenReadonlyDraftTable,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { ApiCreateRowCommand } from 'src/features/draft/commands/impl/api-create-row.command';
 import { ApiCreateRowHandlerReturnType } from 'src/features/draft/commands/types/api-create-row.handler.types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 
 describe('ApiCreateRowHandler', () => {
+  let kit: DraftTestKit;
+
   it('should create a new row', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId } =
-      await prepareProject(prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const newRowId = 'newRowId';
     const command = new ApiCreateRowCommand({
-      revisionId: draftRevisionId,
-      tableId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
       rowId: newRowId,
       data: { ver: 1 },
     });
 
     const result = await execute(command);
 
-    const row = await prismaService.row.findFirstOrThrow({
+    const row = await kit.prismaService.row.findFirstOrThrow({
       where: {
         id: newRowId,
         tables: {
           some: {
-            versionId: draftTableVersionId,
+            versionId: draft.draftTableVersionId,
           },
         },
       },
@@ -33,53 +36,43 @@ describe('ApiCreateRowHandler', () => {
     expect(result.row).toMatchObject({
       ...row,
       context: {
-        revisionId: draftRevisionId,
-        tableId,
+        revisionId: draft.draftRevisionId,
+        tableId: draft.tableId,
       },
     });
-    expect(result.table.versionId).toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table.versionId).toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
 
   it('should create a new table version when table is readonly', async () => {
-    const { draftRevisionId, tableId, draftTableVersionId } =
-      await prepareProject(prismaService);
-    await prismaService.table.update({
-      where: {
-        versionId: draftTableVersionId,
-      },
-      data: {
-        readonly: true,
-      },
+    const draft = await givenDraftProject(kit.prismaService);
+    await givenReadonlyDraftTable({
+      prismaService: kit.prismaService,
+      draftTableVersionId: draft.draftTableVersionId,
     });
 
     const newRowId = 'newRowId';
     const command = new ApiCreateRowCommand({
-      revisionId: draftRevisionId,
-      tableId,
+      revisionId: draft.draftRevisionId,
+      tableId: draft.tableId,
       rowId: newRowId,
       data: { ver: 1 },
     });
 
     const result = await execute(command);
 
-    expect(result.table.versionId).not.toBe(draftTableVersionId);
-    expect(result.previousVersionTableId).toBe(draftTableVersionId);
+    expect(result.table.versionId).not.toBe(draft.draftTableVersionId);
+    expect(result.previousVersionTableId).toBe(draft.draftTableVersionId);
   });
-
-  let prismaService: PrismaService;
-  let commandBus: CommandBus;
 
   function execute(
     command: ApiCreateRowCommand,
   ): Promise<ApiCreateRowHandlerReturnType> {
-    return commandBus.execute(command);
+    return kit.commandBus.execute(command);
   }
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    commandBus = result.commandBus;
+    kit = await createTestingModule();
   });
 
   beforeEach(() => {
@@ -87,6 +80,8 @@ describe('ApiCreateRowHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    if (kit) {
+      await kit.close();
+    }
   });
 });

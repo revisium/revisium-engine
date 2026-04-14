@@ -1,5 +1,5 @@
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { ApiUpdateTableCommand } from 'src/features/draft/commands/impl/api-update-table.command';
 import { ApiUpdateTableHandlerReturnType } from 'src/features/draft/commands/types/api-update-table.handler.types';
 import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
@@ -9,7 +9,7 @@ describe('ApiUpdateTableHandler', () => {
   let kit: DraftTestKit;
 
   it('should update the table', async () => {
-    const draft = await prepareProject(kit.prismaService);
+    const draft = await givenDraftProject(kit.prismaService);
 
     const command = new ApiUpdateTableCommand({
       revisionId: draft.draftRevisionId,

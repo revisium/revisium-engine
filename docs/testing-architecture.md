@@ -252,6 +252,18 @@ That is acceptable when:
 The goal is not uniformity for its own sake. The goal is to make the default test
 style better and keep low-level tests explicit when explicitness is the right tradeoff.
 
+## Ongoing Use
+
+The refactor is complete enough that this architecture is now the default.
+
+From this point:
+
+- new tests should follow these patterns
+- existing tests should be cleaned up opportunistically when feature work touches them
+- low-level tests should stay direct when direct setup is the clearest expression of the invariant
+
+The goal is steady-state maintenance, not another broad rewrite campaign.
+
 ## What Good Tests Should Look Like
 
 ### Example: feature integration test

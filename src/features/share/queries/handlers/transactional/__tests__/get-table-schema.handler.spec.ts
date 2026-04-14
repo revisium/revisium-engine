@@ -1,5 +1,6 @@
 import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
+import type { QueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
+import { createQueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
 import { metaSchema } from 'src/features/share/schema/meta-schema';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
@@ -19,13 +20,14 @@ describe('GetTableSchemaHandler', () => {
     });
   });
 
+  let kit: QueryTestKit;
   let prismaService: PrismaService;
   let shareTransactionalQueries: ShareTransactionalQueries;
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    shareTransactionalQueries = result.shareTransactionalQueries;
+    kit = await createQueryTestKit();
+    prismaService = kit.prismaService;
+    shareTransactionalQueries = kit.shareTransactionalQueries;
   });
 
   beforeEach(() => {
@@ -33,6 +35,6 @@ describe('GetTableSchemaHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

@@ -1,5 +1,6 @@
 import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
-import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
+import type { QueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
+import { createQueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { SystemTablesService } from 'src/features/share/system-tables.service';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
@@ -122,15 +123,16 @@ describe('SystemTablesService', () => {
     return transactionService.run(fn);
   }
 
+  let kit: QueryTestKit;
   let prismaService: PrismaService;
   let transactionService: TransactionPrismaService;
   let systemTablesService: SystemTablesService;
 
   beforeAll(async () => {
-    const result = await createTestingModule();
-    prismaService = result.prismaService;
-    transactionService = result.transactionService;
-    systemTablesService = result.module.get(SystemTablesService);
+    kit = await createQueryTestKit();
+    prismaService = kit.prismaService;
+    transactionService = kit.transactionService;
+    systemTablesService = kit.systemTablesService;
   });
 
   beforeEach(() => {
@@ -138,6 +140,6 @@ describe('SystemTablesService', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await kit.close();
   });
 });

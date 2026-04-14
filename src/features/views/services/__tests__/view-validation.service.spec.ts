@@ -1,18 +1,70 @@
 import { BadRequestException } from '@nestjs/common';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import {
+  givenDraftProject,
+  givenDraftProjectWithSchema,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { ViewValidationService } from 'src/features/views/services/view-validation.service';
 import { TableViewsData } from 'src/features/views/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
+import {
+  JsonSchemaTypeName,
+  type JsonObjectSchema,
+} from '@revisium/schema-toolkit/types';
+
+const titleCountSchema: JsonObjectSchema = {
+  type: JsonSchemaTypeName.Object,
+  properties: {
+    title: { type: JsonSchemaTypeName.String, default: '' },
+    count: { type: JsonSchemaTypeName.Number, default: 0 },
+  },
+  additionalProperties: false,
+  required: ['title', 'count'],
+};
+
+const nestedRewardsSchema: JsonObjectSchema = {
+  type: JsonSchemaTypeName.Object,
+  properties: {
+    rewards: {
+      type: JsonSchemaTypeName.Object,
+      properties: {
+        reputation: {
+          type: JsonSchemaTypeName.Object,
+          properties: {
+            faction: {
+              type: JsonSchemaTypeName.String,
+              default: '',
+            },
+            amount: { type: JsonSchemaTypeName.Number, default: 0 },
+          },
+          additionalProperties: false,
+          required: ['faction', 'amount'],
+        },
+      },
+      additionalProperties: false,
+      required: ['reputation'],
+    },
+  },
+  additionalProperties: false,
+  required: ['rewards'],
+};
+
+const titleOnlySchema: JsonObjectSchema = {
+  type: JsonSchemaTypeName.Object,
+  properties: {
+    title: { type: JsonSchemaTypeName.String, default: '' },
+  },
+  additionalProperties: false,
+  required: ['title'],
+};
 
 describe('ViewValidationService', () => {
   describe('validateViewsFields', () => {
     describe('valid fields', () => {
       it('should accept system fields (id, createdAt, updatedAt)', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,
@@ -43,26 +95,9 @@ describe('ViewValidationService', () => {
       });
 
       it('should accept valid schema fields with data. prefix', async () => {
-        const { draftRevisionId, tableId, schemaTableVersionId } =
-          await prepareProject(prismaService);
-
-        // Update schema with custom fields
-        await prismaService.row.updateMany({
-          where: {
-            id: tableId,
-            tables: { some: { versionId: schemaTableVersionId } },
-          },
-          data: {
-            data: {
-              type: JsonSchemaTypeName.Object,
-              properties: {
-                title: { type: JsonSchemaTypeName.String, default: '' },
-                count: { type: JsonSchemaTypeName.Number, default: 0 },
-              },
-              additionalProperties: false,
-              required: ['title', 'count'],
-            },
-          },
+        const { draftRevisionId, tableId } = await givenDraftProjectWithSchema({
+          prismaService,
+          schema: titleCountSchema,
         });
 
         const viewsData: TableViewsData = {
@@ -94,43 +129,9 @@ describe('ViewValidationService', () => {
       });
 
       it('should accept nested schema fields', async () => {
-        const { draftRevisionId, tableId, schemaTableVersionId } =
-          await prepareProject(prismaService);
-
-        // Update schema with nested object fields
-        await prismaService.row.updateMany({
-          where: {
-            id: tableId,
-            tables: { some: { versionId: schemaTableVersionId } },
-          },
-          data: {
-            data: {
-              type: JsonSchemaTypeName.Object,
-              properties: {
-                rewards: {
-                  type: JsonSchemaTypeName.Object,
-                  properties: {
-                    reputation: {
-                      type: JsonSchemaTypeName.Object,
-                      properties: {
-                        faction: {
-                          type: JsonSchemaTypeName.String,
-                          default: '',
-                        },
-                        amount: { type: JsonSchemaTypeName.Number, default: 0 },
-                      },
-                      additionalProperties: false,
-                      required: ['faction', 'amount'],
-                    },
-                  },
-                  additionalProperties: false,
-                  required: ['reputation'],
-                },
-              },
-              additionalProperties: false,
-              required: ['rewards'],
-            },
-          },
+        const { draftRevisionId, tableId } = await givenDraftProjectWithSchema({
+          prismaService,
+          schema: nestedRewardsSchema,
         });
 
         const viewsData: TableViewsData = {
@@ -167,7 +168,7 @@ describe('ViewValidationService', () => {
 
       it('should accept empty columns and sorts', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,
@@ -195,7 +196,7 @@ describe('ViewValidationService', () => {
 
       it('should accept null columns (default columns)', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,
@@ -225,7 +226,7 @@ describe('ViewValidationService', () => {
     describe('invalid fields', () => {
       it('should throw error for non-existent schema field in columns', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,
@@ -252,7 +253,7 @@ describe('ViewValidationService', () => {
 
       it('should throw error for non-existent schema field in sorts', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,
@@ -278,25 +279,9 @@ describe('ViewValidationService', () => {
       });
 
       it('should throw error for field without data. prefix', async () => {
-        const { draftRevisionId, tableId, schemaTableVersionId } =
-          await prepareProject(prismaService);
-
-        // Add field to schema
-        await prismaService.row.updateMany({
-          where: {
-            id: tableId,
-            tables: { some: { versionId: schemaTableVersionId } },
-          },
-          data: {
-            data: {
-              type: JsonSchemaTypeName.Object,
-              properties: {
-                title: { type: JsonSchemaTypeName.String, default: '' },
-              },
-              additionalProperties: false,
-              required: ['title'],
-            },
-          },
+        const { draftRevisionId, tableId } = await givenDraftProjectWithSchema({
+          prismaService,
+          schema: titleOnlySchema,
         });
 
         const viewsData: TableViewsData = {
@@ -327,7 +312,7 @@ describe('ViewValidationService', () => {
 
       it('should throw error for invalid field in filters', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,
@@ -363,7 +348,7 @@ describe('ViewValidationService', () => {
 
       it('should throw error for invalid field in nested filter groups', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,
@@ -405,7 +390,7 @@ describe('ViewValidationService', () => {
 
       it('should include all invalid fields in error message', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,
@@ -451,7 +436,7 @@ describe('ViewValidationService', () => {
     describe('multiple views', () => {
       it('should validate fields across all views', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData: TableViewsData = {
           version: 1,

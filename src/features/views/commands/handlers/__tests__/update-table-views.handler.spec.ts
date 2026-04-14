@@ -1,6 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import {
+  givenDraftProject,
+  givenDraftProjectWithSchema,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { tableViewsSchema } from 'src/features/share/schema/table-views-schema';
@@ -10,14 +13,41 @@ import { DEFAULT_VIEW_ID, TableViewsData } from 'src/features/views/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
-import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
+import {
+  JsonSchemaTypeName,
+  type JsonObjectSchema,
+} from '@revisium/schema-toolkit/types';
+
+const complexViewsSchema: JsonObjectSchema = {
+  type: JsonSchemaTypeName.Object,
+  properties: {
+    title: { type: JsonSchemaTypeName.String, default: '' },
+    status: { type: JsonSchemaTypeName.String, default: '' },
+    views: { type: JsonSchemaTypeName.Number, default: 0 },
+    category: { type: JsonSchemaTypeName.String, default: '' },
+    meta: {
+      type: JsonSchemaTypeName.Object,
+      properties: {
+        author: { type: JsonSchemaTypeName.String, default: '' },
+        publishedAt: {
+          type: JsonSchemaTypeName.String,
+          default: '',
+        },
+      },
+      additionalProperties: false,
+      required: ['author', 'publishedAt'],
+    },
+  },
+  additionalProperties: false,
+  required: ['title', 'status', 'views', 'category', 'meta'],
+};
 
 describe('UpdateTableViewsHandler', () => {
   describe('validation', () => {
     describe('defaultViewId validation', () => {
       it('should throw error when defaultViewId does not exist in views', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData: TableViewsData = {
           version: 1,
@@ -40,7 +70,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should accept valid defaultViewId', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const validData: TableViewsData = {
           version: 1,
@@ -63,7 +93,7 @@ describe('UpdateTableViewsHandler', () => {
     describe('unique view IDs validation', () => {
       it('should throw error when view IDs are not unique', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData: TableViewsData = {
           version: 1,
@@ -89,7 +119,7 @@ describe('UpdateTableViewsHandler', () => {
     describe('view ID format validation', () => {
       it('should throw error when view ID contains invalid characters', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData: TableViewsData = {
           version: 1,
@@ -110,7 +140,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error when view ID starts with double underscore', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData: TableViewsData = {
           version: 1,
@@ -131,7 +161,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error when view ID starts with number', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData: TableViewsData = {
           version: 1,
@@ -152,7 +182,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error when view ID exceeds max length', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const longId = 'a'.repeat(65);
         const invalidData: TableViewsData = {
@@ -174,7 +204,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should accept valid view IDs', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const validData: TableViewsData = {
           version: 1,
@@ -201,7 +231,7 @@ describe('UpdateTableViewsHandler', () => {
     describe('schema validation', () => {
       it('should throw error for invalid version type', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData = {
           version: 'not-a-number',
@@ -222,7 +252,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error for version less than 1', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData = {
           version: 0,
@@ -243,7 +273,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error for view with empty id', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData = {
           version: 1,
@@ -264,7 +294,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error for view with name exceeding max length', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const longName = 'a'.repeat(101);
         const invalidData = {
@@ -286,7 +316,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error for column with empty field', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData = {
           version: 1,
@@ -313,7 +343,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should accept null columns (default columns)', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const validData: TableViewsData = {
           version: 1,
@@ -340,7 +370,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should accept empty columns array (user hid all columns)', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const validData: TableViewsData = {
           version: 1,
@@ -367,7 +397,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error for column width less than minimum', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData = {
           version: 1,
@@ -394,7 +424,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error for invalid sort direction', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData = {
           version: 1,
@@ -421,7 +451,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should throw error for invalid filter operator', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const invalidData = {
           version: 1,
@@ -452,40 +482,9 @@ describe('UpdateTableViewsHandler', () => {
 
     describe('valid complex views', () => {
       it('should accept views with all optional fields', async () => {
-        const { draftRevisionId, tableId, schemaTableVersionId } =
-          await prepareProject(prismaService);
-
-        // Update schema with fields for complex view
-        await prismaService.row.updateMany({
-          where: {
-            id: tableId,
-            tables: { some: { versionId: schemaTableVersionId } },
-          },
-          data: {
-            data: {
-              type: JsonSchemaTypeName.Object,
-              properties: {
-                title: { type: JsonSchemaTypeName.String, default: '' },
-                status: { type: JsonSchemaTypeName.String, default: '' },
-                views: { type: JsonSchemaTypeName.Number, default: 0 },
-                category: { type: JsonSchemaTypeName.String, default: '' },
-                meta: {
-                  type: JsonSchemaTypeName.Object,
-                  properties: {
-                    author: { type: JsonSchemaTypeName.String, default: '' },
-                    publishedAt: {
-                      type: JsonSchemaTypeName.String,
-                      default: '',
-                    },
-                  },
-                  additionalProperties: false,
-                  required: ['author', 'publishedAt'],
-                },
-              },
-              additionalProperties: false,
-              required: ['title', 'status', 'views', 'category', 'meta'],
-            },
-          },
+        const { draftRevisionId, tableId } = await givenDraftProjectWithSchema({
+          prismaService,
+          schema: complexViewsSchema,
         });
 
         const complexData: TableViewsData = {
@@ -551,7 +550,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should accept multiple views', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const multiViewData: TableViewsData = {
           version: 1,
@@ -577,7 +576,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should accept empty views array with default view', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const defaultData: TableViewsData = {
           version: 1,
@@ -607,7 +606,7 @@ describe('UpdateTableViewsHandler', () => {
 
     describe('table existence validation', () => {
       it('should throw BadRequestException when table does not exist', async () => {
-        const { draftRevisionId } = await prepareProject(prismaService);
+        const { draftRevisionId } = await givenDraftProject(prismaService);
 
         const validData: TableViewsData = {
           version: 1,
@@ -627,7 +626,7 @@ describe('UpdateTableViewsHandler', () => {
       });
 
       it('should include table name in error message', async () => {
-        const { draftRevisionId } = await prepareProject(prismaService);
+        const { draftRevisionId } = await givenDraftProject(prismaService);
 
         const validData: TableViewsData = {
           version: 1,
@@ -649,7 +648,8 @@ describe('UpdateTableViewsHandler', () => {
 
     describe('draft revision validation', () => {
       it('should throw error when revision is not a draft', async () => {
-        const { headRevisionId, tableId } = await prepareProject(prismaService);
+        const { headRevisionId, tableId } =
+          await givenDraftProject(prismaService);
 
         const validData: TableViewsData = {
           version: 1,
@@ -669,7 +669,7 @@ describe('UpdateTableViewsHandler', () => {
       });
 
       it('should throw error when revision does not exist', async () => {
-        const { tableId } = await prepareProject(prismaService);
+        const { tableId } = await givenDraftProject(prismaService);
 
         const validData: TableViewsData = {
           version: 1,
@@ -708,7 +708,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should use tableViewsSchema hash, not data hash', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const expectedSchemaHash =
           jsonSchemaValidator.getSchemaHash(tableViewsSchema);
@@ -735,7 +735,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should have same schemaHash for different views data', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         const viewsData1: TableViewsData = {
           version: 1,
@@ -781,7 +781,7 @@ describe('UpdateTableViewsHandler', () => {
     describe('hasChanges flag', () => {
       it('should set hasChanges to true after updating views', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         // Reset hasChanges to false before test
         await prismaService.revision.update({
@@ -818,7 +818,7 @@ describe('UpdateTableViewsHandler', () => {
 
       it('should not change hasChanges if already true', async () => {
         const { draftRevisionId, tableId } =
-          await prepareProject(prismaService);
+          await givenDraftProject(prismaService);
 
         // Set hasChanges to true before
         await prismaService.revision.update({

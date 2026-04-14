@@ -1,5 +1,5 @@
 import { Readable } from 'stream';
-import { Test } from '@nestjs/testing';
+import { Prisma } from 'src/__generated__/client';
 import {
   getNumberSchema,
   getObjectSchema,
@@ -9,22 +9,15 @@ import {
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
 import { EngineApiService } from 'src/engine-api.service';
-import { AppModule } from 'src/app.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
+import { createEmptyFile } from 'src/__tests__/utils/prepareProject';
 import {
-  createEmptyFile,
-  prepareProject,
-} from 'src/__tests__/utils/prepareProject';
-
-const mockStorage = {
-  isAvailable: true,
-  canServeFiles: false,
-  uploadFile: jest.fn().mockResolvedValue({ key: 'uploads/fake.png' }),
-  getPublicUrl: jest.fn((key: string) => `http://test-files/${key}`),
-};
+  createEngineE2eTestKit,
+  type EngineE2eTestKit,
+} from './engine-api.e2e-helper';
 
 describe('EngineApi E2E', () => {
+  let kit: EngineE2eTestKit;
   let api: EngineApiService;
   let prisma: PrismaService;
 
@@ -34,23 +27,17 @@ describe('EngineApi E2E', () => {
   let draftRevisionId: string;
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [AppModule.forRoot()],
-    })
-      .overrideProvider(STORAGE_SERVICE)
-      .useValue(mockStorage)
-      .compile();
+    kit = await createEngineE2eTestKit();
+    api = kit.api;
+    prisma = kit.prisma;
+    projectId = kit.projectId;
+    branchId = kit.branchId;
+    branchName = kit.branchName;
+    draftRevisionId = kit.draftRevisionId;
+  });
 
-    await module.init();
-
-    api = module.get(EngineApiService);
-    prisma = module.get(PrismaService);
-
-    const project = await prepareProject(prisma);
-    projectId = project.projectId;
-    branchId = project.branchId;
-    branchName = project.branchName;
-    draftRevisionId = project.draftRevisionId;
+  afterAll(async () => {
+    await kit.close();
   });
 
   const testSchema = getObjectSchema({
@@ -59,36 +46,46 @@ describe('EngineApi E2E', () => {
   });
 
   async function refreshDraftRevisionId() {
-    const branch = await prisma.branch.findUnique({
-      where: { id: branchId },
-      include: {
-        revisions: { where: { isDraft: true } },
-      },
+    draftRevisionId = await kit.refreshDraftRevisionId();
+  }
+
+  async function revertDraftChanges() {
+    await kit.revertDraftChanges();
+    draftRevisionId = kit.draftRevisionId;
+  }
+
+  async function createDraftTable(tableId: string, schema: object) {
+    return api.createTable({
+      revisionId: draftRevisionId,
+      tableId,
+      schema,
     });
-    const revisions = branch?.revisions ?? [];
-    const draftRevision = revisions[0];
-    if (draftRevision) {
-      draftRevisionId = draftRevision.id;
-    }
+  }
+
+  async function createDraftRow(
+    tableId: string,
+    rowId: string,
+    data: Record<string, unknown>,
+  ) {
+    return api.createRow({
+      revisionId: draftRevisionId,
+      tableId,
+      rowId,
+      data: JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue,
+    });
   }
 
   describe('full lifecycle', () => {
     it('should create a table', async () => {
-      const result = await api.createTable({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        schema: testSchema,
-      });
+      const result = await createDraftTable('products', testSchema);
 
       expect(result.table?.id).toBe('products');
     });
 
     it('should create a row', async () => {
-      const result = await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        rowId: 'item-1',
-        data: { name: 'Widget', price: 10 },
+      const result = await createDraftRow('products', 'item-1', {
+        name: 'Widget',
+        price: 10,
       });
 
       expect(result.table?.id).toBe('products');
@@ -161,11 +158,9 @@ describe('EngineApi E2E', () => {
     });
 
     it('should create another row and see changes', async () => {
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        rowId: 'item-2',
-        data: { name: 'Gadget', price: 30 },
+      await createDraftRow('products', 'item-2', {
+        name: 'Gadget',
+        price: 30,
       });
 
       const changes = await api.revisionChanges({
@@ -176,22 +171,19 @@ describe('EngineApi E2E', () => {
     });
 
     it('should revert changes', async () => {
-      const result = await api.revertChanges({
-        projectId,
-        branchName,
-      });
+      const result = await api.revertChanges({ projectId, branchName });
 
       expect(result).toBeDefined();
+      await refreshDraftRevisionId();
     });
   });
 
   describe('schema operations', () => {
     it('should rename table', async () => {
-      await api.createTable({
-        revisionId: draftRevisionId,
-        tableId: 'temp-table',
-        schema: getObjectSchema({ val: getNumberSchema() }),
-      });
+      await createDraftTable(
+        'temp-table',
+        getObjectSchema({ val: getNumberSchema() }),
+      );
 
       const result = await api.renameTable({
         revisionId: draftRevisionId,
@@ -244,18 +236,8 @@ describe('EngineApi E2E', () => {
 
   describe('row mutations', () => {
     it('should updateRows in batch', async () => {
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        rowId: 'batch-1',
-        data: { name: 'A', price: 1 },
-      });
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        rowId: 'batch-2',
-        data: { name: 'B', price: 2 },
-      });
+      await createDraftRow('products', 'batch-1', { name: 'A', price: 1 });
+      await createDraftRow('products', 'batch-2', { name: 'B', price: 2 });
 
       const result = await api.updateRows({
         revisionId: draftRevisionId,
@@ -307,18 +289,8 @@ describe('EngineApi E2E', () => {
     });
 
     it('should removeRows in batch', async () => {
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        rowId: 'del-1',
-        data: { name: 'Del1', price: 1 },
-      });
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        rowId: 'del-2',
-        data: { name: 'Del2', price: 2 },
-      });
+      await createDraftRow('products', 'del-1', { name: 'Del1', price: 1 });
+      await createDraftRow('products', 'del-2', { name: 'Del2', price: 2 });
 
       await api.removeRows({
         revisionId: draftRevisionId,
@@ -351,21 +323,15 @@ describe('EngineApi E2E', () => {
       } catch {
         // row may already be gone
       }
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // no changes to revert
-      }
+      await revertDraftChanges();
     });
   });
 
   describe('searchRows', () => {
     it('should find rows by keyword', async () => {
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        rowId: 'search-hit',
-        data: { name: 'Searchable Unique Widget', price: 99 },
+      await createDraftRow('products', 'search-hit', {
+        name: 'Searchable Unique Widget',
+        price: 99,
       });
 
       const result = await api.searchRows({
@@ -380,11 +346,7 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // no changes to revert
-      }
+      await revertDraftChanges();
     });
   });
 
@@ -464,21 +426,16 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // no changes to revert
-      }
+      await revertDraftChanges();
     });
   });
 
   describe('updateTable', () => {
     it('should update table schema via patches', async () => {
-      await api.createTable({
-        revisionId: draftRevisionId,
-        tableId: 'patch-table',
-        schema: getObjectSchema({ val: getNumberSchema() }),
-      });
+      await createDraftTable(
+        'patch-table',
+        getObjectSchema({ val: getNumberSchema() }),
+      );
 
       const result = await api.updateTable({
         revisionId: draftRevisionId,
@@ -504,11 +461,7 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // nothing to revert
-      }
+      await revertDraftChanges();
     });
   });
 
@@ -546,11 +499,7 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // nothing to revert
-      }
+      await revertDraftChanges();
     });
   });
 
@@ -584,11 +533,7 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // nothing to revert
-      }
+      await revertDraftChanges();
     });
   });
 
@@ -600,18 +545,8 @@ describe('EngineApi E2E', () => {
         qty: getNumberSchema(),
       });
 
-      await api.createTable({
-        revisionId: draftRevisionId,
-        tableId: 'orders',
-        schema: ordersSchema,
-      });
-
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'orders',
-        rowId: 'order-1',
-        data: { product: 'item-1', qty: 3 },
-      });
+      await createDraftTable('orders', ordersSchema);
+      await createDraftRow('orders', 'order-1', { product: 'item-1', qty: 3 });
     });
 
     it('should resolve table foreign keys (by and to) and counts', async () => {
@@ -693,11 +628,7 @@ describe('EngineApi E2E', () => {
       } catch {
         // table may already be gone
       }
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // nothing to revert
-      }
+      await revertDraftChanges();
     });
   });
 
@@ -730,11 +661,7 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // nothing to revert
-      }
+      await revertDraftChanges();
     });
   });
 
@@ -743,11 +670,9 @@ describe('EngineApi E2E', () => {
 
     beforeAll(async () => {
       // Make a change and commit to get a new revision
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'products',
-        rowId: 'chain-row',
-        data: { name: 'Chain', price: 1 },
+      await createDraftRow('products', 'chain-row', {
+        name: 'Chain',
+        price: 1,
       });
 
       await api.createRevision({
@@ -786,18 +711,11 @@ describe('EngineApi E2E', () => {
 
   describe('tableChanges and rowChanges', () => {
     beforeAll(async () => {
-      await api.createTable({
-        revisionId: draftRevisionId,
-        tableId: 'changes-table',
-        schema: getObjectSchema({ val: getNumberSchema() }),
-      });
-
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'changes-table',
-        rowId: 'changes-row',
-        data: { val: 42 },
-      });
+      await createDraftTable(
+        'changes-table',
+        getObjectSchema({ val: getNumberSchema() }),
+      );
+      await createDraftRow('changes-table', 'changes-row', { val: 42 });
     });
 
     it('should return table changes', async () => {
@@ -821,11 +739,7 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // nothing to revert
-      }
+      await revertDraftChanges();
     });
   });
 
@@ -922,19 +836,14 @@ describe('EngineApi E2E', () => {
 
   describe('uploadFile', () => {
     it('should upload a file via mocked storage', async () => {
-      await api.createTable({
-        revisionId: draftRevisionId,
-        tableId: 'file-table',
-        schema: getObjectSchema({
+      await createDraftTable(
+        'file-table',
+        getObjectSchema({
           doc: getRefSchema(SystemSchemaIds.File),
         }),
-      });
-
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'file-table',
-        rowId: 'file-row',
-        data: { doc: createEmptyFile() },
+      );
+      await createDraftRow('file-table', 'file-row', {
+        doc: createEmptyFile(),
       });
 
       // Read back the row to get the fileId assigned by the file plugin
@@ -975,30 +884,22 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // nothing to revert
-      }
+      await revertDraftChanges();
     });
   });
 
   describe('getSubSchemaItems', () => {
     it('should return sub-schema items for $ref fields', async () => {
-      await api.createTable({
-        revisionId: draftRevisionId,
-        tableId: 'ref-table',
-        schema: getObjectSchema({
+      await createDraftTable(
+        'ref-table',
+        getObjectSchema({
           name: getStringSchema(),
           file: getRefSchema(SystemSchemaIds.File),
         }),
-      });
-
-      await api.createRow({
-        revisionId: draftRevisionId,
-        tableId: 'ref-table',
-        rowId: 'ref-row',
-        data: { name: 'Test', file: createEmptyFile() },
+      );
+      await createDraftRow('ref-table', 'ref-row', {
+        name: 'Test',
+        file: createEmptyFile(),
       });
 
       const result = await api.getSubSchemaItems({
@@ -1013,11 +914,7 @@ describe('EngineApi E2E', () => {
     });
 
     afterAll(async () => {
-      try {
-        await api.revertChanges({ projectId, branchName });
-      } catch {
-        // nothing to revert
-      }
+      await revertDraftChanges();
     });
   });
 

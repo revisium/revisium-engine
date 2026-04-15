@@ -205,6 +205,23 @@ export type JsonWithAggregatesFilterBase<$PrismaModel = never> = {
   _max?: Prisma.NestedJsonFilter<$PrismaModel>
 }
 
+export type EnumVersioningModeFilter<$PrismaModel = never> = {
+  equals?: $Enums.VersioningMode | Prisma.EnumVersioningModeFieldRefInput<$PrismaModel>
+  in?: $Enums.VersioningMode[] | Prisma.ListEnumVersioningModeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.VersioningMode[] | Prisma.ListEnumVersioningModeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel> | $Enums.VersioningMode
+}
+
+export type EnumVersioningModeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.VersioningMode | Prisma.EnumVersioningModeFieldRefInput<$PrismaModel>
+  in?: $Enums.VersioningMode[] | Prisma.ListEnumVersioningModeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.VersioningMode[] | Prisma.ListEnumVersioningModeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumVersioningModeWithAggregatesFilter<$PrismaModel> | $Enums.VersioningMode
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel>
+}
+
 export type DateTimeNullableFilter<$PrismaModel = never> = {
   equals?: Date | string | Prisma.DateTimeFieldRefInput<$PrismaModel> | null
   in?: Date[] | string[] | Prisma.ListDateTimeFieldRefInput<$PrismaModel> | null
@@ -405,6 +422,23 @@ export type NestedJsonFilterBase<$PrismaModel = never> = {
   gt?: runtime.InputJsonValue | Prisma.JsonFieldRefInput<$PrismaModel>
   gte?: runtime.InputJsonValue | Prisma.JsonFieldRefInput<$PrismaModel>
   not?: runtime.InputJsonValue | Prisma.JsonFieldRefInput<$PrismaModel> | Prisma.JsonNullValueFilter
+}
+
+export type NestedEnumVersioningModeFilter<$PrismaModel = never> = {
+  equals?: $Enums.VersioningMode | Prisma.EnumVersioningModeFieldRefInput<$PrismaModel>
+  in?: $Enums.VersioningMode[] | Prisma.ListEnumVersioningModeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.VersioningMode[] | Prisma.ListEnumVersioningModeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel> | $Enums.VersioningMode
+}
+
+export type NestedEnumVersioningModeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.VersioningMode | Prisma.EnumVersioningModeFieldRefInput<$PrismaModel>
+  in?: $Enums.VersioningMode[] | Prisma.ListEnumVersioningModeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.VersioningMode[] | Prisma.ListEnumVersioningModeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumVersioningModeWithAggregatesFilter<$PrismaModel> | $Enums.VersioningMode
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel>
 }
 
 export type NestedDateTimeNullableFilter<$PrismaModel = never> = {

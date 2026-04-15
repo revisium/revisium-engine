@@ -9,7 +9,9 @@
 * 🟢 You can import this file directly.
 */
 
+export const VersioningMode = {
+  current: 'current',
+  cow: 'cow'
+} as const
 
-
-// This file is empty because there are no enums in the schema.
-export {}
+export type VersioningMode = (typeof VersioningMode)[keyof typeof VersioningMode]

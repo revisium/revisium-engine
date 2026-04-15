@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { CommandBus } from '@nestjs/cqrs';
 import { BranchApiService } from 'src/features/branch/branch-api.service';
 import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { RevisionChangesApiService } from 'src/features/revision-changes/revision-changes-api.service';
@@ -10,8 +9,8 @@ import { TableApiService } from 'src/features/table/table-api.service';
 import { ViewsApiService } from 'src/features/views/views-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
+import { VersioningEngineService } from 'src/features/versioning-engine';
 import {
-  ApiRevertChangesCommand,
   ApiRevertChangesCommandData,
   ApiRevertChangesCommandReturnType,
 } from 'src/features/draft/commands/impl/api-revert-changes.command';
@@ -19,7 +18,6 @@ import {
 @Injectable()
 export class EngineApiService {
   constructor(
-    private readonly commandBus: CommandBus,
     private readonly draftApi: DraftApiService,
     private readonly rowApi: RowApiService,
     private readonly tableApi: TableApiService,
@@ -30,6 +28,7 @@ export class EngineApiService {
     private readonly subSchemaApi: SubSchemaApiService,
     private readonly cleanupService: CleanupService,
     private readonly migrationApi: MigrationApiService,
+    private readonly versioningEngine: VersioningEngineService,
   ) {}
 
   // --- Tables ---
@@ -141,7 +140,9 @@ export class EngineApiService {
   }
 
   getRows(...args: Parameters<RowApiService['getRows']>) {
-    return this.rowApi.getRows(...args);
+    return this.versioningEngine
+      .forRevision(args[0].revisionId)
+      .then((engine) => engine.getRows(...args));
   }
 
   searchRows(...args: Parameters<RowApiService['searchRows']>) {
@@ -179,14 +180,15 @@ export class EngineApiService {
   }
 
   createRevision(...args: Parameters<DraftApiService['apiCreateRevision']>) {
-    return this.draftApi.apiCreateRevision(...args);
+    return this.versioningEngine
+      .forProject(args[0].projectId)
+      .then((engine) => engine.createRevision(...args));
   }
 
   revertChanges(data: ApiRevertChangesCommandData) {
-    return this.commandBus.execute<
-      ApiRevertChangesCommand,
-      ApiRevertChangesCommandReturnType
-    >(new ApiRevertChangesCommand(data));
+    return this.versioningEngine
+      .forProject(data.projectId)
+      .then((engine) => engine.revertChanges(data));
   }
 
   getMigrations(...args: Parameters<RevisionsApiService['migrations']>) {
@@ -266,7 +268,9 @@ export class EngineApiService {
   createBranch(
     ...args: Parameters<BranchApiService['apiCreateBranchByRevisionId']>
   ) {
-    return this.branchApi.apiCreateBranchByRevisionId(...args);
+    return this.versioningEngine
+      .forBranchCreation(args[0])
+      .then((engine) => engine.createBranch(...args));
   }
 
   deleteBranch(...args: Parameters<BranchApiService['deleteBranch']>) {

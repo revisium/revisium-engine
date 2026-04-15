@@ -55,6 +55,7 @@ export const ModelName = {
   Revision: 'Revision',
   Table: 'Table',
   Row: 'Row',
+  ProjectVersioningConfig: 'ProjectVersioningConfig',
   TableMigration: 'TableMigration'
 } as const
 
@@ -129,6 +130,16 @@ export const RowScalarFieldEnum = {
 } as const
 
 export type RowScalarFieldEnum = (typeof RowScalarFieldEnum)[keyof typeof RowScalarFieldEnum]
+
+
+export const ProjectVersioningConfigScalarFieldEnum = {
+  projectId: 'projectId',
+  versioningMode: 'versioningMode',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ProjectVersioningConfigScalarFieldEnum = (typeof ProjectVersioningConfigScalarFieldEnum)[keyof typeof ProjectVersioningConfigScalarFieldEnum]
 
 
 export const TableMigrationScalarFieldEnum = {
@@ -241,6 +252,13 @@ export const RowOrderByRelevanceFieldEnum = {
 } as const
 
 export type RowOrderByRelevanceFieldEnum = (typeof RowOrderByRelevanceFieldEnum)[keyof typeof RowOrderByRelevanceFieldEnum]
+
+
+export const ProjectVersioningConfigOrderByRelevanceFieldEnum = {
+  projectId: 'projectId'
+} as const
+
+export type ProjectVersioningConfigOrderByRelevanceFieldEnum = (typeof ProjectVersioningConfigOrderByRelevanceFieldEnum)[keyof typeof ProjectVersioningConfigOrderByRelevanceFieldEnum]
 
 
 export const TableMigrationOrderByRelevanceFieldEnum = {

@@ -10,10 +10,7 @@ import { ViewsApiService } from 'src/features/views/views-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 import { VersioningEngineService } from 'src/features/versioning-engine';
-import {
-  ApiRevertChangesCommandData,
-  ApiRevertChangesCommandReturnType,
-} from 'src/features/draft/commands/impl/api-revert-changes.command';
+import { ApiRevertChangesCommandData } from 'src/features/draft/commands/impl/api-revert-changes.command';
 
 @Injectable()
 export class EngineApiService {

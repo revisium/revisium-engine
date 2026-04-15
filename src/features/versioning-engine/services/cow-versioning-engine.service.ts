@@ -16,25 +16,31 @@ import { VersioningEngine } from 'src/features/versioning-engine/versioning-engi
 
 @Injectable()
 export class CowVersioningEngineService implements VersioningEngine {
+  private notImplemented(): never {
+    throw new NotImplementedException(
+      'COW versioning engine is not implemented yet',
+    );
+  }
+
   getRows(_data: GetRowsQueryData): Promise<GetRowsQueryReturnType> {
-    throw new NotImplementedException('COW versioning engine is not implemented yet');
+    return this.notImplemented();
   }
 
   createRevision(
     _data: ApiCreateRevisionCommandData,
   ): Promise<ApiCreateRevisionCommandReturnType> {
-    throw new NotImplementedException('COW versioning engine is not implemented yet');
+    return this.notImplemented();
   }
 
   revertChanges(
     _data: ApiRevertChangesCommandData,
   ): Promise<ApiRevertChangesCommandReturnType> {
-    throw new NotImplementedException('COW versioning engine is not implemented yet');
+    return this.notImplemented();
   }
 
   createBranch(
     _data: ApiCreateBranchByRevisionIdCommandData,
   ): Promise<{ id: string }> {
-    throw new NotImplementedException('COW versioning engine is not implemented yet');
+    return this.notImplemented();
   }
 }

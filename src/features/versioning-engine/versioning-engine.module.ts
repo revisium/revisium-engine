@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CqrsModule } from '@nestjs/cqrs';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { DraftModule } from 'src/features/draft/draft.module';
 import { RowModule } from 'src/features/row/row.module';
@@ -9,7 +10,7 @@ import { ProjectVersioningService } from 'src/features/versioning-engine/service
 import { VersioningEngineService } from 'src/features/versioning-engine/services/versioning-engine.service';
 
 @Module({
-  imports: [DatabaseModule, BranchModule, DraftModule, RowModule],
+  imports: [CqrsModule, DatabaseModule, BranchModule, DraftModule, RowModule],
   providers: [
     ProjectVersioningService,
     CurrentVersioningEngineService,

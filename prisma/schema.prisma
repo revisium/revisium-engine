@@ -14,6 +14,12 @@ enum VersioningMode {
   cow
 }
 
+enum CowDraftTableStatus {
+  active
+  draft_only
+  deleted
+}
+
 model Branch {
   id        String     @id
   createdAt DateTime   @default(now())
@@ -21,6 +27,7 @@ model Branch {
   name      String
   projectId String
   revisions Revision[]
+  cowDraftStates CowDraftState[]
 
   @@unique([name, projectId])
 }
@@ -41,6 +48,7 @@ model Revision {
   parent   Revision?  @relation("parentRevision", fields: [parentId], references: [id], onDelete: SetNull)
   children Revision[] @relation("parentRevision")
   tables   Table[]
+  cowTableStates CowRevisionTableState[]
 
   @@index([branchId])
 }
@@ -93,6 +101,102 @@ model ProjectVersioningConfig {
   versioningMode  VersioningMode @default(current)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+}
+
+model CowRevisionTableState {
+  revisionId     String
+  tableCreatedId String
+  tableStateId   String
+
+  revision   Revision      @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  tableState CowTableState @relation(fields: [tableStateId], references: [id], onDelete: Cascade)
+
+  @@id([revisionId, tableCreatedId])
+  @@index([tableStateId])
+  @@index([tableCreatedId])
+}
+
+model CowDraftState {
+  branchId        String
+  tableCreatedId  String
+  tableStateId    String
+  status          CowDraftTableStatus @default(active)
+
+  branch     Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  tableState CowTableState @relation(fields: [tableStateId], references: [id], onDelete: Cascade)
+
+  @@id([branchId, tableCreatedId])
+  @@index([tableStateId])
+  @@index([status])
+}
+
+model CowTableState {
+  id             String @id
+  tableCreatedId String
+  chunkCount     Int
+
+  revisionStates CowRevisionTableState[]
+  draftStates    CowDraftState[]
+  chunks         CowTableStateChunk[]
+
+  @@index([tableCreatedId])
+}
+
+model CowTableChunk {
+  id String @id
+
+  tableStates CowTableStateChunk[]
+  entries     CowChunkEntry[]
+}
+
+model CowTableStateChunk {
+  tableStateId String
+  chunkId      String
+  chunkNo      Int
+
+  tableState CowTableState @relation(fields: [tableStateId], references: [id], onDelete: Cascade)
+  chunk      CowTableChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@id([tableStateId, chunkNo])
+  @@unique([tableStateId, chunkId])
+  @@index([chunkId])
+}
+
+model CowChunkEntry {
+  chunkId      String
+  rowCreatedId String
+  rowStateId   String
+  isDeleted    Boolean @default(false)
+
+  chunk    CowTableChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  rowState CowRowState   @relation(fields: [rowStateId], references: [id], onDelete: Cascade)
+
+  @@id([chunkId, rowCreatedId])
+  @@index([rowStateId])
+  @@index([isDeleted])
+}
+
+model CowRowState {
+  id          String   @id
+  rowCreatedId String
+  rowId       String
+  readonly    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  publishedAt DateTime @default(now())
+  data        Json
+  meta        Json     @default("{}")
+  hash        String
+  schemaHash  String
+
+  chunkEntries CowChunkEntry[]
+
+  @@index([rowCreatedId])
+  @@index([rowId])
+  @@index([data], type: Gin)
+  @@index([hash])
+  @@index([schemaHash])
+  @@index([publishedAt])
 }
 
 model TableMigration {

@@ -43,6 +43,41 @@ export type Row = Prisma.RowModel
  */
 export type ProjectVersioningConfig = Prisma.ProjectVersioningConfigModel
 /**
+ * Model CowRevisionTableState
+ * 
+ */
+export type CowRevisionTableState = Prisma.CowRevisionTableStateModel
+/**
+ * Model CowDraftState
+ * 
+ */
+export type CowDraftState = Prisma.CowDraftStateModel
+/**
+ * Model CowTableState
+ * 
+ */
+export type CowTableState = Prisma.CowTableStateModel
+/**
+ * Model CowTableChunk
+ * 
+ */
+export type CowTableChunk = Prisma.CowTableChunkModel
+/**
+ * Model CowTableStateChunk
+ * 
+ */
+export type CowTableStateChunk = Prisma.CowTableStateChunkModel
+/**
+ * Model CowChunkEntry
+ * 
+ */
+export type CowChunkEntry = Prisma.CowChunkEntryModel
+/**
+ * Model CowRowState
+ * 
+ */
+export type CowRowState = Prisma.CowRowStateModel
+/**
  * Model TableMigration
  * 
  */

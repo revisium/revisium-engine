@@ -388,6 +388,7 @@ export const ModelName = {
   Revision: 'Revision',
   Table: 'Table',
   Row: 'Row',
+  ProjectVersioningConfig: 'ProjectVersioningConfig',
   TableMigration: 'TableMigration'
 } as const
 
@@ -404,7 +405,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "branch" | "revision" | "table" | "row" | "tableMigration"
+    modelProps: "branch" | "revision" | "table" | "row" | "projectVersioningConfig" | "tableMigration"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -704,6 +705,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ProjectVersioningConfig: {
+      payload: Prisma.$ProjectVersioningConfigPayload<ExtArgs>
+      fields: Prisma.ProjectVersioningConfigFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ProjectVersioningConfigFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ProjectVersioningConfigFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>
+        }
+        findFirst: {
+          args: Prisma.ProjectVersioningConfigFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ProjectVersioningConfigFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>
+        }
+        findMany: {
+          args: Prisma.ProjectVersioningConfigFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>[]
+        }
+        create: {
+          args: Prisma.ProjectVersioningConfigCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>
+        }
+        createMany: {
+          args: Prisma.ProjectVersioningConfigCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ProjectVersioningConfigCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>[]
+        }
+        delete: {
+          args: Prisma.ProjectVersioningConfigDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>
+        }
+        update: {
+          args: Prisma.ProjectVersioningConfigUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>
+        }
+        deleteMany: {
+          args: Prisma.ProjectVersioningConfigDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ProjectVersioningConfigUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ProjectVersioningConfigUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>[]
+        }
+        upsert: {
+          args: Prisma.ProjectVersioningConfigUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectVersioningConfigPayload>
+        }
+        aggregate: {
+          args: Prisma.ProjectVersioningConfigAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateProjectVersioningConfig>
+        }
+        groupBy: {
+          args: Prisma.ProjectVersioningConfigGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProjectVersioningConfigGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ProjectVersioningConfigCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProjectVersioningConfigCountAggregateOutputType> | number
+        }
+      }
+    }
     TableMigration: {
       payload: Prisma.$TableMigrationPayload<ExtArgs>
       fields: Prisma.TableMigrationFieldRefs
@@ -878,6 +953,16 @@ export const RowScalarFieldEnum = {
 export type RowScalarFieldEnum = (typeof RowScalarFieldEnum)[keyof typeof RowScalarFieldEnum]
 
 
+export const ProjectVersioningConfigScalarFieldEnum = {
+  projectId: 'projectId',
+  versioningMode: 'versioningMode',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ProjectVersioningConfigScalarFieldEnum = (typeof ProjectVersioningConfigScalarFieldEnum)[keyof typeof ProjectVersioningConfigScalarFieldEnum]
+
+
 export const TableMigrationScalarFieldEnum = {
   id: 'id',
   revisionId: 'revisionId',
@@ -990,6 +1075,13 @@ export const RowOrderByRelevanceFieldEnum = {
 export type RowOrderByRelevanceFieldEnum = (typeof RowOrderByRelevanceFieldEnum)[keyof typeof RowOrderByRelevanceFieldEnum]
 
 
+export const ProjectVersioningConfigOrderByRelevanceFieldEnum = {
+  projectId: 'projectId'
+} as const
+
+export type ProjectVersioningConfigOrderByRelevanceFieldEnum = (typeof ProjectVersioningConfigOrderByRelevanceFieldEnum)[keyof typeof ProjectVersioningConfigOrderByRelevanceFieldEnum]
+
+
 export const TableMigrationOrderByRelevanceFieldEnum = {
   id: 'id',
   revisionId: 'revisionId',
@@ -1074,6 +1166,20 @@ export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'J
  * Reference to a field of type 'QueryMode'
  */
 export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
+    
+
+
+/**
+ * Reference to a field of type 'VersioningMode'
+ */
+export type EnumVersioningModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'VersioningMode'>
+    
+
+
+/**
+ * Reference to a field of type 'VersioningMode[]'
+ */
+export type ListEnumVersioningModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'VersioningMode[]'>
     
 
 
@@ -1189,6 +1295,7 @@ export type GlobalOmitConfig = {
   revision?: Prisma.RevisionOmit
   table?: Prisma.TableOmit
   row?: Prisma.RowOmit
+  projectVersioningConfig?: Prisma.ProjectVersioningConfigOmit
   tableMigration?: Prisma.TableMigrationOmit
 }
 

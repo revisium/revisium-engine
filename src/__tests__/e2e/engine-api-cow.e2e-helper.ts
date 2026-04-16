@@ -17,41 +17,40 @@ export interface CowEngineE2eTestKit extends EngineE2eTestKit {
 }
 
 export async function createCowEngineE2eTestKit(): Promise<CowEngineE2eTestKit> {
-  const baseKit = await createEngineE2eTestKit();
-  const { api, prisma, projectId } = baseKit;
+  const kit = (await createEngineE2eTestKit()) as CowEngineE2eTestKit;
+  const { api, prisma, projectId } = kit;
 
-  return {
-    ...baseKit,
-    async enableCowMode(): Promise<void> {
-      await prisma.projectVersioningConfig.upsert({
-        where: { projectId },
-        create: { projectId, versioningMode: 'cow' },
-        update: { versioningMode: 'cow' },
-      });
-    },
-    async seedProductsTable(): Promise<void> {
-      const schema = getObjectSchema({
-        name: getStringSchema(),
-        price: getNumberSchema(),
-      });
-      const getDraftRevisionId = () => baseKit.draftRevisionId;
-
-      await api.createTable({
-        revisionId: getDraftRevisionId(),
-        tableId: 'products',
-        schema,
-      });
-
-      await createProductRow(api, getDraftRevisionId(), 'row-banana', {
-        name: 'Banana',
-        price: 10,
-      });
-      await createProductRow(api, getDraftRevisionId(), 'row-apple', {
-        name: 'Apple',
-        price: 20,
-      });
-    },
+  kit.enableCowMode = async (): Promise<void> => {
+    await prisma.projectVersioningConfig.upsert({
+      where: { projectId },
+      create: { projectId, versioningMode: 'cow' },
+      update: { versioningMode: 'cow' },
+    });
   };
+
+  kit.seedProductsTable = async (): Promise<void> => {
+    const schema = getObjectSchema({
+      name: getStringSchema(),
+      price: getNumberSchema(),
+    });
+
+    await api.createTable({
+      revisionId: kit.draftRevisionId,
+      tableId: 'products',
+      schema,
+    });
+
+    await createProductRow(api, kit.draftRevisionId, 'row-banana', {
+      name: 'Banana',
+      price: 10,
+    });
+    await createProductRow(api, kit.draftRevisionId, 'row-apple', {
+      name: 'Apple',
+      price: 20,
+    });
+  };
+
+  return kit;
 }
 
 async function createProductRow(

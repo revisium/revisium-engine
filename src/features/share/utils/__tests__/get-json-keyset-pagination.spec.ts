@@ -10,6 +10,21 @@ const DEFAULT_ORDER_BY_PART: OrderByPart = {
 };
 
 describe('getJsonKeysetPagination', () => {
+  it.each([0, -1])('throws when first is %s', async (first) => {
+    await expect(
+      getJsonKeysetPagination({
+        pageData: { first },
+        sourceId: 'source-id',
+        fieldConfig: { createdAt: 'date' },
+        defaultOrderByPart: DEFAULT_ORDER_BY_PART,
+        queryRaw: jest.fn(),
+        transformRows: jest.fn(),
+        getRowsSql: jest.fn(),
+        getRowsCountSql: jest.fn(),
+      }),
+    ).rejects.toThrow(new RangeError('"first" must be a positive integer'));
+  });
+
   it('throws when versionId is missing from the row projection', async () => {
     const getRowsSql = jest.fn().mockReturnValue(sql`SELECT 1`);
     const getRowsCountSql = jest.fn().mockReturnValue(sql`SELECT 0`);

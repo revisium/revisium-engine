@@ -48,6 +48,10 @@ export async function getJsonKeysetPagination<T, TFields extends FieldConfig>({
   getRowsSql,
   getRowsCountSql,
 }: GetJsonKeysetPaginationArgs<T, TFields>): Promise<IPaginatedType<T>> {
+  if (!Number.isInteger(pageData.first) || pageData.first <= 0) {
+    throw new RangeError('"first" must be a positive integer');
+  }
+
   const userParts = generateOrderByParts({
     tableAlias: 'r',
     orderBy,

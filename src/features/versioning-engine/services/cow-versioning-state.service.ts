@@ -9,6 +9,10 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 const CHUNK_SIZE = 512;
 
 type Tx = TransactionPrismaClient;
+type CowRevisionTableStateRef = {
+  tableCreatedId: string;
+  tableStateId: string;
+};
 
 @Injectable()
 export class CowVersioningStateService {
@@ -123,7 +127,7 @@ export class CowVersioningStateService {
       }
 
       await tx.cowRevisionTableState.createMany({
-        data: sourceStates.map((state) => ({
+        data: sourceStates.map((state: CowRevisionTableStateRef) => ({
           revisionId: headRevisionId,
           tableCreatedId: state.tableCreatedId,
           tableStateId: state.tableStateId,
@@ -131,7 +135,7 @@ export class CowVersioningStateService {
       });
 
       await tx.cowDraftState.createMany({
-        data: sourceStates.map((state) => ({
+        data: sourceStates.map((state: CowRevisionTableStateRef) => ({
           branchId,
           tableCreatedId: state.tableCreatedId,
           tableStateId: state.tableStateId,

@@ -13,6 +13,10 @@ type CowRevisionTableStateRef = {
   tableCreatedId: string;
   tableStateId: string;
 };
+type CurrentTableRef = {
+  versionId: string;
+  createdId: string;
+};
 
 @Injectable()
 export class CowVersioningStateService {
@@ -25,7 +29,7 @@ export class CowVersioningStateService {
 
   async ensureRevisionSnapshot(revisionId: string): Promise<void> {
     await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction() as Tx;
+      const tx: Tx = this.transactionService.getTransaction();
       const revision = await tx.revision.findUniqueOrThrow({
         where: { id: revisionId },
         select: { id: true, isDraft: true, branchId: true },
@@ -49,7 +53,7 @@ export class CowVersioningStateService {
 
   async syncDraftStateFromCurrent(branchId: string): Promise<void> {
     await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction() as Tx;
+      const tx: Tx = this.transactionService.getTransaction();
       await this.syncDraftStateFromCurrentTx(tx, branchId);
     });
   }
@@ -114,7 +118,7 @@ export class CowVersioningStateService {
     headRevisionId: string,
   ): Promise<void> {
     await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction() as Tx;
+      const tx: Tx = this.transactionService.getTransaction();
       await this.ensureRevisionSnapshotInTx(tx, sourceRevisionId);
 
       const sourceStates = await tx.cowRevisionTableState.findMany({
@@ -127,20 +131,11 @@ export class CowVersioningStateService {
       }
 
       await tx.cowRevisionTableState.createMany({
-        data: sourceStates.map((state: CowRevisionTableStateRef) => ({
-          revisionId: headRevisionId,
-          tableCreatedId: state.tableCreatedId,
-          tableStateId: state.tableStateId,
-        })),
+        data: this.mapRevisionTableStates(sourceStates, headRevisionId),
       });
 
       await tx.cowDraftState.createMany({
-        data: sourceStates.map((state: CowRevisionTableStateRef) => ({
-          branchId,
-          tableCreatedId: state.tableCreatedId,
-          tableStateId: state.tableStateId,
-          status: 'active',
-        })),
+        data: this.mapDraftStates(sourceStates, branchId),
       });
     });
   }
@@ -149,7 +144,7 @@ export class CowVersioningStateService {
     revisionId: string,
   ): Promise<void> {
     await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction() as Tx;
+      const tx: Tx = this.transactionService.getTransaction();
       await tx.cowRevisionTableState.deleteMany({ where: { revisionId } });
       await this.buildRevisionSnapshotFromCurrent(tx, revisionId);
     });
@@ -172,7 +167,7 @@ export class CowVersioningStateService {
     tx: Tx,
     revisionId: string,
   ): Promise<void> {
-    const revision = await tx.revision.findUniqueOrThrow({
+    const { tables } = await tx.revision.findUniqueOrThrow({
       where: { id: revisionId },
       select: {
         tables: {
@@ -185,21 +180,19 @@ export class CowVersioningStateService {
       },
     });
 
-    for (const table of revision.tables) {
-      const tableStateId = await this.createTableStateFromCurrentTable(
-        tx,
-        table.versionId,
-        table.createdId,
-      );
-
-      await tx.cowRevisionTableState.create({
-        data: {
-          revisionId,
-          tableCreatedId: table.createdId,
-          tableStateId,
-        },
-      });
-    }
+    await this.materializeCurrentTables(
+      tx,
+      tables,
+      async (table, tableStateId) => {
+        await tx.cowRevisionTableState.create({
+          data: {
+            revisionId,
+            tableCreatedId: table.createdId,
+            tableStateId,
+          },
+        });
+      },
+    );
   }
 
   private async syncDraftStateFromCurrentTx(
@@ -211,7 +204,7 @@ export class CowVersioningStateService {
       select: { id: true },
     });
 
-    const draft = await tx.revision.findUniqueOrThrow({
+    const { tables } = await tx.revision.findUniqueOrThrow({
       where: { id: draftRevision.id },
       select: {
         tables: {
@@ -226,21 +219,61 @@ export class CowVersioningStateService {
 
     await tx.cowDraftState.deleteMany({ where: { branchId } });
 
-    for (const table of draft.tables) {
+    await this.materializeCurrentTables(
+      tx,
+      tables,
+      async (table, tableStateId) => {
+        await tx.cowDraftState.create({
+          data: {
+            branchId,
+            tableCreatedId: table.createdId,
+            tableStateId,
+            status: 'active',
+          },
+        });
+      },
+    );
+  }
+
+  private mapRevisionTableStates(
+    sourceStates: CowRevisionTableStateRef[],
+    revisionId: string,
+  ) {
+    return sourceStates.map((state) => ({
+      revisionId,
+      tableCreatedId: state.tableCreatedId,
+      tableStateId: state.tableStateId,
+    }));
+  }
+
+  private mapDraftStates(
+    sourceStates: CowRevisionTableStateRef[],
+    branchId: string,
+  ) {
+    return sourceStates.map((state) => ({
+      branchId,
+      tableCreatedId: state.tableCreatedId,
+      tableStateId: state.tableStateId,
+      status: 'active' as const,
+    }));
+  }
+
+  private async materializeCurrentTables(
+    tx: Tx,
+    tables: CurrentTableRef[],
+    persistTableState: (
+      table: CurrentTableRef,
+      tableStateId: string,
+    ) => Promise<void>,
+  ): Promise<void> {
+    for (const table of tables) {
       const tableStateId = await this.createTableStateFromCurrentTable(
         tx,
         table.versionId,
         table.createdId,
       );
 
-      await tx.cowDraftState.create({
-        data: {
-          branchId,
-          tableCreatedId: table.createdId,
-          tableStateId,
-          status: 'active',
-        },
-      });
+      await persistTableState(table, tableStateId);
     }
   }
 

@@ -20,11 +20,13 @@ import { CurrentVersioningEngineService } from 'src/features/versioning-engine/s
 import { CowVersioningStateService } from 'src/features/versioning-engine/services/cow-versioning-state.service';
 import { VersioningEngine } from 'src/features/versioning-engine/versioning-engine.interface';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @Injectable()
 export class CowVersioningEngineService implements VersioningEngine {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly transactionService: TransactionPrismaService,
     private readonly shareQueries: ShareTransactionalQueries,
     private readonly pluginService: PluginService,
     private readonly systemColumnMappingService: SystemColumnMappingService,
@@ -138,12 +140,8 @@ export class CowVersioningEngineService implements VersioningEngine {
   }
 
   private findBranchInProjectOrThrow(projectId: string, branchName: string) {
-    return this.prisma.branch.findFirstOrThrow({
-      where: {
-        projectId,
-        name: { equals: branchName, mode: 'insensitive' },
-      },
-      select: { id: true },
-    });
+    return this.transactionService.runSerializable(() =>
+      this.shareQueries.findBranchInProjectOrThrow(projectId, branchName),
+    );
   }
 }

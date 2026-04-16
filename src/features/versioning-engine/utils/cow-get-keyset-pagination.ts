@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { sql, type Sql, type Row } from 'src/engine-prisma-types';
 import {
   OrderByConditions,
@@ -34,6 +35,12 @@ export async function getCowKeysetPagination<T>({
   queryRaw,
   transformRows,
 }: GetCowKeysetPaginationArgs<T>): Promise<IPaginatedType<T>> {
+  if (!Number.isInteger(pageData.first) || pageData.first <= 0) {
+    throw new BadRequestException(
+      'Invalid "first" parameter: must be a positive integer',
+    );
+  }
+
   const userParts = generateOrderByParts({
     tableAlias: 'r',
     orderBy,

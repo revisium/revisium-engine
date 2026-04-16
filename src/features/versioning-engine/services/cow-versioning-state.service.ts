@@ -1,13 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from 'src/__generated__/client';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
+import { TransactionPrismaClient } from 'src/features/share/types';
 import { IdService } from 'src/infrastructure/database/id.service';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 const CHUNK_SIZE = 512;
 
-type Tx = PrismaService;
+type Tx = TransactionPrismaClient;
 
 @Injectable()
 export class CowVersioningStateService {
@@ -20,7 +21,7 @@ export class CowVersioningStateService {
 
   async ensureRevisionSnapshot(revisionId: string): Promise<void> {
     await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction() as unknown as Tx;
+      const tx = this.transactionService.getTransaction() as Tx;
       const revision = await tx.revision.findUniqueOrThrow({
         where: { id: revisionId },
         select: { id: true, isDraft: true, branchId: true },
@@ -44,7 +45,7 @@ export class CowVersioningStateService {
 
   async syncDraftStateFromCurrent(branchId: string): Promise<void> {
     await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction() as unknown as Tx;
+      const tx = this.transactionService.getTransaction() as Tx;
       await this.syncDraftStateFromCurrentTx(tx, branchId);
     });
   }
@@ -109,7 +110,7 @@ export class CowVersioningStateService {
     headRevisionId: string,
   ): Promise<void> {
     await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction() as unknown as Tx;
+      const tx = this.transactionService.getTransaction() as Tx;
       await this.ensureRevisionSnapshotInTx(tx, sourceRevisionId);
 
       const sourceStates = await tx.cowRevisionTableState.findMany({
@@ -144,7 +145,7 @@ export class CowVersioningStateService {
     revisionId: string,
   ): Promise<void> {
     await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction() as unknown as Tx;
+      const tx = this.transactionService.getTransaction() as Tx;
       await tx.cowRevisionTableState.deleteMany({ where: { revisionId } });
       await this.buildRevisionSnapshotFromCurrent(tx, revisionId);
     });

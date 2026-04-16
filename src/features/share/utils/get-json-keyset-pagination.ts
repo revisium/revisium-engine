@@ -96,7 +96,10 @@ export async function getJsonKeysetPagination<T, TFields extends FieldConfig>({
   const edges = transformedRows.map((node, index) => {
     const row = resultRows[index] as unknown as Record<string, unknown>;
     const cursorValues = extractCursorValues(row, effectiveParts);
-    const tiebreaker = row.versionId as string;
+    const tiebreaker = row.versionId;
+    if (typeof tiebreaker !== 'string' || tiebreaker.length === 0) {
+      throw new Error('Pagination requires "versionId" in row projection');
+    }
     return {
       cursor: encodeCursor(cursorValues, tiebreaker, sortHash),
       node,

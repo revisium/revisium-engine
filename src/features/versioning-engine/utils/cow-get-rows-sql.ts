@@ -8,7 +8,6 @@ import {
 } from '@revisium/prisma-pg-json';
 
 export const COW_ROW_FIELDS: FieldConfig = {
-  versionId: 'string',
   createdId: 'string',
   id: 'string',
   hash: 'string',

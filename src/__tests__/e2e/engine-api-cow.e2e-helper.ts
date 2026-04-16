@@ -34,18 +34,19 @@ export async function createCowEngineE2eTestKit(): Promise<CowEngineE2eTestKit> 
         name: getStringSchema(),
         price: getNumberSchema(),
       });
+      const getDraftRevisionId = () => baseKit.draftRevisionId;
 
       await api.createTable({
-        revisionId: baseKit.draftRevisionId,
+        revisionId: getDraftRevisionId(),
         tableId: 'products',
         schema,
       });
 
-      await createProductRow(api, baseKit.draftRevisionId, 'row-banana', {
+      await createProductRow(api, getDraftRevisionId(), 'row-banana', {
         name: 'Banana',
         price: 10,
       });
-      await createProductRow(api, baseKit.draftRevisionId, 'row-apple', {
+      await createProductRow(api, getDraftRevisionId(), 'row-apple', {
         name: 'Apple',
         price: 20,
       });

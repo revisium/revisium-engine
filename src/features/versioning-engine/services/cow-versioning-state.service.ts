@@ -72,6 +72,9 @@ export class CowVersioningStateService {
     );
 
     if (revision.isDraft) {
+      // Draft writes still flow through the current engine in this PR, so reads
+      // must rematerialize from current draft state until draft mutations move
+      // behind the versioning-engine boundary.
       await this.syncDraftStateFromCurrent(revision.branchId);
       const draftState = await this.prisma.cowDraftState.findUnique({
         where: {
@@ -145,7 +148,12 @@ export class CowVersioningStateService {
   ): Promise<void> {
     await this.transactionService.runSerializable(async () => {
       const tx: Tx = this.transactionService.getTransaction();
+      const previousStateIds = await this.findRevisionTableStateIds(
+        tx,
+        revisionId,
+      );
       await tx.cowRevisionTableState.deleteMany({ where: { revisionId } });
+      await this.deleteOrphanedTableStates(tx, previousStateIds);
       await this.buildRevisionSnapshotFromCurrent(tx, revisionId);
     });
   }
@@ -217,7 +225,9 @@ export class CowVersioningStateService {
       },
     });
 
+    const previousStateIds = await this.findDraftTableStateIds(tx, branchId);
     await tx.cowDraftState.deleteMany({ where: { branchId } });
+    await this.deleteOrphanedTableStates(tx, previousStateIds);
 
     await this.materializeCurrentTables(
       tx,
@@ -275,6 +285,105 @@ export class CowVersioningStateService {
 
       await persistTableState(table, tableStateId);
     }
+  }
+
+  private async findRevisionTableStateIds(
+    tx: Tx,
+    revisionId: string,
+  ): Promise<string[]> {
+    const states = await tx.cowRevisionTableState.findMany({
+      where: { revisionId },
+      select: { tableStateId: true },
+    });
+
+    return states.map(({ tableStateId }) => tableStateId);
+  }
+
+  private async findDraftTableStateIds(
+    tx: Tx,
+    branchId: string,
+  ): Promise<string[]> {
+    const states = await tx.cowDraftState.findMany({
+      where: { branchId },
+      select: { tableStateId: true },
+    });
+
+    return states.map(({ tableStateId }) => tableStateId);
+  }
+
+  private async deleteOrphanedTableStates(
+    tx: Tx,
+    tableStateIds: string[],
+  ): Promise<void> {
+    if (tableStateIds.length === 0) {
+      return;
+    }
+
+    const orphanedStates = await tx.cowTableState.findMany({
+      where: {
+        id: { in: tableStateIds },
+        revisionStates: { none: {} },
+        draftStates: { none: {} },
+      },
+      select: { id: true },
+    });
+    const orphanedStateIds = orphanedStates.map(({ id }) => id);
+
+    if (orphanedStateIds.length === 0) {
+      return;
+    }
+
+    const tableStateChunks = await tx.cowTableStateChunk.findMany({
+      where: { tableStateId: { in: orphanedStateIds } },
+      select: { chunkId: true },
+    });
+    const chunkIds = [
+      ...new Set(tableStateChunks.map(({ chunkId }) => chunkId)),
+    ];
+
+    await tx.cowTableState.deleteMany({
+      where: { id: { in: orphanedStateIds } },
+    });
+
+    if (chunkIds.length === 0) {
+      return;
+    }
+
+    const orphanedChunks = await tx.cowTableChunk.findMany({
+      where: {
+        id: { in: chunkIds },
+        tableStates: { none: {} },
+      },
+      select: { id: true },
+    });
+    const orphanedChunkIds = orphanedChunks.map(({ id }) => id);
+
+    if (orphanedChunkIds.length === 0) {
+      return;
+    }
+
+    const rowStates = await tx.cowChunkEntry.findMany({
+      where: { chunkId: { in: orphanedChunkIds } },
+      select: { rowStateId: true },
+    });
+    const rowStateIds = [
+      ...new Set(rowStates.map(({ rowStateId }) => rowStateId)),
+    ];
+
+    await tx.cowTableChunk.deleteMany({
+      where: { id: { in: orphanedChunkIds } },
+    });
+
+    if (rowStateIds.length === 0) {
+      return;
+    }
+
+    await tx.cowRowState.deleteMany({
+      where: {
+        id: { in: rowStateIds },
+        chunkEntries: { none: {} },
+      },
+    });
   }
 
   private async createTableStateFromCurrentTable(

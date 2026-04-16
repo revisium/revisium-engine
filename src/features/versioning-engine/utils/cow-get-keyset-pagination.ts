@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { sql, type Sql, type Row } from 'src/engine-prisma-types';
 import {
+  MAX_TAKE,
   OrderByConditions,
   OrderByPart,
   WhereConditionsTyped,
@@ -37,7 +38,10 @@ export async function getCowKeysetPagination<T>({
   }
 
   return getJsonKeysetPagination({
-    pageData,
+    pageData: {
+      ...pageData,
+      first: Math.min(pageData.first, MAX_TAKE),
+    },
     sourceId: tableStateId,
     whereConditions,
     orderBy,

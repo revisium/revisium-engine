@@ -296,7 +296,7 @@ export class CowVersioningStateService {
       select: { tableStateId: true },
     });
 
-    return states.map(({ tableStateId }) => tableStateId);
+    return states.map((state: { tableStateId: string }) => state.tableStateId);
   }
 
   private async findDraftTableStateIds(
@@ -308,7 +308,7 @@ export class CowVersioningStateService {
       select: { tableStateId: true },
     });
 
-    return states.map(({ tableStateId }) => tableStateId);
+    return states.map((state: { tableStateId: string }) => state.tableStateId);
   }
 
   private async deleteOrphanedTableStates(
@@ -327,7 +327,9 @@ export class CowVersioningStateService {
       },
       select: { id: true },
     });
-    const orphanedStateIds = orphanedStates.map(({ id }) => id);
+    const orphanedStateIds = orphanedStates.map(
+      (state: { id: string }) => state.id,
+    );
 
     if (orphanedStateIds.length === 0) {
       return;
@@ -338,7 +340,9 @@ export class CowVersioningStateService {
       select: { chunkId: true },
     });
     const chunkIds = [
-      ...new Set(tableStateChunks.map(({ chunkId }) => chunkId)),
+      ...new Set(
+        tableStateChunks.map((chunk: { chunkId: string }) => chunk.chunkId),
+      ),
     ];
 
     await tx.cowTableState.deleteMany({
@@ -356,7 +360,9 @@ export class CowVersioningStateService {
       },
       select: { id: true },
     });
-    const orphanedChunkIds = orphanedChunks.map(({ id }) => id);
+    const orphanedChunkIds = orphanedChunks.map(
+      (chunk: { id: string }) => chunk.id,
+    );
 
     if (orphanedChunkIds.length === 0) {
       return;
@@ -367,7 +373,9 @@ export class CowVersioningStateService {
       select: { rowStateId: true },
     });
     const rowStateIds = [
-      ...new Set(rowStates.map(({ rowStateId }) => rowStateId)),
+      ...new Set(
+        rowStates.map((entry: { rowStateId: string }) => entry.rowStateId),
+      ),
     ];
 
     await tx.cowTableChunk.deleteMany({

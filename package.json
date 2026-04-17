@@ -1,6 +1,6 @@
 {
   "name": "@revisium/engine",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Revisium version engine — core versioning logic for branches, revisions, tables, and rows",
   "author": "Revisium",
   "license": "Apache-2.0",

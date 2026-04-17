@@ -32,6 +32,88 @@ export { ViewsMigrationService } from './features/share/views-migration.service'
 export { ShareTransactionalQueries } from './features/share/share.transactional.queries';
 export type { TransactionPrismaClient } from './features/share/types';
 
+// Share — pagination + const helpers
+export type {
+  IPageInfo,
+  IEdgeType,
+  IPaginatedType,
+} from './features/share/pagination.interface';
+export { getEmptyPaginatedResponse } from './features/share/const';
+export {
+  getRevisionCursorPagination,
+  type CursorPaginationFindManyArgs,
+  type FindManyType,
+  type ResolveSequenceById,
+} from './features/share/commands/utils/getRevisionCursorPagination';
+
+// Share — validation exceptions
+export {
+  ValidationErrorCode,
+  DataValidationException,
+  ForeignKeyTableNotFoundException,
+  ForeignKeyRowsNotFoundException,
+  FormulaValidationException,
+  type ValidationErrorDetail,
+  type ForeignKeyErrorDetail,
+  type FormulaErrorDetail,
+  type ValidationErrorContext,
+  type ValidationErrorResponse,
+  type ForeignKeyErrorResponse,
+  type FormulaErrorResponse,
+} from './features/share/exceptions/validation.exception';
+
+// Share — schema building blocks
+export { CustomSchemeKeywords } from './features/share/schema/consts';
+export { sharedFields } from './features/share/schema/shared-fields';
+export { historyPatchesSchema } from './features/share/schema/history-patches-schema';
+export { jsonPatchSchema } from './features/share/schema/json-patch-schema';
+export {
+  xFormulaSchema,
+  xFormulaRequiresReadOnly,
+  foreignKeyExcludesFormula,
+  refMetaSchema,
+  baseStringFields,
+  stringMetaSchema,
+  noForeignKeyStringMetaSchema,
+  numberMetaSchema,
+  booleanMetaSchema,
+  objectMetaSchema,
+  arrayMetaSchema,
+  metaSchema,
+  notForeignKeyMetaSchema,
+} from './features/share/schema/meta-schema';
+export { tableMigrationsSchema } from './features/share/schema/table-migrations-schema';
+export { tableViewsSchema } from './features/share/schema/table-views-schema';
+
+// Share — utils
+export { sortRevisions } from './features/share/utils/sort-revisions/sort-revisions';
+export {
+  RESERVED_USERNAMES,
+  RESERVED_BRANCH_NAMES,
+} from './features/share/utils/validateUrlLikeId/reserved-names';
+export {
+  VALIDATE_URL_LIKE_ID_ERROR_MESSAGE,
+  validateUrlLikeId,
+} from './features/share/utils/validateUrlLikeId/validateUrlLikeId';
+export {
+  RESERVED_BRANCH_NAME_ERROR_MESSAGE,
+  BRANCH_NAME_FORMAT_ERROR_MESSAGE,
+  validateBranchName,
+} from './features/share/utils/validateUrlLikeId/validateBranchName';
+export {
+  VALIDATE_JSON_FIELD_NAME_ERROR_MESSAGE,
+  validateJsonFieldName,
+} from './features/share/utils/validateUrlLikeId/validateJsonFieldName';
+export {
+  ROW_ID_ERROR_MESSAGE,
+  validateRowId,
+} from './features/share/utils/validateUrlLikeId/validateRowId';
+export {
+  TABLE_ID_ERROR_MESSAGE,
+  TABLE_ID_SYSTEM_PREFIX_ERROR_MESSAGE,
+  validateTableId,
+} from './features/share/utils/validateUrlLikeId/validateTableId';
+
 // Plugin
 export { PluginModule } from './features/plugin/plugin.module';
 export { PluginService } from './features/plugin/plugin.service';

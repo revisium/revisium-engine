@@ -17,6 +17,19 @@ type CurrentTableRef = {
   versionId: string;
   createdId: string;
 };
+type MaterializedRow = {
+  versionId: string;
+  createdId: string;
+  id: string;
+  readonly: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  publishedAt: Date | null;
+  data: Prisma.JsonValue;
+  meta: Prisma.JsonValue;
+  hash: string | null;
+  schemaHash: string | null;
+};
 
 @Injectable()
 export class CowVersioningStateService {
@@ -408,36 +421,62 @@ export class CowVersioningStateService {
     tableVersionId: string,
     tableCreatedId: string,
   ): Promise<string> {
-    const rows = await tx.row.findMany({
-      where: { tables: { some: { versionId: tableVersionId } } },
-      orderBy: [{ createdId: 'asc' }, { versionId: 'asc' }],
-      select: {
-        versionId: true,
-        createdId: true,
-        id: true,
-        readonly: true,
-        createdAt: true,
-        updatedAt: true,
-        publishedAt: true,
-        data: true,
-        meta: true,
-        hash: true,
-        schemaHash: true,
-      },
-    });
-
     const tableStateId = this.idService.generate();
-    const chunks = this.chunkRows(rows);
-
     await tx.cowTableState.create({
       data: {
         id: tableStateId,
         tableCreatedId,
-        chunkCount: chunks.length,
+        chunkCount: 0,
       },
     });
 
-    for (const [chunkNo, chunkRows] of chunks.entries()) {
+    let chunkCount = 0;
+    let cursor:
+      | {
+          createdId: string;
+          versionId: string;
+        }
+      | undefined;
+
+    while (true) {
+      const chunkRows = await tx.row.findMany({
+        where: {
+          tables: { some: { versionId: tableVersionId } },
+          ...(cursor
+            ? {
+                OR: [
+                  { createdId: { gt: cursor.createdId } },
+                  {
+                    AND: [
+                      { createdId: cursor.createdId },
+                      { versionId: { gt: cursor.versionId } },
+                    ],
+                  },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ createdId: 'asc' }, { versionId: 'asc' }],
+        take: CHUNK_SIZE,
+        select: {
+          versionId: true,
+          createdId: true,
+          id: true,
+          readonly: true,
+          createdAt: true,
+          updatedAt: true,
+          publishedAt: true,
+          data: true,
+          meta: true,
+          hash: true,
+          schemaHash: true,
+        },
+      });
+
+      if (chunkRows.length === 0) {
+        break;
+      }
+
       const chunkId = this.idService.generate();
 
       await tx.cowTableChunk.create({ data: { id: chunkId } });
@@ -445,13 +484,9 @@ export class CowVersioningStateService {
         data: {
           tableStateId,
           chunkId,
-          chunkNo,
+          chunkNo: chunkCount,
         },
       });
-
-      if (chunkRows.length === 0) {
-        continue;
-      }
 
       await tx.cowRowState.createMany({
         data: chunkRows.map((row) => ({
@@ -478,20 +513,22 @@ export class CowVersioningStateService {
           isDeleted: false,
         })),
       });
+
+      chunkCount += 1;
+      const lastRow = chunkRows[chunkRows.length - 1] as MaterializedRow;
+      cursor = {
+        createdId: lastRow.createdId,
+        versionId: lastRow.versionId,
+      };
+    }
+
+    if (chunkCount > 0) {
+      await tx.cowTableState.update({
+        where: { id: tableStateId },
+        data: { chunkCount },
+      });
     }
 
     return tableStateId;
-  }
-
-  private chunkRows<T>(rows: T[]): T[][] {
-    if (rows.length === 0) {
-      return [];
-    }
-
-    const chunks: T[][] = [];
-    for (let index = 0; index < rows.length; index += CHUNK_SIZE) {
-      chunks.push(rows.slice(index, index + CHUNK_SIZE));
-    }
-    return chunks;
   }
 }

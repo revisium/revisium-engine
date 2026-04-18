@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type { ApiCreateBranchByRevisionIdCommandData } from 'src/features/branch/commands/impl/api-create-branch-by-revision-id.command';
 import type {
   ApiRevertChangesCommandData,
@@ -21,6 +21,9 @@ import { CowVersioningStateService } from 'src/features/versioning-engine/servic
 import { VersioningEngine } from 'src/features/versioning-engine/versioning-engine.interface';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import type { RowWhereInput } from 'src/engine-prisma-types';
+import type { WhereConditionsTyped } from '@revisium/prisma-pg-json';
+import { COW_ROW_FIELDS } from 'src/features/versioning-engine/utils/cow-get-rows-sql';
 
 @Injectable()
 export class CowVersioningEngineService implements VersioningEngine {
@@ -35,17 +38,19 @@ export class CowVersioningEngineService implements VersioningEngine {
   ) {}
 
   async getRows(data: GetRowsQueryData): Promise<GetRowsQueryReturnType> {
+    const mappedData = await this.mapFieldsToSystemColumns(data);
+    const whereConditions = this.validateWhereConditions(mappedData.where);
+    const orderBy = this.validateOrderByConditions(mappedData.orderBy);
     const tableStateId = await this.cowStateService.resolveTableStateId(
       data.revisionId,
       data.tableId,
     );
-    const mappedData = await this.mapFieldsToSystemColumns(data);
 
     return getCowKeysetPagination({
       pageData: data,
       tableStateId,
-      whereConditions: mappedData.where as never,
-      orderBy: mappedData.orderBy,
+      whereConditions,
+      orderBy,
       queryRaw: (sql) => this.prisma.$queryRaw(sql),
       transformRows: async (rows) => {
         const { formulaErrors } = await this.pluginService.computeRows({
@@ -137,6 +142,81 @@ export class CowVersioningEngineService implements VersioningEngine {
         schema,
       ),
     };
+  }
+
+  private validateWhereConditions(
+    where: RowWhereInput | undefined,
+  ): WhereConditionsTyped<typeof COW_ROW_FIELDS> | undefined {
+    if (!where) {
+      return undefined;
+    }
+
+    this.assertSupportedWhereKeys(where);
+
+    return where as WhereConditionsTyped<typeof COW_ROW_FIELDS>;
+  }
+
+  private assertSupportedWhereKeys(where: RowWhereInput): void {
+    for (const [key, value] of Object.entries(where)) {
+      if (value == null) {
+        continue;
+      }
+
+      if (this.isLogicalArrayKey(key)) {
+        this.assertSupportedWhereClauses(value as RowWhereInput[]);
+        continue;
+      }
+
+      if (key === 'NOT') {
+        this.assertSupportedNotClause(value);
+        continue;
+      }
+
+      if (!(key in COW_ROW_FIELDS)) {
+        throw new BadRequestException(
+          `Filtering by field "${key}" is not supported by the COW engine`,
+        );
+      }
+    }
+  }
+
+  private isLogicalArrayKey(key: string): key is 'AND' | 'OR' {
+    return key === 'AND' || key === 'OR';
+  }
+
+  private assertSupportedWhereClauses(clauses: RowWhereInput[]): void {
+    for (const clause of clauses) {
+      this.assertSupportedWhereKeys(clause);
+    }
+  }
+
+  private assertSupportedNotClause(value: unknown): void {
+    if (Array.isArray(value)) {
+      this.assertSupportedWhereClauses(value as RowWhereInput[]);
+      return;
+    }
+
+    this.assertSupportedWhereKeys(value as RowWhereInput);
+  }
+
+  private validateOrderByConditions(
+    orderBy: GetRowsQueryData['orderBy'],
+  ): GetRowsQueryData['orderBy'] {
+    if (!orderBy) {
+      return undefined;
+    }
+
+    for (const condition of orderBy) {
+      for (const key of Object.keys(condition)) {
+        if (!(key in COW_ROW_FIELDS)) {
+          throw new BadRequestException(
+            `Ordering by field "${key}" is not supported by the COW engine`,
+          );
+        }
+      }
+    }
+
+    return orderBy;
   }
 
   private findBranchInProjectOrThrow(projectId: string, branchName: string) {

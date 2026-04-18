@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { sql, type Sql, type Row } from 'src/engine-prisma-types';
 import {
   type FieldConfig,
@@ -49,7 +50,9 @@ export async function getJsonKeysetPagination<T, TFields extends FieldConfig>({
   getRowsCountSql,
 }: GetJsonKeysetPaginationArgs<T, TFields>): Promise<IPaginatedType<T>> {
   if (!Number.isInteger(pageData.first) || pageData.first <= 0) {
-    throw new RangeError('"first" must be a positive integer');
+    throw new BadRequestException(
+      'Invalid "first" parameter: must be a positive integer',
+    );
   }
 
   const userParts = generateOrderByParts({

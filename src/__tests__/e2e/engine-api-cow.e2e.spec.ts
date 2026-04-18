@@ -1,4 +1,5 @@
 import { Prisma } from 'src/__generated__/client';
+import { BadRequestException } from '@nestjs/common';
 import {
   createCowEngineE2eTestKit,
   type CowEngineE2eTestKit,
@@ -35,6 +36,23 @@ describe('EngineApi COW E2E', () => {
       'row-apple',
       'row-banana',
     ]);
+  });
+
+  it('rejects unsupported legacy-only filter fields on the COW path', async () => {
+    await givenCowProductsProject(kit);
+
+    await expect(
+      kit.api.getRows({
+        revisionId: kit.draftRevisionId,
+        tableId: 'products',
+        first: 10,
+        where: { versionId: { equals: 'row-version-id' } },
+      }),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Filtering by field "versionId" is not supported by the COW engine',
+      ),
+    );
   });
 
   it('commits through current engine and snapshots committed state into COW', async () => {
@@ -80,6 +98,54 @@ describe('EngineApi COW E2E', () => {
     });
 
     expect(rows.edges.map((edge) => edge.node.id)).toEqual([
+      'row-apple',
+      'row-banana',
+    ]);
+  });
+
+  it('keeps branched draft state isolated after parent draft mutates', async () => {
+    await givenCommittedCowProductsProject(kit);
+    const committedRevisionId = kit.committedRevisionId;
+
+    if (!committedRevisionId) {
+      throw new Error('Committed revision id was not captured');
+    }
+
+    const branch = await kit.api.createBranch({
+      revisionId: committedRevisionId,
+      branchName: 'cow-divergence-branch',
+    });
+    const childDraft = await kit.api.getDraftRevision(branch.id);
+
+    await kit.api.createRow({
+      revisionId: kit.draftRevisionId,
+      tableId: 'products',
+      rowId: 'row-cherry',
+      data: {
+        name: 'Cherry',
+        price: 30,
+      } as Prisma.InputJsonValue,
+    });
+
+    const parentRows = await kit.api.getRows({
+      revisionId: kit.draftRevisionId,
+      tableId: 'products',
+      first: 10,
+      orderBy: [{ data: { path: 'name', direction: 'asc' } }],
+    });
+    const childRows = await kit.api.getRows({
+      revisionId: childDraft.id,
+      tableId: 'products',
+      first: 10,
+      orderBy: [{ data: { path: 'name', direction: 'asc' } }],
+    });
+
+    expect(parentRows.edges.map((edge) => edge.node.id)).toEqual([
+      'row-apple',
+      'row-banana',
+      'row-cherry',
+    ]);
+    expect(childRows.edges.map((edge) => edge.node.id)).toEqual([
       'row-apple',
       'row-banana',
     ]);

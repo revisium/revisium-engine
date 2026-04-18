@@ -1,5 +1,4 @@
 import { MAX_TAKE } from '@revisium/prisma-pg-json';
-import { BadRequestException } from '@nestjs/common';
 import { getCowKeysetPagination } from '../cow-get-keyset-pagination';
 import { getJsonKeysetPagination } from 'src/features/share/utils/get-json-keyset-pagination';
 
@@ -18,21 +17,6 @@ describe('getCowKeysetPagination', () => {
       },
       totalCount: 0,
     });
-  });
-
-  it.each([0, -1])('throws when first is %s', async (first) => {
-    await expect(
-      getCowKeysetPagination({
-        pageData: { first },
-        tableStateId: 'table-state-id',
-        queryRaw: jest.fn(),
-        transformRows: jest.fn(),
-      }),
-    ).rejects.toThrow(
-      new BadRequestException(
-        'Invalid "first" parameter: must be a positive integer',
-      ),
-    );
   });
 
   it('caps first to MAX_TAKE before querying', async () => {

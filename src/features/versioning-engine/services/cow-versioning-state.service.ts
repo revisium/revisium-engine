@@ -72,11 +72,7 @@ export class CowVersioningStateService {
     );
 
     if (revision.isDraft) {
-      // Draft writes still flow through the current engine in this PR, so reads
-      // must rematerialize from current draft state until draft mutations move
-      // behind the versioning-engine boundary.
-      await this.syncDraftStateFromCurrent(revision.branchId);
-      const draftState = await this.prisma.cowDraftState.findUnique({
+      let draftState = await this.prisma.cowDraftState.findUnique({
         where: {
           branchId_tableCreatedId: {
             branchId: revision.branchId,
@@ -85,6 +81,19 @@ export class CowVersioningStateService {
         },
         select: { tableStateId: true, status: true },
       });
+
+      if (!draftState) {
+        await this.syncDraftStateFromCurrent(revision.branchId);
+        draftState = await this.prisma.cowDraftState.findUnique({
+          where: {
+            branchId_tableCreatedId: {
+              branchId: revision.branchId,
+              tableCreatedId: table.createdId,
+            },
+          },
+          select: { tableStateId: true, status: true },
+        });
+      }
 
       if (!draftState || draftState.status === 'deleted') {
         throw new NotFoundException(

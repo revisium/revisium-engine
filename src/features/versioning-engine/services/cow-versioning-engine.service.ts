@@ -123,6 +123,10 @@ export class CowVersioningEngineService implements VersioningEngine {
     return result;
   }
 
+  async syncDraftState(branchId: string): Promise<void> {
+    await this.cowStateService.syncDraftStateFromCurrent(branchId);
+  }
+
   private async mapFieldsToSystemColumns(
     data: GetRowsQueryData,
   ): Promise<GetRowsQueryData> {

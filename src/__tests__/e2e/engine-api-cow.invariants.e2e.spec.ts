@@ -127,15 +127,26 @@ describe('EngineApi COW invariants E2E', () => {
     });
     const initialTableStates = await kit.prisma.cowTableState.count();
     const initialChunks = await kit.prisma.cowTableChunk.count();
+    const initialDraftState = await kit.prisma.cowDraftState.findFirstOrThrow({
+      where: { branchId: kit.branchId },
+      select: { tableStateId: true },
+    });
 
     await kit.api.getRows({
       revisionId: kit.draftRevisionId,
       tableId: 'products',
       first: 10,
     });
+    const repeatedDraftState = await kit.prisma.cowDraftState.findFirstOrThrow({
+      where: { branchId: kit.branchId },
+      select: { tableStateId: true },
+    });
 
     expect(await kit.prisma.cowTableState.count()).toBe(initialTableStates);
     expect(await kit.prisma.cowTableChunk.count()).toBe(initialChunks);
+    expect(repeatedDraftState.tableStateId).toBe(
+      initialDraftState.tableStateId,
+    );
   });
 
   beforeEach(async () => {

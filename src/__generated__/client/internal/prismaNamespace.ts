@@ -389,6 +389,13 @@ export const ModelName = {
   Table: 'Table',
   Row: 'Row',
   ProjectVersioningConfig: 'ProjectVersioningConfig',
+  CowRevisionTableState: 'CowRevisionTableState',
+  CowDraftState: 'CowDraftState',
+  CowTableState: 'CowTableState',
+  CowTableChunk: 'CowTableChunk',
+  CowTableStateChunk: 'CowTableStateChunk',
+  CowChunkEntry: 'CowChunkEntry',
+  CowRowState: 'CowRowState',
   TableMigration: 'TableMigration'
 } as const
 
@@ -405,7 +412,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "branch" | "revision" | "table" | "row" | "projectVersioningConfig" | "tableMigration"
+    modelProps: "branch" | "revision" | "table" | "row" | "projectVersioningConfig" | "cowRevisionTableState" | "cowDraftState" | "cowTableState" | "cowTableChunk" | "cowTableStateChunk" | "cowChunkEntry" | "cowRowState" | "tableMigration"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -779,6 +786,524 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    CowRevisionTableState: {
+      payload: Prisma.$CowRevisionTableStatePayload<ExtArgs>
+      fields: Prisma.CowRevisionTableStateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CowRevisionTableStateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CowRevisionTableStateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>
+        }
+        findFirst: {
+          args: Prisma.CowRevisionTableStateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CowRevisionTableStateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>
+        }
+        findMany: {
+          args: Prisma.CowRevisionTableStateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>[]
+        }
+        create: {
+          args: Prisma.CowRevisionTableStateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>
+        }
+        createMany: {
+          args: Prisma.CowRevisionTableStateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CowRevisionTableStateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>[]
+        }
+        delete: {
+          args: Prisma.CowRevisionTableStateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>
+        }
+        update: {
+          args: Prisma.CowRevisionTableStateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>
+        }
+        deleteMany: {
+          args: Prisma.CowRevisionTableStateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CowRevisionTableStateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CowRevisionTableStateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>[]
+        }
+        upsert: {
+          args: Prisma.CowRevisionTableStateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRevisionTableStatePayload>
+        }
+        aggregate: {
+          args: Prisma.CowRevisionTableStateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCowRevisionTableState>
+        }
+        groupBy: {
+          args: Prisma.CowRevisionTableStateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowRevisionTableStateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CowRevisionTableStateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowRevisionTableStateCountAggregateOutputType> | number
+        }
+      }
+    }
+    CowDraftState: {
+      payload: Prisma.$CowDraftStatePayload<ExtArgs>
+      fields: Prisma.CowDraftStateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CowDraftStateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CowDraftStateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>
+        }
+        findFirst: {
+          args: Prisma.CowDraftStateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CowDraftStateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>
+        }
+        findMany: {
+          args: Prisma.CowDraftStateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>[]
+        }
+        create: {
+          args: Prisma.CowDraftStateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>
+        }
+        createMany: {
+          args: Prisma.CowDraftStateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CowDraftStateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>[]
+        }
+        delete: {
+          args: Prisma.CowDraftStateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>
+        }
+        update: {
+          args: Prisma.CowDraftStateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>
+        }
+        deleteMany: {
+          args: Prisma.CowDraftStateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CowDraftStateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CowDraftStateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>[]
+        }
+        upsert: {
+          args: Prisma.CowDraftStateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowDraftStatePayload>
+        }
+        aggregate: {
+          args: Prisma.CowDraftStateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCowDraftState>
+        }
+        groupBy: {
+          args: Prisma.CowDraftStateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowDraftStateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CowDraftStateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowDraftStateCountAggregateOutputType> | number
+        }
+      }
+    }
+    CowTableState: {
+      payload: Prisma.$CowTableStatePayload<ExtArgs>
+      fields: Prisma.CowTableStateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CowTableStateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CowTableStateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>
+        }
+        findFirst: {
+          args: Prisma.CowTableStateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CowTableStateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>
+        }
+        findMany: {
+          args: Prisma.CowTableStateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>[]
+        }
+        create: {
+          args: Prisma.CowTableStateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>
+        }
+        createMany: {
+          args: Prisma.CowTableStateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CowTableStateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>[]
+        }
+        delete: {
+          args: Prisma.CowTableStateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>
+        }
+        update: {
+          args: Prisma.CowTableStateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>
+        }
+        deleteMany: {
+          args: Prisma.CowTableStateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CowTableStateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CowTableStateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>[]
+        }
+        upsert: {
+          args: Prisma.CowTableStateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStatePayload>
+        }
+        aggregate: {
+          args: Prisma.CowTableStateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCowTableState>
+        }
+        groupBy: {
+          args: Prisma.CowTableStateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowTableStateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CowTableStateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowTableStateCountAggregateOutputType> | number
+        }
+      }
+    }
+    CowTableChunk: {
+      payload: Prisma.$CowTableChunkPayload<ExtArgs>
+      fields: Prisma.CowTableChunkFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CowTableChunkFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CowTableChunkFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>
+        }
+        findFirst: {
+          args: Prisma.CowTableChunkFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CowTableChunkFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>
+        }
+        findMany: {
+          args: Prisma.CowTableChunkFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>[]
+        }
+        create: {
+          args: Prisma.CowTableChunkCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>
+        }
+        createMany: {
+          args: Prisma.CowTableChunkCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CowTableChunkCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>[]
+        }
+        delete: {
+          args: Prisma.CowTableChunkDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>
+        }
+        update: {
+          args: Prisma.CowTableChunkUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>
+        }
+        deleteMany: {
+          args: Prisma.CowTableChunkDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CowTableChunkUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CowTableChunkUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>[]
+        }
+        upsert: {
+          args: Prisma.CowTableChunkUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableChunkPayload>
+        }
+        aggregate: {
+          args: Prisma.CowTableChunkAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCowTableChunk>
+        }
+        groupBy: {
+          args: Prisma.CowTableChunkGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowTableChunkGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CowTableChunkCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowTableChunkCountAggregateOutputType> | number
+        }
+      }
+    }
+    CowTableStateChunk: {
+      payload: Prisma.$CowTableStateChunkPayload<ExtArgs>
+      fields: Prisma.CowTableStateChunkFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CowTableStateChunkFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CowTableStateChunkFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>
+        }
+        findFirst: {
+          args: Prisma.CowTableStateChunkFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CowTableStateChunkFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>
+        }
+        findMany: {
+          args: Prisma.CowTableStateChunkFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>[]
+        }
+        create: {
+          args: Prisma.CowTableStateChunkCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>
+        }
+        createMany: {
+          args: Prisma.CowTableStateChunkCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CowTableStateChunkCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>[]
+        }
+        delete: {
+          args: Prisma.CowTableStateChunkDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>
+        }
+        update: {
+          args: Prisma.CowTableStateChunkUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>
+        }
+        deleteMany: {
+          args: Prisma.CowTableStateChunkDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CowTableStateChunkUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CowTableStateChunkUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>[]
+        }
+        upsert: {
+          args: Prisma.CowTableStateChunkUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowTableStateChunkPayload>
+        }
+        aggregate: {
+          args: Prisma.CowTableStateChunkAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCowTableStateChunk>
+        }
+        groupBy: {
+          args: Prisma.CowTableStateChunkGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowTableStateChunkGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CowTableStateChunkCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowTableStateChunkCountAggregateOutputType> | number
+        }
+      }
+    }
+    CowChunkEntry: {
+      payload: Prisma.$CowChunkEntryPayload<ExtArgs>
+      fields: Prisma.CowChunkEntryFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CowChunkEntryFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CowChunkEntryFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>
+        }
+        findFirst: {
+          args: Prisma.CowChunkEntryFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CowChunkEntryFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>
+        }
+        findMany: {
+          args: Prisma.CowChunkEntryFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>[]
+        }
+        create: {
+          args: Prisma.CowChunkEntryCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>
+        }
+        createMany: {
+          args: Prisma.CowChunkEntryCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CowChunkEntryCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>[]
+        }
+        delete: {
+          args: Prisma.CowChunkEntryDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>
+        }
+        update: {
+          args: Prisma.CowChunkEntryUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>
+        }
+        deleteMany: {
+          args: Prisma.CowChunkEntryDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CowChunkEntryUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CowChunkEntryUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>[]
+        }
+        upsert: {
+          args: Prisma.CowChunkEntryUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowChunkEntryPayload>
+        }
+        aggregate: {
+          args: Prisma.CowChunkEntryAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCowChunkEntry>
+        }
+        groupBy: {
+          args: Prisma.CowChunkEntryGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowChunkEntryGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CowChunkEntryCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowChunkEntryCountAggregateOutputType> | number
+        }
+      }
+    }
+    CowRowState: {
+      payload: Prisma.$CowRowStatePayload<ExtArgs>
+      fields: Prisma.CowRowStateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CowRowStateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CowRowStateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>
+        }
+        findFirst: {
+          args: Prisma.CowRowStateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CowRowStateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>
+        }
+        findMany: {
+          args: Prisma.CowRowStateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>[]
+        }
+        create: {
+          args: Prisma.CowRowStateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>
+        }
+        createMany: {
+          args: Prisma.CowRowStateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CowRowStateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>[]
+        }
+        delete: {
+          args: Prisma.CowRowStateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>
+        }
+        update: {
+          args: Prisma.CowRowStateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>
+        }
+        deleteMany: {
+          args: Prisma.CowRowStateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CowRowStateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CowRowStateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>[]
+        }
+        upsert: {
+          args: Prisma.CowRowStateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CowRowStatePayload>
+        }
+        aggregate: {
+          args: Prisma.CowRowStateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCowRowState>
+        }
+        groupBy: {
+          args: Prisma.CowRowStateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowRowStateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CowRowStateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CowRowStateCountAggregateOutputType> | number
+        }
+      }
+    }
     TableMigration: {
       payload: Prisma.$TableMigrationPayload<ExtArgs>
       fields: Prisma.TableMigrationFieldRefs
@@ -963,6 +1488,77 @@ export const ProjectVersioningConfigScalarFieldEnum = {
 export type ProjectVersioningConfigScalarFieldEnum = (typeof ProjectVersioningConfigScalarFieldEnum)[keyof typeof ProjectVersioningConfigScalarFieldEnum]
 
 
+export const CowRevisionTableStateScalarFieldEnum = {
+  revisionId: 'revisionId',
+  tableCreatedId: 'tableCreatedId',
+  tableStateId: 'tableStateId'
+} as const
+
+export type CowRevisionTableStateScalarFieldEnum = (typeof CowRevisionTableStateScalarFieldEnum)[keyof typeof CowRevisionTableStateScalarFieldEnum]
+
+
+export const CowDraftStateScalarFieldEnum = {
+  branchId: 'branchId',
+  tableCreatedId: 'tableCreatedId',
+  tableStateId: 'tableStateId',
+  status: 'status'
+} as const
+
+export type CowDraftStateScalarFieldEnum = (typeof CowDraftStateScalarFieldEnum)[keyof typeof CowDraftStateScalarFieldEnum]
+
+
+export const CowTableStateScalarFieldEnum = {
+  id: 'id',
+  tableCreatedId: 'tableCreatedId',
+  chunkCount: 'chunkCount'
+} as const
+
+export type CowTableStateScalarFieldEnum = (typeof CowTableStateScalarFieldEnum)[keyof typeof CowTableStateScalarFieldEnum]
+
+
+export const CowTableChunkScalarFieldEnum = {
+  id: 'id'
+} as const
+
+export type CowTableChunkScalarFieldEnum = (typeof CowTableChunkScalarFieldEnum)[keyof typeof CowTableChunkScalarFieldEnum]
+
+
+export const CowTableStateChunkScalarFieldEnum = {
+  tableStateId: 'tableStateId',
+  chunkId: 'chunkId',
+  chunkNo: 'chunkNo'
+} as const
+
+export type CowTableStateChunkScalarFieldEnum = (typeof CowTableStateChunkScalarFieldEnum)[keyof typeof CowTableStateChunkScalarFieldEnum]
+
+
+export const CowChunkEntryScalarFieldEnum = {
+  chunkId: 'chunkId',
+  rowCreatedId: 'rowCreatedId',
+  rowStateId: 'rowStateId',
+  isDeleted: 'isDeleted'
+} as const
+
+export type CowChunkEntryScalarFieldEnum = (typeof CowChunkEntryScalarFieldEnum)[keyof typeof CowChunkEntryScalarFieldEnum]
+
+
+export const CowRowStateScalarFieldEnum = {
+  id: 'id',
+  rowCreatedId: 'rowCreatedId',
+  rowId: 'rowId',
+  readonly: 'readonly',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  publishedAt: 'publishedAt',
+  data: 'data',
+  meta: 'meta',
+  hash: 'hash',
+  schemaHash: 'schemaHash'
+} as const
+
+export type CowRowStateScalarFieldEnum = (typeof CowRowStateScalarFieldEnum)[keyof typeof CowRowStateScalarFieldEnum]
+
+
 export const TableMigrationScalarFieldEnum = {
   id: 'id',
   revisionId: 'revisionId',
@@ -1082,6 +1678,67 @@ export const ProjectVersioningConfigOrderByRelevanceFieldEnum = {
 export type ProjectVersioningConfigOrderByRelevanceFieldEnum = (typeof ProjectVersioningConfigOrderByRelevanceFieldEnum)[keyof typeof ProjectVersioningConfigOrderByRelevanceFieldEnum]
 
 
+export const CowRevisionTableStateOrderByRelevanceFieldEnum = {
+  revisionId: 'revisionId',
+  tableCreatedId: 'tableCreatedId',
+  tableStateId: 'tableStateId'
+} as const
+
+export type CowRevisionTableStateOrderByRelevanceFieldEnum = (typeof CowRevisionTableStateOrderByRelevanceFieldEnum)[keyof typeof CowRevisionTableStateOrderByRelevanceFieldEnum]
+
+
+export const CowDraftStateOrderByRelevanceFieldEnum = {
+  branchId: 'branchId',
+  tableCreatedId: 'tableCreatedId',
+  tableStateId: 'tableStateId'
+} as const
+
+export type CowDraftStateOrderByRelevanceFieldEnum = (typeof CowDraftStateOrderByRelevanceFieldEnum)[keyof typeof CowDraftStateOrderByRelevanceFieldEnum]
+
+
+export const CowTableStateOrderByRelevanceFieldEnum = {
+  id: 'id',
+  tableCreatedId: 'tableCreatedId'
+} as const
+
+export type CowTableStateOrderByRelevanceFieldEnum = (typeof CowTableStateOrderByRelevanceFieldEnum)[keyof typeof CowTableStateOrderByRelevanceFieldEnum]
+
+
+export const CowTableChunkOrderByRelevanceFieldEnum = {
+  id: 'id'
+} as const
+
+export type CowTableChunkOrderByRelevanceFieldEnum = (typeof CowTableChunkOrderByRelevanceFieldEnum)[keyof typeof CowTableChunkOrderByRelevanceFieldEnum]
+
+
+export const CowTableStateChunkOrderByRelevanceFieldEnum = {
+  tableStateId: 'tableStateId',
+  chunkId: 'chunkId'
+} as const
+
+export type CowTableStateChunkOrderByRelevanceFieldEnum = (typeof CowTableStateChunkOrderByRelevanceFieldEnum)[keyof typeof CowTableStateChunkOrderByRelevanceFieldEnum]
+
+
+export const CowChunkEntryOrderByRelevanceFieldEnum = {
+  chunkId: 'chunkId',
+  rowCreatedId: 'rowCreatedId',
+  rowStateId: 'rowStateId'
+} as const
+
+export type CowChunkEntryOrderByRelevanceFieldEnum = (typeof CowChunkEntryOrderByRelevanceFieldEnum)[keyof typeof CowChunkEntryOrderByRelevanceFieldEnum]
+
+
+export const CowRowStateOrderByRelevanceFieldEnum = {
+  id: 'id',
+  rowCreatedId: 'rowCreatedId',
+  rowId: 'rowId',
+  hash: 'hash',
+  schemaHash: 'schemaHash'
+} as const
+
+export type CowRowStateOrderByRelevanceFieldEnum = (typeof CowRowStateOrderByRelevanceFieldEnum)[keyof typeof CowRowStateOrderByRelevanceFieldEnum]
+
+
 export const TableMigrationOrderByRelevanceFieldEnum = {
   id: 'id',
   revisionId: 'revisionId',
@@ -1180,6 +1837,20 @@ export type EnumVersioningModeFieldRefInput<$PrismaModel> = FieldRefInputType<$P
  * Reference to a field of type 'VersioningMode[]'
  */
 export type ListEnumVersioningModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'VersioningMode[]'>
+    
+
+
+/**
+ * Reference to a field of type 'CowDraftTableStatus'
+ */
+export type EnumCowDraftTableStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'CowDraftTableStatus'>
+    
+
+
+/**
+ * Reference to a field of type 'CowDraftTableStatus[]'
+ */
+export type ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'CowDraftTableStatus[]'>
     
 
 
@@ -1296,6 +1967,13 @@ export type GlobalOmitConfig = {
   table?: Prisma.TableOmit
   row?: Prisma.RowOmit
   projectVersioningConfig?: Prisma.ProjectVersioningConfigOmit
+  cowRevisionTableState?: Prisma.CowRevisionTableStateOmit
+  cowDraftState?: Prisma.CowDraftStateOmit
+  cowTableState?: Prisma.CowTableStateOmit
+  cowTableChunk?: Prisma.CowTableChunkOmit
+  cowTableStateChunk?: Prisma.CowTableStateChunkOmit
+  cowChunkEntry?: Prisma.CowChunkEntryOmit
+  cowRowState?: Prisma.CowRowStateOmit
   tableMigration?: Prisma.TableMigrationOmit
 }
 

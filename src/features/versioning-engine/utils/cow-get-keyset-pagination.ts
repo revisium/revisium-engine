@@ -1,5 +1,6 @@
 import { sql, type Sql, type Row } from 'src/engine-prisma-types';
 import {
+  MAX_TAKE,
   OrderByConditions,
   OrderByPart,
   WhereConditionsTyped,
@@ -7,34 +8,37 @@ import {
 import { IPaginatedType } from 'src/features/share/pagination.interface';
 import { getJsonKeysetPagination } from 'src/features/share/utils/get-json-keyset-pagination';
 import {
-  getRowsSql,
-  getRowsCountSql,
-  DEFAULT_ROW_FIELDS,
-} from './get-rows-sql';
+  COW_ROW_FIELDS,
+  getCowRowsCountSql,
+  getCowRowsSql,
+} from 'src/features/versioning-engine/utils/cow-get-rows-sql';
 
-interface GetKeysetPaginationArgs<T> {
+interface GetCowKeysetPaginationArgs<T> {
   pageData: { first: number; after?: string };
-  tableVersionId: string;
-  whereConditions?: WhereConditionsTyped<typeof DEFAULT_ROW_FIELDS>;
+  tableStateId: string;
+  whereConditions?: WhereConditionsTyped<typeof COW_ROW_FIELDS>;
   orderBy?: OrderByConditions[];
   queryRaw: <R>(sql: Sql) => Promise<R>;
   transformRows: (rows: Row[]) => Promise<T[]>;
 }
 
-export async function getKeysetPagination<T>({
+export async function getCowKeysetPagination<T>({
   pageData,
-  tableVersionId,
+  tableStateId,
   whereConditions,
   orderBy,
   queryRaw,
   transformRows,
-}: GetKeysetPaginationArgs<T>): Promise<IPaginatedType<T>> {
+}: GetCowKeysetPaginationArgs<T>): Promise<IPaginatedType<T>> {
   return getJsonKeysetPagination({
-    pageData,
-    sourceId: tableVersionId,
+    pageData: {
+      ...pageData,
+      first: Math.min(pageData.first, MAX_TAKE),
+    },
+    sourceId: tableStateId,
     whereConditions,
     orderBy,
-    fieldConfig: DEFAULT_ROW_FIELDS,
+    fieldConfig: COW_ROW_FIELDS,
     defaultOrderByPart: {
       expression: sql`r."createdAt"`,
       direction: 'DESC' as const,
@@ -43,7 +47,7 @@ export async function getKeysetPagination<T>({
     } satisfies OrderByPart,
     queryRaw,
     transformRows,
-    getRowsSql,
-    getRowsCountSql,
+    getRowsSql: getCowRowsSql,
+    getRowsCountSql: getCowRowsCountSql,
   });
 }

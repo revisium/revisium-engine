@@ -222,6 +222,23 @@ export type EnumVersioningModeWithAggregatesFilter<$PrismaModel = never> = {
   _max?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel>
 }
 
+export type EnumCowDraftTableStatusFilter<$PrismaModel = never> = {
+  equals?: $Enums.CowDraftTableStatus | Prisma.EnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  in?: $Enums.CowDraftTableStatus[] | Prisma.ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  notIn?: $Enums.CowDraftTableStatus[] | Prisma.ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumCowDraftTableStatusFilter<$PrismaModel> | $Enums.CowDraftTableStatus
+}
+
+export type EnumCowDraftTableStatusWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.CowDraftTableStatus | Prisma.EnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  in?: $Enums.CowDraftTableStatus[] | Prisma.ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  notIn?: $Enums.CowDraftTableStatus[] | Prisma.ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumCowDraftTableStatusWithAggregatesFilter<$PrismaModel> | $Enums.CowDraftTableStatus
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumCowDraftTableStatusFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumCowDraftTableStatusFilter<$PrismaModel>
+}
+
 export type DateTimeNullableFilter<$PrismaModel = never> = {
   equals?: Date | string | Prisma.DateTimeFieldRefInput<$PrismaModel> | null
   in?: Date[] | string[] | Prisma.ListDateTimeFieldRefInput<$PrismaModel> | null
@@ -439,6 +456,23 @@ export type NestedEnumVersioningModeWithAggregatesFilter<$PrismaModel = never> =
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumVersioningModeFilter<$PrismaModel>
+}
+
+export type NestedEnumCowDraftTableStatusFilter<$PrismaModel = never> = {
+  equals?: $Enums.CowDraftTableStatus | Prisma.EnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  in?: $Enums.CowDraftTableStatus[] | Prisma.ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  notIn?: $Enums.CowDraftTableStatus[] | Prisma.ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumCowDraftTableStatusFilter<$PrismaModel> | $Enums.CowDraftTableStatus
+}
+
+export type NestedEnumCowDraftTableStatusWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.CowDraftTableStatus | Prisma.EnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  in?: $Enums.CowDraftTableStatus[] | Prisma.ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  notIn?: $Enums.CowDraftTableStatus[] | Prisma.ListEnumCowDraftTableStatusFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumCowDraftTableStatusWithAggregatesFilter<$PrismaModel> | $Enums.CowDraftTableStatus
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumCowDraftTableStatusFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumCowDraftTableStatusFilter<$PrismaModel>
 }
 
 export type NestedDateTimeNullableFilter<$PrismaModel = never> = {

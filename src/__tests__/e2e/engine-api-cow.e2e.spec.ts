@@ -55,6 +55,23 @@ describe('EngineApi COW E2E', () => {
     );
   });
 
+  it('accepts AND as a single where object on the COW path', async () => {
+    await givenCowProductsProject(kit);
+
+    const rows = await kit.api.getRows({
+      revisionId: kit.draftRevisionId,
+      tableId: 'products',
+      first: 10,
+      where: {
+        AND: {
+          data: { path: 'name', equals: 'Apple' },
+        },
+      },
+    });
+
+    expect(rows.edges.map((edge) => edge.node.id)).toEqual(['row-apple']);
+  });
+
   it('commits through current engine and snapshots committed state into COW', async () => {
     await givenCommittedCowProductsProject(kit);
     const committedRevisionId = kit.committedRevisionId;

@@ -134,11 +134,12 @@ export class CowVersioningEngineService implements VersioningEngine {
       data.revisionId,
       data.tableId,
     );
+    const normalizedWhere = this.normalizeWhereConditions(data.where);
 
     return {
       ...data,
       where: this.systemColumnMappingService.mapWhereConditions(
-        data.where,
+        normalizedWhere,
         schema,
       ),
       orderBy: this.systemColumnMappingService.mapOrderByConditions(
@@ -155,9 +156,59 @@ export class CowVersioningEngineService implements VersioningEngine {
       return undefined;
     }
 
-    this.assertSupportedWhereKeys(where);
+    const normalizedWhere = this.normalizeWhereConditions(where);
+    if (!normalizedWhere) {
+      return undefined;
+    }
 
-    return where as WhereConditionsTyped<typeof COW_ROW_FIELDS>;
+    this.assertSupportedWhereKeys(normalizedWhere);
+
+    return normalizedWhere as WhereConditionsTyped<typeof COW_ROW_FIELDS>;
+  }
+
+  private normalizeWhereConditions(
+    where: RowWhereInput | undefined,
+  ): RowWhereInput | undefined {
+    if (!where) {
+      return undefined;
+    }
+
+    return Object.fromEntries(
+      Object.entries(where).map(([key, value]) => {
+        if (value == null) {
+          return [key, value];
+        }
+
+        if (key === 'AND') {
+          return [
+            key,
+            Array.isArray(value)
+              ? value.map((clause) => this.normalizeWhereConditions(clause))
+              : [this.normalizeWhereConditions(value as RowWhereInput)],
+          ];
+        }
+
+        if (key === 'OR') {
+          return [
+            key,
+            (value as RowWhereInput[]).map((clause) =>
+              this.normalizeWhereConditions(clause),
+            ),
+          ];
+        }
+
+        if (key === 'NOT') {
+          return [
+            key,
+            Array.isArray(value)
+              ? value.map((clause) => this.normalizeWhereConditions(clause))
+              : this.normalizeWhereConditions(value as RowWhereInput),
+          ];
+        }
+
+        return [key, value];
+      }),
+    ) as RowWhereInput;
   }
 
   private assertSupportedWhereKeys(where: RowWhereInput): void {
@@ -167,7 +218,7 @@ export class CowVersioningEngineService implements VersioningEngine {
       }
 
       if (this.isLogicalArrayKey(key)) {
-        this.assertSupportedWhereClauses(value as RowWhereInput[]);
+        this.assertSupportedLogicalClause(key, value);
         continue;
       }
 
@@ -186,6 +237,23 @@ export class CowVersioningEngineService implements VersioningEngine {
 
   private isLogicalArrayKey(key: string): key is 'AND' | 'OR' {
     return key === 'AND' || key === 'OR';
+  }
+
+  private assertSupportedLogicalClause(
+    key: 'AND' | 'OR',
+    value: unknown,
+  ): void {
+    if (Array.isArray(value)) {
+      this.assertSupportedWhereClauses(value as RowWhereInput[]);
+      return;
+    }
+
+    if (key === 'AND') {
+      this.assertSupportedWhereKeys(value as RowWhereInput);
+      return;
+    }
+
+    throw new BadRequestException('OR must be an array of where clauses');
   }
 
   private assertSupportedWhereClauses(clauses: RowWhereInput[]): void {

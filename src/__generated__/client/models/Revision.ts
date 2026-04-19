@@ -260,7 +260,6 @@ export type RevisionWhereInput = {
   parent?: Prisma.XOR<Prisma.RevisionNullableScalarRelationFilter, Prisma.RevisionWhereInput> | null
   children?: Prisma.RevisionListRelationFilter
   tables?: Prisma.TableListRelationFilter
-  cowTableStates?: Prisma.CowRevisionTableStateListRelationFilter
 }
 
 export type RevisionOrderByWithRelationInput = {
@@ -278,7 +277,6 @@ export type RevisionOrderByWithRelationInput = {
   parent?: Prisma.RevisionOrderByWithRelationInput
   children?: Prisma.RevisionOrderByRelationAggregateInput
   tables?: Prisma.TableOrderByRelationAggregateInput
-  cowTableStates?: Prisma.CowRevisionTableStateOrderByRelationAggregateInput
   _relevance?: Prisma.RevisionOrderByRelevanceInput
 }
 
@@ -300,7 +298,6 @@ export type RevisionWhereUniqueInput = Prisma.AtLeast<{
   parent?: Prisma.XOR<Prisma.RevisionNullableScalarRelationFilter, Prisma.RevisionWhereInput> | null
   children?: Prisma.RevisionListRelationFilter
   tables?: Prisma.TableListRelationFilter
-  cowTableStates?: Prisma.CowRevisionTableStateListRelationFilter
 }, "id" | "sequence">
 
 export type RevisionOrderByWithAggregationInput = {
@@ -350,7 +347,6 @@ export type RevisionCreateInput = {
   parent?: Prisma.RevisionCreateNestedOneWithoutChildrenInput
   children?: Prisma.RevisionCreateNestedManyWithoutParentInput
   tables?: Prisma.TableCreateNestedManyWithoutRevisionsInput
-  cowTableStates?: Prisma.CowRevisionTableStateCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionUncheckedCreateInput = {
@@ -366,7 +362,6 @@ export type RevisionUncheckedCreateInput = {
   parentId?: string | null
   children?: Prisma.RevisionUncheckedCreateNestedManyWithoutParentInput
   tables?: Prisma.TableUncheckedCreateNestedManyWithoutRevisionsInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionUpdateInput = {
@@ -381,7 +376,6 @@ export type RevisionUpdateInput = {
   parent?: Prisma.RevisionUpdateOneWithoutChildrenNestedInput
   children?: Prisma.RevisionUpdateManyWithoutParentNestedInput
   tables?: Prisma.TableUpdateManyWithoutRevisionsNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUncheckedUpdateInput = {
@@ -397,7 +391,6 @@ export type RevisionUncheckedUpdateInput = {
   parentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   children?: Prisma.RevisionUncheckedUpdateManyWithoutParentNestedInput
   tables?: Prisma.TableUncheckedUpdateManyWithoutRevisionsNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionCreateManyInput = {
@@ -502,11 +495,6 @@ export type RevisionMinOrderByAggregateInput = {
 
 export type RevisionSumOrderByAggregateInput = {
   sequence?: Prisma.SortOrder
-}
-
-export type RevisionScalarRelationFilter = {
-  is?: Prisma.RevisionWhereInput
-  isNot?: Prisma.RevisionWhereInput
 }
 
 export type RevisionCreateNestedManyWithoutBranchInput = {
@@ -659,20 +647,6 @@ export type RevisionUncheckedUpdateManyWithoutTablesNestedInput = {
   deleteMany?: Prisma.RevisionScalarWhereInput | Prisma.RevisionScalarWhereInput[]
 }
 
-export type RevisionCreateNestedOneWithoutCowTableStatesInput = {
-  create?: Prisma.XOR<Prisma.RevisionCreateWithoutCowTableStatesInput, Prisma.RevisionUncheckedCreateWithoutCowTableStatesInput>
-  connectOrCreate?: Prisma.RevisionCreateOrConnectWithoutCowTableStatesInput
-  connect?: Prisma.RevisionWhereUniqueInput
-}
-
-export type RevisionUpdateOneRequiredWithoutCowTableStatesNestedInput = {
-  create?: Prisma.XOR<Prisma.RevisionCreateWithoutCowTableStatesInput, Prisma.RevisionUncheckedCreateWithoutCowTableStatesInput>
-  connectOrCreate?: Prisma.RevisionCreateOrConnectWithoutCowTableStatesInput
-  upsert?: Prisma.RevisionUpsertWithoutCowTableStatesInput
-  connect?: Prisma.RevisionWhereUniqueInput
-  update?: Prisma.XOR<Prisma.XOR<Prisma.RevisionUpdateToOneWithWhereWithoutCowTableStatesInput, Prisma.RevisionUpdateWithoutCowTableStatesInput>, Prisma.RevisionUncheckedUpdateWithoutCowTableStatesInput>
-}
-
 export type RevisionCreateWithoutBranchInput = {
   id: string
   sequence?: number
@@ -685,7 +659,6 @@ export type RevisionCreateWithoutBranchInput = {
   parent?: Prisma.RevisionCreateNestedOneWithoutChildrenInput
   children?: Prisma.RevisionCreateNestedManyWithoutParentInput
   tables?: Prisma.TableCreateNestedManyWithoutRevisionsInput
-  cowTableStates?: Prisma.CowRevisionTableStateCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionUncheckedCreateWithoutBranchInput = {
@@ -700,7 +673,6 @@ export type RevisionUncheckedCreateWithoutBranchInput = {
   parentId?: string | null
   children?: Prisma.RevisionUncheckedCreateNestedManyWithoutParentInput
   tables?: Prisma.TableUncheckedCreateNestedManyWithoutRevisionsInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionCreateOrConnectWithoutBranchInput = {
@@ -757,7 +729,6 @@ export type RevisionCreateWithoutChildrenInput = {
   branch: Prisma.BranchCreateNestedOneWithoutRevisionsInput
   parent?: Prisma.RevisionCreateNestedOneWithoutChildrenInput
   tables?: Prisma.TableCreateNestedManyWithoutRevisionsInput
-  cowTableStates?: Prisma.CowRevisionTableStateCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionUncheckedCreateWithoutChildrenInput = {
@@ -772,7 +743,6 @@ export type RevisionUncheckedCreateWithoutChildrenInput = {
   branchId: string
   parentId?: string | null
   tables?: Prisma.TableUncheckedCreateNestedManyWithoutRevisionsInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionCreateOrConnectWithoutChildrenInput = {
@@ -792,7 +762,6 @@ export type RevisionCreateWithoutParentInput = {
   branch: Prisma.BranchCreateNestedOneWithoutRevisionsInput
   children?: Prisma.RevisionCreateNestedManyWithoutParentInput
   tables?: Prisma.TableCreateNestedManyWithoutRevisionsInput
-  cowTableStates?: Prisma.CowRevisionTableStateCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionUncheckedCreateWithoutParentInput = {
@@ -807,7 +776,6 @@ export type RevisionUncheckedCreateWithoutParentInput = {
   branchId: string
   children?: Prisma.RevisionUncheckedCreateNestedManyWithoutParentInput
   tables?: Prisma.TableUncheckedCreateNestedManyWithoutRevisionsInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionCreateOrConnectWithoutParentInput = {
@@ -842,7 +810,6 @@ export type RevisionUpdateWithoutChildrenInput = {
   branch?: Prisma.BranchUpdateOneRequiredWithoutRevisionsNestedInput
   parent?: Prisma.RevisionUpdateOneWithoutChildrenNestedInput
   tables?: Prisma.TableUpdateManyWithoutRevisionsNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUncheckedUpdateWithoutChildrenInput = {
@@ -857,7 +824,6 @@ export type RevisionUncheckedUpdateWithoutChildrenInput = {
   branchId?: Prisma.StringFieldUpdateOperationsInput | string
   parentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tables?: Prisma.TableUncheckedUpdateManyWithoutRevisionsNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUpsertWithWhereUniqueWithoutParentInput = {
@@ -888,7 +854,6 @@ export type RevisionCreateWithoutTablesInput = {
   branch: Prisma.BranchCreateNestedOneWithoutRevisionsInput
   parent?: Prisma.RevisionCreateNestedOneWithoutChildrenInput
   children?: Prisma.RevisionCreateNestedManyWithoutParentInput
-  cowTableStates?: Prisma.CowRevisionTableStateCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionUncheckedCreateWithoutTablesInput = {
@@ -903,7 +868,6 @@ export type RevisionUncheckedCreateWithoutTablesInput = {
   branchId: string
   parentId?: string | null
   children?: Prisma.RevisionUncheckedCreateNestedManyWithoutParentInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedCreateNestedManyWithoutRevisionInput
 }
 
 export type RevisionCreateOrConnectWithoutTablesInput = {
@@ -925,81 +889,6 @@ export type RevisionUpdateWithWhereUniqueWithoutTablesInput = {
 export type RevisionUpdateManyWithWhereWithoutTablesInput = {
   where: Prisma.RevisionScalarWhereInput
   data: Prisma.XOR<Prisma.RevisionUpdateManyMutationInput, Prisma.RevisionUncheckedUpdateManyWithoutTablesInput>
-}
-
-export type RevisionCreateWithoutCowTableStatesInput = {
-  id: string
-  sequence?: number
-  createdAt?: Date | string
-  comment?: string
-  isHead?: boolean
-  isDraft?: boolean
-  isStart?: boolean
-  hasChanges?: boolean
-  branch: Prisma.BranchCreateNestedOneWithoutRevisionsInput
-  parent?: Prisma.RevisionCreateNestedOneWithoutChildrenInput
-  children?: Prisma.RevisionCreateNestedManyWithoutParentInput
-  tables?: Prisma.TableCreateNestedManyWithoutRevisionsInput
-}
-
-export type RevisionUncheckedCreateWithoutCowTableStatesInput = {
-  id: string
-  sequence?: number
-  createdAt?: Date | string
-  comment?: string
-  isHead?: boolean
-  isDraft?: boolean
-  isStart?: boolean
-  hasChanges?: boolean
-  branchId: string
-  parentId?: string | null
-  children?: Prisma.RevisionUncheckedCreateNestedManyWithoutParentInput
-  tables?: Prisma.TableUncheckedCreateNestedManyWithoutRevisionsInput
-}
-
-export type RevisionCreateOrConnectWithoutCowTableStatesInput = {
-  where: Prisma.RevisionWhereUniqueInput
-  create: Prisma.XOR<Prisma.RevisionCreateWithoutCowTableStatesInput, Prisma.RevisionUncheckedCreateWithoutCowTableStatesInput>
-}
-
-export type RevisionUpsertWithoutCowTableStatesInput = {
-  update: Prisma.XOR<Prisma.RevisionUpdateWithoutCowTableStatesInput, Prisma.RevisionUncheckedUpdateWithoutCowTableStatesInput>
-  create: Prisma.XOR<Prisma.RevisionCreateWithoutCowTableStatesInput, Prisma.RevisionUncheckedCreateWithoutCowTableStatesInput>
-  where?: Prisma.RevisionWhereInput
-}
-
-export type RevisionUpdateToOneWithWhereWithoutCowTableStatesInput = {
-  where?: Prisma.RevisionWhereInput
-  data: Prisma.XOR<Prisma.RevisionUpdateWithoutCowTableStatesInput, Prisma.RevisionUncheckedUpdateWithoutCowTableStatesInput>
-}
-
-export type RevisionUpdateWithoutCowTableStatesInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  comment?: Prisma.StringFieldUpdateOperationsInput | string
-  isHead?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  isDraft?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  isStart?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  hasChanges?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  branch?: Prisma.BranchUpdateOneRequiredWithoutRevisionsNestedInput
-  parent?: Prisma.RevisionUpdateOneWithoutChildrenNestedInput
-  children?: Prisma.RevisionUpdateManyWithoutParentNestedInput
-  tables?: Prisma.TableUpdateManyWithoutRevisionsNestedInput
-}
-
-export type RevisionUncheckedUpdateWithoutCowTableStatesInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  sequence?: Prisma.IntFieldUpdateOperationsInput | number
-  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  comment?: Prisma.StringFieldUpdateOperationsInput | string
-  isHead?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  isDraft?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  isStart?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  hasChanges?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  branchId?: Prisma.StringFieldUpdateOperationsInput | string
-  parentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  children?: Prisma.RevisionUncheckedUpdateManyWithoutParentNestedInput
-  tables?: Prisma.TableUncheckedUpdateManyWithoutRevisionsNestedInput
 }
 
 export type RevisionCreateManyBranchInput = {
@@ -1025,7 +914,6 @@ export type RevisionUpdateWithoutBranchInput = {
   parent?: Prisma.RevisionUpdateOneWithoutChildrenNestedInput
   children?: Prisma.RevisionUpdateManyWithoutParentNestedInput
   tables?: Prisma.TableUpdateManyWithoutRevisionsNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUncheckedUpdateWithoutBranchInput = {
@@ -1040,7 +928,6 @@ export type RevisionUncheckedUpdateWithoutBranchInput = {
   parentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   children?: Prisma.RevisionUncheckedUpdateManyWithoutParentNestedInput
   tables?: Prisma.TableUncheckedUpdateManyWithoutRevisionsNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUncheckedUpdateManyWithoutBranchInput = {
@@ -1078,7 +965,6 @@ export type RevisionUpdateWithoutParentInput = {
   branch?: Prisma.BranchUpdateOneRequiredWithoutRevisionsNestedInput
   children?: Prisma.RevisionUpdateManyWithoutParentNestedInput
   tables?: Prisma.TableUpdateManyWithoutRevisionsNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUncheckedUpdateWithoutParentInput = {
@@ -1093,7 +979,6 @@ export type RevisionUncheckedUpdateWithoutParentInput = {
   branchId?: Prisma.StringFieldUpdateOperationsInput | string
   children?: Prisma.RevisionUncheckedUpdateManyWithoutParentNestedInput
   tables?: Prisma.TableUncheckedUpdateManyWithoutRevisionsNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUncheckedUpdateManyWithoutParentInput = {
@@ -1119,7 +1004,6 @@ export type RevisionUpdateWithoutTablesInput = {
   branch?: Prisma.BranchUpdateOneRequiredWithoutRevisionsNestedInput
   parent?: Prisma.RevisionUpdateOneWithoutChildrenNestedInput
   children?: Prisma.RevisionUpdateManyWithoutParentNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUncheckedUpdateWithoutTablesInput = {
@@ -1134,7 +1018,6 @@ export type RevisionUncheckedUpdateWithoutTablesInput = {
   branchId?: Prisma.StringFieldUpdateOperationsInput | string
   parentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   children?: Prisma.RevisionUncheckedUpdateManyWithoutParentNestedInput
-  cowTableStates?: Prisma.CowRevisionTableStateUncheckedUpdateManyWithoutRevisionNestedInput
 }
 
 export type RevisionUncheckedUpdateManyWithoutTablesInput = {
@@ -1158,13 +1041,11 @@ export type RevisionUncheckedUpdateManyWithoutTablesInput = {
 export type RevisionCountOutputType = {
   children: number
   tables: number
-  cowTableStates: number
 }
 
 export type RevisionCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   children?: boolean | RevisionCountOutputTypeCountChildrenArgs
   tables?: boolean | RevisionCountOutputTypeCountTablesArgs
-  cowTableStates?: boolean | RevisionCountOutputTypeCountCowTableStatesArgs
 }
 
 /**
@@ -1191,13 +1072,6 @@ export type RevisionCountOutputTypeCountTablesArgs<ExtArgs extends runtime.Types
   where?: Prisma.TableWhereInput
 }
 
-/**
- * RevisionCountOutputType without action
- */
-export type RevisionCountOutputTypeCountCowTableStatesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  where?: Prisma.CowRevisionTableStateWhereInput
-}
-
 
 export type RevisionSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1214,7 +1088,6 @@ export type RevisionSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs
   parent?: boolean | Prisma.Revision$parentArgs<ExtArgs>
   children?: boolean | Prisma.Revision$childrenArgs<ExtArgs>
   tables?: boolean | Prisma.Revision$tablesArgs<ExtArgs>
-  cowTableStates?: boolean | Prisma.Revision$cowTableStatesArgs<ExtArgs>
   _count?: boolean | Prisma.RevisionCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["revision"]>
 
@@ -1267,7 +1140,6 @@ export type RevisionInclude<ExtArgs extends runtime.Types.Extensions.InternalArg
   parent?: boolean | Prisma.Revision$parentArgs<ExtArgs>
   children?: boolean | Prisma.Revision$childrenArgs<ExtArgs>
   tables?: boolean | Prisma.Revision$tablesArgs<ExtArgs>
-  cowTableStates?: boolean | Prisma.Revision$cowTableStatesArgs<ExtArgs>
   _count?: boolean | Prisma.RevisionCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type RevisionIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1286,7 +1158,6 @@ export type $RevisionPayload<ExtArgs extends runtime.Types.Extensions.InternalAr
     parent: Prisma.$RevisionPayload<ExtArgs> | null
     children: Prisma.$RevisionPayload<ExtArgs>[]
     tables: Prisma.$TablePayload<ExtArgs>[]
-    cowTableStates: Prisma.$CowRevisionTableStatePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1697,7 +1568,6 @@ export interface Prisma__RevisionClient<T, Null = never, ExtArgs extends runtime
   parent<T extends Prisma.Revision$parentArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Revision$parentArgs<ExtArgs>>): Prisma.Prisma__RevisionClient<runtime.Types.Result.GetResult<Prisma.$RevisionPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   children<T extends Prisma.Revision$childrenArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Revision$childrenArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$RevisionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   tables<T extends Prisma.Revision$tablesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Revision$tablesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TablePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
-  cowTableStates<T extends Prisma.Revision$cowTableStatesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Revision$cowTableStatesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$CowRevisionTableStatePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2202,30 +2072,6 @@ export type Revision$tablesArgs<ExtArgs extends runtime.Types.Extensions.Interna
   take?: number
   skip?: number
   distinct?: Prisma.TableScalarFieldEnum | Prisma.TableScalarFieldEnum[]
-}
-
-/**
- * Revision.cowTableStates
- */
-export type Revision$cowTableStatesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  /**
-   * Select specific fields to fetch from the CowRevisionTableState
-   */
-  select?: Prisma.CowRevisionTableStateSelect<ExtArgs> | null
-  /**
-   * Omit specific fields from the CowRevisionTableState
-   */
-  omit?: Prisma.CowRevisionTableStateOmit<ExtArgs> | null
-  /**
-   * Choose, which related nodes to fetch as well
-   */
-  include?: Prisma.CowRevisionTableStateInclude<ExtArgs> | null
-  where?: Prisma.CowRevisionTableStateWhereInput
-  orderBy?: Prisma.CowRevisionTableStateOrderByWithRelationInput | Prisma.CowRevisionTableStateOrderByWithRelationInput[]
-  cursor?: Prisma.CowRevisionTableStateWhereUniqueInput
-  take?: number
-  skip?: number
-  distinct?: Prisma.CowRevisionTableStateScalarFieldEnum | Prisma.CowRevisionTableStateScalarFieldEnum[]
 }
 
 /**

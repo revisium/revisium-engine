@@ -31,27 +31,19 @@ export class EngineApiService {
   // --- Tables ---
 
   createTable(...args: Parameters<DraftApiService['apiCreateTable']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiCreateTable(data),
-    );
+    return this.draftApi.apiCreateTable(...args);
   }
 
   updateTable(...args: Parameters<DraftApiService['apiUpdateTable']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiUpdateTable(data),
-    );
+    return this.draftApi.apiUpdateTable(...args);
   }
 
   renameTable(...args: Parameters<DraftApiService['apiRenameTable']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiRenameTable(data),
-    );
+    return this.draftApi.apiRenameTable(...args);
   }
 
   removeTable(...args: Parameters<DraftApiService['apiRemoveTable']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiRemoveTable(data),
-    );
+    return this.draftApi.apiRemoveTable(...args);
   }
 
   getTable(...args: Parameters<TableApiService['getTable']>) {
@@ -101,57 +93,39 @@ export class EngineApiService {
   // --- Rows ---
 
   createRow(...args: Parameters<DraftApiService['apiCreateRow']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiCreateRow(data),
-    );
+    return this.draftApi.apiCreateRow(...args);
   }
 
   createRows(...args: Parameters<DraftApiService['apiCreateRows']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiCreateRows(data),
-    );
+    return this.draftApi.apiCreateRows(...args);
   }
 
   updateRow(...args: Parameters<DraftApiService['apiUpdateRow']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiUpdateRow(data),
-    );
+    return this.draftApi.apiUpdateRow(...args);
   }
 
   updateRows(...args: Parameters<DraftApiService['apiUpdateRows']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiUpdateRows(data),
-    );
+    return this.draftApi.apiUpdateRows(...args);
   }
 
   patchRow(...args: Parameters<DraftApiService['apiPatchRow']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiPatchRow(data),
-    );
+    return this.draftApi.apiPatchRow(...args);
   }
 
   patchRows(...args: Parameters<DraftApiService['apiPatchRows']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiPatchRows(data),
-    );
+    return this.draftApi.apiPatchRows(...args);
   }
 
   renameRow(...args: Parameters<DraftApiService['apiRenameRow']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiRenameRow(data),
-    );
+    return this.draftApi.apiRenameRow(...args);
   }
 
   removeRow(...args: Parameters<DraftApiService['apiRemoveRow']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiRemoveRow(data),
-    );
+    return this.draftApi.apiRemoveRow(...args);
   }
 
   removeRows(...args: Parameters<DraftApiService['apiRemoveRows']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiRemoveRows(data),
-    );
+    return this.draftApi.apiRemoveRows(...args);
   }
 
   getRow(...args: Parameters<RowApiService['getRow']>) {
@@ -219,9 +193,7 @@ export class EngineApiService {
   }
 
   applyMigrations(...args: Parameters<DraftApiService['applyMigrations']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.applyMigrations(data),
-    );
+    return this.draftApi.applyMigrations(...args);
   }
 
   getRevisionParent(
@@ -341,9 +313,7 @@ export class EngineApiService {
   // --- Files ---
 
   uploadFile(...args: Parameters<DraftApiService['apiUploadFile']>) {
-    return this.executeDraftMutation(args[0], (data) =>
-      this.draftApi.apiUploadFile(data),
-    );
+    return this.draftApi.apiUploadFile(...args);
   }
 
   // --- Views ---
@@ -386,17 +356,5 @@ export class EngineApiService {
 
   abortMigration(...args: Parameters<MigrationApiService['abortMigration']>) {
     return this.migrationApi.abortMigration(...args);
-  }
-
-  private async executeDraftMutation<
-    TData extends { revisionId: string },
-    TResult,
-  >(
-    data: TData,
-    mutation: (data: TData) => Promise<TResult>,
-  ): Promise<TResult> {
-    const result = await mutation(data);
-    await this.versioningEngine.syncDraftStateAfterMutation(data.revisionId);
-    return result;
   }
 }

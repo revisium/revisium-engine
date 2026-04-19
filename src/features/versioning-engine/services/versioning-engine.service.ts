@@ -38,30 +38,4 @@ export class VersioningEngineService {
   ): Promise<VersioningEngine> {
     return this.forRevision(data.revisionId);
   }
-
-  async syncDraftStateAfterMutation(revisionId: string): Promise<void> {
-    const revision = await this.prisma.revision.findUniqueOrThrow({
-      where: { id: revisionId },
-      select: {
-        isDraft: true,
-        branchId: true,
-        branch: { select: { projectId: true } },
-      },
-    });
-
-    if (!revision.isDraft) {
-      return;
-    }
-
-    const versioningMode =
-      await this.projectVersioningService.getVersioningMode(
-        revision.branch.projectId,
-      );
-
-    if (versioningMode !== 'cow') {
-      return;
-    }
-
-    await this.cowVersioningEngine.syncDraftState(revision.branchId);
-  }
 }

@@ -56,13 +56,6 @@ export const ModelName = {
   Table: 'Table',
   Row: 'Row',
   ProjectVersioningConfig: 'ProjectVersioningConfig',
-  CowRevisionTableState: 'CowRevisionTableState',
-  CowDraftState: 'CowDraftState',
-  CowTableState: 'CowTableState',
-  CowTableChunk: 'CowTableChunk',
-  CowTableStateChunk: 'CowTableStateChunk',
-  CowChunkEntry: 'CowChunkEntry',
-  CowRowState: 'CowRowState',
   TableMigration: 'TableMigration'
 } as const
 
@@ -147,77 +140,6 @@ export const ProjectVersioningConfigScalarFieldEnum = {
 } as const
 
 export type ProjectVersioningConfigScalarFieldEnum = (typeof ProjectVersioningConfigScalarFieldEnum)[keyof typeof ProjectVersioningConfigScalarFieldEnum]
-
-
-export const CowRevisionTableStateScalarFieldEnum = {
-  revisionId: 'revisionId',
-  tableCreatedId: 'tableCreatedId',
-  tableStateId: 'tableStateId'
-} as const
-
-export type CowRevisionTableStateScalarFieldEnum = (typeof CowRevisionTableStateScalarFieldEnum)[keyof typeof CowRevisionTableStateScalarFieldEnum]
-
-
-export const CowDraftStateScalarFieldEnum = {
-  branchId: 'branchId',
-  tableCreatedId: 'tableCreatedId',
-  tableStateId: 'tableStateId',
-  status: 'status'
-} as const
-
-export type CowDraftStateScalarFieldEnum = (typeof CowDraftStateScalarFieldEnum)[keyof typeof CowDraftStateScalarFieldEnum]
-
-
-export const CowTableStateScalarFieldEnum = {
-  id: 'id',
-  tableCreatedId: 'tableCreatedId',
-  chunkCount: 'chunkCount'
-} as const
-
-export type CowTableStateScalarFieldEnum = (typeof CowTableStateScalarFieldEnum)[keyof typeof CowTableStateScalarFieldEnum]
-
-
-export const CowTableChunkScalarFieldEnum = {
-  id: 'id'
-} as const
-
-export type CowTableChunkScalarFieldEnum = (typeof CowTableChunkScalarFieldEnum)[keyof typeof CowTableChunkScalarFieldEnum]
-
-
-export const CowTableStateChunkScalarFieldEnum = {
-  tableStateId: 'tableStateId',
-  chunkId: 'chunkId',
-  chunkNo: 'chunkNo'
-} as const
-
-export type CowTableStateChunkScalarFieldEnum = (typeof CowTableStateChunkScalarFieldEnum)[keyof typeof CowTableStateChunkScalarFieldEnum]
-
-
-export const CowChunkEntryScalarFieldEnum = {
-  chunkId: 'chunkId',
-  rowCreatedId: 'rowCreatedId',
-  rowStateId: 'rowStateId',
-  isDeleted: 'isDeleted'
-} as const
-
-export type CowChunkEntryScalarFieldEnum = (typeof CowChunkEntryScalarFieldEnum)[keyof typeof CowChunkEntryScalarFieldEnum]
-
-
-export const CowRowStateScalarFieldEnum = {
-  id: 'id',
-  rowCreatedId: 'rowCreatedId',
-  rowId: 'rowId',
-  readonly: 'readonly',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
-  publishedAt: 'publishedAt',
-  data: 'data',
-  meta: 'meta',
-  hash: 'hash',
-  schemaHash: 'schemaHash'
-} as const
-
-export type CowRowStateScalarFieldEnum = (typeof CowRowStateScalarFieldEnum)[keyof typeof CowRowStateScalarFieldEnum]
 
 
 export const TableMigrationScalarFieldEnum = {
@@ -337,67 +259,6 @@ export const ProjectVersioningConfigOrderByRelevanceFieldEnum = {
 } as const
 
 export type ProjectVersioningConfigOrderByRelevanceFieldEnum = (typeof ProjectVersioningConfigOrderByRelevanceFieldEnum)[keyof typeof ProjectVersioningConfigOrderByRelevanceFieldEnum]
-
-
-export const CowRevisionTableStateOrderByRelevanceFieldEnum = {
-  revisionId: 'revisionId',
-  tableCreatedId: 'tableCreatedId',
-  tableStateId: 'tableStateId'
-} as const
-
-export type CowRevisionTableStateOrderByRelevanceFieldEnum = (typeof CowRevisionTableStateOrderByRelevanceFieldEnum)[keyof typeof CowRevisionTableStateOrderByRelevanceFieldEnum]
-
-
-export const CowDraftStateOrderByRelevanceFieldEnum = {
-  branchId: 'branchId',
-  tableCreatedId: 'tableCreatedId',
-  tableStateId: 'tableStateId'
-} as const
-
-export type CowDraftStateOrderByRelevanceFieldEnum = (typeof CowDraftStateOrderByRelevanceFieldEnum)[keyof typeof CowDraftStateOrderByRelevanceFieldEnum]
-
-
-export const CowTableStateOrderByRelevanceFieldEnum = {
-  id: 'id',
-  tableCreatedId: 'tableCreatedId'
-} as const
-
-export type CowTableStateOrderByRelevanceFieldEnum = (typeof CowTableStateOrderByRelevanceFieldEnum)[keyof typeof CowTableStateOrderByRelevanceFieldEnum]
-
-
-export const CowTableChunkOrderByRelevanceFieldEnum = {
-  id: 'id'
-} as const
-
-export type CowTableChunkOrderByRelevanceFieldEnum = (typeof CowTableChunkOrderByRelevanceFieldEnum)[keyof typeof CowTableChunkOrderByRelevanceFieldEnum]
-
-
-export const CowTableStateChunkOrderByRelevanceFieldEnum = {
-  tableStateId: 'tableStateId',
-  chunkId: 'chunkId'
-} as const
-
-export type CowTableStateChunkOrderByRelevanceFieldEnum = (typeof CowTableStateChunkOrderByRelevanceFieldEnum)[keyof typeof CowTableStateChunkOrderByRelevanceFieldEnum]
-
-
-export const CowChunkEntryOrderByRelevanceFieldEnum = {
-  chunkId: 'chunkId',
-  rowCreatedId: 'rowCreatedId',
-  rowStateId: 'rowStateId'
-} as const
-
-export type CowChunkEntryOrderByRelevanceFieldEnum = (typeof CowChunkEntryOrderByRelevanceFieldEnum)[keyof typeof CowChunkEntryOrderByRelevanceFieldEnum]
-
-
-export const CowRowStateOrderByRelevanceFieldEnum = {
-  id: 'id',
-  rowCreatedId: 'rowCreatedId',
-  rowId: 'rowId',
-  hash: 'hash',
-  schemaHash: 'schemaHash'
-} as const
-
-export type CowRowStateOrderByRelevanceFieldEnum = (typeof CowRowStateOrderByRelevanceFieldEnum)[keyof typeof CowRowStateOrderByRelevanceFieldEnum]
 
 
 export const TableMigrationOrderByRelevanceFieldEnum = {

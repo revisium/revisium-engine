@@ -15,12 +15,3 @@ export const VersioningMode = {
 } as const
 
 export type VersioningMode = (typeof VersioningMode)[keyof typeof VersioningMode]
-
-
-export const CowDraftTableStatus = {
-  active: 'active',
-  draft_only: 'draft_only',
-  deleted: 'deleted'
-} as const
-
-export type CowDraftTableStatus = (typeof CowDraftTableStatus)[keyof typeof CowDraftTableStatus]

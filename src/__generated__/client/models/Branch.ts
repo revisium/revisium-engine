@@ -183,7 +183,6 @@ export type BranchWhereInput = {
   name?: Prisma.StringFilter<"Branch"> | string
   projectId?: Prisma.StringFilter<"Branch"> | string
   revisions?: Prisma.RevisionListRelationFilter
-  cowDraftStates?: Prisma.CowDraftStateListRelationFilter
 }
 
 export type BranchOrderByWithRelationInput = {
@@ -193,7 +192,6 @@ export type BranchOrderByWithRelationInput = {
   name?: Prisma.SortOrder
   projectId?: Prisma.SortOrder
   revisions?: Prisma.RevisionOrderByRelationAggregateInput
-  cowDraftStates?: Prisma.CowDraftStateOrderByRelationAggregateInput
   _relevance?: Prisma.BranchOrderByRelevanceInput
 }
 
@@ -208,7 +206,6 @@ export type BranchWhereUniqueInput = Prisma.AtLeast<{
   name?: Prisma.StringFilter<"Branch"> | string
   projectId?: Prisma.StringFilter<"Branch"> | string
   revisions?: Prisma.RevisionListRelationFilter
-  cowDraftStates?: Prisma.CowDraftStateListRelationFilter
 }, "id" | "name_projectId">
 
 export type BranchOrderByWithAggregationInput = {
@@ -240,7 +237,6 @@ export type BranchCreateInput = {
   name: string
   projectId: string
   revisions?: Prisma.RevisionCreateNestedManyWithoutBranchInput
-  cowDraftStates?: Prisma.CowDraftStateCreateNestedManyWithoutBranchInput
 }
 
 export type BranchUncheckedCreateInput = {
@@ -250,7 +246,6 @@ export type BranchUncheckedCreateInput = {
   name: string
   projectId: string
   revisions?: Prisma.RevisionUncheckedCreateNestedManyWithoutBranchInput
-  cowDraftStates?: Prisma.CowDraftStateUncheckedCreateNestedManyWithoutBranchInput
 }
 
 export type BranchUpdateInput = {
@@ -260,7 +255,6 @@ export type BranchUpdateInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
   revisions?: Prisma.RevisionUpdateManyWithoutBranchNestedInput
-  cowDraftStates?: Prisma.CowDraftStateUpdateManyWithoutBranchNestedInput
 }
 
 export type BranchUncheckedUpdateInput = {
@@ -270,7 +264,6 @@ export type BranchUncheckedUpdateInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
   revisions?: Prisma.RevisionUncheckedUpdateManyWithoutBranchNestedInput
-  cowDraftStates?: Prisma.CowDraftStateUncheckedUpdateManyWithoutBranchNestedInput
 }
 
 export type BranchCreateManyInput = {
@@ -363,27 +356,12 @@ export type BranchUpdateOneRequiredWithoutRevisionsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.BranchUpdateToOneWithWhereWithoutRevisionsInput, Prisma.BranchUpdateWithoutRevisionsInput>, Prisma.BranchUncheckedUpdateWithoutRevisionsInput>
 }
 
-export type BranchCreateNestedOneWithoutCowDraftStatesInput = {
-  create?: Prisma.XOR<Prisma.BranchCreateWithoutCowDraftStatesInput, Prisma.BranchUncheckedCreateWithoutCowDraftStatesInput>
-  connectOrCreate?: Prisma.BranchCreateOrConnectWithoutCowDraftStatesInput
-  connect?: Prisma.BranchWhereUniqueInput
-}
-
-export type BranchUpdateOneRequiredWithoutCowDraftStatesNestedInput = {
-  create?: Prisma.XOR<Prisma.BranchCreateWithoutCowDraftStatesInput, Prisma.BranchUncheckedCreateWithoutCowDraftStatesInput>
-  connectOrCreate?: Prisma.BranchCreateOrConnectWithoutCowDraftStatesInput
-  upsert?: Prisma.BranchUpsertWithoutCowDraftStatesInput
-  connect?: Prisma.BranchWhereUniqueInput
-  update?: Prisma.XOR<Prisma.XOR<Prisma.BranchUpdateToOneWithWhereWithoutCowDraftStatesInput, Prisma.BranchUpdateWithoutCowDraftStatesInput>, Prisma.BranchUncheckedUpdateWithoutCowDraftStatesInput>
-}
-
 export type BranchCreateWithoutRevisionsInput = {
   id: string
   createdAt?: Date | string
   isRoot?: boolean
   name: string
   projectId: string
-  cowDraftStates?: Prisma.CowDraftStateCreateNestedManyWithoutBranchInput
 }
 
 export type BranchUncheckedCreateWithoutRevisionsInput = {
@@ -392,7 +370,6 @@ export type BranchUncheckedCreateWithoutRevisionsInput = {
   isRoot?: boolean
   name: string
   projectId: string
-  cowDraftStates?: Prisma.CowDraftStateUncheckedCreateNestedManyWithoutBranchInput
 }
 
 export type BranchCreateOrConnectWithoutRevisionsInput = {
@@ -417,7 +394,6 @@ export type BranchUpdateWithoutRevisionsInput = {
   isRoot?: Prisma.BoolFieldUpdateOperationsInput | boolean
   name?: Prisma.StringFieldUpdateOperationsInput | string
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
-  cowDraftStates?: Prisma.CowDraftStateUpdateManyWithoutBranchNestedInput
 }
 
 export type BranchUncheckedUpdateWithoutRevisionsInput = {
@@ -426,59 +402,6 @@ export type BranchUncheckedUpdateWithoutRevisionsInput = {
   isRoot?: Prisma.BoolFieldUpdateOperationsInput | boolean
   name?: Prisma.StringFieldUpdateOperationsInput | string
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
-  cowDraftStates?: Prisma.CowDraftStateUncheckedUpdateManyWithoutBranchNestedInput
-}
-
-export type BranchCreateWithoutCowDraftStatesInput = {
-  id: string
-  createdAt?: Date | string
-  isRoot?: boolean
-  name: string
-  projectId: string
-  revisions?: Prisma.RevisionCreateNestedManyWithoutBranchInput
-}
-
-export type BranchUncheckedCreateWithoutCowDraftStatesInput = {
-  id: string
-  createdAt?: Date | string
-  isRoot?: boolean
-  name: string
-  projectId: string
-  revisions?: Prisma.RevisionUncheckedCreateNestedManyWithoutBranchInput
-}
-
-export type BranchCreateOrConnectWithoutCowDraftStatesInput = {
-  where: Prisma.BranchWhereUniqueInput
-  create: Prisma.XOR<Prisma.BranchCreateWithoutCowDraftStatesInput, Prisma.BranchUncheckedCreateWithoutCowDraftStatesInput>
-}
-
-export type BranchUpsertWithoutCowDraftStatesInput = {
-  update: Prisma.XOR<Prisma.BranchUpdateWithoutCowDraftStatesInput, Prisma.BranchUncheckedUpdateWithoutCowDraftStatesInput>
-  create: Prisma.XOR<Prisma.BranchCreateWithoutCowDraftStatesInput, Prisma.BranchUncheckedCreateWithoutCowDraftStatesInput>
-  where?: Prisma.BranchWhereInput
-}
-
-export type BranchUpdateToOneWithWhereWithoutCowDraftStatesInput = {
-  where?: Prisma.BranchWhereInput
-  data: Prisma.XOR<Prisma.BranchUpdateWithoutCowDraftStatesInput, Prisma.BranchUncheckedUpdateWithoutCowDraftStatesInput>
-}
-
-export type BranchUpdateWithoutCowDraftStatesInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  isRoot?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  name?: Prisma.StringFieldUpdateOperationsInput | string
-  projectId?: Prisma.StringFieldUpdateOperationsInput | string
-  revisions?: Prisma.RevisionUpdateManyWithoutBranchNestedInput
-}
-
-export type BranchUncheckedUpdateWithoutCowDraftStatesInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  isRoot?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  name?: Prisma.StringFieldUpdateOperationsInput | string
-  projectId?: Prisma.StringFieldUpdateOperationsInput | string
-  revisions?: Prisma.RevisionUncheckedUpdateManyWithoutBranchNestedInput
 }
 
 
@@ -488,12 +411,10 @@ export type BranchUncheckedUpdateWithoutCowDraftStatesInput = {
 
 export type BranchCountOutputType = {
   revisions: number
-  cowDraftStates: number
 }
 
 export type BranchCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   revisions?: boolean | BranchCountOutputTypeCountRevisionsArgs
-  cowDraftStates?: boolean | BranchCountOutputTypeCountCowDraftStatesArgs
 }
 
 /**
@@ -513,13 +434,6 @@ export type BranchCountOutputTypeCountRevisionsArgs<ExtArgs extends runtime.Type
   where?: Prisma.RevisionWhereInput
 }
 
-/**
- * BranchCountOutputType without action
- */
-export type BranchCountOutputTypeCountCowDraftStatesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  where?: Prisma.CowDraftStateWhereInput
-}
-
 
 export type BranchSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -528,7 +442,6 @@ export type BranchSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   name?: boolean
   projectId?: boolean
   revisions?: boolean | Prisma.Branch$revisionsArgs<ExtArgs>
-  cowDraftStates?: boolean | Prisma.Branch$cowDraftStatesArgs<ExtArgs>
   _count?: boolean | Prisma.BranchCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["branch"]>
 
@@ -559,7 +472,6 @@ export type BranchSelectScalar = {
 export type BranchOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "isRoot" | "name" | "projectId", ExtArgs["result"]["branch"]>
 export type BranchInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   revisions?: boolean | Prisma.Branch$revisionsArgs<ExtArgs>
-  cowDraftStates?: boolean | Prisma.Branch$cowDraftStatesArgs<ExtArgs>
   _count?: boolean | Prisma.BranchCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type BranchIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -569,7 +481,6 @@ export type $BranchPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
   name: "Branch"
   objects: {
     revisions: Prisma.$RevisionPayload<ExtArgs>[]
-    cowDraftStates: Prisma.$CowDraftStatePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -972,7 +883,6 @@ readonly fields: BranchFieldRefs;
 export interface Prisma__BranchClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   revisions<T extends Prisma.Branch$revisionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Branch$revisionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$RevisionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
-  cowDraftStates<T extends Prisma.Branch$cowDraftStatesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Branch$cowDraftStatesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$CowDraftStatePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1421,30 +1331,6 @@ export type Branch$revisionsArgs<ExtArgs extends runtime.Types.Extensions.Intern
   take?: number
   skip?: number
   distinct?: Prisma.RevisionScalarFieldEnum | Prisma.RevisionScalarFieldEnum[]
-}
-
-/**
- * Branch.cowDraftStates
- */
-export type Branch$cowDraftStatesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  /**
-   * Select specific fields to fetch from the CowDraftState
-   */
-  select?: Prisma.CowDraftStateSelect<ExtArgs> | null
-  /**
-   * Omit specific fields from the CowDraftState
-   */
-  omit?: Prisma.CowDraftStateOmit<ExtArgs> | null
-  /**
-   * Choose, which related nodes to fetch as well
-   */
-  include?: Prisma.CowDraftStateInclude<ExtArgs> | null
-  where?: Prisma.CowDraftStateWhereInput
-  orderBy?: Prisma.CowDraftStateOrderByWithRelationInput | Prisma.CowDraftStateOrderByWithRelationInput[]
-  cursor?: Prisma.CowDraftStateWhereUniqueInput
-  take?: number
-  skip?: number
-  distinct?: Prisma.CowDraftStateScalarFieldEnum | Prisma.CowDraftStateScalarFieldEnum[]
 }
 
 /**

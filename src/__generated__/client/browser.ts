@@ -38,11 +38,6 @@ export type Table = Prisma.TableModel
  */
 export type Row = Prisma.RowModel
 /**
- * Model ProjectVersioningConfig
- * 
- */
-export type ProjectVersioningConfig = Prisma.ProjectVersioningConfigModel
-/**
  * Model TableMigration
  * 
  */

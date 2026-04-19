@@ -16,7 +16,6 @@ import { MigrationModule } from 'src/features/migration/migration.module';
 import { RevisionChangesModule } from 'src/features/revision-changes/revision-changes.module';
 import { SubSchemaModule } from 'src/features/sub-schema/sub-schema.module';
 import { ViewsModule } from 'src/features/views/views.module';
-import { VersioningEngineModule } from 'src/features/versioning-engine';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { IStorageService } from 'src/infrastructure/storage/storage.interface';
 
@@ -37,7 +36,6 @@ const FEATURE_MODULES = [
   RevisionChangesModule,
   SubSchemaModule,
   ViewsModule,
-  VersioningEngineModule,
 ];
 
 @Module({})

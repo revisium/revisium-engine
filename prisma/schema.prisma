@@ -9,11 +9,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum VersioningMode {
-  current
-  cow
-}
-
 model Branch {
   id        String     @id
   createdAt DateTime   @default(now())
@@ -86,13 +81,6 @@ model Row {
   @@index([hash])
   @@index([schemaHash])
   @@index([publishedAt])
-}
-
-model ProjectVersioningConfig {
-  projectId       String         @id
-  versioningMode  VersioningMode @default(current)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
 }
 
 model TableMigration {

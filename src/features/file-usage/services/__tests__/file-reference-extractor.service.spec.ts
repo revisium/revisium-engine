@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import {
   getArraySchema,
@@ -11,6 +12,7 @@ import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.ser
 describe('FileReferenceExtractorService', () => {
   const jsonSchemaStore = new JsonSchemaStoreService();
   const extractor = new FileReferenceExtractorService();
+  let warnSpy: jest.SpyInstance;
 
   const singleFileSchema = getObjectSchema({
     avatar: getRefSchema(SystemSchemaIds.File),
@@ -55,6 +57,14 @@ describe('FileReferenceExtractorService', () => {
       height: 0,
     };
   }
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
 
   describe('uploaded file extraction', () => {
     it('extracts a single uploaded file reference', () => {
@@ -150,6 +160,54 @@ describe('FileReferenceExtractorService', () => {
       });
 
       expect(references).toEqual([]);
+    });
+
+    it('drops a single-file reference with negative size', () => {
+      const schemaStore = jsonSchemaStore.create(singleFileSchema);
+
+      const references = extractor.extract({
+        data: { avatar: uploadedFile('hash-negative', -1) },
+        schemaStore,
+        rowId: 'row-negative',
+        projectId: 'project-negative',
+      });
+
+      expect(references).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns only valid refs when valid and invalid refs are mixed', () => {
+      const schemaStore = jsonSchemaStore.create(multipleFilesSchema);
+
+      const references = extractor.extract({
+        data: {
+          primary: uploadedFile('hash-valid', 512),
+          gallery: [uploadedFile('hash-invalid', -10)],
+        },
+        schemaStore,
+        rowId: 'row-mixed',
+        projectId: 'project-mixed',
+      });
+
+      expect(references).toEqual([
+        { fileId: 'file-hash-valid', hash: 'hash-valid', size: 512n },
+      ]);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps zero-sized refs', () => {
+      const schemaStore = jsonSchemaStore.create(singleFileSchema);
+
+      const references = extractor.extract({
+        data: { avatar: uploadedFile('hash-zero', 0) },
+        schemaStore,
+        rowId: 'row-zero',
+      });
+
+      expect(references).toEqual([
+        { fileId: 'file-hash-zero', hash: 'hash-zero', size: 0n },
+      ]);
+      expect(warnSpy).not.toHaveBeenCalled();
     });
   });
 

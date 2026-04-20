@@ -99,6 +99,7 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
       data: row.data as JsonValue,
       schemaStore,
       rowId: row.rowId,
+      projectId,
     });
 
     const existing = await this.loadExistingRowBlobLinks(row.rowVersionId);

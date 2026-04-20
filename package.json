@@ -26,8 +26,8 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "npm run prisma:migrate:deploy && npm run seed:prod && node --experimental-require-module dist/src/main",
-    "lint:ci": "eslint --max-warnings 0",
-    "lint:fix": "eslint --fix",
+    "lint:ci": "eslint \"{src,prisma}/**/*.ts\" jest.setup.ts --max-warnings 0",
+    "lint:fix": "eslint \"{src,prisma}/**/*.ts\" jest.setup.ts --fix",
     "tsc": "tsc --noEmit",
     "test": "jest --maxWorkers=50% --passWithNoTests",
     "test:watch": "jest --watch",
@@ -153,6 +153,7 @@
     ],
     "coverageDirectory": "coverage",
     "testEnvironment": "node",
+    "cacheDirectory": "<rootDir>/.jest-cache",
     "setupFiles": [
       "<rootDir>/jest.setup.ts"
     ],

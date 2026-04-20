@@ -15,6 +15,7 @@
 
 # coverage
 /coverage
+/.jest-cache
 
 # debug
 npm-debug.log
@@ -23,4 +24,3 @@ yarn-error.log
 
 # generated Prisma client (tests only, not shipped)
 /src/__generated__
-

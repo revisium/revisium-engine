@@ -65,7 +65,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
     const context = this.createScanContext();
 
     for (const branchId of branches) {
-      await this.scanBranch(branchId, context);
+      await this.scanBranch(projectId, branchId, context);
     }
 
     return {
@@ -91,6 +91,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
   }
 
   private async scanBranch(
+    projectId: string,
     branchId: string,
     context: ReturnType<BackfillProjectFileBlobsHandler['createScanContext']>,
   ): Promise<void> {
@@ -101,6 +102,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
 
     for (const revision of revisions) {
       context.scannedRowVersions += await this.scanRevisionForBlobs({
+        projectId,
         revisionId: revision.id,
         seenRowVersionKeys: context.seenRowVersionKeys,
         plannedBlobs: context.plannedBlobs,
@@ -109,6 +111,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
   }
 
   private async scanRevisionForBlobs(args: {
+    projectId: string;
     revisionId: string;
     seenRowVersionKeys: Set<string>;
     plannedBlobs: Map<string, PlannedBlob>;
@@ -124,6 +127,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
       }
 
       scanned += await this.scanTableForBlobs({
+        projectId: args.projectId,
         tableVersionId: table.versionId,
         schemaStore,
         seenRowVersionKeys: args.seenRowVersionKeys,
@@ -161,6 +165,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
   }
 
   private async scanTableForBlobs(args: {
+    projectId: string;
     tableVersionId: string;
     schemaStore: JsonSchemaStore;
     seenRowVersionKeys: Set<string>;
@@ -184,6 +189,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
       scanned += 1;
 
       this.mergeRowReferences({
+        projectId: args.projectId,
         rowVersionId: row.versionId,
         rowId: row.id,
         rowData: row.data as JsonValue,
@@ -196,6 +202,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
   }
 
   private mergeRowReferences(args: {
+    projectId: string;
     rowVersionId: string;
     rowId: string;
     rowData: JsonValue;
@@ -206,6 +213,7 @@ export class BackfillProjectFileBlobsHandler implements ICommandHandler<
       data: args.rowData,
       schemaStore: args.schemaStore,
       rowId: args.rowId,
+      projectId: args.projectId,
     });
 
     for (const ref of refs) {

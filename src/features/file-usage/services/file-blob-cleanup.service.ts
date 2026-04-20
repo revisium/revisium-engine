@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { CleanupOrphanedFileBlobsResult } from 'src/features/file-usage/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -14,6 +14,8 @@ export interface OrphanBlobRow {
 
 @Injectable()
 export class FileBlobCleanupService {
+  private readonly logger = new Logger(FileBlobCleanupService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly transactionPrisma: TransactionPrismaService,
@@ -118,11 +120,15 @@ export class FileBlobCleanupService {
       return;
     }
 
-    await this.prisma.projectFileUsage.upsert({
-      where: { projectId },
-      create: { projectId, fileBytes: ZERO_BYTES },
-      update: { fileBytes: { decrement: amount } },
-    });
+    const wasDecremented = await this.tryDecrementProjectCounter(
+      projectId,
+      amount,
+    );
+    if (wasDecremented) {
+      return;
+    }
+
+    await this.ensureNonNegativeProjectCounter(projectId, amount);
   }
 
   public async findGloballyOrphanHashes(
@@ -162,6 +168,62 @@ export class FileBlobCleanupService {
     for (const [projectId, freed] of bytesByProject) {
       await this.decrementProjectCounter(projectId, freed);
     }
+  }
+
+  private async tryDecrementProjectCounter(
+    projectId: string,
+    amount: bigint,
+  ): Promise<boolean> {
+    const result = await this.prisma.projectFileUsage.updateMany({
+      where: {
+        projectId,
+        fileBytes: { gte: amount },
+      },
+      data: {
+        fileBytes: { decrement: amount },
+      },
+    });
+
+    return result.count === 1;
+  }
+
+  private async ensureNonNegativeProjectCounter(
+    projectId: string,
+    amount: bigint,
+  ): Promise<void> {
+    const usage = await this.prisma.projectFileUsage.findUnique({
+      where: { projectId },
+    });
+    if (!usage) {
+      await this.prisma.projectFileUsage.create({
+        data: {
+          projectId,
+          fileBytes: ZERO_BYTES,
+        },
+      });
+
+      return;
+    }
+
+    await this.clampProjectCounter(projectId, usage.fileBytes, amount);
+  }
+
+  private async clampProjectCounter(
+    projectId: string,
+    current: bigint,
+    requested: bigint,
+  ): Promise<void> {
+    await this.prisma.projectFileUsage.update({
+      where: { projectId },
+      data: { fileBytes: ZERO_BYTES },
+    });
+
+    this.logger.warn({
+      message: 'Clamped project file usage over-decrement to zero',
+      projectId,
+      current,
+      requested,
+    });
   }
 
   private get prisma() {

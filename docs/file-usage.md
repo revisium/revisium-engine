@@ -452,6 +452,11 @@ Mutations run inside the Prisma transaction opened by the CQRS command handler. 
 
 A re-upload that targets a tombstoned `(projectId, hash)` row reactivates the row (clears `deletedAt`, increments the counter). This serializes against any concurrent `cleanupOrphanedFileBlobs` pass on the unique index, so either: (a) the sweep happens first — the row is tombstoned, the upload then reactivates it; or (b) the upload happens first — the row moves out of the orphan set before the sweep selects it.
 
+### Byte accounting guarantees
+
+- `FileBlob.size` is `>= 0` by construction because the extractor drops negative-size file refs before registration.
+- `ProjectFileUsage.fileBytes` is `>= 0` by construction because `decrementProjectCounter` clamps over-decrements to `0` and emits a warning.
+
 ## Test Strategy
 
 Following `testing-architecture.md`:

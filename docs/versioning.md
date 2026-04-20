@@ -658,6 +658,10 @@ System tables follow the same versioning rules (touch, commit, revert) but are h
 
 ## Changelog
 
+### 0.7.0-alpha.1
+
+- Harden byte accounting: drop negative-size file refs at extraction, clamp ProjectFileUsage.fileBytes to 0 on over-decrement.
+
 ### 2026-02-25
 
 - Initial document

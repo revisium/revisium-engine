@@ -3,6 +3,24 @@ name: Bump Version and Release
 on:
   workflow_dispatch:
     inputs:
+      # Release policy
+      #
+      # master
+      #   minor       -> stable next-line release, e.g. 0.6.0 -> 0.7.0
+      #   major       -> stable next-line release, e.g. 0.6.0 -> 1.0.0
+      #   alpha-start -> start prerelease line, e.g. 0.6.0 -> 0.7.0-alpha.0
+      #   alpha-bump  -> increment prerelease, e.g. 0.7.0-alpha.0 -> 0.7.0-alpha.1
+      #
+      # release/X.Y.x
+      #   patch       -> maintenance release, e.g. 0.6.3 -> 0.6.4
+      #
+      # ASCII overview
+      #
+      #   master ---------------------------> 0.7.0-alpha.0 -> 0.7.0-alpha.1 -> ...
+      #      |                                            \
+      #      +-------------------------------> 0.7.0 ------+--> create release/0.7.x
+      #
+      #   release/0.6.x --------------------> 0.6.4 -> 0.6.5 -> ...
       release_type:
         description: 'Select release type'
         required: true
@@ -11,6 +29,8 @@ on:
           - patch
           - minor
           - major
+          - alpha-start
+          - alpha-bump
 
 jobs:
   bump-and-tag:
@@ -28,9 +48,13 @@ jobs:
           BRANCH=$(git symbolic-ref --short HEAD)
           TYPE=${{ github.event.inputs.release_type }}
           echo "Running on branch: $BRANCH — release_type: $TYPE"
+
+          # Branch gates:
+          # - master is the only place where next-line releases and alpha prereleases are created
+          # - release/X.Y.x branches are maintenance-only and may publish patch releases
           if [[ "$BRANCH" == "master" ]]; then
-            if [[ "$TYPE" != "minor" && "$TYPE" != "major" ]]; then
-              echo "Only 'minor' and 'major' releases are allowed on master!"
+            if [[ "$TYPE" != "minor" && "$TYPE" != "major" && "$TYPE" != "alpha-start" && "$TYPE" != "alpha-bump" ]]; then
+              echo "Only 'minor', 'major', 'alpha-start', and 'alpha-bump' releases are allowed on master!"
               exit 1
             fi
           elif [[ "$BRANCH" =~ ^release/[0-9]+\.[0-9]+\.x$ ]]; then
@@ -53,10 +77,54 @@ jobs:
         env:
           GH_PAT: ${{ secrets.PAT_TOKEN_FOR_BUMP_VERSION }}
         run: |
-          NEW_TAG=$(npm version ${{ github.event.inputs.release_type }} -m "chore(release): %s")
+          TYPE=${{ github.event.inputs.release_type }}
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+
+          # Keep alpha actions ordered:
+          # - alpha-start is only valid before the first alpha exists
+          # - alpha-bump is only valid after an alpha line already exists
+          if [[ "$TYPE" == "alpha-start" && "$CURRENT_VERSION" =~ -alpha\.[0-9]+$ ]]; then
+            echo "Current version $CURRENT_VERSION is already an alpha release. Use 'alpha-bump' instead."
+            exit 1
+          fi
+
+          if [[ "$TYPE" == "alpha-bump" && ! "$CURRENT_VERSION" =~ -alpha\.[0-9]+$ ]]; then
+            echo "Current version $CURRENT_VERSION is not an alpha release. Use 'alpha-start' first."
+            exit 1
+          fi
+
+          # Map workflow inputs to npm version commands.
+          #
+          # stable:
+          #   patch        -> npm version patch
+          #   minor        -> npm version minor
+          #   major        -> npm version major
+          #
+          # prerelease:
+          #   alpha-start  -> npm version preminor --preid alpha
+          #   alpha-bump   -> npm version prerelease --preid alpha
+          case "$TYPE" in
+            patch|minor|major)
+              NPM_VERSION_ARGS=("$TYPE")
+              ;;
+            alpha-start)
+              NPM_VERSION_ARGS=("preminor" "--preid" "alpha")
+              ;;
+            alpha-bump)
+              NPM_VERSION_ARGS=("prerelease" "--preid" "alpha")
+              ;;
+            *)
+              echo "Unsupported release type: $TYPE"
+              exit 1
+              ;;
+          esac
+
+          NEW_TAG=$(npm version "${NPM_VERSION_ARGS[@]}" -m "chore(release): %s")
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "New version: $NEW_TAG"
 
+          # Push the generated release commit back to the branch where the workflow ran.
+          # master stays on master, release/0.6.x stays on release/0.6.x, etc.
           BRANCH=$(git symbolic-ref --short HEAD)
           if [[ "$BRANCH" == "master" ]]; then
             TARGET_BRANCH=master
@@ -73,6 +141,11 @@ jobs:
           GH_PAT: ${{ secrets.PAT_TOKEN_FOR_BUMP_VERSION }}
           RAW_TAG: ${{ steps.bump.outputs.new_tag }}
         run: |
+          # Stable line creation:
+          #   v0.7.0 -> release/0.7.x
+          #   v1.0.0 -> release/1.0.x
+          #
+          # Alpha releases do not create release branches.
           VERSION_NUM=${RAW_TAG#v}
           MAJOR_MINOR=${VERSION_NUM%.*}
           RELEASE_BRANCH="release/${MAJOR_MINOR}.x"

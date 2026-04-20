@@ -27,6 +27,10 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { createStorageMock } from 'src/__tests__/kit/storage.mock';
+import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
+import { FileUsageApiService } from 'src/features/file-usage/file-usage-api.service';
+import { FileReferenceExtractorService } from 'src/features/file-usage/services/file-reference-extractor.service';
+import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 
 export interface DraftTestKit {
   module: TestingModule;
@@ -43,6 +47,9 @@ export interface DraftTestKit {
   draftTransactionalCommands: DraftTransactionalCommands;
   migrationContextService: MigrationContextService;
   viewsMigrationService: ViewsMigrationService;
+  fileUsageApi: FileUsageApiService;
+  fileReferenceExtractor: FileReferenceExtractorService;
+  fileUsageIntegration: FileUsageIntegrationService;
   close(): Promise<void>;
 }
 
@@ -63,6 +70,7 @@ export async function createDraftTestKit(): Promise<DraftTestKit> {
       DraftRevisionModule,
       DraftModule,
       ViewsModule,
+      FileUsageModule,
       CacheModule.register(),
     ],
   })
@@ -89,6 +97,9 @@ export async function createDraftTestKit(): Promise<DraftTestKit> {
       .select(DraftModule)
       .get(MigrationContextService, { strict: true }),
     viewsMigrationService: module.get(ViewsMigrationService),
+    fileUsageApi: module.get(FileUsageApiService),
+    fileReferenceExtractor: module.get(FileReferenceExtractorService),
+    fileUsageIntegration: module.get(FileUsageIntegrationService),
     async close() {
       await module.close();
     },

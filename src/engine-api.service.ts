@@ -9,6 +9,7 @@ import { SubSchemaApiService } from 'src/features/sub-schema/sub-schema-api.serv
 import { TableApiService } from 'src/features/table/table-api.service';
 import { ViewsApiService } from 'src/features/views/views-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
+import { FileUsageApiService } from 'src/features/file-usage/file-usage-api.service';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 import {
   ApiRevertChangesCommand,
@@ -30,6 +31,7 @@ export class EngineApiService {
     private readonly subSchemaApi: SubSchemaApiService,
     private readonly cleanupService: CleanupService,
     private readonly migrationApi: MigrationApiService,
+    private readonly fileUsageApi: FileUsageApiService,
   ) {}
 
   // --- Tables ---
@@ -355,5 +357,67 @@ export class EngineApiService {
 
   abortMigration(...args: Parameters<MigrationApiService['abortMigration']>) {
     return this.migrationApi.abortMigration(...args);
+  }
+
+  // --- File Usage ---
+
+  getProjectStorageBytes(
+    ...args: Parameters<FileUsageApiService['getProjectStorageBytes']>
+  ) {
+    return this.fileUsageApi.getProjectStorageBytes(...args);
+  }
+
+  getStorageBytesForProjects(
+    ...args: Parameters<FileUsageApiService['getStorageBytesForProjects']>
+  ) {
+    return this.fileUsageApi.getStorageBytesForProjects(...args);
+  }
+
+  validateProjectFileBytes(
+    ...args: Parameters<FileUsageApiService['validateProjectFileBytes']>
+  ) {
+    return this.fileUsageApi.validateProjectFileBytes(...args);
+  }
+
+  restoreProjectFileBytes(
+    ...args: Parameters<FileUsageApiService['restoreProjectFileBytes']>
+  ) {
+    return this.fileUsageApi.restoreProjectFileBytes(...args);
+  }
+
+  backfillProjectFileBlobs(
+    ...args: Parameters<FileUsageApiService['backfillProjectFileBlobs']>
+  ) {
+    return this.fileUsageApi.backfillProjectFileBlobs(...args);
+  }
+
+  cleanupOrphanedFileBlobs() {
+    return this.fileUsageApi.cleanupOrphanedFileBlobs();
+  }
+
+  cleanupOrphanedFileBlobsForProject(
+    ...args: Parameters<
+      FileUsageApiService['cleanupOrphanedFileBlobsForProject']
+    >
+  ) {
+    return this.fileUsageApi.cleanupOrphanedFileBlobsForProject(...args);
+  }
+
+  cleanupProjectFileUsage(
+    ...args: Parameters<FileUsageApiService['cleanupProjectFileUsage']>
+  ) {
+    return this.fileUsageApi.cleanupProjectFileUsage(...args);
+  }
+
+  getPendingStorageDeletions(
+    ...args: Parameters<FileUsageApiService['getPendingStorageDeletions']>
+  ) {
+    return this.fileUsageApi.getPendingStorageDeletions(...args);
+  }
+
+  confirmStorageDeleted(
+    ...args: Parameters<FileUsageApiService['confirmStorageDeleted']>
+  ) {
+    return this.fileUsageApi.confirmStorageDeleted(...args);
   }
 }

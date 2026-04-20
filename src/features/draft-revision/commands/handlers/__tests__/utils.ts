@@ -8,6 +8,7 @@ import {
   DraftRevisionInternalService,
   DraftRevisionValidationService,
 } from 'src/features/draft-revision/services';
+import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
 import { DiffService } from 'src/features/share/diff.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
@@ -68,7 +69,13 @@ export async function prepareDraftRevisionTest(
 
 export const createDraftRevisionTestingModule = async () => {
   const module: TestingModule = await Test.createTestingModule({
-    imports: [DatabaseModule, CqrsModule, RevisionModule, BranchModule],
+    imports: [
+      DatabaseModule,
+      CqrsModule,
+      RevisionModule,
+      BranchModule,
+      FileUsageModule,
+    ],
     providers: [
       DraftRevisionApiService,
       DraftRevisionInternalService,

@@ -7,6 +7,7 @@ import {
   DraftRevisionInternalService,
   DraftRevisionValidationService,
 } from 'src/features/draft-revision/services';
+import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
@@ -18,6 +19,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     ShareModule,
     RevisionModule,
     BranchModule,
+    FileUsageModule,
   ],
   providers: [
     DraftRevisionApiService,

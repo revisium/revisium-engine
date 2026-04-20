@@ -388,6 +388,8 @@ export const ModelName = {
   Revision: 'Revision',
   Table: 'Table',
   Row: 'Row',
+  FileBlob: 'FileBlob',
+  ProjectFileUsage: 'ProjectFileUsage',
   TableMigration: 'TableMigration'
 } as const
 
@@ -404,7 +406,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "branch" | "revision" | "table" | "row" | "tableMigration"
+    modelProps: "branch" | "revision" | "table" | "row" | "fileBlob" | "projectFileUsage" | "tableMigration"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -704,6 +706,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    FileBlob: {
+      payload: Prisma.$FileBlobPayload<ExtArgs>
+      fields: Prisma.FileBlobFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.FileBlobFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.FileBlobFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>
+        }
+        findFirst: {
+          args: Prisma.FileBlobFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.FileBlobFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>
+        }
+        findMany: {
+          args: Prisma.FileBlobFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>[]
+        }
+        create: {
+          args: Prisma.FileBlobCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>
+        }
+        createMany: {
+          args: Prisma.FileBlobCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.FileBlobCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>[]
+        }
+        delete: {
+          args: Prisma.FileBlobDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>
+        }
+        update: {
+          args: Prisma.FileBlobUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>
+        }
+        deleteMany: {
+          args: Prisma.FileBlobDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.FileBlobUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.FileBlobUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>[]
+        }
+        upsert: {
+          args: Prisma.FileBlobUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FileBlobPayload>
+        }
+        aggregate: {
+          args: Prisma.FileBlobAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateFileBlob>
+        }
+        groupBy: {
+          args: Prisma.FileBlobGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.FileBlobGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.FileBlobCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.FileBlobCountAggregateOutputType> | number
+        }
+      }
+    }
+    ProjectFileUsage: {
+      payload: Prisma.$ProjectFileUsagePayload<ExtArgs>
+      fields: Prisma.ProjectFileUsageFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ProjectFileUsageFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ProjectFileUsageFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>
+        }
+        findFirst: {
+          args: Prisma.ProjectFileUsageFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ProjectFileUsageFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>
+        }
+        findMany: {
+          args: Prisma.ProjectFileUsageFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>[]
+        }
+        create: {
+          args: Prisma.ProjectFileUsageCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>
+        }
+        createMany: {
+          args: Prisma.ProjectFileUsageCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ProjectFileUsageCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>[]
+        }
+        delete: {
+          args: Prisma.ProjectFileUsageDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>
+        }
+        update: {
+          args: Prisma.ProjectFileUsageUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>
+        }
+        deleteMany: {
+          args: Prisma.ProjectFileUsageDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ProjectFileUsageUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ProjectFileUsageUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>[]
+        }
+        upsert: {
+          args: Prisma.ProjectFileUsageUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProjectFileUsagePayload>
+        }
+        aggregate: {
+          args: Prisma.ProjectFileUsageAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateProjectFileUsage>
+        }
+        groupBy: {
+          args: Prisma.ProjectFileUsageGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProjectFileUsageGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ProjectFileUsageCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProjectFileUsageCountAggregateOutputType> | number
+        }
+      }
+    }
     TableMigration: {
       payload: Prisma.$TableMigrationPayload<ExtArgs>
       fields: Prisma.TableMigrationFieldRefs
@@ -878,6 +1028,27 @@ export const RowScalarFieldEnum = {
 export type RowScalarFieldEnum = (typeof RowScalarFieldEnum)[keyof typeof RowScalarFieldEnum]
 
 
+export const FileBlobScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  deletedAt: 'deletedAt',
+  projectId: 'projectId',
+  hash: 'hash',
+  size: 'size'
+} as const
+
+export type FileBlobScalarFieldEnum = (typeof FileBlobScalarFieldEnum)[keyof typeof FileBlobScalarFieldEnum]
+
+
+export const ProjectFileUsageScalarFieldEnum = {
+  projectId: 'projectId',
+  fileBytes: 'fileBytes',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ProjectFileUsageScalarFieldEnum = (typeof ProjectFileUsageScalarFieldEnum)[keyof typeof ProjectFileUsageScalarFieldEnum]
+
+
 export const TableMigrationScalarFieldEnum = {
   id: 'id',
   revisionId: 'revisionId',
@@ -990,6 +1161,22 @@ export const RowOrderByRelevanceFieldEnum = {
 export type RowOrderByRelevanceFieldEnum = (typeof RowOrderByRelevanceFieldEnum)[keyof typeof RowOrderByRelevanceFieldEnum]
 
 
+export const FileBlobOrderByRelevanceFieldEnum = {
+  id: 'id',
+  projectId: 'projectId',
+  hash: 'hash'
+} as const
+
+export type FileBlobOrderByRelevanceFieldEnum = (typeof FileBlobOrderByRelevanceFieldEnum)[keyof typeof FileBlobOrderByRelevanceFieldEnum]
+
+
+export const ProjectFileUsageOrderByRelevanceFieldEnum = {
+  projectId: 'projectId'
+} as const
+
+export type ProjectFileUsageOrderByRelevanceFieldEnum = (typeof ProjectFileUsageOrderByRelevanceFieldEnum)[keyof typeof ProjectFileUsageOrderByRelevanceFieldEnum]
+
+
 export const TableMigrationOrderByRelevanceFieldEnum = {
   id: 'id',
   revisionId: 'revisionId',
@@ -1074,6 +1261,20 @@ export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'J
  * Reference to a field of type 'QueryMode'
  */
 export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
+    
+
+
+/**
+ * Reference to a field of type 'BigInt'
+ */
+export type BigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt'>
+    
+
+
+/**
+ * Reference to a field of type 'BigInt[]'
+ */
+export type ListBigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt[]'>
     
 
 
@@ -1189,6 +1390,8 @@ export type GlobalOmitConfig = {
   revision?: Prisma.RevisionOmit
   table?: Prisma.TableOmit
   row?: Prisma.RowOmit
+  fileBlob?: Prisma.FileBlobOmit
+  projectFileUsage?: Prisma.ProjectFileUsageOmit
   tableMigration?: Prisma.TableMigrationOmit
 }
 

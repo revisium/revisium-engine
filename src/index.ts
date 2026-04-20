@@ -21,6 +21,22 @@ export { StorageModule } from './infrastructure/storage/storage.module';
 export { STORAGE_SERVICE } from './infrastructure/storage/storage.interface';
 export type { IStorageService } from './infrastructure/storage/storage.interface';
 
+// File Usage
+export { FileUsageModule } from './features/file-usage/file-usage.module';
+export { FileUsageApiService } from './features/file-usage/file-usage-api.service';
+export { FileReferenceExtractorService } from './features/file-usage/services/file-reference-extractor.service';
+export { FileUsageIntegrationService } from './features/file-usage/services/file-usage-integration.service';
+export type {
+  BackfillProjectFileBlobsResult,
+  CleanupOrphanedFileBlobsResult,
+  CleanupProjectFileUsageResult,
+  ConfirmStorageDeletedResult,
+  FileReference,
+  PendingStorageDeletion,
+  RestoreProjectFileBytesResult,
+  ValidateProjectFileBytesResult,
+} from './features/file-usage/types';
+
 // Share
 export { ShareModule } from './features/share/share.module';
 export { DiffService } from './features/share/diff.service';

@@ -153,8 +153,10 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
       );
 
       if (existingBlob.deletedAt !== null) {
-        await this.reactivateBlob(existingBlob.id);
-        await this.incrementProjectCounter(args.projectId, existingBlob.size);
+        const reactivated = await this.tryReactivateBlob(existingBlob.id);
+        if (reactivated) {
+          await this.incrementProjectCounter(args.projectId, existingBlob.size);
+        }
       }
       return;
     }
@@ -233,8 +235,10 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
     this.warnOnSizeMismatch(projectId, reference, existing.size);
 
     if (existing.deletedAt !== null) {
-      await this.reactivateBlob(existing.id);
-      await this.incrementProjectCounter(projectId, existing.size);
+      const reactivated = await this.tryReactivateBlob(existing.id);
+      if (reactivated) {
+        await this.incrementProjectCounter(projectId, existing.size);
+      }
     }
 
     return existing.id;
@@ -252,11 +256,12 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
     }
   }
 
-  private async reactivateBlob(blobId: string): Promise<void> {
-    await this.prisma.fileBlob.update({
-      where: { id: blobId },
+  private async tryReactivateBlob(blobId: string): Promise<boolean> {
+    const { count } = await this.prisma.fileBlob.updateMany({
+      where: { id: blobId, deletedAt: { not: null } },
       data: { deletedAt: null },
     });
+    return count > 0;
   }
 
   private async incrementProjectCounter(

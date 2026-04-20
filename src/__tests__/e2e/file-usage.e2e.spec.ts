@@ -1285,6 +1285,11 @@ describe('File Usage E2E', () => {
         comment: 'commit before fork',
       });
 
+      const uploadedBlob = await prisma.fileBlob.findFirstOrThrow({
+        where: { projectId: sourceProject.projectId, deletedAt: null },
+        select: { hash: true },
+      });
+
       const sourceHead = await api.getHeadRevision(sourceProject.branchId);
       const forkProject = await simulateConsumerForkFromRevision({
         sourceRevisionId: sourceHead.id,
@@ -1312,12 +1317,10 @@ describe('File Usage E2E', () => {
       const sourceCleanup = await api.cleanupProjectFileUsage({
         projectId: sourceProject.projectId,
       });
-      expect(sourceCleanup.orphanHashes).not.toContain(fakeSha256(content));
+      expect(sourceCleanup.orphanHashes).not.toContain(uploadedBlob.hash);
 
       const pending = await api.getPendingStorageDeletions({ limit: 1000 });
-      expect(pending.map((item) => item.hash)).not.toContain(
-        fakeSha256(content),
-      );
+      expect(pending.map((item) => item.hash)).not.toContain(uploadedBlob.hash);
 
       const forkReport = await api.validateProjectFileBytes({
         projectId: forkProject.projectId,

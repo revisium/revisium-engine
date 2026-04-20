@@ -95,7 +95,7 @@ export class CleanupService {
   }
 
   private isMissingHandlerError(error: unknown): boolean {
-    const message = (error as Error).message ?? '';
+    const message = error instanceof Error ? error.message : '';
     return message.includes('No handler found for the command');
   }
 

@@ -154,6 +154,7 @@ export interface TableMigration {
 export interface FileBlob {
   id: string;
   createdAt: Date;
+  deletedAt: Date | null;
   projectId: string;
   hash: string;
   size: bigint;

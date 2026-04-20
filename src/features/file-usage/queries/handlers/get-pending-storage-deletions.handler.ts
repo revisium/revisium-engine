@@ -50,7 +50,7 @@ export class GetPendingStorageDeletionsHandler implements IQueryHandler<
         pending.push({ hash: row.hash, size: row.size });
       }
 
-      cursor = batch[batch.length - 1]?.hash ?? cursor;
+      cursor = batch.at(-1)?.hash ?? cursor;
 
       if (batch.length < BATCH_SIZE) {
         break;

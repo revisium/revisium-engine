@@ -27,21 +27,18 @@ export class CleanupProjectFileUsageHandler implements ICommandHandler<
     data,
   }: CleanupProjectFileUsageCommand): Promise<CleanupProjectFileUsageResult> {
     const activeBlobs = await this.findActiveBlobsForProject(data.projectId);
+    const tombstoned = await this.cleanup.tombstoneActive(activeBlobs);
 
-    const bytesFreed = this.cleanup.sumBytes(activeBlobs);
-    const blobIds = activeBlobs.map((blob) => blob.id);
-    const hashesInScope = this.cleanup.uniqueHashes(activeBlobs);
-
-    await this.cleanup.tombstoneBlobs(blobIds);
     await this.deleteUsageCounter(data.projectId);
 
-    const orphanHashes =
-      await this.cleanup.findGloballyOrphanHashes(hashesInScope);
+    const orphanHashes = await this.cleanup.findGloballyOrphanHashes(
+      this.cleanup.uniqueHashes(tombstoned),
+    );
 
     return {
       projectId: data.projectId,
-      blobsTombstoned: activeBlobs.length,
-      bytesFreed,
+      blobsTombstoned: tombstoned.length,
+      bytesFreed: this.cleanup.sumBytes(tombstoned),
       orphanHashes,
     };
   }

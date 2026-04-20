@@ -31,17 +31,20 @@ export class FileBlobCleanupService {
       return this.emptyResult();
     }
 
-    const bytesFreed = this.sumBytes(orphans);
-    const orphanIds = orphans.map((orphan) => orphan.id);
-    const hashesInScope = this.uniqueHashes(orphans);
+    const tombstoned = await this.tombstoneActive(orphans);
+    if (tombstoned.length === 0) {
+      return this.emptyResult();
+    }
 
-    await this.tombstoneBlobs(orphanIds);
+    const bytesFreed = this.sumBytes(tombstoned);
     await this.decrementProjectCounter(projectId, bytesFreed);
 
-    const orphanHashes = await this.findGloballyOrphanHashes(hashesInScope);
+    const orphanHashes = await this.findGloballyOrphanHashes(
+      this.uniqueHashes(tombstoned),
+    );
 
     return {
-      blobsTombstoned: orphans.length,
+      blobsTombstoned: tombstoned.length,
       bytesFreed,
       orphanHashes,
     };
@@ -54,18 +57,20 @@ export class FileBlobCleanupService {
       return this.emptyResult();
     }
 
-    const bytesByProject = this.groupBytesByProject(orphans);
-    const orphanIds = orphans.map((orphan) => orphan.id);
-    const hashesInScope = this.uniqueHashes(orphans);
+    const tombstoned = await this.tombstoneActive(orphans);
+    if (tombstoned.length === 0) {
+      return this.emptyResult();
+    }
 
-    await this.tombstoneBlobs(orphanIds);
-    await this.decrementProjectCounters(bytesByProject);
+    await this.decrementProjectCounters(this.groupBytesByProject(tombstoned));
 
-    const orphanHashes = await this.findGloballyOrphanHashes(hashesInScope);
+    const orphanHashes = await this.findGloballyOrphanHashes(
+      this.uniqueHashes(tombstoned),
+    );
 
     return {
-      blobsTombstoned: orphans.length,
-      bytesFreed: this.sumBytes(orphans),
+      blobsTombstoned: tombstoned.length,
+      bytesFreed: this.sumBytes(tombstoned),
       orphanHashes,
     };
   }
@@ -78,21 +83,41 @@ export class FileBlobCleanupService {
     return Array.from(new Set(orphans.map((orphan) => orphan.hash)));
   }
 
-  public async tombstoneBlobs(blobIds: readonly string[]): Promise<void> {
-    if (blobIds.length === 0) {
-      return;
+  public async tombstoneActive(
+    orphans: readonly OrphanBlobRow[],
+  ): Promise<OrphanBlobRow[]> {
+    if (orphans.length === 0) {
+      return [];
     }
 
-    await this.prisma.fileBlob.updateMany({
-      where: { id: { in: [...blobIds] } },
-      data: { deletedAt: new Date() },
+    const marker = new Date();
+    const ids = orphans.map((orphan) => orphan.id);
+
+    const { count } = await this.prisma.fileBlob.updateMany({
+      where: { id: { in: ids }, deletedAt: null },
+      data: { deletedAt: marker },
     });
+
+    if (count === 0) {
+      return [];
+    }
+
+    const stamped = await this.prisma.fileBlob.findMany({
+      where: { id: { in: ids }, deletedAt: marker },
+      select: { id: true, projectId: true, hash: true, size: true },
+    });
+
+    return stamped;
   }
 
   public async decrementProjectCounter(
     projectId: string,
     amount: bigint,
   ): Promise<void> {
+    if (amount === ZERO_BYTES) {
+      return;
+    }
+
     await this.prisma.projectFileUsage.upsert({
       where: { projectId },
       create: { projectId, fileBytes: ZERO_BYTES },

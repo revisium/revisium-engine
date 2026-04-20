@@ -128,7 +128,7 @@ export class FileBlobCleanupService {
       return;
     }
 
-    await this.ensureNonNegativeProjectCounter(projectId, amount);
+    await this.reconcileProjectCounterAfterFailedDecrement(projectId, amount);
   }
 
   public async findGloballyOrphanHashes(
@@ -187,7 +187,7 @@ export class FileBlobCleanupService {
     return result.count === 1;
   }
 
-  private async ensureNonNegativeProjectCounter(
+  private async reconcileProjectCounterAfterFailedDecrement(
     projectId: string,
     amount: bigint,
   ): Promise<void> {
@@ -195,17 +195,31 @@ export class FileBlobCleanupService {
       where: { projectId },
     });
     if (!usage) {
-      await this.prisma.projectFileUsage.create({
-        data: {
-          projectId,
-          fileBytes: ZERO_BYTES,
-        },
-      });
+      await this.ensureProjectCounterRow(projectId);
 
       return;
     }
 
+    const wasDecremented = await this.tryDecrementProjectCounter(
+      projectId,
+      amount,
+    );
+    if (wasDecremented) {
+      return;
+    }
+
     await this.clampProjectCounter(projectId, usage.fileBytes, amount);
+  }
+
+  private async ensureProjectCounterRow(projectId: string): Promise<void> {
+    await this.prisma.projectFileUsage.upsert({
+      where: { projectId },
+      create: {
+        projectId,
+        fileBytes: ZERO_BYTES,
+      },
+      update: {},
+    });
   }
 
   private async clampProjectCounter(
@@ -213,10 +227,18 @@ export class FileBlobCleanupService {
     current: bigint,
     requested: bigint,
   ): Promise<void> {
-    await this.prisma.projectFileUsage.update({
-      where: { projectId },
-      data: { fileBytes: ZERO_BYTES },
+    const result = await this.prisma.projectFileUsage.updateMany({
+      where: {
+        projectId,
+        fileBytes: { lt: requested },
+      },
+      data: {
+        fileBytes: ZERO_BYTES,
+      },
     });
+    if (result.count === 0) {
+      return;
+    }
 
     this.logger.warn({
       message: 'Clamped project file usage over-decrement to zero',

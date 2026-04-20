@@ -91,16 +91,18 @@ describe('FileBlobCleanupService', () => {
     const createSpy = jest.spyOn(kit.prismaService.projectFileUsage, 'create');
     const updateSpy = jest.spyOn(kit.prismaService.projectFileUsage, 'update');
 
-    await service.decrementProjectCounter(nanoid(), 0n);
+    try {
+      await service.decrementProjectCounter(nanoid(), 0n);
 
-    expect(updateManySpy).not.toHaveBeenCalled();
-    expect(findUniqueSpy).not.toHaveBeenCalled();
-    expect(createSpy).not.toHaveBeenCalled();
-    expect(updateSpy).not.toHaveBeenCalled();
-
-    updateManySpy.mockRestore();
-    findUniqueSpy.mockRestore();
-    createSpy.mockRestore();
-    updateSpy.mockRestore();
+      expect(updateManySpy).not.toHaveBeenCalled();
+      expect(findUniqueSpy).not.toHaveBeenCalled();
+      expect(createSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
+    } finally {
+      updateManySpy.mockRestore();
+      findUniqueSpy.mockRestore();
+      createSpy.mockRestore();
+      updateSpy.mockRestore();
+    }
   });
 });

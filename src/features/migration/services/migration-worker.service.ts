@@ -159,7 +159,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private runInlineMigration(migrationId: string) {
-    void this.runClaimedMigration(migrationId).catch((err) => {
+    this.runClaimedMigration(migrationId).catch((err) => {
       this.logger.error(
         `Inline migration ${migrationId} failed: ${err.message}`,
       );

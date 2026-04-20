@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { ShareModule } from 'src/features/share/share.module';
+import { FileBlobCleanupService } from 'src/features/file-usage/services/file-blob-cleanup.service';
 import { FileReferenceExtractorService } from 'src/features/file-usage/services/file-reference-extractor.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { FileUsageApiService } from 'src/features/file-usage/file-usage-api.service';
@@ -9,6 +10,7 @@ import { FILE_USAGE_COMMAND_HANDLERS } from 'src/features/file-usage/commands/ha
 import { FILE_USAGE_QUERY_HANDLERS } from 'src/features/file-usage/queries/handlers';
 
 const SERVICES = [
+  FileBlobCleanupService,
   FileReferenceExtractorService,
   FileUsageIntegrationService,
   FileUsageApiService,

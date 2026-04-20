@@ -408,7 +408,10 @@ engine.cleanupProjectFileUsage({ projectId: string }): Promise<{
 ### Consumer-driven storage deletion
 
 ```typescript
-engine.getPendingStorageDeletions({ limit?: number }): Promise<Array<{
+engine.getPendingStorageDeletions({
+  limit?: number;
+  afterHash?: string;
+}): Promise<Array<{
   hash: string;
   size: bigint;
 }>>
@@ -419,7 +422,7 @@ engine.confirmStorageDeleted({ hashes: string[] }): Promise<{
 }>
 ```
 
-- `getPendingStorageDeletions` returns hashes that are tombstoned with no remaining active row. Use this as the source for a periodic reconcile pass that retries any storage deletions that failed after a cleanup call. The `limit` parameter bounds a single batch.
+- `getPendingStorageDeletions` returns hashes that are tombstoned with no remaining active row. Use this as the source for a periodic reconcile pass that retries any storage deletions that failed after a cleanup call. The `limit` parameter bounds a single batch, and `afterHash` lets consumers checkpoint large backlogs in stable `hash ASC` order.
 - `confirmStorageDeleted` hard-deletes tombstoned rows for the given hashes. Only tombstoned rows are removed — if a hash has been re-uploaded and reactivated in the interim, its row is left alone.
 
 ## Error Handling

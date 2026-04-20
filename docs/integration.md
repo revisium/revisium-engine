@@ -22,6 +22,8 @@ export class MyService {
 
 `EngineApiService` is a flat facade over all engine services. See [api.md](api.md) for the full method reference.
 
+If you prefer module-level composition instead of the unified facade, `FileUsageModule` and `FileUsageApiService` are also exported from `@revisium/engine`.
+
 ### With async migration config
 
 ```typescript
@@ -82,6 +84,7 @@ import {
   RevisionChangesModule,
   SubSchemaModule,
   ViewsModule,
+  FileUsageModule,
 } from '@revisium/engine';
 ```
 

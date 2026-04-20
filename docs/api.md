@@ -572,6 +572,176 @@ engine.uploadFile({
 })
 ```
 
+`uploadFile` automatically maintains the reference-counted `FileBlob` + `_FileBlobToRow` tables and the per-project `ProjectFileUsage` counter for whichever `projectId` the branch carries.
+
+---
+
+## File Usage
+
+Reference-counted, dedup-aware file byte counters keyed by opaque `projectId`. The engine does not model organizations or project lifecycle — consumers pass project identifiers when they want file-usage information. See [File Usage Tracking](./file-usage.md) for the complete data model and scenarios.
+
+### getProjectStorageBytes
+
+```typescript
+engine.getProjectStorageBytes({ projectId: string }): Promise<bigint>
+```
+
+O(1) read from `ProjectFileUsage.fileBytes`. Returns `0n` for unknown projectIds.
+
+### getStorageBytesForProjects
+
+```typescript
+engine.getStorageBytesForProjects({
+  projectIds: string[];
+}): Promise<bigint>
+```
+
+Sums `ProjectFileUsage.fileBytes` across the supplied list. Use for organization-level or team-level aggregates — the consumer supplies the grouping.
+
+### validateProjectFileBytes
+
+```typescript
+engine.validateProjectFileBytes({ projectId: string }): Promise<{
+  projectId: string;
+  currentFileBytes: bigint;
+  expectedFileBytes: bigint;
+  drift: bigint;
+  fileBlobCount: number;
+  referenceCount: number;
+}>
+```
+
+Never writes. Safe to call in production.
+
+### restoreProjectFileBytes
+
+```typescript
+engine.restoreProjectFileBytes({ projectId: string }): Promise<{
+  projectId: string;
+  previousFileBytes: bigint;
+  nextFileBytes: bigint;
+  drift: bigint;
+}>
+```
+
+Atomically sets `ProjectFileUsage.fileBytes = SUM(FileBlob.size)` for the project.
+
+### backfillProjectFileBlobs
+
+```typescript
+engine.backfillProjectFileBlobs({
+  projectId: string;
+  dryRun?: boolean;
+}): Promise<{
+  projectId: string;
+  scannedRowVersions: number;
+  blobsCreated: number;
+  referencesCreated: number;
+  fileBytesAfter: bigint;
+  dryRun: boolean;
+}>
+```
+
+Scans every row version linked to the project, reconstructs `FileBlob` + `_FileBlobToRow` state, and refreshes the counter. Idempotent. Use `dryRun: true` for a preview.
+
+### cleanupOrphanedFileBlobs / cleanupOrphanedFileBlobsForProject
+
+```typescript
+engine.cleanupOrphanedFileBlobs(): Promise<{
+  blobsTombstoned: number;
+  bytesFreed: bigint;
+  orphanHashes: string[];
+}>
+
+engine.cleanupOrphanedFileBlobsForProject({ projectId: string }): Promise<{
+  blobsTombstoned: number;
+  bytesFreed: bigint;
+  orphanHashes: string[];
+}>
+```
+
+**Tombstones** active `FileBlob` rows with no live `_FileBlobToRow` references (sets `deletedAt`) and decrements the matching counters. `cleanupOrphanedFileBlobs` is called automatically by `cleanOrphanedData` after row garbage collection.
+
+`orphanHashes` contains content hashes that have **no remaining active `FileBlob` rows anywhere in the database** after the sweep. The tombstoned rows persist until the consumer deletes the underlying storage objects and calls `confirmStorageDeleted`.
+
+### cleanupProjectFileUsage
+
+```typescript
+engine.cleanupProjectFileUsage({ projectId: string }): Promise<{
+  projectId: string;
+  blobsTombstoned: number;
+  bytesFreed: bigint;
+  orphanHashes: string[];
+}>
+```
+
+Call when the consumer hard-deletes a project. Unconditionally tombstones every active `FileBlob` for that project and drops the `ProjectFileUsage` counter.
+
+`orphanHashes` contains hashes that had active FileBlobs in the deleted project and have no active FileBlobs remaining in any other project — that is, hashes that are safe to delete from object storage.
+
+### getPendingStorageDeletions
+
+```typescript
+engine.getPendingStorageDeletions({
+  limit?: number;
+  afterHash?: string;
+}): Promise<Array<{
+  hash: string;
+  size: bigint;
+}>>
+```
+
+Returns tombstoned hashes that still have no active row anywhere. Drives the periodic reconcile-storage cron that retries deletions which failed during the main sweep.
+
+`afterHash` is an optional stable checkpoint cursor for large backlogs. Results are ordered by `hash ASC`, so consumers can page by remembering the last processed hash from the previous batch.
+
+### confirmStorageDeleted
+
+```typescript
+engine.confirmStorageDeleted({ hashes: string[] }): Promise<{
+  hashesConfirmed: number;
+  blobsDeleted: number;
+}>
+```
+
+Hard-deletes tombstoned rows for the given hashes. Only rows with `deletedAt IS NOT NULL` are removed — if a hash has been re-uploaded and reactivated in the interim, its row is left alone, so the operation is safe to call repeatedly with stale hash lists.
+
+### Storage-side deletion workflow (tombstone + confirm)
+
+The engine never calls `IStorageService.deleteFile`. The cleanup cycle is:
+
+1. Consumer calls a cleanup operation; the engine tombstones rows (sets `deletedAt`) and returns `orphanHashes`.
+2. Consumer deletes the underlying storage objects keyed by those hashes.
+3. Consumer calls `engine.confirmStorageDeleted({ hashes })` with every hash whose storage delete succeeded; the engine hard-deletes those tombstoned rows.
+4. For any storage delete that failed in step 2, the tombstone remains. A periodic `getPendingStorageDeletions` pass retries step 2 and step 3 on the next cron tick.
+
+```typescript
+const { orphanHashes } = await engine.cleanupOrphanedFileBlobs();
+
+const confirmed: string[] = [];
+for (const hash of orphanHashes) {
+  try {
+    await storageService.deleteFile(hash);
+    confirmed.push(hash);
+  } catch {
+    // Leave tombstoned — the reconcile pass will retry.
+  }
+}
+if (confirmed.length > 0) {
+  await engine.confirmStorageDeleted({ hashes: confirmed });
+}
+```
+
+The same pattern applies to `cleanupOrphanedFileBlobsForProject` and `cleanupProjectFileUsage`.
+
+### Fork
+
+When a consumer forks a project (same row data, new `projectId`), call `backfillProjectFileBlobs` on the new project so the engine populates `FileBlob` + `_FileBlobToRow` + `ProjectFileUsage` from the forked rows. Reactivation handles any hashes that happen to be tombstoned.
+
+### Re-upload over a tombstone
+
+Uploading a file whose `(projectId, hash)` has been tombstoned reactivates the existing row: `deletedAt` is cleared, M2M links are recreated, and the counter is re-incremented. The consumer does not need to do anything special — the standard row-write path handles it.
+
 ---
 
 ## Views

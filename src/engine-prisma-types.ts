@@ -151,6 +151,22 @@ export interface TableMigration {
   [key: string]: unknown;
 }
 
+export interface FileBlob {
+  id: string;
+  createdAt: Date;
+  projectId: string;
+  hash: string;
+  size: bigint;
+  [key: string]: unknown;
+}
+
+export interface ProjectFileUsage {
+  projectId: string;
+  fileBytes: bigint;
+  updatedAt: Date;
+  [key: string]: unknown;
+}
+
 // ---------------------------------------------------------------------------
 // TransactionPrismaClient is re-exported from src/features/share/types.ts
 // because it depends on the generated Prisma client for model-specific

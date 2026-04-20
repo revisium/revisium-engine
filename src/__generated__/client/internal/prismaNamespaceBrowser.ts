@@ -55,6 +55,8 @@ export const ModelName = {
   Revision: 'Revision',
   Table: 'Table',
   Row: 'Row',
+  FileBlob: 'FileBlob',
+  ProjectFileUsage: 'ProjectFileUsage',
   TableMigration: 'TableMigration'
 } as const
 
@@ -129,6 +131,27 @@ export const RowScalarFieldEnum = {
 } as const
 
 export type RowScalarFieldEnum = (typeof RowScalarFieldEnum)[keyof typeof RowScalarFieldEnum]
+
+
+export const FileBlobScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  deletedAt: 'deletedAt',
+  projectId: 'projectId',
+  hash: 'hash',
+  size: 'size'
+} as const
+
+export type FileBlobScalarFieldEnum = (typeof FileBlobScalarFieldEnum)[keyof typeof FileBlobScalarFieldEnum]
+
+
+export const ProjectFileUsageScalarFieldEnum = {
+  projectId: 'projectId',
+  fileBytes: 'fileBytes',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ProjectFileUsageScalarFieldEnum = (typeof ProjectFileUsageScalarFieldEnum)[keyof typeof ProjectFileUsageScalarFieldEnum]
 
 
 export const TableMigrationScalarFieldEnum = {
@@ -241,6 +264,22 @@ export const RowOrderByRelevanceFieldEnum = {
 } as const
 
 export type RowOrderByRelevanceFieldEnum = (typeof RowOrderByRelevanceFieldEnum)[keyof typeof RowOrderByRelevanceFieldEnum]
+
+
+export const FileBlobOrderByRelevanceFieldEnum = {
+  id: 'id',
+  projectId: 'projectId',
+  hash: 'hash'
+} as const
+
+export type FileBlobOrderByRelevanceFieldEnum = (typeof FileBlobOrderByRelevanceFieldEnum)[keyof typeof FileBlobOrderByRelevanceFieldEnum]
+
+
+export const ProjectFileUsageOrderByRelevanceFieldEnum = {
+  projectId: 'projectId'
+} as const
+
+export type ProjectFileUsageOrderByRelevanceFieldEnum = (typeof ProjectFileUsageOrderByRelevanceFieldEnum)[keyof typeof ProjectFileUsageOrderByRelevanceFieldEnum]
 
 
 export const TableMigrationOrderByRelevanceFieldEnum = {

@@ -38,6 +38,16 @@ export type Table = Prisma.TableModel
  */
 export type Row = Prisma.RowModel
 /**
+ * Model FileBlob
+ * 
+ */
+export type FileBlob = Prisma.FileBlobModel
+/**
+ * Model ProjectFileUsage
+ * 
+ */
+export type ProjectFileUsage = Prisma.ProjectFileUsageModel
+/**
  * Model TableMigration
  * 
  */

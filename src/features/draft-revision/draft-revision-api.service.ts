@@ -29,10 +29,14 @@ import {
   DraftRevisionUpdateRowsCommandData,
   DraftRevisionUpdateRowsCommandReturnType,
 } from 'src/features/draft-revision/commands/impl';
+import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 
 @Injectable()
 export class DraftRevisionApiService {
-  constructor(private readonly commandBus: CommandBus) {}
+  constructor(
+    private readonly commandBus: CommandBus,
+    private readonly fileUsageIntegration: FileUsageIntegrationService,
+  ) {}
 
   public createTable(
     data: DraftRevisionCreateTableCommandData,
@@ -52,28 +56,77 @@ export class DraftRevisionApiService {
     return this.commandBus.execute(new DraftRevisionRenameTableCommand(data));
   }
 
-  public createRows(
+  public async createRows(
     data: DraftRevisionCreateRowsCommandData,
   ): Promise<DraftRevisionCreateRowsCommandReturnType> {
-    return this.commandBus.execute(new DraftRevisionCreateRowsCommand(data));
+    const result: DraftRevisionCreateRowsCommandReturnType =
+      await this.commandBus.execute(new DraftRevisionCreateRowsCommand(data));
+
+    await this.fileUsageIntegration.registerReferencesForRows({
+      revisionId: data.revisionId,
+      tableId: data.tableId,
+      rows: data.rows.map((row, index) => ({
+        rowId: row.rowId,
+        rowVersionId: result.createdRows[index]?.rowVersionId ?? '',
+        data: row.data,
+      })),
+    });
+
+    return result;
   }
 
-  public updateRows(
+  public async updateRows(
     data: DraftRevisionUpdateRowsCommandData,
   ): Promise<DraftRevisionUpdateRowsCommandReturnType> {
-    return this.commandBus.execute(new DraftRevisionUpdateRowsCommand(data));
+    const result: DraftRevisionUpdateRowsCommandReturnType =
+      await this.commandBus.execute(new DraftRevisionUpdateRowsCommand(data));
+
+    await this.fileUsageIntegration.registerReferencesForRows({
+      revisionId: data.revisionId,
+      tableId: data.tableId,
+      rows: data.rows.map((row, index) => ({
+        rowId: row.rowId,
+        rowVersionId: result.updatedRows[index]?.rowVersionId ?? '',
+        data: row.data,
+      })),
+    });
+
+    return result;
   }
 
-  public renameRows(
+  public async renameRows(
     data: DraftRevisionRenameRowsCommandData,
   ): Promise<DraftRevisionRenameRowsCommandReturnType> {
-    return this.commandBus.execute(new DraftRevisionRenameRowsCommand(data));
+    const result: DraftRevisionRenameRowsCommandReturnType =
+      await this.commandBus.execute(new DraftRevisionRenameRowsCommand(data));
+
+    await this.fileUsageIntegration.registerReferencesForRowVersions({
+      revisionId: data.revisionId,
+      tableId: data.tableId,
+      rowVersionIds: result.renamedRows.map((row) => row.rowVersionId),
+    });
+
+    return result;
   }
 
-  public removeRows(
+  public async removeRows(
     data: DraftRevisionRemoveRowsCommandData,
   ): Promise<DraftRevisionRemoveRowsCommandReturnType> {
-    return this.commandBus.execute(new DraftRevisionRemoveRowsCommand(data));
+    const affectedBlobIds =
+      await this.fileUsageIntegration.findBlobIdsLinkedToRows({
+        tableId: data.tableId,
+        rowIds: data.rowIds,
+      });
+
+    const result: DraftRevisionRemoveRowsCommandReturnType =
+      await this.commandBus.execute(new DraftRevisionRemoveRowsCommand(data));
+
+    await this.fileUsageIntegration.cleanupBlobsByIds({
+      revisionId: data.revisionId,
+      blobIds: affectedBlobIds,
+    });
+
+    return result;
   }
 
   public commit(

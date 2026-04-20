@@ -60,13 +60,65 @@ export class AppModule {}
 
 Without a storage provider, file operations throw "Storage is not configured".
 
+### File usage tracking
+
+When file storage is configured, the engine tracks reference-counted file-byte totals per project. `projectId` is treated as an opaque string — the engine does not model organizations or project lifecycle. Consumers pass project identifiers when they want file-usage information:
+
+```typescript
+const bytes = await engine.getProjectStorageBytes({ projectId: 'games' });
+const orgBytes = await engine.getStorageBytesForProjects({
+  projectIds: ['games', 'art', 'music'],
+});
+```
+
+Reconciliation API for audits and legacy-data migration:
+
+```typescript
+await engine.validateProjectFileBytes({ projectId: 'games' });
+await engine.restoreProjectFileBytes({ projectId: 'games' });
+await engine.backfillProjectFileBlobs({ projectId: 'games', dryRun: true });
+```
+
+Cleanup uses a tombstone + confirm pattern. `cleanupOrphanedFileBlobs` / `cleanupProjectFileUsage` tombstone rows (set `deletedAt`) and return `orphanHashes` — the content hashes whose last active row was just tombstoned. The engine never calls the storage provider; the consumer deletes the underlying objects and then confirms back so the tombstone rows are hard-deleted:
+
+```typescript
+const { orphanHashes } = await engine.cleanupOrphanedFileBlobs();
+
+const confirmed: string[] = [];
+for (const hash of orphanHashes) {
+  try {
+    await myStorage.deleteFile(hash);
+    confirmed.push(hash);
+  } catch (error) {
+    // leave tombstoned; getPendingStorageDeletions will surface it for retry
+  }
+}
+if (confirmed.length > 0) {
+  await engine.confirmStorageDeleted({ hashes: confirmed });
+}
+
+// Periodic reconcile pass for storage deletions that failed earlier:
+const pending = await engine.getPendingStorageDeletions({ limit: 500 });
+
+// Consumer-hard-deleted project:
+await engine.cleanupProjectFileUsage({ projectId: 'games' });
+
+// Forking a project: backfill the new projectId so it gets its own FileBlob rows
+await engine.backfillProjectFileBlobs({ projectId: 'games-fork' });
+```
+
+See [File Usage Tracking](docs/file-usage.md) for the full data model, write rules, scenario table, and storage-side deletion workflow.
+
 ## Data Model
 
 ```
-Branch (projectId: string)
+Branch (projectId: string, opaque)
   └── Revision (head, draft, start)
         └── Table (schema: JSON Schema)
               └── Row (data: JSON, hash, meta)
+                    └── FileBlob (via _FileBlobToRow M2M, unique per projectId+hash)
+
+ProjectFileUsage (per-project byte counter, keyed by opaque projectId)
 ```
 
 ## Documentation
@@ -74,6 +126,7 @@ Branch (projectId: string)
 - [API Reference](docs/api.md) — all `EngineApiService` methods with inputs/outputs
 - [Integration Guide](docs/integration.md) — how to use in your NestJS app
 - [Versioning System](docs/versioning.md) — data model, copy-on-write, commit/revert, invariants
+- [File Usage Tracking](docs/file-usage.md) — dedup-aware file byte counters, reconciliation API
 
 ## Development
 

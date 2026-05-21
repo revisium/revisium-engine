@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { sql, type Sql, type Row } from 'src/engine-prisma-types';
 import {
   OrderByConditions,
@@ -59,18 +60,26 @@ export async function getKeysetPagination<T>({
 
   if (pageData.after) {
     const decoded = decodeCursor(pageData.after);
-    if (
-      decoded?.sortHash === sortHash &&
-      decoded?.values.length === effectiveParts.length
-    ) {
-      keysetCondition = buildKeysetCondition(
-        effectiveParts,
-        decoded.values,
-        decoded.tiebreaker,
-        sql`r."versionId"`,
-      );
-      hasPreviousPage = true;
+    if (!decoded) {
+      throw new BadRequestException('Invalid "after" cursor: malformed cursor');
     }
+
+    if (
+      decoded.sortHash !== sortHash ||
+      decoded.values.length !== effectiveParts.length
+    ) {
+      throw new BadRequestException(
+        'Invalid "after" cursor: cursor does not match current sort',
+      );
+    }
+
+    keysetCondition = buildKeysetCondition(
+      effectiveParts,
+      decoded.values,
+      decoded.tiebreaker,
+      sql`r."versionId"`,
+    );
+    hasPreviousPage = true;
   }
 
   const take = pageData.first;

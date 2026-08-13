@@ -20,12 +20,12 @@ export class ValidateSchemaHandler implements ICommandHandler<ValidateSchemaComm
     protected readonly formulaValidationService: FormulaValidationService,
   ) {}
 
-  async execute({ schema }: ValidateSchemaCommand) {
+  async execute({ schema, tableId }: ValidateSchemaCommand) {
     const { result, errors } =
       this.jsonSchemaValidator.validateMetaSchema(schema);
 
     const store = this.tryToCreateJsonSchemaStore(schema as JsonSchema);
-    await this.validateForeignKeys(getForeignKeysFromSchema(store));
+    await this.validateForeignKeys(getForeignKeysFromSchema(store), tableId);
 
     if (!result) {
       const details = (errors ?? [])
@@ -51,14 +51,27 @@ export class ValidateSchemaHandler implements ICommandHandler<ValidateSchemaComm
     return this.jsonSchemaStore.create(schema);
   }
 
-  private async validateForeignKeys(tableForeignKeys: string[]) {
+  private async validateForeignKeys(
+    tableForeignKeys: string[],
+    knownTableId?: string,
+  ) {
     return Promise.all(
-      tableForeignKeys.map((tableForeignKey) =>
-        this.shareTransactionalQueries.findTableInRevisionOrThrow(
-          this.revisionRequestDto.id,
-          tableForeignKey,
-        ),
+      this.excludingTheTableItself(tableForeignKeys, knownTableId).map(
+        (tableForeignKey) =>
+          this.shareTransactionalQueries.findTableInRevisionOrThrow(
+            this.revisionRequestDto.id,
+            tableForeignKey,
+          ),
       ),
+    );
+  }
+
+  private excludingTheTableItself(
+    referencedTableIds: string[],
+    tableId?: string,
+  ) {
+    return referencedTableIds.filter(
+      (referencedTableId) => referencedTableId !== tableId,
     );
   }
 }

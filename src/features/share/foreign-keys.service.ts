@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { sql, join, type Sql, type Row } from 'src/engine-prisma-types';
+import { sql, join, empty, type Sql, type Row } from 'src/engine-prisma-types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 type CountResult = { count: string | number | bigint };
@@ -203,6 +203,7 @@ export class ForeignKeysService {
     tableVersionId: string,
     jsonPaths: string[],
     values: string[],
+    excludeRowIds: string[] = [],
   ) {
     if (jsonPaths.length === 0 || values.length === 0) {
       return 0;
@@ -234,6 +235,13 @@ export class ForeignKeysService {
     }
 
     const conditions = join(allConditions, ' OR ');
+    const excludeClause =
+      excludeRowIds.length === 0
+        ? empty
+        : sql`AND "id" NOT IN (${join(
+            excludeRowIds.map((id) => sql`${id}`),
+            ', ',
+          )})`;
 
     const result: CountResult[] = await this.transaction.$queryRaw`
         SELECT count(*)
@@ -241,7 +249,8 @@ export class ForeignKeysService {
         WHERE "versionId" IN (
           SELECT "A" FROM "_RowToTable" WHERE "B" = ${tableVersionId}
         )
-        AND (${conditions});
+        AND (${conditions})
+        ${excludeClause};
       `;
 
     return Number((result[0] as { count: unknown }).count);

@@ -1,14 +1,22 @@
+import {
+  getArraySchema,
+  getObjectSchema,
+  getStringSchema,
+} from '@revisium/schema-toolkit/mocks';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import {
   givenDraftProject,
   givenDraftProjectWithRows,
+  givenDraftProjectWithSchema,
 } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   createTestingModule,
   testSchema,
 } from 'src/features/draft/commands/handlers/__tests__/utils';
+import { CreateRowsCommand } from 'src/features/draft/commands/impl/create-rows.command';
 import { UpdateRowsCommand } from 'src/features/draft/commands/impl/update-rows.command';
 import { UpdateRowsHandlerReturnType } from 'src/features/draft/commands/types/update-rows.handler.types';
+import { ForeignKeyRowsNotFoundException } from 'src/features/share/exceptions';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 
 describe('UpdateRowsHandler', () => {
@@ -204,6 +212,92 @@ describe('UpdateRowsHandler', () => {
         isRestore: undefined,
       }),
     );
+  });
+
+  describe('itself foreign key', () => {
+    it('should throw ForeignKeyRowsNotFoundException for a missing itself target and leave Draft unchanged', async () => {
+      const tableId = 'nodes';
+      const schema = getObjectSchema({
+        refs: getArraySchema(getStringSchema({ foreignKey: tableId })),
+      });
+      const draft = await givenDraftProjectWithSchema({
+        prismaService: kit.prismaService,
+        tableId,
+        schema,
+        row: {
+          rowId: 'a',
+          data: { refs: [] },
+          draftData: { refs: [] },
+        },
+      });
+
+      const command = new UpdateRowsCommand({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rows: [{ rowId: 'a', data: { refs: ['missing'] } }],
+      });
+
+      await expect(runTransaction(command)).rejects.toThrow(
+        ForeignKeyRowsNotFoundException,
+      );
+
+      const row = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'a',
+      });
+      expect(row).not.toBeNull();
+      expect(row?.data).toStrictEqual({ refs: [] });
+    });
+
+    it('should allow a cycle once both rows exist', async () => {
+      const tableId = 'nodes';
+      const schema = getObjectSchema({
+        refs: getArraySchema(getStringSchema({ foreignKey: tableId })),
+      });
+      const draft = await givenDraftProjectWithSchema({
+        prismaService: kit.prismaService,
+        tableId,
+        schema,
+        row: {
+          rowId: 'a',
+          data: { refs: [] },
+          draftData: { refs: [] },
+        },
+      });
+
+      await kit.transactionService.run(async () =>
+        kit.commandBus.execute(
+          new CreateRowsCommand({
+            revisionId: draft.draftRevisionId,
+            tableId,
+            rows: [{ rowId: 'b', data: { refs: ['a'] } }],
+          }),
+        ),
+      );
+
+      const command = new UpdateRowsCommand({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rows: [{ rowId: 'a', data: { refs: ['b'] } }],
+      });
+
+      const result = await runTransaction(command);
+      expect(result.updatedRows).toHaveLength(1);
+
+      const rowA = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'a',
+      });
+      const rowB = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'b',
+      });
+      expect(rowA?.data).toStrictEqual({ refs: ['b'] });
+      expect(rowB?.data).toStrictEqual({ refs: ['a'] });
+    });
   });
 
   function runTransaction(

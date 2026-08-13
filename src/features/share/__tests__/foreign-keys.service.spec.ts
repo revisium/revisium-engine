@@ -291,6 +291,40 @@ describe('ForeignKeysService', () => {
       expect(count).toBe(0);
     });
 
+    it('should ignore rows whose id is in the removal set', async () => {
+      const tableVersionId = await createTableWithParentRefs();
+
+      const withoutExclusion = await transactionPrismaService.run(async () => {
+        return service.countRowsByPathsAndValuesInData(
+          tableVersionId,
+          ['$.parent'],
+          ['row-a'],
+        );
+      });
+      const excludingSelfRef = await transactionPrismaService.run(async () => {
+        return service.countRowsByPathsAndValuesInData(
+          tableVersionId,
+          ['$.parent'],
+          ['row-a'],
+          ['row-a'],
+        );
+      });
+      const excludingRemovalSet = await transactionPrismaService.run(
+        async () => {
+          return service.countRowsByPathsAndValuesInData(
+            tableVersionId,
+            ['$.parent'],
+            ['row-a'],
+            ['row-a', 'row-b'],
+          );
+        },
+      );
+
+      expect(withoutExclusion).toBe(2);
+      expect(excludingSelfRef).toBe(1);
+      expect(excludingRemovalSet).toBe(0);
+    });
+
     it('should throw when cross-product of paths and values exceeds max conditions', async () => {
       const tableVersionId = await createTableWithRows();
       const manyPaths = Array.from({ length: 50 }, (_, i) => `$.field${i}`);
@@ -684,6 +718,66 @@ describe('ForeignKeysService', () => {
           createdId: nanoid(),
           data,
           hash: hash(data),
+          schemaHash: 'test-schema-hash',
+          tables: {
+            connect: { versionId: tableVersionId },
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          publishedAt: new Date(),
+        },
+      });
+    }
+
+    return tableVersionId;
+  }
+
+  async function createTableWithParentRefs() {
+    const tableVersionId = nanoid();
+    const branchId = nanoid();
+    const revisionId = nanoid();
+
+    await prismaService.branch.create({
+      data: {
+        id: branchId,
+        name: `test-branch-${nanoid()}`,
+        isRoot: true,
+        projectId: nanoid(),
+        revisions: {
+          create: {
+            id: revisionId,
+            isStart: true,
+            isHead: true,
+            hasChanges: false,
+          },
+        },
+      },
+    });
+
+    await prismaService.table.create({
+      data: {
+        id: nanoid(),
+        createdId: nanoid(),
+        versionId: tableVersionId,
+        revisions: {
+          connect: { id: revisionId },
+        },
+      },
+    });
+
+    const rowsData = [
+      { id: 'row-a', data: { parent: 'row-a' } },
+      { id: 'row-b', data: { parent: 'row-a' } },
+    ];
+
+    for (const row of rowsData) {
+      await prismaService.row.create({
+        data: {
+          id: row.id,
+          versionId: nanoid(),
+          createdId: nanoid(),
+          data: row.data,
+          hash: hash(row.data),
           schemaHash: 'test-schema-hash',
           tables: {
             connect: { versionId: tableVersionId },

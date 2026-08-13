@@ -1,7 +1,14 @@
 import { nanoid } from 'nanoid';
+import {
+  getObjectSchema,
+  getStringSchema,
+} from '@revisium/schema-toolkit/mocks';
 import { prepareProject } from 'src/__tests__/utils/prepareProject';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
-import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
+import {
+  givenDraftProject,
+  givenDraftProjectWithSchema,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { RemoveTableCommand } from 'src/features/draft/commands/impl/remove-table.command';
 import { RemoveTableHandlerReturnType } from 'src/features/draft/commands/types/remove-table.handler.types';
@@ -104,6 +111,37 @@ describe('RemoveTableHandler', () => {
     await expect(runTransaction(command)).rejects.toThrow(
       `There are foreign keys between ${tableId} and [${anotherTableId}]`,
     );
+  });
+
+  it('should remove a table that only has itself foreign key', async () => {
+    const tableId = 'locations';
+    const schema = getObjectSchema({
+      parentId: getStringSchema({ foreignKey: tableId }),
+    });
+    const draft = await givenDraftProjectWithSchema({
+      prismaService: kit.prismaService,
+      tableId,
+      schema,
+      row: {
+        rowId: 'root',
+        data: { parentId: 'root' },
+        draftData: { parentId: 'root' },
+      },
+    });
+
+    const command = new RemoveTableCommand({
+      revisionId: draft.draftRevisionId,
+      tableId,
+    });
+
+    const result = await runTransaction(command);
+    expect(result.revisionId).toBe(draft.draftRevisionId);
+
+    const table = await kit.tableApiService.getTable({
+      revisionId: draft.draftRevisionId,
+      tableId,
+    });
+    expect(table).toBeNull();
   });
 
   it('should remove the table if conditions are met', async () => {

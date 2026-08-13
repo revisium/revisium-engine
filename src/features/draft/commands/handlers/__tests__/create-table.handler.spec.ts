@@ -73,8 +73,10 @@ describe('CreateTableHandler', () => {
     );
   });
 
-  it('should throw an error if the schema contains self-referencing foreignKey', async () => {
-    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
+  it('should create a table with a scalar self-referencing foreignKey', async () => {
+    const { draftRevisionId, branchId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -90,14 +92,23 @@ describe('CreateTableHandler', () => {
       },
     });
 
-    await expect(runTransaction(command)).rejects.toThrow(BadRequestException);
-    await expect(runTransaction(command)).rejects.toThrow(
-      'Self-referencing foreignKey is not supported',
-    );
+    const result = await runTransaction(command);
+
+    expect(result.branchId).toBe(branchId);
+    expect(result.revisionId).toBe(draftRevisionId);
+    expect(result.tableVersionId).toBeTruthy();
+
+    const table = await kit.tableApiService.getTable({
+      revisionId: draftRevisionId,
+      tableId: 'locations',
+    });
+    expect(table).not.toBeNull();
   });
 
-  it('should throw an error if the schema contains nested self-referencing foreignKey', async () => {
-    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
+  it('should create a table with a nested array of objects self-referencing foreignKey', async () => {
+    const { draftRevisionId, branchId } = await givenDraftProject(
+      kit.prismaService,
+    );
 
     const command = new CreateTableCommand({
       revisionId: draftRevisionId,
@@ -123,9 +134,81 @@ describe('CreateTableHandler', () => {
       },
     });
 
-    await expect(runTransaction(command)).rejects.toThrow(BadRequestException);
+    const result = await runTransaction(command);
+
+    expect(result.branchId).toBe(branchId);
+    expect(result.revisionId).toBe(draftRevisionId);
+    expect(result.tableVersionId).toBeTruthy();
+
+    const table = await kit.tableApiService.getTable({
+      revisionId: draftRevisionId,
+      tableId: 'nodes',
+    });
+    expect(table).not.toBeNull();
+  });
+
+  it('should create a table with a string array self-referencing foreignKey', async () => {
+    const { draftRevisionId, branchId } = await givenDraftProject(
+      kit.prismaService,
+    );
+
+    const command = new CreateTableCommand({
+      revisionId: draftRevisionId,
+      tableId: 'tags',
+      schema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', default: '' },
+          related: {
+            type: 'array',
+            items: { type: 'string', default: '', foreignKey: 'tags' },
+          },
+        },
+        additionalProperties: false,
+        required: ['name', 'related'],
+      },
+    });
+
+    const result = await runTransaction(command);
+
+    expect(result.branchId).toBe(branchId);
+    expect(result.revisionId).toBe(draftRevisionId);
+    expect(result.tableVersionId).toBeTruthy();
+
+    const table = await kit.tableApiService.getTable({
+      revisionId: draftRevisionId,
+      tableId: 'tags',
+    });
+    expect(table).not.toBeNull();
+  });
+
+  it('should still reject a missing other table when the schema also has itself foreign key', async () => {
+    const { draftRevisionId } = await givenDraftProject(kit.prismaService);
+
+    const command = new CreateTableCommand({
+      revisionId: draftRevisionId,
+      tableId: 'locations',
+      schema: {
+        type: 'object',
+        properties: {
+          parentId: {
+            type: 'string',
+            default: '',
+            foreignKey: 'locations',
+          },
+          categoryId: {
+            type: 'string',
+            default: '',
+            foreignKey: 'missing-categories',
+          },
+        },
+        additionalProperties: false,
+        required: ['parentId', 'categoryId'],
+      },
+    });
+
     await expect(runTransaction(command)).rejects.toThrow(
-      'Self-referencing foreignKey is not supported',
+      'A table with this name does not exist in the revision',
     );
   });
 

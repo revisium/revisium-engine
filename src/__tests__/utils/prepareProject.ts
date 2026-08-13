@@ -155,6 +155,7 @@ export async function prepareTableWithSchema({
   schemaTableVersionId,
   migrationTableVersionId,
   schema,
+  tableId: requestedTableId,
 }: {
   prismaService: PrismaService;
   headRevisionId: string;
@@ -162,10 +163,11 @@ export async function prepareTableWithSchema({
   schemaTableVersionId: string;
   migrationTableVersionId: string;
   schema: JsonSchema;
+  tableId?: string;
 }): Promise<TableWithSchemaResult> {
   const schemaRowVersionId = nanoid();
   const migrationRowVersionId = nanoid();
-  const tableId = `table-${nanoid()}`;
+  const tableId = requestedTableId ?? `table-${nanoid()}`;
   const createdIdForTableInSchemaTable = `table-${nanoid()}`;
   const tableCreatedId = nanoid();
   const headTableVersionId = nanoid();

@@ -28,11 +28,10 @@ import {
 } from 'src/features/share/views-migration.service';
 import { tableViewsSchema } from 'src/features/share/schema/table-views-schema';
 import { TableViewsData } from 'src/features/views/types';
-import { SchemaTable, traverseStore } from '@revisium/schema-toolkit/lib';
+import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import {
   JsonPatch,
   JsonSchema,
-  JsonSchemaTypeName,
   JsonValue,
 } from '@revisium/schema-toolkit/types';
 
@@ -60,7 +59,7 @@ export class UpdateTableHandler extends DraftHandler<
       throw new BadRequestException('Invalid length of patches');
     }
 
-    await this.validatePatchSchema(data.patches);
+    await this.validatePatchSchema(data.tableId, data.patches);
   }
 
   protected async handler({
@@ -76,10 +75,6 @@ export class UpdateTableHandler extends DraftHandler<
         revisionId,
         tableId,
       );
-
-    if (this.checkItselfForeignKey(data.tableId, data.patches)) {
-      throw new BadRequestException('Itself foreign key is not supported yet');
-    }
 
     if (table.system) {
       throw new BadRequestException('Table is a system table');
@@ -127,6 +122,7 @@ export class UpdateTableHandler extends DraftHandler<
 
     await this.draftTransactionalCommands.validateSchema(
       schemaTable.getSchema(),
+      data.tableId,
     );
 
     const patchedRows = new Map(
@@ -165,7 +161,7 @@ export class UpdateTableHandler extends DraftHandler<
       });
   }
 
-  private async validatePatchSchema(patches: JsonPatch[]) {
+  private async validatePatchSchema(tableId: string, patches: JsonPatch[]) {
     const { result, errors } =
       this.jsonSchemaValidator.validateJsonPatchSchema(patches);
 
@@ -180,7 +176,10 @@ export class UpdateTableHandler extends DraftHandler<
 
     for (const patch of patches) {
       if (patch.op === 'replace' || patch.op === 'add') {
-        await this.draftTransactionalCommands.validateSchema(patch.value);
+        await this.draftTransactionalCommands.validateSchema(
+          patch.value,
+          tableId,
+        );
       }
     }
   }
@@ -227,30 +226,6 @@ export class UpdateTableHandler extends DraftHandler<
         schemaHash: data.schemaHash,
       }),
     );
-  }
-
-  private checkItselfForeignKey(tableId: string, patches: JsonPatch[]) {
-    for (const patch of patches) {
-      if (patch.op === 'replace' || patch.op === 'add') {
-        let isThereItselfForeignKey = false;
-
-        const schemaStore = this.jsonSchemaStore.create(patch.value);
-        traverseStore(schemaStore, (item) => {
-          if (
-            item.type === JsonSchemaTypeName.String &&
-            item.foreignKey === tableId
-          ) {
-            isThereItselfForeignKey = true;
-          }
-        });
-
-        if (isThereItselfForeignKey) {
-          return true;
-        }
-      }
-    }
-
-    return false;
   }
 
   private async migrateViews(

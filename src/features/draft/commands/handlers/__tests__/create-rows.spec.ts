@@ -1,9 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
+import {
+  getArraySchema,
+  getObjectSchema,
+  getStringSchema,
+} from '@revisium/schema-toolkit/mocks';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
-import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
+import {
+  givenDraftProject,
+  givenDraftProjectWithSchema,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import { CreateRowsCommand } from 'src/features/draft/commands/impl/create-rows.command';
 import { CreateRowsHandlerReturnType } from 'src/features/draft/commands/types/create-rows.handler.types';
+import { ForeignKeyRowsNotFoundException } from 'src/features/share/exceptions';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 
 describe('CreateRowsHandler', () => {
@@ -210,6 +219,119 @@ describe('CreateRowsHandler', () => {
         isRestore: undefined,
       }),
     );
+  });
+
+  describe('itself foreign key', () => {
+    it('should throw ForeignKeyRowsNotFoundException for a missing itself target and leave Draft unchanged', async () => {
+      const tableId = 'locations';
+      const schema = getObjectSchema({
+        parentId: getStringSchema({ foreignKey: tableId }),
+      });
+      const draft = await givenDraftProjectWithSchema({
+        prismaService: kit.prismaService,
+        tableId,
+        schema,
+        row: {
+          rowId: 'root',
+          data: { parentId: 'root' },
+          draftData: { parentId: 'root' },
+        },
+      });
+
+      const command = new CreateRowsCommand({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rows: [{ rowId: 'child', data: { parentId: 'missing' } }],
+      });
+
+      await expect(runTransaction(command)).rejects.toThrow(
+        ForeignKeyRowsNotFoundException,
+      );
+
+      const createdRow = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'child',
+      });
+      expect(createdRow).toBeNull();
+
+      const rootRow = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'root',
+      });
+      expect(rootRow).not.toBeNull();
+      expect(rootRow?.data).toStrictEqual({ parentId: 'root' });
+    });
+
+    it('should throw ForeignKeyRowsNotFoundException for an empty string itself foreign key', async () => {
+      const tableId = 'locations';
+      const schema = getObjectSchema({
+        parentId: getStringSchema({ foreignKey: tableId }),
+      });
+      const draft = await givenDraftProjectWithSchema({
+        prismaService: kit.prismaService,
+        tableId,
+        schema,
+        row: {
+          rowId: 'root',
+          data: { parentId: 'root' },
+          draftData: { parentId: 'root' },
+        },
+      });
+
+      const command = new CreateRowsCommand({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rows: [{ rowId: 'child', data: { parentId: '' } }],
+      });
+
+      await expect(runTransaction(command)).rejects.toThrow(
+        ForeignKeyRowsNotFoundException,
+      );
+
+      const createdRow = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'child',
+      });
+      expect(createdRow).toBeNull();
+    });
+
+    it('should create a row with an empty array of itself foreign keys', async () => {
+      const tableId = 'nodes';
+      const schema = getObjectSchema({
+        refs: getArraySchema(getStringSchema({ foreignKey: tableId })),
+      });
+      const draft = await givenDraftProjectWithSchema({
+        prismaService: kit.prismaService,
+        tableId,
+        schema,
+        row: {
+          rowId: 'root',
+          data: { refs: [] },
+          draftData: { refs: [] },
+        },
+      });
+
+      const command = new CreateRowsCommand({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rows: [{ rowId: 'child', data: { refs: [] } }],
+      });
+
+      const result = await runTransaction(command);
+
+      expect(result.createdRows).toHaveLength(1);
+
+      const row = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'child',
+      });
+      expect(row).not.toBeNull();
+      expect(row?.data).toStrictEqual({ refs: [] });
+    });
   });
 
   function runTransaction(

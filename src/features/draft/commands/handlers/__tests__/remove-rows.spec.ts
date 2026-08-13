@@ -1,9 +1,20 @@
 import { nanoid } from 'nanoid';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import {
+  getArraySchema,
+  getObjectSchema,
+  getStringSchema,
+} from '@revisium/schema-toolkit/mocks';
+import {
+  prepareBranch,
+  prepareProject,
+  prepareRow,
+  prepareTableWithSchema,
+} from 'src/__tests__/utils/prepareProject';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import {
   givenDraftProject,
   givenDraftProjectWithRows,
+  givenDraftProjectWithSchema,
 } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import {
   createTestingModule,
@@ -369,6 +380,216 @@ describe('RemoveRowsHandler', () => {
       rowId,
     });
     expect(row).toBeNull();
+  });
+
+  describe('itself foreign key', () => {
+    it('should throw when another remaining row references the target', async () => {
+      const tableId = 'nodes';
+      const schema = getObjectSchema({
+        refs: getArraySchema(getStringSchema({ foreignKey: tableId })),
+      });
+      const draft = await givenDraftProjectWithSchema({
+        prismaService: kit.prismaService,
+        tableId,
+        schema,
+        row: {
+          rowId: 'a',
+          data: { refs: [] },
+          draftData: { refs: [] },
+        },
+      });
+      await prepareRow({
+        prismaService: kit.prismaService,
+        headTableVersionId: draft.headTableVersionId,
+        draftTableVersionId: draft.draftTableVersionId,
+        rowId: 'b',
+        data: { refs: ['a'] },
+        dataDraft: { refs: ['a'] },
+        schema,
+      });
+
+      const command = new RemoveRowsCommand({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowIds: ['a'],
+      });
+
+      await expect(runTransaction(command)).rejects.toThrow(
+        'The row is related to other rows',
+      );
+
+      const rowA = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'a',
+      });
+      expect(rowA).not.toBeNull();
+    });
+
+    it('should remove a mutually referencing set together', async () => {
+      const tableId = 'nodes';
+      const schema = getObjectSchema({
+        refs: getArraySchema(getStringSchema({ foreignKey: tableId })),
+      });
+      const draft = await givenDraftProjectWithSchema({
+        prismaService: kit.prismaService,
+        tableId,
+        schema,
+        row: {
+          rowId: 'a',
+          data: { refs: ['b'] },
+          draftData: { refs: ['b'] },
+        },
+      });
+      await prepareRow({
+        prismaService: kit.prismaService,
+        headTableVersionId: draft.headTableVersionId,
+        draftTableVersionId: draft.draftTableVersionId,
+        rowId: 'b',
+        data: { refs: ['a'] },
+        dataDraft: { refs: ['a'] },
+        schema,
+      });
+
+      const command = new RemoveRowsCommand({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowIds: ['a', 'b'],
+      });
+
+      const result = await runTransaction(command);
+      expect(result.tableVersionId).toBeTruthy();
+
+      const rowA = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'a',
+      });
+      const rowB = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'b',
+      });
+      expect(rowA).toBeNull();
+      expect(rowB).toBeNull();
+    });
+
+    it('should remove a row that only references itself', async () => {
+      const tableId = 'nodes';
+      const schema = getObjectSchema({
+        refs: getArraySchema(getStringSchema({ foreignKey: tableId })),
+      });
+      const draft = await givenDraftProjectWithSchema({
+        prismaService: kit.prismaService,
+        tableId,
+        schema,
+        row: {
+          rowId: 'a',
+          data: { refs: ['a'] },
+          draftData: { refs: ['a'] },
+        },
+      });
+
+      const command = new RemoveRowsCommand({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowIds: ['a'],
+      });
+
+      const result = await runTransaction(command);
+      expect(result.tableVersionId).toBeTruthy();
+
+      const rowA = await kit.rowApiService.getRow({
+        revisionId: draft.draftRevisionId,
+        tableId,
+        rowId: 'a',
+      });
+      expect(rowA).toBeNull();
+    });
+
+    it('should not block removal when a remaining row matches the id only on a foreign key to another table', async () => {
+      const peopleTableId = 'people';
+      const tasksTableId = 'tasks';
+      const peopleSchema = getObjectSchema({
+        name: getStringSchema(),
+      });
+      const tasksSchema = getObjectSchema({
+        blockedBy: getArraySchema(
+          getStringSchema({ foreignKey: tasksTableId }),
+        ),
+        assignee: getStringSchema({ foreignKey: peopleTableId }),
+      });
+
+      const branch = await prepareBranch(kit.prismaService);
+      const people = await prepareTableWithSchema({
+        prismaService: kit.prismaService,
+        headRevisionId: branch.headRevisionId,
+        draftRevisionId: branch.draftRevisionId,
+        schemaTableVersionId: branch.schemaTableVersionId,
+        migrationTableVersionId: branch.migrationTableVersionId,
+        tableId: peopleTableId,
+        schema: peopleSchema,
+      });
+      await prepareRow({
+        prismaService: kit.prismaService,
+        headTableVersionId: people.headTableVersionId,
+        draftTableVersionId: people.draftTableVersionId,
+        rowId: 'alex',
+        data: { name: 'Alex' },
+        dataDraft: { name: 'Alex' },
+        schema: peopleSchema,
+      });
+
+      const tasks = await prepareTableWithSchema({
+        prismaService: kit.prismaService,
+        headRevisionId: branch.headRevisionId,
+        draftRevisionId: branch.draftRevisionId,
+        schemaTableVersionId: branch.schemaTableVersionId,
+        migrationTableVersionId: branch.migrationTableVersionId,
+        tableId: tasksTableId,
+        schema: tasksSchema,
+      });
+      await prepareRow({
+        prismaService: kit.prismaService,
+        headTableVersionId: tasks.headTableVersionId,
+        draftTableVersionId: tasks.draftTableVersionId,
+        rowId: 'alex',
+        data: { blockedBy: [], assignee: 'alex' },
+        dataDraft: { blockedBy: [], assignee: 'alex' },
+        schema: tasksSchema,
+      });
+      await prepareRow({
+        prismaService: kit.prismaService,
+        headTableVersionId: tasks.headTableVersionId,
+        draftTableVersionId: tasks.draftTableVersionId,
+        rowId: 'task-2',
+        data: { blockedBy: [], assignee: 'alex' },
+        dataDraft: { blockedBy: [], assignee: 'alex' },
+        schema: tasksSchema,
+      });
+
+      const command = new RemoveRowsCommand({
+        revisionId: branch.draftRevisionId,
+        tableId: tasksTableId,
+        rowIds: ['alex'],
+      });
+
+      const result = await runTransaction(command);
+      expect(result.tableVersionId).toBeTruthy();
+
+      const deletedTask = await kit.rowApiService.getRow({
+        revisionId: branch.draftRevisionId,
+        tableId: tasksTableId,
+        rowId: 'alex',
+      });
+      const remainingTask = await kit.rowApiService.getRow({
+        revisionId: branch.draftRevisionId,
+        tableId: tasksTableId,
+        rowId: 'task-2',
+      });
+      expect(deletedTask).toBeNull();
+      expect(remainingTask).not.toBeNull();
+    });
   });
 
   it('should keep draft-only table when all rows removed (not in head)', async () => {

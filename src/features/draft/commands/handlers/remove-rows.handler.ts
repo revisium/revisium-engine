@@ -100,16 +100,22 @@ export class RemoveRowsHandler extends DraftHandler<
       const paths: string[] = [];
 
       traverseStore(schemaStore, (item) => {
-        if (item.type === JsonSchemaTypeName.String && item.foreignKey) {
+        if (
+          item.type === JsonSchemaTypeName.String &&
+          item.foreignKey === data.tableId
+        ) {
           paths.push(getDBJsonPathByJsonSchemaStore(item));
         }
       });
 
+      const rowIdsBeingRemoved =
+        foreignKeyTableId === data.tableId ? data.rowIds : [];
       const count =
         await this.foreignKeysService.countRowsByPathsAndValuesInData(
           foreignKeyTable.versionId,
           paths,
           data.rowIds,
+          rowIdsBeingRemoved,
         );
 
       if (count) {

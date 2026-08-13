@@ -38,9 +38,9 @@ export class DraftTransactionalCommands {
     >(new ValidateDataCommand(data));
   }
 
-  public async validateSchema(schema: InputJsonValue) {
+  public async validateSchema(schema: InputJsonValue, tableId?: string) {
     return this.commandBus.execute<ValidateSchemaCommand>(
-      new ValidateSchemaCommand(schema),
+      new ValidateSchemaCommand(schema, tableId),
     );
   }
 }

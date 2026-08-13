@@ -157,18 +157,63 @@ describe('UpdateTableHandler', () => {
     await expect(runTransaction(command)).rejects.toThrow('Table not found');
   });
 
-  it('should throw an error if itself foreign keys are found in checkItselfForeignKey', async () => {
+  it('should allow adding itself foreign key to an empty table', async () => {
+    const branchData = await prepareBranch(kit.prismaService);
+    const {
+      headRevisionId,
+      draftRevisionId,
+      schemaTableVersionId,
+      migrationTableVersionId,
+    } = branchData;
+
+    const emptyTableResult = await prepareTableWithSchema({
+      prismaService: kit.prismaService,
+      headRevisionId,
+      draftRevisionId,
+      schemaTableVersionId,
+      migrationTableVersionId,
+      schema: {
+        type: JsonSchemaTypeName.Object,
+        required: ['name'],
+        properties: {
+          name: { type: JsonSchemaTypeName.String, default: '' },
+        },
+        additionalProperties: false,
+      },
+    });
+
+    const command = new UpdateTableCommand({
+      revisionId: draftRevisionId,
+      tableId: emptyTableResult.tableId,
+      patches: [
+        {
+          op: 'add',
+          path: '/properties/parentId',
+          value: {
+            type: JsonSchemaTypeName.String,
+            foreignKey: emptyTableResult.tableId,
+            default: '',
+          },
+        },
+      ],
+    });
+
+    const result = await runTransaction(command);
+    expect(result.tableVersionId).toBeTruthy();
+  });
+
+  it('should reject adding itself scalar foreign key when the table already has rows', async () => {
     const { draftRevisionId, tableId } = await givenDraftProject(
       kit.prismaService,
     );
 
     const command = new UpdateTableCommand({
       revisionId: draftRevisionId,
-      tableId: tableId,
+      tableId,
       patches: [
         {
-          op: 'replace',
-          path: '/properties/ver',
+          op: 'add',
+          path: '/properties/parentId',
           value: {
             type: JsonSchemaTypeName.String,
             foreignKey: tableId,
@@ -179,8 +224,47 @@ describe('UpdateTableHandler', () => {
     });
 
     await expect(runTransaction(command)).rejects.toThrow(
-      'Itself foreign key is not supported yet',
+      /Foreign key error.*not found in table/i,
     );
+  });
+
+  it('should allow adding itself array foreign key when the table already has rows', async () => {
+    const { draftRevisionId, tableId, rowId } = await givenDraftProject(
+      kit.prismaService,
+    );
+
+    const rowBefore = await kit.rowApiService.getRow({
+      revisionId: draftRevisionId,
+      tableId,
+      rowId,
+    });
+    expect(rowBefore?.data).toStrictEqual({ ver: 2 });
+
+    const command = new UpdateTableCommand({
+      revisionId: draftRevisionId,
+      tableId,
+      patches: [
+        {
+          op: 'add',
+          path: '/properties/refs',
+          value: getArraySchema({
+            type: JsonSchemaTypeName.String,
+            foreignKey: tableId,
+            default: '',
+          }),
+        },
+      ],
+    });
+
+    const result = await runTransaction(command);
+    expect(result.tableVersionId).toBeTruthy();
+
+    const rowAfter = await kit.rowApiService.getRow({
+      revisionId: draftRevisionId,
+      tableId,
+      rowId,
+    });
+    expect(rowAfter?.data).toStrictEqual({ ver: 2, refs: [] });
   });
 
   it('should throw an error if the table is a system table', async () => {

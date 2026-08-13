@@ -36,6 +36,7 @@ interface GivenDraftProjectWithSchemaOptions {
   prismaService: PrismaService;
   schema: JsonSchema;
   row?: ExtraRowInput;
+  tableId?: string;
 }
 
 export async function givenDraftProject(
@@ -63,6 +64,7 @@ export async function givenDraftProjectWithSchema({
   prismaService,
   schema,
   row,
+  tableId,
 }: GivenDraftProjectWithSchemaOptions): Promise<DraftProjectScenario> {
   const branch = await prepareBranch(prismaService);
   const table = await prepareTableWithSchema({
@@ -72,6 +74,7 @@ export async function givenDraftProjectWithSchema({
     schemaTableVersionId: branch.schemaTableVersionId,
     migrationTableVersionId: branch.migrationTableVersionId,
     schema,
+    tableId,
   });
   const createdRow = await prepareRow({
     prismaService,

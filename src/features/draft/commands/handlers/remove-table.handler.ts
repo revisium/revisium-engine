@@ -94,17 +94,36 @@ export class RemoveTableHandler extends DraftHandler<
         SystemTables.Schema,
       );
 
-    const rows = await this.foreignKeysService.findRowsByKeyValueInData(
+    const otherTables = await this.findOtherTablesReferencing(
       schemaTable.versionId,
-      CustomSchemeKeywords.ForeignKey,
       data.tableId,
     );
 
-    if (rows.length) {
+    if (otherTables.length) {
       throw new BadRequestException(
-        `There are foreign keys between ${data.tableId} and [${rows.map((row) => row.id).join(', ')}]`,
+        `There are foreign keys between ${data.tableId} and [${otherTables.map((row) => row.id).join(', ')}]`,
       );
     }
+  }
+
+  private async findOtherTablesReferencing(
+    schemaTableVersionId: string,
+    tableId: string,
+  ) {
+    const tables = await this.foreignKeysService.findRowsByKeyValueInData(
+      schemaTableVersionId,
+      CustomSchemeKeywords.ForeignKey,
+      tableId,
+    );
+
+    return this.excludingTheTableItself(tables, tableId);
+  }
+
+  private excludingTheTableItself<T extends { id: string }>(
+    tables: T[],
+    tableId: string,
+  ) {
+    return tables.filter((table) => table.id !== tableId);
   }
 
   private createRemoveMigration(data: RemoveTableCommand['data']) {

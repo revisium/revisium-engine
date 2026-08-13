@@ -1,7 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
-import { prepareProject } from 'src/__tests__/utils/prepareProject';
+import {
+  getArraySchema,
+  getObjectSchema,
+  getStringSchema,
+} from '@revisium/schema-toolkit/mocks';
+import { prepareProject, prepareRow } from 'src/__tests__/utils/prepareProject';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
-import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
+import {
+  givenDraftProject,
+  givenDraftProjectWithSchema,
+} from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createTestingModule } from 'src/features/draft/commands/handlers/__tests__/utils';
 import {
   RenameRowCommand,
@@ -124,6 +132,56 @@ describe('RenameRowHandler', () => {
     });
     expect(newRow).not.toBeNull();
     expect(newRow?.id).toBe(nextRowId);
+  });
+
+  it('should update itself foreign key references when the target is renamed', async () => {
+    const tableId = 'nodes';
+    const schema = getObjectSchema({
+      refs: getArraySchema(getStringSchema({ foreignKey: tableId })),
+    });
+    const draft = await givenDraftProjectWithSchema({
+      prismaService: kit.prismaService,
+      tableId,
+      schema,
+      row: {
+        rowId: 'a',
+        data: { refs: [] },
+        draftData: { refs: [] },
+      },
+    });
+    await prepareRow({
+      prismaService: kit.prismaService,
+      headTableVersionId: draft.headTableVersionId,
+      draftTableVersionId: draft.draftTableVersionId,
+      rowId: 'b',
+      data: { refs: ['a'] },
+      dataDraft: { refs: ['a'] },
+      schema,
+    });
+
+    const command = new RenameRowCommand({
+      revisionId: draft.draftRevisionId,
+      tableId,
+      rowId: 'a',
+      nextRowId,
+    });
+
+    await runTransaction(command);
+
+    const renamed = await kit.rowApiService.getRow({
+      revisionId: draft.draftRevisionId,
+      tableId,
+      rowId: nextRowId,
+    });
+    expect(renamed).not.toBeNull();
+
+    const referringRow = await kit.rowApiService.getRow({
+      revisionId: draft.draftRevisionId,
+      tableId,
+      rowId: 'b',
+    });
+    expect(referringRow).not.toBeNull();
+    expect(referringRow?.data).toStrictEqual({ refs: [nextRowId] });
   });
 
   it('should update the linked row', async () => {

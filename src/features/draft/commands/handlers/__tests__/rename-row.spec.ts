@@ -4,7 +4,12 @@ import {
   getObjectSchema,
   getStringSchema,
 } from '@revisium/schema-toolkit/mocks';
-import { prepareProject, prepareRow } from 'src/__tests__/utils/prepareProject';
+import {
+  prepareBranch,
+  prepareProject,
+  prepareRow,
+  prepareTableWithSchema,
+} from 'src/__tests__/utils/prepareProject';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import {
   givenDraftProject,
@@ -256,6 +261,97 @@ describe('RenameRowHandler', () => {
     });
 
     expect(updatedRow.publishedAt).toStrictEqual(originalPublishedAt);
+  });
+
+  it('should update a same-table foreign key even when many other fields collide on the old id', async () => {
+    const peopleTableId = 'people';
+    const tasksTableId = 'tasks';
+    const peopleSchema = getObjectSchema({
+      name: getStringSchema(),
+    });
+    const tasksSchema = getObjectSchema({
+      blockedBy: getArraySchema(getStringSchema({ foreignKey: tasksTableId })),
+      assignee: getStringSchema({ foreignKey: peopleTableId }),
+    });
+
+    const branch = await prepareBranch(kit.prismaService);
+    const people = await prepareTableWithSchema({
+      prismaService: kit.prismaService,
+      headRevisionId: branch.headRevisionId,
+      draftRevisionId: branch.draftRevisionId,
+      schemaTableVersionId: branch.schemaTableVersionId,
+      migrationTableVersionId: branch.migrationTableVersionId,
+      tableId: peopleTableId,
+      schema: peopleSchema,
+    });
+    await prepareRow({
+      prismaService: kit.prismaService,
+      headTableVersionId: people.headTableVersionId,
+      draftTableVersionId: people.draftTableVersionId,
+      rowId: 'alex',
+      data: { name: 'Alex' },
+      dataDraft: { name: 'Alex' },
+      schema: peopleSchema,
+    });
+
+    const tasks = await prepareTableWithSchema({
+      prismaService: kit.prismaService,
+      headRevisionId: branch.headRevisionId,
+      draftRevisionId: branch.draftRevisionId,
+      schemaTableVersionId: branch.schemaTableVersionId,
+      migrationTableVersionId: branch.migrationTableVersionId,
+      tableId: tasksTableId,
+      schema: tasksSchema,
+    });
+    await prepareRow({
+      prismaService: kit.prismaService,
+      headTableVersionId: tasks.headTableVersionId,
+      draftTableVersionId: tasks.draftTableVersionId,
+      rowId: 'alex',
+      data: { blockedBy: [], assignee: 'alex' },
+      dataDraft: { blockedBy: [], assignee: 'alex' },
+      schema: tasksSchema,
+    });
+    for (let index = 0; index < 99; index += 1) {
+      const rowId = `b-${String(index).padStart(2, '0')}`;
+      await prepareRow({
+        prismaService: kit.prismaService,
+        headTableVersionId: tasks.headTableVersionId,
+        draftTableVersionId: tasks.draftTableVersionId,
+        rowId,
+        data: { blockedBy: ['alex'], assignee: '' },
+        dataDraft: { blockedBy: ['alex'], assignee: '' },
+        schema: tasksSchema,
+      });
+    }
+    await prepareRow({
+      prismaService: kit.prismaService,
+      headTableVersionId: tasks.headTableVersionId,
+      draftTableVersionId: tasks.draftTableVersionId,
+      rowId: 'z-real',
+      data: { blockedBy: [], assignee: 'alex' },
+      dataDraft: { blockedBy: [], assignee: 'alex' },
+      schema: tasksSchema,
+    });
+
+    const command = new RenameRowCommand({
+      revisionId: branch.draftRevisionId,
+      tableId: peopleTableId,
+      rowId: 'alex',
+      nextRowId: 'alex2',
+    });
+
+    await runTransaction(command);
+
+    const updated = await kit.rowApiService.getRow({
+      revisionId: branch.draftRevisionId,
+      tableId: tasksTableId,
+      rowId: 'z-real',
+    });
+    expect(updated?.data).toStrictEqual({
+      blockedBy: [],
+      assignee: 'alex2',
+    });
   });
 
   function runTransaction(

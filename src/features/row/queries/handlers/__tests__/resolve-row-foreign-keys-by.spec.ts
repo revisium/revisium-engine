@@ -6,7 +6,10 @@ import {
   ResolveRowForeignKeysByReturnType,
 } from 'src/features/row/queries/impl';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-import { givenForeignKeysByScenario } from './row-query.spec-helper';
+import {
+  givenForeignKeysByScenario,
+  givenMixedPeopleTasksScenario,
+} from './row-query.spec-helper';
 
 describe('ResolveRowForeignKeysByHandler', () => {
   it('should compute rows', async () => {
@@ -28,6 +31,38 @@ describe('ResolveRowForeignKeysByHandler', () => {
     const resultData = (result.edges[0] as (typeof result.edges)[number]).node
       .data as { file: { url: string } };
     expect(resultData.file.url).toBeTruthy();
+  });
+
+  it('should not treat a foreign key to another table as an incoming reference', async () => {
+    const { draftRevisionId, peopleTableId, tasksTableId } =
+      await givenMixedPeopleTasksScenario(kit);
+
+    const taskIncoming = await runTransaction(
+      new ResolveRowForeignKeysByQuery({
+        revisionId: draftRevisionId,
+        tableId: tasksTableId,
+        rowId: 'alex',
+        first: 100,
+        foreignKeyByTableId: tasksTableId,
+      }),
+    );
+    const personIncoming = await runTransaction(
+      new ResolveRowForeignKeysByQuery({
+        revisionId: draftRevisionId,
+        tableId: peopleTableId,
+        rowId: 'alex',
+        first: 100,
+        foreignKeyByTableId: tasksTableId,
+      }),
+    );
+
+    expect(taskIncoming.totalCount).toEqual(0);
+    expect(taskIncoming.edges).toHaveLength(0);
+    expect(personIncoming.totalCount).toEqual(2);
+    expect(personIncoming.edges.map((edge) => edge.node.id).sort()).toEqual([
+      'alex',
+      'task-2',
+    ]);
   });
 
   function runTransaction(

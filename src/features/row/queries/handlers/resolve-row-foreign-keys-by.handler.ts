@@ -9,11 +9,7 @@ import {
 import { getOffsetPagination } from 'src/features/share/commands/utils/getOffsetPagination';
 import { ForeignKeysService } from 'src/features/share/foreign-keys.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
-import {
-  getDBJsonPathByJsonSchemaStore,
-  traverseStore,
-} from '@revisium/schema-toolkit/lib';
-import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
+import { getForeignKeyJsonPaths } from 'src/features/share/utils/get-foreign-key-json-paths';
 
 @QueryHandler(ResolveRowForeignKeysByQuery)
 export class ResolveRowForeignKeysByHandler implements IQueryHandler<
@@ -44,6 +40,7 @@ export class ResolveRowForeignKeysByHandler implements IQueryHandler<
     const jsonPaths = await this.getJsonPaths(
       data.revisionId,
       data.foreignKeyByTableId,
+      data.tableId,
     );
 
     const foreignKeyTable =
@@ -82,24 +79,20 @@ export class ResolveRowForeignKeysByHandler implements IQueryHandler<
     });
   }
 
-  private async getJsonPaths(revisionId: string, foreignKeyTableId: string) {
-    // NOTE: consider moving to shared
+  private async getJsonPaths(
+    revisionId: string,
+    foreignKeyTableId: string,
+    targetTableId: string,
+  ) {
     const { schema } = await this.shareTransactionalQueries.getTableSchema(
       revisionId,
       foreignKeyTableId,
     );
 
-    const schemaStore = this.jsonSchemaStore.create(schema);
-
-    const jsonPaths: string[] = [];
-
-    traverseStore(schemaStore, (item) => {
-      if (item.type === JsonSchemaTypeName.String && item.foreignKey) {
-        jsonPaths.push(getDBJsonPathByJsonSchemaStore(item));
-      }
-    });
-
-    return jsonPaths;
+    return getForeignKeyJsonPaths(
+      this.jsonSchemaStore.create(schema),
+      targetTableId,
+    );
   }
 
   async getRows(

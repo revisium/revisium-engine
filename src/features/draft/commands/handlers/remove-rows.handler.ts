@@ -12,11 +12,7 @@ import { ForeignKeysService } from 'src/features/share/foreign-keys.service';
 import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import {
-  getDBJsonPathByJsonSchemaStore,
-  traverseStore,
-} from '@revisium/schema-toolkit/lib';
-import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
+import { getForeignKeyJsonPaths } from 'src/features/share/utils/get-foreign-key-json-paths';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
 
 @CommandHandler(RemoveRowsCommand)
@@ -96,17 +92,7 @@ export class RemoveRowsHandler extends DraftHandler<
       );
 
       const schemaStore = this.jsonSchemaStore.create(schema);
-
-      const paths: string[] = [];
-
-      traverseStore(schemaStore, (item) => {
-        if (
-          item.type === JsonSchemaTypeName.String &&
-          item.foreignKey === data.tableId
-        ) {
-          paths.push(getDBJsonPathByJsonSchemaStore(item));
-        }
-      });
+      const paths = getForeignKeyJsonPaths(schemaStore, data.tableId);
 
       const rowIdsBeingRemoved =
         foreignKeyTableId === data.tableId ? data.rowIds : [];

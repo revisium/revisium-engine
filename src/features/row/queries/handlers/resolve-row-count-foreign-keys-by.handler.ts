@@ -6,11 +6,7 @@ import { ForeignKeysService } from 'src/features/share/foreign-keys.service';
 import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import {
-  getDBJsonPathByJsonSchemaStore,
-  traverseStore,
-} from '@revisium/schema-toolkit/lib';
-import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
+import { getForeignKeyJsonPaths } from 'src/features/share/utils/get-foreign-key-json-paths';
 
 @QueryHandler(ResolveRowCountForeignKeysByQuery)
 export class ResolveRowCountForeignKeysByHandler implements IQueryHandler<
@@ -56,6 +52,7 @@ export class ResolveRowCountForeignKeysByHandler implements IQueryHandler<
         this.getCountByForeignKeyTableId(
           data.revisionId,
           data.rowId,
+          data.tableId,
           foreignKeyTableId,
         ),
       ),
@@ -69,10 +66,9 @@ export class ResolveRowCountForeignKeysByHandler implements IQueryHandler<
   async getCountByForeignKeyTableId(
     revisionId: string,
     rowId: string,
+    targetTableId: string,
     foreignKeyTableId: string,
   ) {
-    // NOTE: consider moving to shared
-
     const foreignKeyTable =
       await this.shareTransactionalQueries.findTableInRevisionOrThrow(
         revisionId,
@@ -84,19 +80,12 @@ export class ResolveRowCountForeignKeysByHandler implements IQueryHandler<
       foreignKeyTableId,
     );
 
-    const schemaStore = this.jsonSchemaStore.create(schema);
-
-    const paths: string[] = [];
-
-    traverseStore(schemaStore, (item) => {
-      if (item.type === JsonSchemaTypeName.String && item.foreignKey) {
-        paths.push(getDBJsonPathByJsonSchemaStore(item));
-      }
-    });
-
     return this.foreignKeysService.countRowsByPathsAndValueInData(
       foreignKeyTable.versionId,
-      paths,
+      getForeignKeyJsonPaths(
+        this.jsonSchemaStore.create(schema),
+        targetTableId,
+      ),
       rowId,
     );
   }

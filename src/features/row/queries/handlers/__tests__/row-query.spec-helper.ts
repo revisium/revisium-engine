@@ -11,6 +11,7 @@ import {
 } from 'src/__tests__/utils/prepareProject';
 import type { QueryTestKit } from 'src/__tests__/kit/create-query-test-kit';
 import {
+  getArraySchema,
   getObjectSchema,
   getRefSchema,
   getStringSchema,
@@ -43,6 +44,15 @@ export interface ForeignKeysByScenario {
   table: TableWithSchemaResult;
   byTable: TableWithSchemaResult;
   rowId: string;
+}
+
+export interface MixedPeopleTasksScenario {
+  draftRevisionId: string;
+  peopleTableId: string;
+  tasksTableId: string;
+  tasksSchema: JsonObjectSchema;
+  tasksHeadTableVersionId: string;
+  tasksDraftTableVersionId: string;
 }
 
 export interface ForeignKeysToScenario {
@@ -249,6 +259,77 @@ export async function givenForeignKeysByScenario(
     table,
     byTable,
     rowId: row.rowId,
+  };
+}
+
+export async function givenMixedPeopleTasksScenario(
+  kit: QueryTestKit,
+): Promise<MixedPeopleTasksScenario> {
+  const peopleTableId = 'people';
+  const tasksTableId = 'tasks';
+  const peopleSchema = getObjectSchema({
+    name: getStringSchema(),
+  });
+  const tasksSchema = getObjectSchema({
+    blockedBy: getArraySchema(getStringSchema({ foreignKey: tasksTableId })),
+    assignee: getStringSchema({ foreignKey: peopleTableId }),
+  });
+
+  const branch = await prepareBranch(kit.prismaService);
+  const people = await prepareTableWithSchema({
+    prismaService: kit.prismaService,
+    headRevisionId: branch.headRevisionId,
+    draftRevisionId: branch.draftRevisionId,
+    schemaTableVersionId: branch.schemaTableVersionId,
+    migrationTableVersionId: branch.migrationTableVersionId,
+    tableId: peopleTableId,
+    schema: peopleSchema,
+  });
+  await prepareRow({
+    prismaService: kit.prismaService,
+    headTableVersionId: people.headTableVersionId,
+    draftTableVersionId: people.draftTableVersionId,
+    rowId: 'alex',
+    data: { name: 'Alex' },
+    dataDraft: { name: 'Alex' },
+    schema: peopleSchema,
+  });
+
+  const tasks = await prepareTableWithSchema({
+    prismaService: kit.prismaService,
+    headRevisionId: branch.headRevisionId,
+    draftRevisionId: branch.draftRevisionId,
+    schemaTableVersionId: branch.schemaTableVersionId,
+    migrationTableVersionId: branch.migrationTableVersionId,
+    tableId: tasksTableId,
+    schema: tasksSchema,
+  });
+  await prepareRow({
+    prismaService: kit.prismaService,
+    headTableVersionId: tasks.headTableVersionId,
+    draftTableVersionId: tasks.draftTableVersionId,
+    rowId: 'alex',
+    data: { blockedBy: [], assignee: 'alex' },
+    dataDraft: { blockedBy: [], assignee: 'alex' },
+    schema: tasksSchema,
+  });
+  await prepareRow({
+    prismaService: kit.prismaService,
+    headTableVersionId: tasks.headTableVersionId,
+    draftTableVersionId: tasks.draftTableVersionId,
+    rowId: 'task-2',
+    data: { blockedBy: [], assignee: 'alex' },
+    dataDraft: { blockedBy: [], assignee: 'alex' },
+    schema: tasksSchema,
+  });
+
+  return {
+    draftRevisionId: branch.draftRevisionId,
+    peopleTableId,
+    tasksTableId,
+    tasksSchema,
+    tasksHeadTableVersionId: tasks.headTableVersionId,
+    tasksDraftTableVersionId: tasks.draftTableVersionId,
   };
 }
 

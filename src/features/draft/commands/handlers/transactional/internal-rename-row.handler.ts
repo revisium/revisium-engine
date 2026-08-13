@@ -16,15 +16,14 @@ import { ShareTransactionalQueries } from 'src/features/share/share.transactiona
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import {
   createJsonValueStore,
-  getDBJsonPathByJsonSchemaStore,
   replaceForeignKeyValue,
-  traverseStore,
 } from '@revisium/schema-toolkit/lib';
+import { getForeignKeyJsonPaths } from 'src/features/share/utils/get-foreign-key-json-paths';
 import {
   JsonSchemaStore,
   JsonValueStore,
 } from '@revisium/schema-toolkit/model';
-import { JsonSchemaTypeName, JsonValue } from '@revisium/schema-toolkit/types';
+import { JsonValue } from '@revisium/schema-toolkit/types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @CommandHandler(InternalRenameRowCommand)
@@ -91,7 +90,7 @@ export class InternalRenameRowHandler extends DraftHandler<
     );
 
     const schemaStore = this.jsonSchemaStore.create(schema);
-    const foreignPaths = this.getForeignPathsFromSchema(schemaStore);
+    const foreignPaths = getForeignKeyJsonPaths(schemaStore, input.tableId);
     const rows = await this.getRowsWithForeignKeys(
       foreignKeyTable.versionId,
       foreignPaths,
@@ -104,18 +103,6 @@ export class InternalRenameRowHandler extends DraftHandler<
       rows,
       schemaStore,
     );
-  }
-
-  private getForeignPathsFromSchema(schemaStore: JsonSchemaStore): string[] {
-    const foreignPaths: string[] = [];
-
-    traverseStore(schemaStore, (item) => {
-      if (item.type === JsonSchemaTypeName.String && item.foreignKey) {
-        foreignPaths.push(getDBJsonPathByJsonSchemaStore(item));
-      }
-    });
-
-    return foreignPaths;
   }
 
   private async getRowsWithForeignKeys(

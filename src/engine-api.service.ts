@@ -146,6 +146,12 @@ export class EngineApiService {
     return this.rowApi.getRows(...args);
   }
 
+  getPreviousRowStates(
+    ...args: Parameters<RowApiService['getPreviousRowStates']>
+  ) {
+    return this.rowApi.getPreviousRowStates(...args);
+  }
+
   searchRows(...args: Parameters<RowApiService['searchRows']>) {
     return this.rowApi.searchRows(...args);
   }

@@ -309,6 +309,58 @@ engine.getRows({
 
 Returns: `{ edges: [{ cursor, node: RowWithContext }], pageInfo, totalCount }`
 
+### getPreviousRowStates
+
+Returns the previous distinct persisted states of one Row identity at an exact
+committed Revision. The selected/current state is omitted; `edges[0]` is the
+newest previous state.
+
+```typescript
+engine.getPreviousRowStates({
+  revisionId: string; // exact committed snapshot
+  tableId: string;    // user-facing id in that snapshot
+  rowId: string;      // user-facing id in that Table snapshot
+  first: number;      // integer, 1..100
+  after?: string;     // opaque, versioned, scope-bound cursor
+})
+```
+
+Returns:
+
+```typescript
+{
+  edges: Array<{
+    cursor: string;
+    node: {
+      row: Row;
+      table: Table;
+      revision: Revision;
+      branch: Branch;
+      introducedBy: Array<'created' | 'modified' | 'renamed'>;
+    };
+  }>;
+  pageInfo: PageInfo;
+  totalCount: number;
+} | null
+```
+
+`node.revision` and `node.branch` are the actual ancestor context where that
+state first became effective, including a parent Revision from another Branch
+in the same Project. `introducedBy` describes direct-parent -> returned node;
+a rename and data modification may both be present.
+
+State equality is `Row.id` plus persisted `Row.data`. Physical copy-on-write,
+Table rename/schema changes, and changes to Row metadata, timestamps,
+`schemaHash`, or `versionId` do not create states. Rows are hydrated directly
+from persistence; formula/plugin computation is not performed.
+
+Without a cursor, returns `null` when the exact Revision/Table/Row snapshot
+cannot be resolved. A resolved Row with no previous state returns an empty
+non-null connection. Supplying a cursor makes an unresolved or changed selector
+a cursor-scope error. Draft tips or ancestors, invalid page sizes/cursors,
+duplicate logical states, broken or cyclic ancestry, and cross-Project parent
+chains are errors.
+
 ### searchRows
 
 Full-text search across all fields.

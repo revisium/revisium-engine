@@ -10,6 +10,9 @@ import {
   GetRowsQuery,
   GetRowsQueryData,
   GetRowsQueryReturnType,
+  GetPreviousRowStatesQuery,
+  GetPreviousRowStatesQueryData,
+  GetPreviousRowStatesQueryReturnType,
   ResolveRowCountForeignKeysByQuery,
   ResolveRowCountForeignKeysByQueryData,
   ResolveRowCountForeignKeysToQuery,
@@ -45,6 +48,13 @@ export class InternalRowApiService {
     return this.queryBus.execute<GetRowsQuery, GetRowsQueryReturnType>(
       new GetRowsQuery(data),
     );
+  }
+
+  public getPreviousRowStates(data: GetPreviousRowStatesQueryData) {
+    return this.queryBus.execute<
+      GetPreviousRowStatesQuery,
+      GetPreviousRowStatesQueryReturnType
+    >(new GetPreviousRowStatesQuery(data));
   }
 
   public resolveRowCountForeignKeysBy(

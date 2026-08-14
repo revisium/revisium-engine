@@ -4,6 +4,7 @@ import {
   GetRowByIdQueryData,
   GetRowQueryData,
   GetRowsQueryData,
+  GetPreviousRowStatesQueryData,
   ResolveRowCountForeignKeysByQueryData,
   ResolveRowCountForeignKeysToQueryData,
   ResolveRowForeignKeysByQueryData,
@@ -25,6 +26,10 @@ export class RowApiService {
 
   public getRows(data: GetRowsQueryData) {
     return this.api.getRows(data);
+  }
+
+  public getPreviousRowStates(data: GetPreviousRowStatesQueryData) {
+    return this.api.getPreviousRowStates(data);
   }
 
   public resolveRowCountForeignKeysBy(

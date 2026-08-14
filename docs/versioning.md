@@ -32,11 +32,11 @@ model Branch {
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Primary key |
-| `isRoot` | boolean | Default branch of the project |
-| `name` | string | User-facing name, unique per project |
+| Field    | Type    | Description                          |
+| -------- | ------- | ------------------------------------ |
+| `id`     | string  | Primary key                          |
+| `isRoot` | boolean | Default branch of the project        |
+| `name`   | string  | User-facing name, unique per project |
 
 #### Revision
 
@@ -61,17 +61,17 @@ model Revision {
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Primary key |
-| `sequence` | int | Global autoincrement, monotonic ordering |
-| `comment` | string | Commit message (set on commit) |
-| `isHead` | boolean | Pointer: last committed snapshot |
-| `isDraft` | boolean | Pointer: working copy |
-| `isStart` | boolean | First revision of the branch (root of chain) |
-| `hasChanges` | boolean | Draft has uncommitted modifications |
-| `parentId` | string? | Previous revision in chain (`null` for first revision) |
-| `tables` | Table[] | M:N relation via `_RevisionToTable` |
+| Field        | Type    | Description                                            |
+| ------------ | ------- | ------------------------------------------------------ |
+| `id`         | string  | Primary key                                            |
+| `sequence`   | int     | Global autoincrement, monotonic ordering               |
+| `comment`    | string  | Commit message (set on commit)                         |
+| `isHead`     | boolean | Pointer: last committed snapshot                       |
+| `isDraft`    | boolean | Pointer: working copy                                  |
+| `isStart`    | boolean | First revision of the branch (root of chain)           |
+| `hasChanges` | boolean | Draft has uncommitted modifications                    |
+| `parentId`   | string? | Previous revision in chain (`null` for first revision) |
+| `tables`     | Table[] | M:N relation via `_RevisionToTable`                    |
 
 #### Table
 
@@ -91,15 +91,15 @@ model Table {
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `versionId` | string | Primary key, changes on touch (clone) |
-| `createdId` | string | Stable identity across versions, never changes |
-| `id` | string | User-facing name, changes on rename |
-| `readonly` | boolean | Set `true` after commit, triggers copy-on-write |
-| `system` | boolean | Internal CMS table (`revisium_schema_table`, `revisium_migration_table`, `revisium_shared_schemas_table`, `revisium_views_table`) |
-| `revisions` | Revision[] | M:N — which revisions include this table version |
-| `rows` | Row[] | M:N — rows belonging to this table version |
+| Field       | Type       | Description                                                                                                                       |
+| ----------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `versionId` | string     | Primary key, changes on touch (clone)                                                                                             |
+| `createdId` | string     | Stable identity across versions, never changes                                                                                    |
+| `id`        | string     | User-facing name, changes on rename                                                                                               |
+| `readonly`  | boolean    | Set `true` after commit, triggers copy-on-write                                                                                   |
+| `system`    | boolean    | Internal CMS table (`revisium_schema_table`, `revisium_migration_table`, `revisium_shared_schemas_table`, `revisium_views_table`) |
+| `revisions` | Revision[] | M:N — which revisions include this table version                                                                                  |
+| `rows`      | Row[]      | M:N — rows belonging to this table version                                                                                        |
 
 #### Row
 
@@ -123,27 +123,27 @@ model Row {
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `versionId` | string | Primary key, changes on touch (clone) |
-| `createdId` | string | Stable identity across versions, never changes |
-| `id` | string | User-facing name, changes on rename |
-| `readonly` | boolean | Set `true` after commit, triggers copy-on-write |
-| `data` | Json | Row payload, GIN-indexed for search |
-| `meta` | Json | Metadata (plugin data, etc.) |
-| `hash` | string | `object-hash` of `data` field |
-| `schemaHash` | string | Hash of schema at time of creation/update |
-| `tables` | Table[] | M:N — which table versions contain this row |
+| Field        | Type    | Description                                     |
+| ------------ | ------- | ----------------------------------------------- |
+| `versionId`  | string  | Primary key, changes on touch (clone)           |
+| `createdId`  | string  | Stable identity across versions, never changes  |
+| `id`         | string  | User-facing name, changes on rename             |
+| `readonly`   | boolean | Set `true` after commit, triggers copy-on-write |
+| `data`       | Json    | Row payload, GIN-indexed for search             |
+| `meta`       | Json    | Metadata (plugin data, etc.)                    |
+| `hash`       | string  | `object-hash` of `data` field                   |
+| `schemaHash` | string  | Hash of schema at time of creation/update       |
+| `tables`     | Table[] | M:N — which table versions contain this row     |
 
 ### Three-ID System
 
 Tables and Rows use three identifiers:
 
-| Identifier | Uniqueness | Changes When | Purpose |
-|------------|------------|--------------|---------|
-| `id` | Per revision (table) / per table (row) | Rename operation | User-facing name |
-| `versionId` | Global (PK) | Touch/clone from readonly | Identifies specific version |
-| `createdId` | Global | Never | Entity identity across versions |
+| Identifier  | Uniqueness                             | Changes When              | Purpose                         |
+| ----------- | -------------------------------------- | ------------------------- | ------------------------------- |
+| `id`        | Per revision (table) / per table (row) | Rename operation          | User-facing name                |
+| `versionId` | Global (PK)                            | Touch/clone from readonly | Identifies specific version     |
+| `createdId` | Global                                 | Never                     | Entity identity across versions |
 
 `versionId` changes only on the **first** modification after commit (when `readonly=true` triggers a clone). All subsequent modifications within the same draft use the same `versionId`.
 
@@ -231,10 +231,10 @@ After modifying Row "bob" in draft (touch creates new versions):
 
 Each branch has exactly two pointer revisions at all times:
 
-| Flag | Count per Branch | Description |
-|------|-----------------|-------------|
-| `isHead=true` | Exactly 1 | Last committed snapshot |
-| `isDraft=true` | Exactly 1 | Working copy for modifications |
+| Flag           | Count per Branch | Description                    |
+| -------------- | ---------------- | ------------------------------ |
+| `isHead=true`  | Exactly 1        | Last committed snapshot        |
+| `isDraft=true` | Exactly 1        | Working copy for modifications |
 
 Revisions form a linked list via `parentId`:
 
@@ -438,29 +438,67 @@ New (feature):
   R4.parentId = R2 (cross-branch link to source)
 ```
 
+## Exclusive Previous Row States
+
+`getPreviousRowStates` reads the ancestry of an exact committed snapshot. It
+walks only `Revision.parentId`, so a fork crosses into its source Branch but
+never reads siblings, children, future commits, or mutable Draft state. Every
+ancestor Branch must belong to the selected Project. The lineage must terminate
+at the Project's original start Revision; a causally later fork start without
+its source parent and any Draft Revision in the chain are rejected. This graph
+integrity check does not depend on the consumer-managed `Branch.isRoot` flag.
+
+The stream is intentionally exclusive: it detects semantic events on the
+inclusive selected-tip lineage and drops the newest event, which represents
+the selected/current state. This preserves first-effective attribution through
+copy-on-write no-ops:
+
+```text
+R10 create A; selected R10                 -> []
+R10 A; R15 B; selected R15                 -> [A@R10(created)]
+R10 A; R15 B; R20 no-op; selected R20      -> [A@R10(created)]
+R10 A; R15 B; R20 rename to C; selected R20 ->
+  [B@R15(modified), A@R10(created)]
+```
+
+Semantic equality is persisted `Row.id` plus JSON equality of `Row.data`.
+`introducedBy` describes the direct-parent transition into each returned node:
+`created`, `renamed`, and/or `modified`. Table changes and Row `versionId`,
+metadata, schema hash, timestamps, and readonly state are excluded.
+
+The physical query resolves stable `Table.createdId` and `Row.createdId`
+candidate versions through non-unique indexes, follows the M:N indexes, and
+intersects those candidates with one depth-carrying recursive lineage. Exact
+count and depth-keyset pagination operate on the semantic event stream. The
+opaque cursor binds the tip, both stable identities, event Revision and depth;
+non-event or cross-scope cursors are rejected.
+
+Deletion/restoration history is not represented: recreating a user-facing Row
+id with a new `createdId` starts a separate state stream.
+
 ## Draft Modification Rules
 
 ### Creating Data
 
-| Operation | Steps | Post-action |
-|-----------|-------|-------------|
+| Operation    | Steps                                              | Post-action             |
+| ------------ | -------------------------------------------------- | ----------------------- |
 | Create Table | Create new table record, connect to draft revision | `markRevisionAsChanged` |
-| Create Rows | Touch table → create row records in table | `markRevisionAsChanged` |
+| Create Rows  | Touch table → create row records in table          | `markRevisionAsChanged` |
 
 ### Modifying Data
 
-| Operation | Steps | Post-action |
-|-----------|-------|-------------|
-| Update Rows | Touch table → touch row → update data/hash | `markRevisionAsChanged` |
-| Rename Rows | Touch table → touch row → update id | `markRevisionAsChanged` |
-| Rename Table | Touch table → update id | `markRevisionAsChanged` |
+| Operation    | Steps                                      | Post-action             |
+| ------------ | ------------------------------------------ | ----------------------- |
+| Update Rows  | Touch table → touch row → update data/hash | `markRevisionAsChanged` |
+| Rename Rows  | Touch table → touch row → update id        | `markRevisionAsChanged` |
+| Rename Table | Touch table → update id                    | `markRevisionAsChanged` |
 
 ### Removing Data
 
-| Operation | Steps | Post-action |
-|-----------|-------|-------------|
+| Operation    | Steps                                                           | Post-action           |
+| ------------ | --------------------------------------------------------------- | --------------------- |
 | Remove Table | Delete (if `readonly=false`) or disconnect (if `readonly=true`) | `recomputeHasChanges` |
-| Remove Rows | Delete non-readonly rows, disconnect readonly rows | `recomputeHasChanges` |
+| Remove Rows  | Delete non-readonly rows, disconnect readonly rows              | `recomputeHasChanges` |
 
 Removal operations call `recomputeHasChanges` instead of `markRevisionAsChanged` because removing data can undo all changes, returning the draft to its head state.
 
@@ -582,6 +620,7 @@ cleanTablesAndRows():
 ```
 
 Orphans are created by:
+
 - Revert (draft tables/rows disconnected)
 - Touch (old readonly version disconnected from draft)
 - Table removal (table disconnected from draft)
@@ -608,53 +647,53 @@ export class AppCleanupService {
 
 Tables with `system=true` are internal CMS tables:
 
-| Table ID | Purpose |
-|----------|---------|
-| `revisium_schema_table` | JSON Schema definition per user table (one row per table, rowId = tableId) |
-| `revisium_migration_table` | Schema migration history |
-| `revisium_shared_schemas_table` | Shared schema components across tables |
-| `revisium_views_table` | View/filter/sort configurations per table |
+| Table ID                        | Purpose                                                                    |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| `revisium_schema_table`         | JSON Schema definition per user table (one row per table, rowId = tableId) |
+| `revisium_migration_table`      | Schema migration history                                                   |
+| `revisium_shared_schemas_table` | Shared schema components across tables                                     |
+| `revisium_views_table`          | View/filter/sort configurations per table                                  |
 
 System tables follow the same versioning rules (touch, commit, revert) but are hidden from user-facing queries by default (`WHERE system = false`). Use `includeSystem: true` to include them.
 
 ## Invariant Summary
 
-| # | Invariant | Enforced By |
-|---|-----------|-------------|
-| 1 | Exactly one `isHead=true` per branch | Commit handler (flag swap) |
-| 2 | Exactly one `isDraft=true` per branch | Commit handler (creates new draft) |
-| 3 | `hasChanges=true` only on draft revisions | All modification handlers |
-| 4 | Draft-only tables are never auto-reverted | `recomputeHasChanges` (checks `tableInHead`) |
-| 5 | Readonly entities require clone before modification | `getOrCreateDraft{Table,Row}` handlers |
-| 6 | `createdId` never changes | Generated once, copied on clone |
-| 7 | `versionId` changes only on clone (touch) | `getOrCreateDraft{Table,Row}` handlers |
-| 8 | Commit requires `hasChanges=true` | Commit validation |
-| 9 | Revert requires `hasChanges=true` | Revert validation |
-| 10 | All draft operations run in a transaction | `TransactionPrismaService` wrapper |
-| 11 | Draft.parentId always points to Head | Commit handler |
-| 12 | Committed entities are `readonly=true` | Commit handler (`lockTablesAndRows`) |
+| #   | Invariant                                           | Enforced By                                  |
+| --- | --------------------------------------------------- | -------------------------------------------- |
+| 1   | Exactly one `isHead=true` per branch                | Commit handler (flag swap)                   |
+| 2   | Exactly one `isDraft=true` per branch               | Commit handler (creates new draft)           |
+| 3   | `hasChanges=true` only on draft revisions           | All modification handlers                    |
+| 4   | Draft-only tables are never auto-reverted           | `recomputeHasChanges` (checks `tableInHead`) |
+| 5   | Readonly entities require clone before modification | `getOrCreateDraft{Table,Row}` handlers       |
+| 6   | `createdId` never changes                           | Generated once, copied on clone              |
+| 7   | `versionId` changes only on clone (touch)           | `getOrCreateDraft{Table,Row}` handlers       |
+| 8   | Commit requires `hasChanges=true`                   | Commit validation                            |
+| 9   | Revert requires `hasChanges=true`                   | Revert validation                            |
+| 10  | All draft operations run in a transaction           | `TransactionPrismaService` wrapper           |
+| 11  | Draft.parentId always points to Head                | Commit handler                               |
+| 12  | Committed entities are `readonly=true`              | Commit handler (`lockTablesAndRows`)         |
 
 ## Implementation Files
 
-| Component | File |
-|-----------|------|
-| Recompute hasChanges | `src/features/draft-revision/commands/handlers/draft-revision-recompute-has-changes.handler.ts` |
-| Remove rows | `src/features/draft-revision/commands/handlers/draft-revision-remove-rows.handler.ts` |
-| Remove table | `src/features/draft-revision/commands/handlers/draft-revision-remove-table.handler.ts` |
-| Touch table | `src/features/draft-revision/commands/handlers/draft-revision-get-or-create-draft-table.handler.ts` |
-| Touch row | `src/features/draft-revision/commands/handlers/draft-revision-get-or-create-draft-row.handler.ts` |
-| Create table | `src/features/draft-revision/commands/handlers/draft-revision-create-table.handler.ts` |
-| Create rows | `src/features/draft-revision/commands/handlers/draft-revision-create-rows.handler.ts` |
-| Update rows | `src/features/draft-revision/commands/handlers/draft-revision-update-rows.handler.ts` |
-| Rename rows | `src/features/draft-revision/commands/handlers/draft-revision-rename-rows.handler.ts` |
-| Rename table | `src/features/draft-revision/commands/handlers/draft-revision-rename-table.handler.ts` |
-| Commit | `src/features/draft-revision/commands/handlers/draft-revision-commit.handler.ts` |
-| Revert | `src/features/draft-revision/commands/handlers/draft-revision-revert.handler.ts` |
-| Row diff SQL | `prisma/sql/hasRowDiffsBetweenRevisions.sql` |
-| Table diff SQL | `prisma/sql/hasTableDiffsBetweenRevisions.sql` |
-| Diff service | `src/features/share/diff.service.ts` |
-| Internal service | `src/features/draft-revision/services/draft-revision-internal.service.ts` |
-| Cleanup service | `src/infrastructure/database/cleanup.service.ts` |
+| Component            | File                                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| Recompute hasChanges | `src/features/draft-revision/commands/handlers/draft-revision-recompute-has-changes.handler.ts`     |
+| Remove rows          | `src/features/draft-revision/commands/handlers/draft-revision-remove-rows.handler.ts`               |
+| Remove table         | `src/features/draft-revision/commands/handlers/draft-revision-remove-table.handler.ts`              |
+| Touch table          | `src/features/draft-revision/commands/handlers/draft-revision-get-or-create-draft-table.handler.ts` |
+| Touch row            | `src/features/draft-revision/commands/handlers/draft-revision-get-or-create-draft-row.handler.ts`   |
+| Create table         | `src/features/draft-revision/commands/handlers/draft-revision-create-table.handler.ts`              |
+| Create rows          | `src/features/draft-revision/commands/handlers/draft-revision-create-rows.handler.ts`               |
+| Update rows          | `src/features/draft-revision/commands/handlers/draft-revision-update-rows.handler.ts`               |
+| Rename rows          | `src/features/draft-revision/commands/handlers/draft-revision-rename-rows.handler.ts`               |
+| Rename table         | `src/features/draft-revision/commands/handlers/draft-revision-rename-table.handler.ts`              |
+| Commit               | `src/features/draft-revision/commands/handlers/draft-revision-commit.handler.ts`                    |
+| Revert               | `src/features/draft-revision/commands/handlers/draft-revision-revert.handler.ts`                    |
+| Row diff SQL         | `prisma/sql/hasRowDiffsBetweenRevisions.sql`                                                        |
+| Table diff SQL       | `prisma/sql/hasTableDiffsBetweenRevisions.sql`                                                      |
+| Diff service         | `src/features/share/diff.service.ts`                                                                |
+| Internal service     | `src/features/draft-revision/services/draft-revision-internal.service.ts`                           |
+| Cleanup service      | `src/infrastructure/database/cleanup.service.ts`                                                    |
 
 ## Changelog
 

@@ -213,6 +213,13 @@ export type { ApplyMigrationCommandData } from './features/draft/commands/impl/m
 export type { GetRowQueryData } from './features/row/queries/impl';
 export type { GetRowByIdQueryData } from './features/row/queries/impl';
 export type { GetRowsQueryData } from './features/row/queries/impl';
+export { GetPreviousRowStatesQuery } from './features/row/queries/impl';
+export type {
+  GetPreviousRowStatesQueryData,
+  GetPreviousRowStatesQueryReturnType,
+  PreviousRowStateNode,
+  RowStateIntroductionType,
+} from './features/row/queries/impl';
 export type { SearchRowsQueryData } from './features/row/queries/impl';
 export type {
   SearchMatch,

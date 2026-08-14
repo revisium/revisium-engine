@@ -10,6 +10,45 @@ All methods delegate to the underlying `*ApiService` classes. Input types are re
 
 ---
 
+## ChangeSet availability
+
+The published package does not currently export or implement a ChangeSet,
+consistency-audit, Commit Plan, or partial-commit API. The current runtime
+surface remains the `hasChanges` field, whole-Draft `createRevision` and
+`revertChanges` operations, and immutable Revision comparison queries.
+
+The [normative VE-011 target contract](consistency.md) defines exactly eight
+future v1 methods. Their names and contracts are documentation targets, not
+callable `EngineApiService` methods today.
+
+| Target v1 method | Availability | Contract |
+| --- | --- | --- |
+| `changeSet` | Target; not implemented | Computed singleton summary |
+| `changeSetItems` | Target; not implemented | Bounded semantic-item connection |
+| `changeSetItemDetails` | Target; not implemented | Bounded detail connection |
+| `discardChangeSet` | Target; not implemented | Atomic item or all-scope Discard |
+| `commitChangeSet` | Target; not implemented | Atomic all-scope Commit |
+| `auditBranchConsistency` | Target; not implemented | Pure operator-facing audit read |
+| `auditBranchConsistencyFindings` | Target; not implemented | Bounded immutable audit-finding connection |
+| `changeSetDiagnosticDetails` | Target; not implemented | Bounded immutable diagnostic connection |
+
+The [partial-commit design](design/partial-commit.md) is non-normative,
+PDR-008 is not accepted, and no runtime API exists. It defines exactly these
+five possible future methods:
+
+| Future method | Availability |
+| --- | --- |
+| `planChangeSetCommit` | Non-normative future design; not implemented |
+| `previewChangeSetCommitItems` | Non-normative future design; not implemented |
+| `previewChangeSetCommitIssues` | Non-normative future design; not implemented |
+| `previewChangeSetCommitIssueRequired` | Non-normative future design; not implemented |
+| `commitPlannedChangeSet` | Non-normative future design; not implemented |
+
+Neither inventory adds TypeScript declarations, package exports, stubs, or a
+runtime availability promise.
+
+---
+
 ## Tables
 
 ### createTable
@@ -350,6 +389,14 @@ engine.createRevision({
 
 Returns: `{ id, sequence, createdAt, comment, isHead, isDraft, isStart, hasChanges, previousHeadRevisionId, previousDraftRevisionId }` — the committed revision plus the IDs of the head and draft revisions that existed before the commit
 
+The current implementation gates this operation on stored
+`Draft.hasChanges`. `false` returns the established `There are no changes`
+error even if another computation would find a semantic delta; `true`
+continues the current whole-Draft path. The optional historical `comment` input
+has no new ChangeSet message-length limit. The target compatibility rules keep
+this exact input and successful Revision projection; see
+[Legacy adapters](consistency.md#legacy-adapters).
+
 ### revertChanges
 
 Revert all uncommitted changes in the draft.
@@ -362,6 +409,12 @@ engine.revertChanges({
 ```
 
 Returns: branch data
+
+The current implementation gates this operation on stored
+`Draft.hasChanges`. `false` returns the established `There are no changes`
+error, while `true` continues the current whole-Draft revert path. The target
+compatibility rules keep this exact input and successful full Branch
+projection; see [Legacy adapters](consistency.md#legacy-adapters).
 
 ### getRevision
 
@@ -427,6 +480,10 @@ Returns: `Branch`
 ---
 
 ## Revision Changes (Diffs)
+
+These current APIs compare immutable Revision snapshots. They are not
+ChangeSet aliases, and the VE-011 target does not change their names, inputs,
+pagination, physical projections, ordering, hashes, or response bytes.
 
 ### revisionChanges
 

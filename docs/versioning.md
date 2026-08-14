@@ -2,6 +2,12 @@
 
 This document describes the internal versioning system of `@revisium/engine`: data model, database schema, invariants, operation rules, and implementation details.
 
+The mechanics below describe the current runtime. The package does not
+currently implement a ChangeSet or consistency-audit API. The
+[Consistency and ChangeSet Contract](consistency.md) is the normative VE-011
+target, while the [Partial Commit Design](design/partial-commit.md) is a
+non-normative future design for an unaccepted PDR-008 and has no runtime API.
+
 ## Data Model
 
 ### Entity Hierarchy
@@ -252,6 +258,29 @@ Branch "master"
 
 Draft's parent is always Head.
 
+### Target singleton ChangeSet lifecycle (not implemented)
+
+VE-011 defines exactly one computed ChangeSet for every structurally valid
+Draft, including an empty projection when Head and Draft are semantically
+equal. It is not a persisted staging object. The ChangeSet ID belongs to the
+Draft Revision and remains stable through semantic edits, physical
+copy-on-write, single-item Discard, and Discard all. Full Commit promotes the
+old Draft to Head and creates a new Draft, so the new Draft has a new ChangeSet
+ID.
+
+The ChangeSet version changes exactly when the complete semantic Head-to-Draft
+projection changes. An item version changes exactly when that semantic item
+changes. A physical clone that changes only storage identity, readonly state,
+or timestamps changes neither public items nor public versions. All IDs,
+versions, hashes, cursors, audit IDs, diagnostic IDs, and future plan handles
+are opaque strings that callers only compare and echo.
+
+Target Discard all retains the Draft Revision and restores its complete state
+to Head. Target full Commit creates an immutable snapshot of the complete
+Draft, not a delta-only Revision. The exact semantic projection, validation,
+outcome, and compatibility rules are owned by
+[the normative contract](consistency.md).
+
 ## Copy-on-Write (Touch)
 
 When modifying data in a draft, the system clones readonly entities to preserve head data.
@@ -311,6 +340,10 @@ AFTER touchRow("bob"):
 
 ## Commit Flow
 
+This section documents the present `createRevision` mechanics. The target
+all-scope ChangeSet Commit is specified separately in
+[Consistency and ChangeSet Contract](consistency.md#discard-and-commit).
+
 ```text
 commit(branchId, comment?):
   1. Validate draftRevision.hasChanges = true
@@ -336,6 +369,10 @@ AFTER:
 Revision chain: `R1 ← R2 ← R3` (via parentId).
 
 ## Revert
+
+This section documents the present `revertChanges` mechanics. The target
+ChangeSet Discard operations are specified separately in
+[Consistency and ChangeSet Contract](consistency.md#discard-and-commit).
 
 ### Full Revert (Branch-Level)
 
@@ -495,6 +532,13 @@ Remove table from revision:
 ## hasChanges System
 
 `Revision.hasChanges` tracks whether a draft has uncommitted changes.
+
+In the present runtime, `createRevision` and `revertChanges` use this stored
+field as their no-changes gate. The VE-011 target computes new ChangeSet reads
+and mutations from the canonical semantic Head-to-Draft delta instead; it does
+not silently repair this stored cache. The complete four-cell compatibility
+matrix is normative in
+[Consistency and ChangeSet Contract](consistency.md#legacy-adapters).
 
 ### markRevisionAsChanged
 

@@ -3,12 +3,12 @@
 ## Quick Reference
 
 ```bash
-npm run start:dev       # dev mode
-npm run build           # production build
-npm run lint:ci         # lint (0 warnings)
-npm run tsc             # type check
-npm test                # run tests
-npm run test:cov        # tests + coverage
+pnpm run start:dev       # dev mode
+pnpm run build           # production build
+pnpm run lint:ci         # lint (0 warnings)
+pnpm run tsc             # type check
+pnpm test                # run tests
+pnpm run test:cov        # tests + coverage
 ```
 
 ## Knowledge Base

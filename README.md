@@ -130,20 +130,23 @@ ProjectFileUsage (per-project byte counter, keyed by opaque projectId)
 
 ## Development
 
+This project uses [pnpm](https://pnpm.io) (pinned via the `packageManager` field). Node version: see `.nvmrc`.
+
 ```bash
-npm ci
+corepack enable
+pnpm install
 docker compose -f docker/docker-compose.yml up -d
 cp .env.example .env
-npm run prisma:generate
-npm run start:dev
+pnpm run prisma:generate
+pnpm run start:dev
 ```
 
-| Script            | Description             |
-| ----------------- | ----------------------- |
-| `npm run tsc`     | Type check              |
-| `npm run lint:ci` | ESLint (0 warnings)     |
-| `npm test`        | Run tests (1100+ tests) |
-| `npm run build`   | Production build        |
+| Script             | Description             |
+| ------------------ | ----------------------- |
+| `pnpm run tsc`     | Type check              |
+| `pnpm run lint:ci` | ESLint (0 warnings)     |
+| `pnpm test`        | Run tests (1100+ tests) |
+| `pnpm run build`   | Production build        |
 
 ## Tech Stack
 

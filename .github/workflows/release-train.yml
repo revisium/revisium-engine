@@ -44,11 +44,11 @@ jobs:
       dry_run: ${{ inputs.dry_run }}
       base_branch: master
       node_version: 24.11.1
-      package_manager: npm
-      install_command: npm ci --ignore-scripts
+      package_manager: pnpm
+      install_command: corepack enable && pnpm install --frozen-lockfile
       validate_command: |
-        npm run prisma:generate
-        npm run tsc
-        npm run build
+        pnpm run prisma:generate
+        pnpm run tsc
+        pnpm run build
     secrets:
       RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}

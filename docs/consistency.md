@@ -1,4 +1,4 @@
-> Status: Accepted
+> Status: proposed ChangeSet API contract; not implemented
 >
 > Version: 1.0
 
@@ -8,14 +8,14 @@ The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, **MAY**,
 **REQUIRED**, and **OPTIONAL** in this document are interpreted according to
 RFC 2119 and BCP 14 only when they appear in all capitals.
 
-This is the Engine-neutral normative VE-011 target and not a runtime
-availability claim. None of the eight methods defined here is currently
-exported or implemented by
-`@revisium/engine`. Current and future availability is indexed in
+This document defines a proposed ChangeSet API contract for Engine; it does not
+describe runtime availability. None of the eight methods defined here is
+currently exported or implemented by `@revisium/engine`. Current and future
+availability is indexed in
 [the API reference](api.md#changeset-availability). Present persistence,
 copy-on-write, Commit, and Revert mechanics remain documented in
 [Versioning System](versioning.md). The partial-commit protocol is isolated in
-the [non-normative future design](design/partial-commit.md).
+the [exploratory future design](design/partial-commit.md).
 
 ## Canonical ChangeSet
 
@@ -72,7 +72,7 @@ semantic projection changes. An item version changes if and only if that
 semantic item changes. Physical storage identity, readonly state, Revision
 associations, and timestamps do not affect either version.
 
-## Target documentation schema
+## Proposed ChangeSet types
 
 The TypeScript in this section is documentation schema, not a package
 declaration. `Branch` refers to the unchanged full Branch projection already
@@ -350,8 +350,8 @@ interface DiagnosticFindingConnection {
 
 ### Exact v1 method inventory
 
-These eight signatures are target documentation only and are not callable in
-the current runtime.
+These eight signatures are part of the proposed contract and are not callable
+in the current runtime.
 
 ```typescript
 changeSet(input: GetChangeSetInput): Promise<ChangeSet>;
@@ -455,7 +455,7 @@ semantic effect. It succeeds only when the entire remaining Draft passes the
 total validator. It never silently adds or removes another item.
 
 Discard all restores exact Head associations into the existing Draft. It
-retains the Draft Revision ID and ChangeSet ID. Target Discard results use
+retains the Draft Revision ID and ChangeSet ID. Discard results use
 `committed:true` only for a successful nonempty transaction; this means the
 Draft-state transaction committed, not that a Revision was created.
 
@@ -497,7 +497,7 @@ may rewrite semantic state.
 
 ## Outcomes
 
-Target failures use `{statusCode,code,message,details}`. Rows marked
+Proposed ChangeSet failures use `{statusCode,code,message,details}`. Rows marked
 `false / zero / 0` are rollback-confirmed pre-commit failures: `committed` is
 false, state effect is zero, and notification attempts are zero.
 
@@ -531,7 +531,7 @@ before choosing recovery.
 
 ### Operation-specific empty behavior
 
-| Operation on an empty canonical ChangeSet | Target outcome |
+| Operation on an empty canonical ChangeSet | Proposed outcome |
 | --- | --- |
 | `changeSet` | Successful ChangeSet with `isEmpty:true` and every total zero |
 | `changeSetItems` | Successful empty connection with truthful page information |
@@ -554,9 +554,10 @@ mechanics remain documented in [Async Row Migration](migration.md).
 ## Legacy adapters
 
 The current runtime exposes `createRevision` and `revertChanges`; it does not
-yet route through ChangeSet handlers. A target implementation maps their
-successful whole-Draft behavior to current-mode all-scope Commit and Discard
-without changing the established public inputs or successful projections.
+yet route through ChangeSet handlers. An implementation of the proposed
+contract maps their successful whole-Draft behavior to current-mode all-scope
+Commit and Discard without changing the established public inputs or successful
+projections.
 
 Both legacy no-changes gates remain based only on stored `Draft.hasChanges`,
 not canonical delta:
@@ -570,12 +571,12 @@ not canonical delta:
 
 The legacy gate is neither repaired nor replaced. After a true gate, any new
 topology, Head, Draft, migration, or transaction consistency failure uses its
-classified target failure and has zero effect.
+classified ChangeSet failure and has zero effect.
 
 `createRevision` keeps the exact input
 `{projectId,branchName,comment?}`. Historical `comment` remains unchanged and
-does not inherit the target `message` limit. Success remains the complete
-committed Revision plus only `previousHeadRevisionId` and
+does not inherit the proposed ChangeSet `message` limit. Success remains the
+complete committed Revision plus only `previousHeadRevisionId` and
 `previousDraftRevisionId`.
 
 `revertChanges` keeps the exact input `{projectId,branchName}` and success
@@ -599,7 +600,7 @@ migration, or backfill.
 | Observed condition | ChangeSet read | Audit result | Mutation disposition | Recovery |
 | --- | --- | --- | --- | --- |
 | Valid clean or dirty state | Computed success | `valid` or cache warning | Use canonical delta | None required |
-| Stored cache disagrees | Canonical content wins | `valid-with-warnings` | Target uses canonical content; legacy gate remains stored | Explicit cache-only repair after fresh valid audit |
+| Stored cache disagrees | Canonical content wins | `valid-with-warnings` | Proposed ChangeSet operations use canonical content; legacy gate remains stored | Explicit cache-only repair after fresh valid audit |
 | Invalid Head/Draft cardinality | Fail closed | `invalid` with bounded finding | `REVISION_CARDINALITY_INVALID` | Operator repairs topology from authoritative history |
 | Invalid role or Draft parent topology | Fail closed | `invalid` with bounded finding | Zero-effect topology failure | Operator-guided repair; never implicit |
 | Invalid Head schema, foreign key, formula definition, or file reference | Fail closed | `invalid` | `LEGACY_HEAD_INVALID` | Restore a known-valid immutable Head |
@@ -610,13 +611,13 @@ migration, or backfill.
 
 No row authorizes implicit destructive repair.
 
-## Normative v1 golden vectors
+## Proposed ChangeSet contract golden vectors
 
 The following single strict-JSON block is the repository-owned mechanical
-contract for v1 semantics. It does not assert runtime availability and contains
-no future selector, plan, handle, or PDR-008 acceptance case. Every vector has
-exactly the five fields `id`, `context`, `input`, `observable`, and `expected`;
-every embedded collection is bounded.
+contract for the proposed semantics. It does not assert runtime availability
+and contains no selector, plan, or handle from the exploratory partial-commit
+design. Every vector has exactly the five fields `id`, `context`, `input`,
+`observable`, and `expected`; every embedded collection is bounded.
 
 Within this block, `context.current_or_null` is the actual computed
 `ChangeSetCurrent` identity for the fixture state, not the caller's optional
@@ -626,7 +627,7 @@ cardinality, role, or parent topology prevents a singleton projection.
 
 ```json
 {
-  "schema": "ve011-v1-doc-goldens-v1",
+  "schema": "changeset-doc-goldens-v1",
   "contextAxes": {
     "semantic_delta": [
       "empty",
@@ -2423,7 +2424,7 @@ cardinality, role, or parent topology prevents a singleton projection.
       "expected": {
         "pinnedPathProceeds": true,
         "successProjection": "complete Revision plus previousHeadRevisionId and previousDraftRevisionId",
-        "newTargetMutationWouldBe": "CHANGESET_EMPTY"
+        "newMutationWouldBe": "CHANGESET_EMPTY"
       }
     },
     {
@@ -2453,7 +2454,7 @@ cardinality, role, or parent topology prevents a singleton projection.
       "expected": {
         "pinnedPathProceeds": true,
         "successProjection": "complete Branch",
-        "newTargetMutationWouldBe": "CHANGESET_EMPTY"
+        "newMutationWouldBe": "CHANGESET_EMPTY"
       }
     },
     {
@@ -3093,7 +3094,7 @@ cardinality, role, or parent topology prevents a singleton projection.
       }
     },
     {
-      "id": "target-outcome-row-census",
+      "id": "changeset-outcome-row-census",
       "context": {
         "projectId": "project-alpha",
         "branchName": "main",
@@ -3105,7 +3106,7 @@ cardinality, role, or parent topology prevents a singleton projection.
         }
       },
       "input": {
-        "operation": "targetOutcomeContract",
+        "operation": "changeSetOutcomeContract",
         "rows": [
           "CHANGESET_INVALID_INPUT",
           "CHANGESET_INVALID_CURSOR",

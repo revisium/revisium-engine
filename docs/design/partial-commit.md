@@ -1,10 +1,10 @@
-> Status: non-normative future design; PDR-008 is not accepted; no runtime API.
+> Status: exploratory future design; no runtime API.
 
 # Partial Commit Design
 
-This document describes a possible future partial-commit protocol. It is not a
-VE-011 v1 requirement, does not accept PDR-008, and does not add package types,
-exports, stubs, handlers, or callable methods. Normative v1 ChangeSet types and
+This document describes an exploratory future partial-commit protocol. It is
+not part of the proposed ChangeSet contract and does not add package types,
+exports, stubs, handlers, or callable methods. Proposed ChangeSet types and
 shared consistency rules live in
 [Consistency and ChangeSet Contract](../consistency.md).
 
@@ -25,11 +25,11 @@ It plans before it mutates. Planning and every preview are read-only. Commit
 accepts an opaque authoritative handle and an accepted closure hash; it never
 accepts a dependency array or trusts an echoed summary.
 
-## Shared target types
+## Shared ChangeSet contract types
 
 `BranchRef`, `ChangeSetPrecondition`, `ChangeSetCurrent`, `ChangeSetItemRef`,
 `ChangeSet`, `Branch`, `Delivery`, `Edge`, and `PageInfo` have the exact meanings
-defined by the [normative target documentation schema](../consistency.md#target-documentation-schema).
+defined by the [proposed ChangeSet types](../consistency.md#proposed-changeset-types).
 All IDs, versions, hashes, handles, and cursors are opaque echo-only strings.
 No algorithm, preimage, encoding, prefix, or parsing behavior is public.
 
@@ -141,7 +141,7 @@ empty, the accepted hash is null.
 
 ## Bounded plan schema
 
-The TypeScript below is documentation schema for this non-normative design.
+The TypeScript below is documentation schema for this exploratory design.
 
 ```typescript
 type OpaquePlanToken = string;
@@ -265,7 +265,7 @@ truthful page information. Cursors are opaque and query-bound.
 Every preview is exactly the first `min(count,20)` nodes of the corresponding
 complete connection after identical normalization and filters. It follows that
 connection's deterministic order; summaries of item references use the
-normative ChangeSet item order. `truncated` is exactly
+proposed ChangeSet item order. `truncated` is exactly
 `count > preview.length`, and paging reproduces the preview prefix without loss
 or duplicates. This applies to selected, required, candidate, excluded,
 remainder, issue, and reason summaries.
@@ -316,8 +316,8 @@ Failure priority is exactly:
 ## Exact future method inventory
 
 The design contains these five methods and no others. Every referenced type is
-defined above or linked to the normative target. These signatures are not
-implemented.
+defined above or linked to the proposed ChangeSet contract. These signatures
+are not implemented.
 
 ```typescript
 planChangeSetCommit(
@@ -342,11 +342,12 @@ commitPlannedChangeSet(
 The table below is closed for future plan/selector state outcomes after shared
 request and branch validation. Input-domain violations — including `first`
 outside 0..100, selector collections outside 1..100, duplicates, or a partial
-version precondition — reuse the normative `CHANGESET_INVALID_INPUT` failure.
-Shared branch lookup, topology, migration, rollback-confirmed transaction, and
-unknown post-commit connection outcomes also retain their normative
-[classification](../consistency.md#outcomes); they are not additional plan-state
-outcomes.
+version precondition — reuse the proposed contract's
+`CHANGESET_INVALID_INPUT` failure. Shared branch lookup, topology, migration,
+rollback-confirmed transaction, and unknown post-commit connection outcomes
+also retain the proposed contract's
+[classification](../consistency.md#outcomes); they are not additional
+plan-state outcomes.
 
 | Method | Success outcomes | Future protocol failure outcomes |
 | --- | --- | --- |
@@ -371,7 +372,7 @@ planning succeeds with `status:'blocked'` and a bounded issue whose code is
 `CHANGESET_EMPTY`; v1 `commitChangeSet` returns `CHANGESET_EMPTY` as a
 pre-commit failure.
 
-## Non-normative future golden vectors
+## Exploratory partial-commit golden vectors
 
 This strict-JSON block is a mechanical design sample, not v1 acceptance or a
 runtime claim. It prescribes no token or hash algorithm. Every vector has
@@ -385,7 +386,7 @@ projection.
 
 ```json
 {
-  "schema": "ve011-future-plan-doc-goldens-v1",
+  "schema": "partial-commit-doc-goldens-v1",
   "contextAxes": {
     "selector": [
       "all",

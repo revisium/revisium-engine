@@ -3,9 +3,9 @@ import {
   decodePreviousRowStatesCursor,
   encodePreviousRowStatesCursor,
   type PreviousRowStatesCursorV1,
-} from 'src/features/row/utils/previous-row-states-cursor';
+} from 'src/features/row/previous-row-states/previous-row-states.cursor';
 
-describe('previous row states cursor v1', () => {
+describe('Previous row states cursor v1', () => {
   const encodedV1 =
     'eyJ2IjoxLCJ0aXBSZXZpc2lvbklkIjoidGlwLXJldmlzaW9uIiwidGFibGVDcmVhdGVkSWQiOiJ0YWJsZS1jcmVhdGVkIiwicm93Q3JlYXRlZElkIjoicm93LWNyZWF0ZWQiLCJldmVudFJldmlzaW9uSWQiOiJldmVudC1yZXZpc2lvbiIsImRlcHRoIjoyfQ';
   const cursor: PreviousRowStatesCursorV1 = {

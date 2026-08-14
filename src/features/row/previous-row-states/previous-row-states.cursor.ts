@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
+/** Opaque, versioned position within one exact logical-row history stream. */
 export type PreviousRowStatesCursorV1 = {
   readonly v: 1;
   readonly tipRevisionId: string;

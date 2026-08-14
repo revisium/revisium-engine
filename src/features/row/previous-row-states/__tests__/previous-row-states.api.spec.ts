@@ -1,8 +1,9 @@
 import { EngineApiService } from 'src/engine-api.service';
 import { RowApiService } from 'src/features/row/row-api.service';
 import { PreviousRowStatesFixture } from './previous-row-states.fixture';
+import { rowState } from './previous-row-states.scenario';
 
-describe('PreviousRowStates API wiring', () => {
+describe('Previous row states API wiring', () => {
   let fixture: PreviousRowStatesFixture;
 
   beforeAll(async () => {
@@ -14,37 +15,23 @@ describe('PreviousRowStates API wiring', () => {
   });
 
   it('is exposed through the public row API', async () => {
-    const scenario = await fixture.createLinearScenario({
-      states: [
-        { rowId: 'row', value: 'A' },
-        { rowId: 'row', value: 'B' },
-      ],
+    const history = await fixture.given({
+      revisions: [rowState('created', 'A'), rowState('selected', 'B')],
     });
     const rowApi = fixture.module.get(RowApiService);
 
-    const result = await rowApi.getPreviousRowStates({
-      revisionId: scenario.revisionIds.at(-1) as string,
-      tableId: scenario.tableIds.at(-1) as string,
-      rowId: 'row',
-      first: 10,
-    });
+    const result = await rowApi.getPreviousRowStates(
+      history.inputAt('selected'),
+    );
 
     expect(result?.totalCount).toBe(1);
   });
 
   it('delegates through the flat EngineApi facade', async () => {
-    const scenario = await fixture.createLinearScenario({
-      states: [
-        { rowId: 'row', value: 'A' },
-        { rowId: 'row', value: 'B' },
-      ],
+    const history = await fixture.given({
+      revisions: [rowState('created', 'A'), rowState('selected', 'B')],
     });
-    const data = {
-      revisionId: scenario.revisionIds.at(-1) as string,
-      tableId: scenario.tableIds.at(-1) as string,
-      rowId: 'row',
-      first: 10,
-    };
+    const data = history.inputAt('selected');
     const rowApi = fixture.module.get(RowApiService);
     const delegate = jest.spyOn(rowApi, 'getPreviousRowStates');
     const engineApi = Object.create(

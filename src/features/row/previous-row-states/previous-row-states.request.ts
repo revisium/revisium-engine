@@ -3,7 +3,7 @@ import type { GetPreviousRowStatesQueryData } from 'src/features/row/queries/imp
 import {
   decodePreviousRowStatesCursor,
   type PreviousRowStatesCursorV1,
-} from 'src/features/row/utils/previous-row-states-cursor';
+} from 'src/features/row/previous-row-states/previous-row-states.cursor';
 
 const MIN_PAGE_SIZE = 1;
 const MAX_PAGE_SIZE = 100;

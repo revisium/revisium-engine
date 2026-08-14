@@ -6,12 +6,12 @@ import type {
 import {
   type ParsedPreviousRowStatesRequest,
   throwPreviousRowStatesCursorScopeError,
-} from 'src/features/row/services/previous-row-states.request';
-import type { PreviousRowStateSqlResult } from 'src/features/row/utils/get-previous-row-states-sql';
+} from 'src/features/row/previous-row-states/previous-row-states.request';
+import type { PreviousRowStateSqlResult } from 'src/features/row/previous-row-states/sql/get-previous-row-states.sql';
 import {
   encodePreviousRowStatesCursor,
   type PreviousRowStatesCursorV1,
-} from 'src/features/row/utils/previous-row-states-cursor';
+} from 'src/features/row/previous-row-states/previous-row-states.cursor';
 
 export function interpretPreviousRowStatesResult({
   request,
@@ -115,22 +115,79 @@ function assertCursor(
 }
 
 function toNode(row: PreviousRowStateSqlResult): PreviousRowStateNode {
+  if (!row.introducedBy) {
+    return incompleteHydration();
+  }
+
+  return {
+    row: mapRow(row),
+    table: mapTable(row),
+    revision: mapRevision(row),
+    branch: mapBranch(row),
+    introducedBy: row.introducedBy,
+  };
+}
+
+function mapRow(row: PreviousRowStateSqlResult): PreviousRowStateNode['row'] {
   if (
-    !row.introducedBy ||
     !row.rowVersionId ||
+    !row.rowCreatedId ||
     !row.rowId ||
     row.rowReadonly === null ||
     !row.rowCreatedAt ||
     !row.rowUpdatedAt ||
     !row.rowPublishedAt ||
     row.rowHash === null ||
-    row.rowSchemaHash === null ||
+    row.rowSchemaHash === null
+  ) {
+    return incompleteHydration();
+  }
+
+  return {
+    versionId: row.rowVersionId,
+    createdId: row.rowCreatedId,
+    id: row.rowId,
+    readonly: row.rowReadonly,
+    createdAt: row.rowCreatedAt,
+    updatedAt: row.rowUpdatedAt,
+    publishedAt: row.rowPublishedAt,
+    data: row.rowData,
+    meta: row.rowMeta,
+    hash: row.rowHash,
+    schemaHash: row.rowSchemaHash,
+  };
+}
+
+function mapTable(
+  row: PreviousRowStateSqlResult,
+): PreviousRowStateNode['table'] {
+  if (
     !row.nodeTableVersionId ||
+    !row.tableCreatedId ||
     !row.nodeTableId ||
     row.tableReadonly === null ||
     !row.tableCreatedAt ||
     !row.tableUpdatedAt ||
-    row.tableSystem === null ||
+    row.tableSystem === null
+  ) {
+    return incompleteHydration();
+  }
+
+  return {
+    versionId: row.nodeTableVersionId,
+    createdId: row.tableCreatedId,
+    id: row.nodeTableId,
+    readonly: row.tableReadonly,
+    createdAt: row.tableCreatedAt,
+    updatedAt: row.tableUpdatedAt,
+    system: row.tableSystem,
+  };
+}
+
+function mapRevision(
+  row: PreviousRowStateSqlResult,
+): PreviousRowStateNode['revision'] {
+  if (
     !row.eventRevisionId ||
     row.revisionSequence === null ||
     !row.revisionCreatedAt ||
@@ -139,58 +196,47 @@ function toNode(row: PreviousRowStateSqlResult): PreviousRowStateNode {
     row.revisionIsDraft === null ||
     row.revisionIsStart === null ||
     row.revisionHasChanges === null ||
-    !row.revisionBranchId ||
+    !row.revisionBranchId
+  ) {
+    return incompleteHydration();
+  }
+
+  return {
+    id: row.eventRevisionId,
+    sequence: row.revisionSequence,
+    createdAt: row.revisionCreatedAt,
+    comment: row.revisionComment,
+    isHead: row.revisionIsHead,
+    isDraft: row.revisionIsDraft,
+    isStart: row.revisionIsStart,
+    hasChanges: row.revisionHasChanges,
+    branchId: row.revisionBranchId,
+    parentId: row.revisionParentId,
+  };
+}
+
+function mapBranch(
+  row: PreviousRowStateSqlResult,
+): PreviousRowStateNode['branch'] {
+  if (
     !row.branchId ||
     !row.branchCreatedAt ||
     row.branchIsRoot === null ||
     row.branchName === null ||
     row.branchProjectId === null
   ) {
-    throw new Error('Previous row state hydration is incomplete');
+    return incompleteHydration();
   }
 
   return {
-    row: {
-      versionId: row.rowVersionId,
-      createdId: row.rowCreatedId as string,
-      id: row.rowId,
-      readonly: row.rowReadonly,
-      createdAt: row.rowCreatedAt,
-      updatedAt: row.rowUpdatedAt,
-      publishedAt: row.rowPublishedAt,
-      data: row.rowData,
-      meta: row.rowMeta,
-      hash: row.rowHash,
-      schemaHash: row.rowSchemaHash,
-    },
-    table: {
-      versionId: row.nodeTableVersionId,
-      createdId: row.tableCreatedId as string,
-      id: row.nodeTableId,
-      readonly: row.tableReadonly,
-      createdAt: row.tableCreatedAt,
-      updatedAt: row.tableUpdatedAt,
-      system: row.tableSystem,
-    },
-    revision: {
-      id: row.eventRevisionId,
-      sequence: row.revisionSequence,
-      createdAt: row.revisionCreatedAt,
-      comment: row.revisionComment,
-      isHead: row.revisionIsHead,
-      isDraft: row.revisionIsDraft,
-      isStart: row.revisionIsStart,
-      hasChanges: row.revisionHasChanges,
-      branchId: row.revisionBranchId,
-      parentId: row.revisionParentId,
-    },
-    branch: {
-      id: row.branchId,
-      createdAt: row.branchCreatedAt,
-      isRoot: row.branchIsRoot,
-      name: row.branchName,
-      projectId: row.branchProjectId,
-    },
-    introducedBy: row.introducedBy,
+    id: row.branchId,
+    createdAt: row.branchCreatedAt,
+    isRoot: row.branchIsRoot,
+    name: row.branchName,
+    projectId: row.branchProjectId,
   };
+}
+
+function incompleteHydration(): never {
+  throw new Error('Previous row state hydration is incomplete');
 }

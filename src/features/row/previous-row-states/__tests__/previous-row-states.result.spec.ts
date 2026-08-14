@@ -1,8 +1,8 @@
-import { interpretPreviousRowStatesResult } from 'src/features/row/services/previous-row-states.result';
-import type { ParsedPreviousRowStatesRequest } from 'src/features/row/services/previous-row-states.request';
-import type { PreviousRowStateSqlResult } from 'src/features/row/utils/get-previous-row-states-sql';
+import type { ParsedPreviousRowStatesRequest } from 'src/features/row/previous-row-states/previous-row-states.request';
+import { interpretPreviousRowStatesResult } from 'src/features/row/previous-row-states/previous-row-states.result';
+import type { PreviousRowStateSqlResult } from 'src/features/row/previous-row-states/sql/get-previous-row-states.sql';
 
-describe('interpretPreviousRowStatesResult', () => {
+describe('Previous row states result', () => {
   const request: ParsedPreviousRowStatesRequest = {
     revisionId: 'tip-revision',
     tableId: 'table',

@@ -2,10 +2,10 @@ import { BadRequestException } from '@nestjs/common';
 import {
   parsePreviousRowStatesRequest,
   throwPreviousRowStatesCursorScopeError,
-} from 'src/features/row/services/previous-row-states.request';
-import { encodePreviousRowStatesCursor } from 'src/features/row/utils/previous-row-states-cursor';
+} from 'src/features/row/previous-row-states/previous-row-states.request';
+import { encodePreviousRowStatesCursor } from 'src/features/row/previous-row-states/previous-row-states.cursor';
 
-describe('parsePreviousRowStatesRequest', () => {
+describe('Previous row states request', () => {
   const cursor = encodePreviousRowStatesCursor({
     v: 1,
     tipRevisionId: 'revision',

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { Prisma } from 'src/__generated__/client';
-import { getPreviousRowStatesSql } from 'src/features/row/utils/get-previous-row-states-sql';
+import { getPreviousRowStatesSql } from 'src/features/row/previous-row-states/sql/get-previous-row-states.sql';
 
-describe('getPreviousRowStatesSql physical shape', () => {
+describe('Previous row states SQL physical shape', () => {
   const query = getPreviousRowStatesSql({
     revisionId: 'revision',
     tableId: 'table',

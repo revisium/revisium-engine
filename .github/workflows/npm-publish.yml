@@ -13,10 +13,10 @@ jobs:
     uses: revisium/revisium-actions/.github/workflows/npm-publish.yml@6f243e6b395abc914c4427d204ffad7822a8e9e3 # v0.5.0
     with:
       node_version: 24.11.1
-      install_command: npm ci --ignore-scripts
+      install_command: corepack enable && pnpm install --frozen-lockfile
       pre_publish_commands: |
-        npm run prisma:generate
-        npm run build
+        pnpm run prisma:generate
+        pnpm run build
       npm_access: public
       publish_auth: token
       create_github_release: true

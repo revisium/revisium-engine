@@ -1,4 +1,5 @@
 const eslint = require('@eslint/js');
+const globals = require('globals');
 const tseslint = require('typescript-eslint');
 const prettierPlugin = require('eslint-plugin-prettier');
 const sonarjsPlugin = require('eslint-plugin-sonarjs');
@@ -13,8 +14,8 @@ module.exports = [
     },
     languageOptions: {
       globals: {
-        ...require('globals/globals.json').node,
-        ...require('globals/globals.json').jest,
+        ...globals.node,
+        ...globals.jest,
       },
       parser: tseslint.parser,
       parserOptions: {

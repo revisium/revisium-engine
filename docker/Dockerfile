@@ -2,14 +2,16 @@ FROM node:24.11.1-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --ignore-scripts
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm rebuild sharp @swc/core @prisma/engines prisma
 
 COPY src ./src
 COPY prisma ./prisma
 COPY tsconfig.json tsconfig.build.json nest-cli.json prisma.config.ts ./
 
-RUN npm run build
+RUN pnpm run build
 
 FROM node:24.11.1-alpine
 

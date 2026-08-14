@@ -61,21 +61,29 @@ export interface PreviousRowStateSqlResult {
   branchProjectId: string | null;
 }
 
-export function getPreviousRowStatesSql({
+export type PreviousRowStatesSqlParams = {
+  readonly revisionId: string;
+  readonly tableId: string;
+  readonly rowId: string;
+  readonly first: number;
+  readonly afterDepth: number | null;
+  readonly afterRevisionId: string | null;
+};
+
+export function getPreviousRowStatesSql(
+  params: PreviousRowStatesSqlParams,
+): Sql {
+  return sql`${selectorAndLineageSql(params)}${IDENTITY_SQL}${INTEGRITY_AND_EVENTS_SQL}${PAGINATION_SQL}${HYDRATION_SQL}`;
+}
+
+function selectorAndLineageSql({
   revisionId,
   tableId,
   rowId,
   first,
   afterDepth,
   afterRevisionId,
-}: {
-  revisionId: string;
-  tableId: string;
-  rowId: string;
-  first: number;
-  afterDepth: number | null;
-  afterRevisionId: string | null;
-}): Sql {
+}: PreviousRowStatesSqlParams): Sql {
   return sql`
 WITH RECURSIVE
 params AS MATERIALIZED (
@@ -152,7 +160,10 @@ lineage AS MATERIALIZED (
     OFFSET 0
   ) parent ON true
   WHERE parent."sequence" < child.sequence
-),
+)`;
+}
+
+const IDENTITY_SQL = sql`,
 table_identity_versions AS MATERIALIZED (
   SELECT
     table_version."versionId" AS table_version_id,
@@ -214,7 +225,9 @@ row_candidates AS MATERIALIZED (
   FROM row_identity_memberships row_membership
   JOIN table_candidates table_candidate
     ON table_candidate.table_version_id = row_membership.table_version_id
-),
+)`;
+
+const INTEGRITY_AND_EVENTS_SQL = sql`,
 states AS MATERIALIZED (
   SELECT
     lineage.revision_id,
@@ -361,7 +374,9 @@ semantic_events AS MATERIALIZED (
 ),
 previous_events AS MATERIALIZED (
   SELECT * FROM semantic_events WHERE event_number > 1
-),
+)`;
+
+const PAGINATION_SQL = sql`,
 cursor_check AS MATERIALIZED (
   SELECT
     params.after_depth IS NULL
@@ -409,7 +424,9 @@ metadata AS MATERIALIZED (
   CROSS JOIN integrity
   CROSS JOIN cursor_check
   CROSS JOIN params
-)
+)`;
+
+const HYDRATION_SQL = sql`
 SELECT
   metadata.selector_count AS "selectorCount",
   metadata.project_id AS "projectId",
@@ -467,4 +484,3 @@ LEFT JOIN "Revision" revision ON revision."id" = page.revision_id
 LEFT JOIN "Branch" branch ON branch."id" = page.branch_id
 ORDER BY page.depth NULLS LAST
   `;
-}

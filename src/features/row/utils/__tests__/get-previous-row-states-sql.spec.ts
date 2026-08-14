@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Prisma } from 'src/__generated__/client';
 import { getPreviousRowStatesSql } from 'src/features/row/utils/get-previous-row-states-sql';
 
@@ -7,10 +8,28 @@ describe('getPreviousRowStatesSql physical shape', () => {
     tableId: 'table',
     rowId: 'row',
     first: 10,
-    afterDepth: null,
-    afterRevisionId: null,
+    afterDepth: 7,
+    afterRevisionId: 'after-revision',
   });
   const text = getSqlText(query);
+
+  it('matches the captured rendered SQL and bound-value order', () => {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+
+    expect(normalized).toHaveLength(10_731);
+    expect(createHash('sha256').update(normalized).digest('hex')).toBe(
+      '6ff127e3f3870c7f87a59b0edc1691b197eef094f438a4b89605a7c3bd8ac956',
+    );
+    expect(query.values).toEqual([
+      'revision',
+      'table',
+      'row',
+      10,
+      7,
+      'after-revision',
+    ]);
+    expect(text.match(/\$\d+/g)).toEqual(['$1', '$2', '$3', '$4', '$5', '$6']);
+  });
 
   it('carries ancestry depth in one recursive CTE', () => {
     expect(text).toMatch(/WITH RECURSIVE/);
@@ -46,5 +65,5 @@ describe('getPreviousRowStatesSql physical shape', () => {
 });
 
 function getSqlText(query: Prisma.Sql): string {
-  return query.strings.join('?');
+  return query.text;
 }

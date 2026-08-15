@@ -57,7 +57,9 @@ model Revision {
   children   Revision[] @relation("parentRevision")
   tables     Table[]
 
-  @@index([branchId])
+  @@index([branchId, sequence])
+  @@index([branchId, isStart])
+  @@index([branchId, isDraft])
 }
 ```
 
@@ -88,6 +90,7 @@ model Table {
   rows      Row[]
 
   @@index([id])
+  @@index([createdId])
 }
 ```
 
@@ -119,7 +122,11 @@ model Row {
   tables      Table[]
 
   @@index([data], type: Gin)
+  @@index([createdId])
   @@index([id])
+  @@index([hash])
+  @@index([schemaHash])
+  @@index([publishedAt])
 }
 ```
 

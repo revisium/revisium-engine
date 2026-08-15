@@ -7,12 +7,11 @@ import { encodePreviousRowStatesCursor } from 'src/features/row/previous-row-sta
 
 describe('Previous row states request', () => {
   const cursor = encodePreviousRowStatesCursor({
-    v: 1,
     tipRevisionId: 'revision',
     tableCreatedId: 'table-created',
     rowCreatedId: 'row-created',
     eventRevisionId: 'event-revision',
-    depth: 2,
+    sequence: 2,
   });
 
   it('parses a valid request and strict cursor', () => {
@@ -30,12 +29,11 @@ describe('Previous row states request', () => {
       rowId: 'row',
       first: 10,
       after: {
-        v: 1,
         tipRevisionId: 'revision',
         tableCreatedId: 'table-created',
         rowCreatedId: 'row-created',
         eventRevisionId: 'event-revision',
-        depth: 2,
+        sequence: 2,
       },
     });
   });

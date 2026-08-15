@@ -37,7 +37,9 @@ model Revision {
   children Revision[] @relation("parentRevision")
   tables   Table[]
 
-  @@index([branchId])
+  @@index([branchId, sequence])
+  @@index([branchId, isStart])
+  @@index([branchId, isDraft])
 }
 
 model Table {

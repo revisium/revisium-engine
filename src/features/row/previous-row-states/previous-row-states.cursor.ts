@@ -1,33 +1,39 @@
 import { BadRequestException } from '@nestjs/common';
 
-/** Opaque, versioned position within one exact logical-row history stream. */
-export type PreviousRowStatesCursorV1 = {
-  readonly v: 1;
+// Revision.sequence is a PostgreSQL integer; an unbounded client-supplied
+// value would fail the ::integer cast with a 500 instead of a 400.
+const MAX_SEQUENCE = 2147483647;
+
+/**
+ * Opaque position within one exact logical-row history stream, keyed by the
+ * event Revision and its global sequence. The decoder accepts exactly this
+ * shape — any cursor from a different build of the payload is rejected.
+ */
+export type PreviousRowStatesCursor = {
   readonly tipRevisionId: string;
   readonly tableCreatedId: string;
   readonly rowCreatedId: string;
   readonly eventRevisionId: string;
-  readonly depth: number;
+  readonly sequence: number;
 };
 
 const CURSOR_KEYS = [
-  'depth',
   'eventRevisionId',
   'rowCreatedId',
+  'sequence',
   'tableCreatedId',
   'tipRevisionId',
-  'v',
 ];
 
 export function encodePreviousRowStatesCursor(
-  cursor: PreviousRowStatesCursorV1,
+  cursor: PreviousRowStatesCursor,
 ): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
 export function decodePreviousRowStatesCursor(
   value: string,
-): PreviousRowStatesCursorV1 {
+): PreviousRowStatesCursor {
   try {
     if (!value || !/^[A-Za-z0-9_-]+$/.test(value)) {
       throw new Error('invalid base64url');
@@ -48,7 +54,7 @@ export function decodePreviousRowStatesCursor(
   }
 }
 
-function isCursor(value: unknown): value is PreviousRowStatesCursorV1 {
+function isCursor(value: unknown): value is PreviousRowStatesCursor {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return false;
   }
@@ -58,13 +64,13 @@ function isCursor(value: unknown): value is PreviousRowStatesCursorV1 {
   return (
     keys.length === CURSOR_KEYS.length &&
     keys.every((key, index) => key === CURSOR_KEYS[index]) &&
-    cursor.v === 1 &&
     isNonEmptyString(cursor.tipRevisionId) &&
     isNonEmptyString(cursor.tableCreatedId) &&
     isNonEmptyString(cursor.rowCreatedId) &&
     isNonEmptyString(cursor.eventRevisionId) &&
-    Number.isInteger(cursor.depth) &&
-    (cursor.depth as number) > 0
+    Number.isInteger(cursor.sequence) &&
+    (cursor.sequence as number) > 0 &&
+    (cursor.sequence as number) <= MAX_SEQUENCE
   );
 }
 

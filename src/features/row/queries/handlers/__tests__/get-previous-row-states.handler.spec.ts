@@ -3,7 +3,7 @@ import { GetPreviousRowStatesQuery } from 'src/features/row/queries/impl';
 import type { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 describe('GetPreviousRowStatesHandler', () => {
-  it('returns null without executing history SQL when the revision is missing', async () => {
+  it('returns null without running the history walk when the revision is missing', async () => {
     const data = {
       revisionId: 'revision',
       tableId: 'table',
@@ -11,8 +11,7 @@ describe('GetPreviousRowStatesHandler', () => {
       first: 10,
     };
     const prisma = {
-      revision: { findUnique: jest.fn().mockResolvedValue(null) },
-      $queryRaw: jest.fn(),
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
     const transactionService = {
       getTransactionOrPrisma: jest.fn().mockReturnValue(prisma),
@@ -22,10 +21,6 @@ describe('GetPreviousRowStatesHandler', () => {
     await expect(
       handler.execute(new GetPreviousRowStatesQuery(data)),
     ).resolves.toBeNull();
-    expect(prisma.revision.findUnique).toHaveBeenCalledWith({
-      where: { id: 'revision' },
-      select: { isDraft: true },
-    });
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 });

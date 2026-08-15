@@ -1,5 +1,8 @@
 import type { ParsedPreviousRowStatesRequest } from 'src/features/row/previous-row-states/previous-row-states.request';
-import { interpretPreviousRowStatesResult } from 'src/features/row/previous-row-states/previous-row-states.result';
+import {
+  interpretPreviousRowStatesResult,
+  type ResolvedHistorySelector,
+} from 'src/features/row/previous-row-states/previous-row-states.result';
 import type { PreviousRowStateSqlResult } from 'src/features/row/previous-row-states/sql/get-previous-row-states.sql';
 
 describe('Previous row states result', () => {
@@ -10,11 +13,19 @@ describe('Previous row states result', () => {
     first: 10,
     after: null,
   };
+  const selector: ResolvedHistorySelector = {
+    tableCreatedId: 'table-created',
+    rowCreatedId: 'row-created',
+  };
 
   it('projects hydrated rows into the public connection', () => {
     const row = createRawRow();
 
-    const result = interpretPreviousRowStatesResult({ request, rows: [row] });
+    const result = interpretPreviousRowStatesResult({
+      request,
+      selector,
+      rows: [row],
+    });
 
     expect(result).toEqual({
       edges: [
@@ -76,30 +87,6 @@ describe('Previous row states result', () => {
     });
   });
 
-  it('returns null for an unresolved selector and preserves cursor precedence', () => {
-    const unresolved = createRawRow({ selectorCount: 0 });
-
-    expect(
-      interpretPreviousRowStatesResult({ request, rows: [unresolved] }),
-    ).toBeNull();
-    expect(() =>
-      interpretPreviousRowStatesResult({
-        request: {
-          ...request,
-          after: {
-            v: 1,
-            tipRevisionId: request.revisionId,
-            tableCreatedId: 'table-created',
-            rowCreatedId: 'row-created',
-            eventRevisionId: 'event-revision',
-            depth: 2,
-          },
-        },
-        rows: [unresolved],
-      }),
-    ).toThrow('Previous row states cursor does not belong to this result');
-  });
-
   it('checks full integrity before cursor membership', () => {
     const invalid = createRawRow({ hasCycle: true, cursorValid: false });
 
@@ -108,23 +95,45 @@ describe('Previous row states result', () => {
         request: {
           ...request,
           after: {
-            v: 1,
             tipRevisionId: request.revisionId,
             tableCreatedId: 'table-created',
             rowCreatedId: 'row-created',
             eventRevisionId: 'event-revision',
-            depth: 2,
+            sequence: 2,
           },
         },
+        selector,
         rows: [invalid],
       }),
     ).toThrow('Cycle in selected revision ancestry');
+  });
+
+  it('rejects a cursor whose identities or membership no longer match', () => {
+    const rows = [createRawRow({ cursorValid: false })];
+
+    expect(() =>
+      interpretPreviousRowStatesResult({
+        request: {
+          ...request,
+          after: {
+            tipRevisionId: request.revisionId,
+            tableCreatedId: 'table-created',
+            rowCreatedId: 'row-created',
+            eventRevisionId: 'event-revision',
+            sequence: 2,
+          },
+        },
+        selector,
+        rows,
+      }),
+    ).toThrow('Previous row states cursor does not belong to this result');
   });
 
   it('rejects incomplete page hydration', () => {
     expect(() =>
       interpretPreviousRowStatesResult({
         request,
+        selector,
         rows: [createRawRow({ rowVersionId: null })],
       }),
     ).toThrow('Previous row state hydration is incomplete');
@@ -136,10 +145,6 @@ function createRawRow(
 ): PreviousRowStateSqlResult {
   const date = new Date('2026-08-14T00:00:00.000Z');
   return {
-    selectorCount: 1,
-    projectId: 'project',
-    tableCreatedId: 'table-created',
-    rowCreatedId: 'row-created',
     hasCycle: false,
     hasGap: false,
     hasDraft: false,
@@ -151,9 +156,10 @@ function createRawRow(
     totalCount: 1n,
     hasNextPage: false,
     eventRevisionId: 'event-revision',
-    eventDepth: 2,
+    eventSequence: 2,
     introducedBy: ['created'],
     rowVersionId: 'row-version',
+    rowCreatedId: 'row-created',
     rowId: 'row',
     rowReadonly: false,
     rowCreatedAt: date,
@@ -164,6 +170,7 @@ function createRawRow(
     rowHash: 'hash',
     rowSchemaHash: 'schema-hash',
     nodeTableVersionId: 'table-version',
+    tableCreatedId: 'table-created',
     nodeTableId: 'table',
     tableReadonly: false,
     tableCreatedAt: date,

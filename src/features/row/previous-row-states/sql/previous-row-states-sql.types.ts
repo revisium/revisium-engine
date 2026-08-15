@@ -1,12 +1,42 @@
 import type { JsonValue } from 'src/engine-prisma-types';
 import type { RowStateIntroductionType } from 'src/features/row/queries/impl/get-previous-row-states.query';
 
-/** Raw PostgreSQL projection before application-level validation. */
-export interface PreviousRowStateSqlResult {
+export type HistorySelectorSqlParams = {
+  readonly revisionId: string;
+  readonly tableId: string;
+  readonly rowId: string;
+};
+
+/**
+ * Selected-snapshot resolution: the tip Revision, identities, uniqueness,
+ * and the version count (capped just past the strategy threshold).
+ */
+export interface HistorySelectorSqlResult {
+  tipIsDraft: boolean;
+  tipBranchId: string;
+  tipSequence: number;
+  projectId: string;
   selectorCount: number;
-  projectId: string | null;
   tableCreatedId: string | null;
   rowCreatedId: string | null;
+  rowVersionCount: number;
+}
+
+export type PreviousRowStatesSqlParams = {
+  readonly tipBranchId: string;
+  readonly tipSequence: number;
+  readonly projectId: string;
+  readonly tableCreatedId: string;
+  readonly rowCreatedId: string;
+  /** Total Row versions sharing the stable identity; picks the algorithm. */
+  readonly rowVersionCount: number;
+  readonly first: number;
+  readonly afterSequence: number | null;
+  readonly afterRevisionId: string | null;
+};
+
+/** Raw PostgreSQL projection before application-level validation. */
+export interface PreviousRowStateSqlResult {
   hasCycle: boolean;
   hasGap: boolean;
   hasDraft: boolean;
@@ -18,9 +48,10 @@ export interface PreviousRowStateSqlResult {
   totalCount: bigint | number;
   hasNextPage: boolean;
   eventRevisionId: string | null;
-  eventDepth: number | null;
+  eventSequence: number | null;
   introducedBy: RowStateIntroductionType[] | null;
   rowVersionId: string | null;
+  rowCreatedId: string | null;
   rowId: string | null;
   rowReadonly: boolean | null;
   rowCreatedAt: Date | null;
@@ -31,6 +62,7 @@ export interface PreviousRowStateSqlResult {
   rowHash: string | null;
   rowSchemaHash: string | null;
   nodeTableVersionId: string | null;
+  tableCreatedId: string | null;
   nodeTableId: string | null;
   tableReadonly: boolean | null;
   tableCreatedAt: Date | null;
@@ -51,12 +83,3 @@ export interface PreviousRowStateSqlResult {
   branchName: string | null;
   branchProjectId: string | null;
 }
-
-export type PreviousRowStatesSqlParams = {
-  readonly revisionId: string;
-  readonly tableId: string;
-  readonly rowId: string;
-  readonly first: number;
-  readonly afterDepth: number | null;
-  readonly afterRevisionId: string | null;
-};

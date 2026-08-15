@@ -10,26 +10,34 @@ import {
 import type { PreviousRowStateSqlResult } from 'src/features/row/previous-row-states/sql/get-previous-row-states.sql';
 import {
   encodePreviousRowStatesCursor,
-  type PreviousRowStatesCursorV1,
+  type PreviousRowStatesCursor,
 } from 'src/features/row/previous-row-states/previous-row-states.cursor';
+
+/** Stable identities already resolved for the selected snapshot. */
+export type ResolvedHistorySelector = {
+  readonly tableCreatedId: string;
+  readonly rowCreatedId: string;
+};
 
 export function interpretPreviousRowStatesResult({
   request,
+  selector,
   rows,
 }: {
   request: ParsedPreviousRowStatesRequest;
+  selector: ResolvedHistorySelector;
   rows: readonly PreviousRowStateSqlResult[];
 }): GetPreviousRowStatesQueryReturnType {
+  // metadata is a cross join of always-one-row CTEs left-joined to the page,
+  // so the statement yields at least one row even for an empty history;
+  // anything else is an internal invariant violation, not an empty result.
   const metadata = rows[0];
-  if (!metadata || metadata.selectorCount === 0) {
-    if (request.after) {
-      throwPreviousRowStatesCursorScopeError();
-    }
-    return null;
+  if (!metadata) {
+    throw new Error('Previous row states metadata row is missing');
   }
 
   assertIntegrity(metadata);
-  assertCursor(request.after, metadata);
+  assertCursor(request.after, selector, metadata);
 
   const edges = rows
     .filter(
@@ -37,17 +45,16 @@ export function interpretPreviousRowStatesResult({
         row,
       ): row is PreviousRowStateSqlResult & {
         eventRevisionId: string;
-        eventDepth: number;
-      } => row.eventRevisionId !== null && row.eventDepth !== null,
+        eventSequence: number;
+      } => row.eventRevisionId !== null && row.eventSequence !== null,
     )
     .map((row) => {
       const cursor = encodePreviousRowStatesCursor({
-        v: 1,
         tipRevisionId: request.revisionId,
-        tableCreatedId: metadata.tableCreatedId as string,
-        rowCreatedId: metadata.rowCreatedId as string,
+        tableCreatedId: selector.tableCreatedId,
+        rowCreatedId: selector.rowCreatedId,
         eventRevisionId: row.eventRevisionId,
-        depth: row.eventDepth,
+        sequence: row.eventSequence,
       });
       return { cursor, node: toNode(row) };
     });
@@ -65,11 +72,6 @@ export function interpretPreviousRowStatesResult({
 }
 
 function assertIntegrity(metadata: PreviousRowStateSqlResult): void {
-  if (metadata.selectorCount !== 1) {
-    throw new BadRequestException(
-      'Selected row snapshot must resolve exactly once',
-    );
-  }
   if (metadata.hasCycle) {
     throw new BadRequestException('Cycle in selected revision ancestry');
   }
@@ -98,7 +100,8 @@ function assertIntegrity(metadata: PreviousRowStateSqlResult): void {
 }
 
 function assertCursor(
-  after: PreviousRowStatesCursorV1 | null,
+  after: PreviousRowStatesCursor | null,
+  selector: ResolvedHistorySelector,
   metadata: PreviousRowStateSqlResult,
 ): void {
   if (!after) {
@@ -106,8 +109,8 @@ function assertCursor(
   }
 
   if (
-    after.tableCreatedId !== metadata.tableCreatedId ||
-    after.rowCreatedId !== metadata.rowCreatedId ||
+    after.tableCreatedId !== selector.tableCreatedId ||
+    after.rowCreatedId !== selector.rowCreatedId ||
     !metadata.cursorValid
   ) {
     throwPreviousRowStatesCursorScopeError();

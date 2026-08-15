@@ -126,6 +126,8 @@ ProjectFileUsage (per-project byte counter, keyed by opaque projectId)
 - [API Reference](docs/api.md) — all `EngineApiService` methods with inputs/outputs
 - [Integration Guide](docs/integration.md) — how to use in your NestJS app
 - [Versioning System](docs/versioning.md) — data model, copy-on-write, commit/revert, invariants
+- [Consistency and ChangeSet Contract](docs/consistency.md) — proposed ChangeSet contract; not implemented by the current runtime
+- [Partial Commit Design](docs/design/partial-commit.md) — exploratory future design; no runtime API
 - [File Usage Tracking](docs/file-usage.md) — dedup-aware file byte counters, reconciliation API
 
 ## Development

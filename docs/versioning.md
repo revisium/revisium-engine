@@ -440,9 +440,9 @@ New (feature):
 
 ## Exclusive Previous Row States
 
-`getPreviousRowStates` reads the ancestry of an exact committed snapshot. It
-walks only `Revision.parentId`, so a fork crosses into its source Branch but
-never reads siblings, children, future commits, or mutable Draft state. Every
+`getPreviousRowStates` reads the ancestry of an exact committed snapshot: the
+`Revision.parentId` chain, so a fork crosses into its source Branch but never
+reads siblings, children, future commits, or mutable Draft state. Every
 ancestor Branch must belong to the selected Project. The lineage must terminate
 at the Project's original start Revision; a causally later fork start without
 its source parent and any Draft Revision in the chain are rejected. This graph
@@ -461,17 +461,38 @@ R10 A; R15 B; R20 rename to C; selected R20 ->
   [B@R15(modified), A@R10(created)]
 ```
 
-Semantic equality is persisted `Row.id` plus JSON equality of `Row.data`.
+Semantic equality is persisted `Row.id` plus `Row.data` content, compared
+through the persisted `Row.hash` (recomputed on every data write and carried
+unchanged by copy-on-write clones).
 `introducedBy` describes the direct-parent transition into each returned node:
 `created`, `renamed`, and/or `modified`. Table changes and Row `versionId`,
 metadata, schema hash, timestamps, and readonly state are excluded.
 
-The physical query resolves stable `Table.createdId` and `Row.createdId`
-candidate versions through non-unique indexes, follows the M:N indexes, and
-intersects those candidates with one depth-carrying recursive lineage. Exact
-count and depth-keyset pagination operate on the semantic event stream. The
-opaque cursor binds the tip, both stable identities, event Revision and depth;
-non-event or cross-scope cursors are rejected.
+Physically the read is two statements. A selector statement resolves the tip
+Revision and the stable `Table.createdId`/`Row.createdId` identities, and
+counts the Row's versions (capped just past the strategy threshold). The walk
+statement then materializes ancestry as `(branch, max sequence)` intervals —
+one recursion step per fork hop, backed by the composite
+`Revision(branchId, …)` indexes — never one step per Revision. Introductions
+are found either by bisection over the sequence axis (the default: the row's
+state is a step function with one step per version, so every boundary is
+located in `O(versions x log revisions)` point lookups, each checking up to
+`versions` candidates by primary key — independent of how many Table versions
+carry each Row version) or, for rows with more than 100 versions, by a direct
+membership scan. Exact count and sequence-keyset
+pagination operate on the semantic event stream; `totalCount` is the number of
+effective versions, already materialized. The opaque cursor binds the tip,
+both stable identities, the event Revision, and its global sequence; non-event
+or cross-scope cursors are rejected. Duplicate-state and vanish/reappear
+corruption is detected best-effort at probed Revisions (which always include
+every interval endpoint and event boundary) rather than by scanning the full
+lineage on every page. A Row identity re-linked so that two probed points
+carry equal states around a hidden gap is inherently invisible to bisection;
+such data violates the no-reappearance invariant and cannot be produced
+through the engine API. The membership-scan path checks only duplicate-Row
+collisions (two versions introduced by one Revision) — duplicate-Table and
+vanish/reappear corruption is not observable there without the full
+per-revision scan this design removes.
 
 Deletion/restoration history is not represented: recreating a user-facing Row
 id with a new `createdId` starts a separate state stream.

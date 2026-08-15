@@ -3,10 +3,6 @@ import { sql } from 'src/engine-prisma-types';
 // Hydrate only the page selected by the preceding stages.
 export const HYDRATION_SQL = sql`
 SELECT
-  metadata.selector_count AS "selectorCount",
-  metadata.project_id AS "projectId",
-  metadata.table_created_id AS "tableCreatedId",
-  metadata.row_created_id AS "rowCreatedId",
   metadata.has_cycle AS "hasCycle",
   metadata.has_gap AS "hasGap",
   metadata.has_draft AS "hasDraft",
@@ -18,9 +14,10 @@ SELECT
   metadata.total_count AS "totalCount",
   metadata.has_next_page AS "hasNextPage",
   page.revision_id AS "eventRevisionId",
-  page.depth AS "eventDepth",
+  page.introduced_seq AS "eventSequence",
   page.introduced_by AS "introducedBy",
   row."versionId" AS "rowVersionId",
+  row."createdId" AS "rowCreatedId",
   row."id" AS "rowId",
   row."readonly" AS "rowReadonly",
   row."createdAt" AS "rowCreatedAt",
@@ -30,12 +27,13 @@ SELECT
   row."meta" AS "rowMeta",
   row."hash" AS "rowHash",
   row."schemaHash" AS "rowSchemaHash",
-  table_version."versionId" AS "nodeTableVersionId",
-  table_version."id" AS "nodeTableId",
-  table_version."readonly" AS "tableReadonly",
-  table_version."createdAt" AS "tableCreatedAt",
-  table_version."updatedAt" AS "tableUpdatedAt",
-  table_version."system" AS "tableSystem",
+  node_table."versionId" AS "nodeTableVersionId",
+  node_table."createdId" AS "tableCreatedId",
+  node_table."id" AS "nodeTableId",
+  node_table."readonly" AS "tableReadonly",
+  node_table."createdAt" AS "tableCreatedAt",
+  node_table."updatedAt" AS "tableUpdatedAt",
+  node_table."system" AS "tableSystem",
   revision."sequence" AS "revisionSequence",
   revision."createdAt" AS "revisionCreatedAt",
   revision."comment" AS "revisionComment",
@@ -53,9 +51,25 @@ SELECT
 FROM metadata
 LEFT JOIN page ON true
 LEFT JOIN "Row" row ON row."versionId" = page.row_version_id
-LEFT JOIN "Table" table_version
-  ON table_version."versionId" = page.table_version_id
 LEFT JOIN "Revision" revision ON revision."id" = page.revision_id
-LEFT JOIN "Branch" branch ON branch."id" = page.branch_id
-ORDER BY page.depth NULLS LAST
+LEFT JOIN "Branch" branch ON branch."id" = revision."branchId"
+LEFT JOIN LATERAL (
+  SELECT
+    table_version."versionId",
+    table_version."createdId",
+    table_version."id",
+    table_version."readonly",
+    table_version."createdAt",
+    table_version."updatedAt",
+    table_version."system"
+  FROM "_RevisionToTable" revision_table
+  JOIN "Table" table_version
+    ON table_version."versionId" = revision_table."B"
+  CROSS JOIN params
+  WHERE revision_table."A" = page.revision_id
+    AND table_version."createdId" = params.table_created_id
+  ORDER BY table_version."versionId"
+  LIMIT 1
+) node_table ON true
+ORDER BY page.introduced_seq DESC NULLS LAST
   `;

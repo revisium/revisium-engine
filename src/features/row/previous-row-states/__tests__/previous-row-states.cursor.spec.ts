@@ -2,34 +2,34 @@ import { BadRequestException } from '@nestjs/common';
 import {
   decodePreviousRowStatesCursor,
   encodePreviousRowStatesCursor,
-  type PreviousRowStatesCursorV1,
+  type PreviousRowStatesCursor,
 } from 'src/features/row/previous-row-states/previous-row-states.cursor';
 
-describe('Previous row states cursor v1', () => {
-  const encodedV1 =
-    'eyJ2IjoxLCJ0aXBSZXZpc2lvbklkIjoidGlwLXJldmlzaW9uIiwidGFibGVDcmVhdGVkSWQiOiJ0YWJsZS1jcmVhdGVkIiwicm93Q3JlYXRlZElkIjoicm93LWNyZWF0ZWQiLCJldmVudFJldmlzaW9uSWQiOiJldmVudC1yZXZpc2lvbiIsImRlcHRoIjoyfQ';
-  const cursor: PreviousRowStatesCursorV1 = {
-    v: 1,
+describe('Previous row states cursor', () => {
+  const encoded =
+    'eyJ0aXBSZXZpc2lvbklkIjoidGlwLXJldmlzaW9uIiwidGFibGVDcmVhdGVkSWQiOiJ0YWJsZS1jcmVhdGVkIiwicm93Q3JlYXRlZElkIjoicm93LWNyZWF0ZWQiLCJldmVudFJldmlzaW9uSWQiOiJldmVudC1yZXZpc2lvbiIsInNlcXVlbmNlIjoyfQ';
+  const cursor: PreviousRowStatesCursor = {
     tipRevisionId: 'tip-revision',
     tableCreatedId: 'table-created',
     rowCreatedId: 'row-created',
     eventRevisionId: 'event-revision',
-    depth: 2,
+    sequence: 2,
   };
 
-  it('round-trips the existing v1 payload', () => {
-    expect(encodePreviousRowStatesCursor(cursor)).toBe(encodedV1);
-    expect(decodePreviousRowStatesCursor(encodedV1)).toEqual(cursor);
+  it('round-trips the payload', () => {
+    expect(encodePreviousRowStatesCursor(cursor)).toBe(encoded);
+    expect(decodePreviousRowStatesCursor(encoded)).toEqual(cursor);
   });
 
   it.each([
     '',
     'not-json',
-    encode({ ...cursor, v: 2 }),
-    encode({ ...cursor, depth: 0 }),
-    encode({ ...cursor, extra: true }),
+    // any unknown key rejects, including a versioned cursor from older builds
+    encode({ ...cursor, v: 1 }),
+    encode({ ...cursor, sequence: 0 }),
+    encode({ ...cursor, sequence: Number.MAX_SAFE_INTEGER }),
     encode({ ...cursor, rowCreatedId: '' }),
-  ])('rejects a non-v1 cursor payload', (value) => {
+  ])('rejects a foreign cursor payload', (value) => {
     expect(() => decodePreviousRowStatesCursor(value)).toThrow(
       BadRequestException,
     );

@@ -10,7 +10,9 @@ import {
 } from 'src/features/row/previous-row-states/previous-row-states.request';
 import { interpretPreviousRowStatesResult } from 'src/features/row/previous-row-states/previous-row-states.result';
 import {
+  getHistorySelectorSql,
   getPreviousRowStatesSql,
+  type HistorySelectorSqlResult,
   type PreviousRowStateSqlResult,
 } from 'src/features/row/previous-row-states/sql/get-previous-row-states.sql';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -30,35 +32,65 @@ export class GetPreviousRowStatesHandler implements IQueryHandler<
     data,
   }: GetPreviousRowStatesQuery): Promise<GetPreviousRowStatesQueryReturnType> {
     const request = parsePreviousRowStatesRequest(data);
-    const selectedRevision = await this.prisma.revision.findUnique({
-      where: { id: request.revisionId },
-      select: { isDraft: true },
-    });
+    const [selector] = await this.prisma.$queryRaw<HistorySelectorSqlResult[]>(
+      getHistorySelectorSql({
+        revisionId: request.revisionId,
+        tableId: request.tableId,
+        rowId: request.rowId,
+      }),
+    );
 
-    if (!selectedRevision) {
+    if (!selector) {
       if (request.after) {
         throwPreviousRowStatesCursorScopeError();
       }
       return null;
     }
 
-    if (selectedRevision.isDraft) {
+    if (selector.tipIsDraft) {
       throw new BadRequestException(
         'Previous row states require a committed revision',
       );
     }
 
+    if (selector.selectorCount === 0) {
+      if (request.after) {
+        throwPreviousRowStatesCursorScopeError();
+      }
+      return null;
+    }
+
+    if (
+      selector.selectorCount !== 1 ||
+      !selector.tableCreatedId ||
+      !selector.rowCreatedId
+    ) {
+      throw new BadRequestException(
+        'Selected row snapshot must resolve exactly once',
+      );
+    }
+
     const rows = await this.prisma.$queryRaw<PreviousRowStateSqlResult[]>(
       getPreviousRowStatesSql({
-        revisionId: request.revisionId,
-        tableId: request.tableId,
-        rowId: request.rowId,
+        tipBranchId: selector.tipBranchId,
+        tipSequence: selector.tipSequence,
+        projectId: selector.projectId,
+        tableCreatedId: selector.tableCreatedId,
+        rowCreatedId: selector.rowCreatedId,
+        rowVersionCount: selector.rowVersionCount,
         first: request.first,
-        afterDepth: request.after?.depth ?? null,
+        afterSequence: request.after?.sequence ?? null,
         afterRevisionId: request.after?.eventRevisionId ?? null,
       }),
     );
 
-    return interpretPreviousRowStatesResult({ request, rows });
+    return interpretPreviousRowStatesResult({
+      request,
+      selector: {
+        tableCreatedId: selector.tableCreatedId,
+        rowCreatedId: selector.rowCreatedId,
+      },
+      rows,
+    });
   }
 }

@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import type { GetPreviousRowStatesQueryData } from 'src/features/row/queries/impl/get-previous-row-states.query';
 import {
   decodePreviousRowStatesCursor,
-  type PreviousRowStatesCursorV1,
+  type PreviousRowStatesCursor,
 } from 'src/features/row/previous-row-states/previous-row-states.cursor';
 
 const MIN_PAGE_SIZE = 1;
@@ -12,7 +12,7 @@ export type ParsedPreviousRowStatesRequest = Omit<
   GetPreviousRowStatesQueryData,
   'after'
 > & {
-  readonly after: PreviousRowStatesCursorV1 | null;
+  readonly after: PreviousRowStatesCursor | null;
 };
 
 export function parsePreviousRowStatesRequest(

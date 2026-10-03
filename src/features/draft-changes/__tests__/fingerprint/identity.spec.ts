@@ -1,8 +1,8 @@
-import { fingerprintDraftChangesSnapshot } from 'src/features/draft-changes/draft-changes.fingerprint';
+import { fingerprintDraftChangesSnapshot } from 'src/features/draft-changes/snapshot/fingerprint';
 import {
   fingerprintSnapshot,
   firstDraftRow,
-} from './support/fingerprint-fixtures';
+} from '../snapshot/support/fingerprint-fixtures';
 
 describe('draft changes fingerprint identity', () => {
   it('binds Head and Draft roles and their relationship', () => {

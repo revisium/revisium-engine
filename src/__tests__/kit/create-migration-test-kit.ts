@@ -4,8 +4,6 @@ import { CommandBus, CqrsModule } from '@nestjs/cqrs';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
-import { DraftChangesModule } from 'src/features/draft-changes/draft-changes.module';
-import { DraftChangesApiService } from 'src/features/draft-changes/draft-changes-api.service';
 import { DraftModule } from 'src/features/draft/draft.module';
 import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
@@ -50,7 +48,6 @@ export interface MigrationTestKit {
   migrationLockService: MigrationLockService;
   migrationService: MigrationService;
   migrationProgressService: MigrationProgressService;
-  draftChangesApi: DraftChangesApiService;
   transactionService: TransactionPrismaService;
   close(): Promise<void>;
 }
@@ -72,7 +69,6 @@ export async function createMigrationTestKit(
       TableModule,
       RowModule,
       DraftRevisionModule,
-      DraftChangesModule,
       DraftModule,
       ViewsModule,
       CacheModule.register(),
@@ -101,7 +97,6 @@ export async function createMigrationTestKit(
     migrationLockService: module.get(MigrationLockService),
     migrationService: module.get(MigrationService),
     migrationProgressService: module.get(MigrationProgressService),
-    draftChangesApi: module.get(DraftChangesApiService),
     transactionService: module.get(TransactionPrismaService),
     async close() {
       await module.close();

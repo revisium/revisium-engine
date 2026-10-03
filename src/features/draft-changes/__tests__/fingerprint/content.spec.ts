@@ -1,8 +1,9 @@
-import { fingerprintDraftChangesSnapshot } from 'src/features/draft-changes/draft-changes.fingerprint';
+import { fingerprintDraftChangesSnapshot } from 'src/features/draft-changes/snapshot/fingerprint';
 import {
   fingerprintSnapshot,
   firstDraftRow,
-} from './support/fingerprint-fixtures';
+  requiredBlob,
+} from '../snapshot/support/fingerprint-fixtures';
 
 describe('draft changes fingerprint content', () => {
   it('binds nested JSON when stored hashes stay the same', () => {
@@ -33,12 +34,7 @@ describe('draft changes fingerprint content', () => {
   it('binds file size metadata', () => {
     const before = fingerprintSnapshot();
     const after = structuredClone(before);
-    const blob = firstDraftRow(after).row.fileBlobs.find(
-      ({ id }) => id === 'blob-a',
-    );
-    if (!blob) {
-      throw new Error('Expected associated blob.');
-    }
+    const blob = requiredBlob(firstDraftRow(after).row, 'blob-a');
     blob.size = BigInt(99);
 
     expect(fingerprintDraftChangesSnapshot(after)).not.toBe(
@@ -49,10 +45,7 @@ describe('draft changes fingerprint content', () => {
   it('binds file availability metadata', () => {
     const before = fingerprintSnapshot();
     const after = structuredClone(before);
-    const [blob] = firstDraftRow(after).row.fileBlobs;
-    if (!blob) {
-      throw new Error('Expected an associated file blob.');
-    }
+    const blob = requiredBlob(firstDraftRow(after).row, 'blob-b');
     blob.deletedAt = new Date('2025-02-01T00:00:00.000Z');
 
     expect(fingerprintDraftChangesSnapshot(after)).not.toBe(

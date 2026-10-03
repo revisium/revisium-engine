@@ -8,3 +8,14 @@ export type {
   DraftChangesSnapshot,
   ReadDraftChangesSnapshotQueryData,
 } from 'src/features/draft-changes/queries/impl/read-draft-changes-snapshot.query';
+export { ProjectDraftChangesSchemaQuery } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
+export type {
+  DiscardedDataField,
+  ProjectDraftChangesSchemaQueryData,
+  ProjectDraftChangesSchemaResult,
+  SchemaEffectRef,
+  SchemaProjectionBlocker,
+  SchemaProjectionBlockerCode,
+  SchemaProjectionState,
+  SchemaProjectionRow,
+} from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';

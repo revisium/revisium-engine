@@ -1,4 +1,5 @@
 import { CacheModule } from '@nestjs/cache-manager';
+import type { ModuleMetadata } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CommandBus, CqrsModule, QueryBus } from '@nestjs/cqrs';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -10,6 +11,7 @@ import { DraftContextService } from 'src/features/draft/draft-context.service';
 import { MigrationContextService } from 'src/features/draft/migration-context.service';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { MigrationModule } from 'src/features/migration/migration.module';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { RevisionModule } from 'src/features/revision/revision.module';
@@ -53,7 +55,12 @@ export interface DraftTestKit {
   close(): Promise<void>;
 }
 
-export async function createDraftTestKit(): Promise<DraftTestKit> {
+export async function createDraftTestKit(
+  options: {
+    imports?: ModuleMetadata['imports'];
+    migrationOptions?: MigrationOptions;
+  } = {},
+): Promise<DraftTestKit> {
   const module = await Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true }),
@@ -62,7 +69,7 @@ export async function createDraftTestKit(): Promise<DraftTestKit> {
       StorageModule.forRoot(),
       ShareModule,
       PluginModule,
-      MigrationModule.forRoot(),
+      MigrationModule.forRoot(options.migrationOptions),
       RevisionModule,
       BranchModule,
       TableModule,
@@ -72,6 +79,7 @@ export async function createDraftTestKit(): Promise<DraftTestKit> {
       ViewsModule,
       FileUsageModule,
       CacheModule.register(),
+      ...(options.imports ?? []),
     ],
   })
     .overrideProvider(STORAGE_SERVICE)

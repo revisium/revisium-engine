@@ -49,6 +49,13 @@ module.exports = [
     },
   },
   {
+    // These acceptance suites precede the Draft Changes runtime implementation.
+    files: ['src/__tests__/integration/draft-changes/**/*.spec.ts'],
+    rules: {
+      'sonarjs/no-skipped-tests': 'off',
+    },
+  },
+  {
     ignores: [
       'dist/**',
       'node_modules/**',

@@ -43,6 +43,12 @@ export class GetRowChangesHandler implements IQueryHandler<
   async execute({
     data,
   }: GetRowChangesQuery): Promise<GetRowChangesQueryReturnType> {
+    return this.getRowChangesPage(data);
+  }
+
+  private async getRowChangesPage(
+    data: GetRowChangesQuery['data'],
+  ): Promise<GetRowChangesQueryReturnType> {
     const { revisionId, compareWithRevisionId, filters } = data;
 
     const fromRevisionId =
@@ -55,6 +61,11 @@ export class GetRowChangesHandler implements IQueryHandler<
       return createEmptyPaginatedResponse<RowChange>();
     }
 
+    const tableCreatedId = await this.resolveTableCreatedId(
+      revisionId,
+      fromRevisionId,
+      filters?.tableId,
+    );
     const includeSystem = filters?.includeSystem ?? false;
 
     return getOffsetPagination({
@@ -65,6 +76,7 @@ export class GetRowChangesHandler implements IQueryHandler<
           revisionId,
           args.take,
           args.skip,
+          tableCreatedId,
           filters,
           includeSystem,
         );
@@ -77,6 +89,7 @@ export class GetRowChangesHandler implements IQueryHandler<
         this.countRowChanges(
           fromRevisionId,
           revisionId,
+          tableCreatedId,
           filters,
           includeSystem,
         ),
@@ -88,13 +101,14 @@ export class GetRowChangesHandler implements IQueryHandler<
     toRevisionId: string,
     limit: number,
     offset: number,
+    tableCreatedId: string | null | undefined,
     filters?: GetRowChangesQuery['data']['filters'],
     includeSystem = false,
   ) {
-    const tableCreatedId = await this.resolveTableCreatedId(
-      toRevisionId,
-      filters,
-    );
+    if (tableCreatedId === null) {
+      return [];
+    }
+
     const searchTerm = filters?.search;
     const changeTypes = filters?.changeTypes
       ? JSON.stringify(filters.changeTypes)
@@ -117,13 +131,14 @@ export class GetRowChangesHandler implements IQueryHandler<
   private async countRowChanges(
     fromRevisionId: string,
     toRevisionId: string,
+    tableCreatedId: string | null | undefined,
     filters?: GetRowChangesQuery['data']['filters'],
     includeSystem = false,
   ): Promise<number> {
-    const tableCreatedId = await this.resolveTableCreatedId(
-      toRevisionId,
-      filters,
-    );
+    if (tableCreatedId === null) {
+      return 0;
+    }
+
     const searchTerm = filters?.search;
     const changeTypes = filters?.changeTypes
       ? JSON.stringify(filters.changeTypes)
@@ -144,16 +159,36 @@ export class GetRowChangesHandler implements IQueryHandler<
   }
 
   private async resolveTableCreatedId(
-    revisionId: string,
-    filters?: GetRowChangesQuery['data']['filters'],
-  ): Promise<string | undefined> {
-    if (!filters?.tableId) {
+    toRevisionId: string,
+    fromRevisionId: string,
+    tableId?: string,
+  ): Promise<string | null | undefined> {
+    if (!tableId) {
       return undefined;
     }
 
+    const currentCreatedId = await this.findTableCreatedId(
+      toRevisionId,
+      tableId,
+    );
+    if (currentCreatedId !== undefined) {
+      return currentCreatedId;
+    }
+
+    const previousCreatedId = await this.findTableCreatedId(
+      fromRevisionId,
+      tableId,
+    );
+    return previousCreatedId ?? null;
+  }
+
+  private async findTableCreatedId(
+    revisionId: string,
+    tableId: string,
+  ): Promise<string | undefined> {
     const table = await this.prisma.table.findFirst({
       where: {
-        id: filters.tableId,
+        id: tableId,
         revisions: {
           some: {
             id: revisionId,

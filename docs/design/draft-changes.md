@@ -1,0 +1,165 @@
+# Draft Changes: API, modules, and PR plan
+
+Status: proposal for review. PR 0 adds this document; implementation starts after
+approval. PR [#63](https://github.com/revisium/revisium-engine/pull/63)
+(skipped acceptance tests) and [#64](https://github.com/revisium/revisium-engine/pull/64)
+(`rowChanges` compatibility) are merged.
+
+## Scope
+
+- Consumers browse, plan, and execute full or partial commit/discard of uncommitted
+  Draft changes, including the user-defined JSON schema.
+- The PostgreSQL schema stays unchanged. Existing APIs, including `createRevision`,
+  `revertChanges`, and `revisionChanges`, retain their behavior.
+- Partial commit preserves the final user state of Draft; discard preserves Head
+  and independent Draft edits. Existing snapshots remain immutable.
+- Planning performs no writes. Stale plans apply no changes; execution failures
+  roll back all writes, including file associations and history.
+
+## Public API
+
+Adds `engine.changes`. Type names below are abbreviated; exact structures and
+signatures are in the [acceptance contract](../../src/__tests__/integration/draft-changes/support/contract.ts).
+
+```ts
+draftChanges(branch): Promise<Snapshot>
+draftChangedTables(branch, page?): Promise<Connection<ChangedTable>>
+draftChangedRows(branch, tableId, page?): Promise<Connection<ChangedRow>>
+draftTableChanges(branch, tableId): Promise<TableChanges>
+draftRowChanges(branch, tableId, rowId, page?): Promise<RowChanges>
+
+planDraftChanges({ branch, operation, selection }): Promise<Plan>
+draftChangesPlanDetails(branch, planToken, groupRef, page?): Promise<PlanDetails>
+executeDraftChanges({
+  branch, planToken, requestId, requiredAcknowledgmentToken?, message?,
+}): Promise<ExecutionResult>
+```
+
+- `branch = { projectId, branchName }`; `operation = 'commit' | 'discard'`.
+- `selection = { include, exclude? }`: all/table/rows/rowFields/schemaFields/change.
+  Selections form a union; exclude denies effects. Exact refs distinguish reused
+  public IDs; consumers do not pass `createdId`/`versionId`.
+- Plan: ready/confirmationRequired/blocked/empty. Additional user changes require
+  confirmation through `requiredAcknowledgmentToken`; execution receives the plan
+  token without repeating selection.
+- Execution: applied/replayed/stalePlan/blocked. Data paths use JSON Pointer;
+  row creation/deletion, files, and arrays are atomic. Formula outputs are not
+  independently selectable.
+
+## Glossary and ownership
+
+Head is the latest committed state; Draft is the working state. A snapshot is a
+consistent read of state. A fingerprint covers actual data, metadata, and Head/Draft
+roles; stored hashes or revision IDs alone do not establish freshness. A candidate
+is a calculated state before persistence. A blocker explains why an operation
+cannot proceed. COW (copy on write) reuses unchanged versions during persistence.
+
+- `draft-revision`: the COW writer persists a candidate into a mutable revision,
+  links versions, and removes only detached versions. It has no selection/plan
+  logic. Fully equivalent rows and tables reconnect to Head versions. It returns
+  created versionIds for file accounting; blobIds are collected before deletion.
+- `draft-changes`: Head/Draft reads, the change/ref catalogue, partial-state
+  calculation, user-schema projection, FK effects, browsing, and execution.
+  These are separate responsibilities within one feature.
+- The catalogue owns semantic diff, ref creation/resolution, and ID selection.
+  Comparison uses `revision-changes` operations through its feature API. The
+  catalogue PR includes the minimum extension of that boundary and preserves
+  existing comparison methods.
+- Existing formula, file, and view owners retain their domain rules. Candidate
+  operations use their APIs or shared extracted operations; `draft-changes` must
+  not reimplement their validation.
+- Shared calculation validates both resulting states against ordinary engine
+  rules. An invalid source Draft does not block discard that restores a valid result.
+- `infrastructure/database`: the existing transaction runner. The executor owns a
+  Serializable transaction; reads, freshness checks, and writes use its client.
+  Planning and browsing read snapshots in RepeatableRead transactions. Active
+  async user-schema migrations use the existing migration feature, without a new
+  locking system or DDL.
+- Commit uses the existing `draft-revision.commit` operation: the current Draft
+  becomes Head, and one child Draft contains the remaining edits. Discard persists
+  the calculated Draft without creating a revision; partial discard must not call
+  full revert. Commit order: persist Head candidate and flag → commit → COW-write
+  the remainder into the child Draft → existing `hasChanges` recompute. The flag
+  and existing comparison remain consistent with reused Head versions.
+- Preparing file effects performs no writes. File restoration, accounting, and
+  cleanup use `file-usage` inside the executor transaction, without another upload.
+  New references are registered after persistence. Detached-version and blob
+  cleanup waits until both final states and their new references are saved.
+- The consumer facade only invokes feature operations; it does not import other
+  features' internal handlers. Public types are introduced with their consumer.
+
+## Module dependencies
+
+An arrow means "uses". Plan and execute share candidate calculation; browsing
+and calculation share one catalogue for diff and refs.
+
+```mermaid
+flowchart TD
+    API["Consumer API: engine.changes"]
+    API --> Read["Browse changes"]
+    API --> Plan["Plan changes"]
+    API --> Execute["Execute changes"]
+    Read --> Snapshot["Read Head/Draft"]
+    Plan --> Snapshot
+    Execute --> Snapshot
+    Read --> Catalog["Change and ref catalogue"]
+    Plan --> Calculate["Shared candidate calculation"]
+    Execute --> Calculate
+    Calculate --> Catalog
+    Catalog --> Schema["Schema projection"]
+    Calculate --> Data["Select data changes"]
+    Data --> Schema
+    Calculate --> Domain["FK, formulas, file effects, views"]
+    Execute --> Writer["COW writer: persist versions"]
+    Execute --> FileUsage["file-usage: apply file effects"]
+```
+
+## PR map
+
+Numbers identify stages, not GitHub PRs. Dependencies are substantive; the stack
+linearizes this graph in the order below. All implementation stages are unstarted.
+
+| PR  | Module: input → output; substantive change                                                                                                                         | Depends on | Behavior to prove                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | ---------------------------------------------------------------------------------------------------- |
+| 1   | COW writer: transaction + mutable revision + candidate + source versions → versions/links and created versionIds                                                   | —          | Unchanged versions are shared; state equal to Head reuses its versions; rollback                     |
+| 2   | Snapshot reader: branch → consistent Head/Draft + fingerprint; existing migration guards                                                                           | —          | Detect edits with unchanged stored hash; active migration blocks reads                               |
+| 3   | Schema projection: snapshot + schema history + schema effects → projections and remaining edits; defines the schema-effects representation reused by the catalogue | 2          | Tests pass effects directly; schema/data across renames; explain unrepresentable remainder           |
+| 4   | Catalogue: snapshot + projection → semantic diff, kind/selectable, refs; selection → exact catalogue entries                                                       | 2, 3       | Separate migration effects from user edits; resolve reused IDs through refs                          |
+| 5   | Data candidates: snapshot + operation + catalogue selection → final Head/Draft, without writes                                                                     | 3, 4       | Partial fields, include/exclude, create/delete/rename, mixed schema/data changes                     |
+| 6   | Dependencies: candidate → FK effects, required effects, and blockers                                                                                               | 5          | Cycles, reference renames, hard excludes; no invented user edits                                     |
+| 7   | Formulas: candidate → validated and recomputed values                                                                                                              | 5          | Valid formulas in both resulting states                                                              |
+| 8   | Files: candidate + version associations → validated file effects; apply through file-usage                                                                         | 1, 5       | Read-only preview; restore without upload; accounting rolls back with persistence                    |
+| 9   | Views: schema/view changes → resulting views and required effects                                                                                                  | 5          | Preserve independent edits or require exact confirmation                                             |
+| 10  | Changes reader: catalogue → change pages, refs, and details                                                                                                        | 4          | Bounded responses, pagination, stale cursors, ambiguous IDs                                          |
+| 11  | Planner: selection → validated candidates, effects/blockers, plan token, and acknowledgment                                                                        | 5–9        | Read-only preview; exact acknowledgment; restorative discard                                         |
+| 12  | Executor: plan token → atomic commit/discard, history, and result                                                                                                  | 1, 2, 11   | Freshness, rollback, concurrent writers, commit/commit and commit/discard; replay after its decision |
+| 13  | Consumer integration: feature operations → engine.changes and exports                                                                                              | 10–12      | Existing API compatibility; complete acceptance after the replay decision                            |
+
+## Open decisions and workflow
+
+**Plan token: proposal for approval.** A self-contained signed handle binds branch,
+Head/Draft roles and IDs, fingerprint, operation, normalized selection, rule version,
+and exact effects/acknowledgment. Details are recomputed read-only and reject stale
+handles. Engine configuration supplies a shared stable signing key. Configuration
+shape, missing-key behavior, and token-size limits for large selections need
+approval and a PoC before PR 11.
+
+**Open: retries after a lost response.** The contract includes `requestId`,
+`replayed`, `receiptId`, and prevention of repeated application. The PoC added
+`DraftChangesReceipt`, conflicting with the unchanged-DB-schema constraint.
+Before PR 12 approval, a separate PoC must establish a solution using the existing
+schema, or a contract change needs explicit approval. Replay covers successful
+applied results in the same branch with the same payload; a reused requestId with
+a different payload is rejected. PR 12 and full acceptance in PR 13 are conditional:
+receipt scenarios and dependent rollback/concurrency cases are blocked. Support
+currently reads `DraftChangesReceipt`; its binding may change while retaining the
+asserted guarantees, without weakening expectations.
+
+After PR 0 approval, open 2–3 stack layers at a time, starting from fresh `master`.
+Each layer includes active behavior tests (TDD); acceptance tests are enabled as
+runtime becomes available. The executor rereads actual state and checks the
+migration guard inside its transaction. Prove transactions and races on PostgreSQL
+with synchronization; test worker recovery and full-fingerprint cost separately
+with sparse changes on increasing data sizes. Lower layers do not depend on upper
+layers. New layers, dependencies, storage, or API changes first update this plan.
+Each layer passes existing CI; the user merges from the bottom up.

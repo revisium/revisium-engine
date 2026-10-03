@@ -15,6 +15,7 @@ export class MigrationLockedException extends HttpException {
   constructor(details: MigrationLockedDetails) {
     super(
       {
+        code: 'MIGRATION_LOCKED',
         statusCode: HttpStatus.LOCKED,
         message: `Revision is locked by an active migration on table "${details.tableId}" (${details.status})`,
         migration: details,

@@ -8,15 +8,11 @@ import {
   ACTIVE_MIGRATION_STATUSES,
   MigrationStatus,
 } from 'src/features/migration/types/migration.types';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @Injectable()
 export class MigrationLockService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly transactionService: TransactionPrismaService,
-  ) {}
+  constructor(private readonly transactionService: TransactionPrismaService) {}
 
   async cancelBranchMigrations(
     projectId: string,
@@ -88,7 +84,8 @@ export class MigrationLockService {
   }
 
   async checkBranchLock(projectId: string, branchName: string): Promise<void> {
-    const branch = await this.prisma.branch.findUnique({
+    const client = this.transactionService.getTransactionOrPrisma();
+    const branch = await client.branch.findUnique({
       where: { name_projectId: { name: branchName, projectId } },
       include: { revisions: { where: { isDraft: true }, take: 1 } },
     });
@@ -100,7 +97,8 @@ export class MigrationLockService {
   }
 
   async checkRevisionLock(revisionId: string): Promise<void> {
-    const migration = await this.prisma.tableMigration.findFirst({
+    const client = this.transactionService.getTransactionOrPrisma();
+    const migration = await client.tableMigration.findFirst({
       where: {
         revisionId,
         status: { in: [...ACTIVE_MIGRATION_STATUSES] },

@@ -4,6 +4,8 @@ import { CommandBus, CqrsModule } from '@nestjs/cqrs';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
+import { DraftChangesModule } from 'src/features/draft-changes/draft-changes.module';
+import { DraftChangesApiService } from 'src/features/draft-changes/draft-changes-api.service';
 import { DraftModule } from 'src/features/draft/draft.module';
 import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
@@ -23,6 +25,7 @@ import { TableApiService } from 'src/features/table/table-api.service';
 import { ViewsModule } from 'src/features/views/views.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { createStorageMock } from 'src/__tests__/kit/storage.mock';
@@ -47,6 +50,8 @@ export interface MigrationTestKit {
   migrationLockService: MigrationLockService;
   migrationService: MigrationService;
   migrationProgressService: MigrationProgressService;
+  draftChangesApi: DraftChangesApiService;
+  transactionService: TransactionPrismaService;
   close(): Promise<void>;
 }
 
@@ -67,6 +72,7 @@ export async function createMigrationTestKit(
       TableModule,
       RowModule,
       DraftRevisionModule,
+      DraftChangesModule,
       DraftModule,
       ViewsModule,
       CacheModule.register(),
@@ -95,6 +101,8 @@ export async function createMigrationTestKit(
     migrationLockService: module.get(MigrationLockService),
     migrationService: module.get(MigrationService),
     migrationProgressService: module.get(MigrationProgressService),
+    draftChangesApi: module.get(DraftChangesApiService),
+    transactionService: module.get(TransactionPrismaService),
     async close() {
       await module.close();
     },

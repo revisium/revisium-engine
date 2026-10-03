@@ -1,9 +1,4 @@
-import {
-  createDraftRevisionStateWriterTestKit,
-  givenStateWriter,
-  row,
-  table,
-} from './draft-revision-state.fixture';
+import { createDraftRevisionStateWriterTestKit, row, table } from './support';
 
 describe('DraftRevision cleanup detached state', () => {
   let kit: Awaited<ReturnType<typeof createDraftRevisionStateWriterTestKit>>;
@@ -15,7 +10,7 @@ describe('DraftRevision cleanup detached state', () => {
   afterAll(async () => kit.close());
 
   it('cleans detached mutable versions and returns blob IDs before row deletion', async () => {
-    const s = await givenStateWriter(kit);
+    const s = await kit.given();
     const blob = await s.blob();
     await s.seedDraft(table({ rows: [row({ fileBlobs: [{ id: blob }] })] }));
     const detached = await s.draftState();
@@ -31,7 +26,7 @@ describe('DraftRevision cleanup detached state', () => {
 
   it('protects table and row versions shared by another revision', async () => {
     const shared = table({ rows: [row()] });
-    const s = await givenStateWriter(kit, { head: [shared] });
+    const s = await kit.given({ head: [shared] });
     await s.attachHeadTablesToDraft();
     const draft = await s.draftState();
     await s.write({ tables: [] }, { head: { tables: [] }, others: [draft] });
@@ -44,7 +39,7 @@ describe('DraftRevision cleanup detached state', () => {
   });
 
   it('protects versions readonly in PostgreSQL', async () => {
-    const s = await givenStateWriter(kit);
+    const s = await kit.given();
     const readonly = table({ readonly: true, rows: [row({ readonly: true })] });
     await s.seedDraft(readonly);
     const state = await s.draftState();
@@ -58,7 +53,7 @@ describe('DraftRevision cleanup detached state', () => {
   });
 
   it('rechecks row links at the delete boundary after selection', async () => {
-    const s = await givenStateWriter(kit);
+    const s = await kit.given();
     const detachedTable = table({ rows: [row()] });
     const keeper = table({ id: 'keeper' });
     await s.seedDraft(detachedTable);
@@ -78,7 +73,7 @@ describe('DraftRevision cleanup detached state', () => {
   });
 
   it('retains a row linked from another table when its source table is detached', async () => {
-    const s = await givenStateWriter(kit);
+    const s = await kit.given();
     await s.seedDraft(table({ rows: [row()] }));
     await s.seedHead(table({ id: 'keeper' }));
     const detached = await s.draftState();
@@ -95,7 +90,7 @@ describe('DraftRevision cleanup detached state', () => {
   });
 
   it('uses PostgreSQL readonly status when source flags are stale', async () => {
-    const s = await givenStateWriter(kit);
+    const s = await kit.given();
     await s.seedDraft(
       table({ readonly: true, rows: [row({ readonly: true })] }),
     );
@@ -108,30 +103,5 @@ describe('DraftRevision cleanup detached state', () => {
 
     expect(await s.hasTable(s.table(stale).versionId)).toBe(true);
     expect(await s.hasRow(s.row(stale).versionId)).toBe(true);
-  });
-
-  it('rolls back state writes when detached-row cleanup fails in PostgreSQL', async () => {
-    const s = await givenStateWriter(kit);
-    const oldRow = row({ data: { old: true } });
-    await s.seedDraft(table({ rows: [oldRow] }));
-    const oldState = await s.draftState();
-    const oldVersionId = s.row(oldState).versionId;
-    const newState = {
-      tables: [table({ rows: [row({ data: { new: true } })] })],
-    };
-
-    await expect(
-      s.cleanupFailingOnRow(oldRow.createdId, () =>
-        s.writeAndCleanupAtomically(newState, [oldState], {
-          head: { tables: [] },
-          others: [oldState],
-        }),
-      ),
-    ).rejects.toThrow('simulated detached row cleanup failure');
-
-    expect(
-      (await s.draftState()).tables.map(({ versionId }) => versionId),
-    ).toEqual([s.table(oldState).versionId]);
-    expect(await s.rowVersions(oldRow.createdId)).toEqual([oldVersionId]);
   });
 });

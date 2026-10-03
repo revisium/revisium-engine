@@ -4,6 +4,7 @@ import {
   DraftRevisionCleanupDetachedStateCommandResult,
 } from 'src/features/draft-revision/commands/impl/draft-revision-cleanup-detached-state.command';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { collectCleanupCandidates } from 'src/features/draft-revision/state/cleanup-candidates';
 
 @CommandHandler(DraftRevisionCleanupDetachedStateCommand)
 export class DraftRevisionCleanupDetachedStateHandler implements ICommandHandler<DraftRevisionCleanupDetachedStateCommand> {
@@ -22,34 +23,21 @@ export class DraftRevisionCleanupDetachedStateHandler implements ICommandHandler
   private async handle(
     data: DraftRevisionCleanupDetachedStateCommand['data'],
   ): Promise<DraftRevisionCleanupDetachedStateCommandResult> {
-    const mutableTables = data.states.flatMap(({ tables }) =>
-      tables.filter((table) => !table.readonly),
-    );
-    await this.deleteDetachedTables(
-      mutableTables.map(({ versionId }) => versionId),
-    );
-    const detachedRows = await this.findDetachedRows(
-      mutableTables.flatMap((table) =>
-        table.rows
-          .filter((row) => !row.readonly)
-          .map(({ versionId }) => versionId),
-      ),
-    );
+    const candidates = collectCleanupCandidates(data.states);
+    await this.deleteDetachedTables(candidates.tableVersionIds);
+    const detachedRows = await this.findDetachedRows(candidates.rowVersionIds);
     const affectedBlobIds = this.collectBlobIds(detachedRows);
-    await this.deleteDetachedRows(
-      detachedRows.map(({ versionId }) => versionId),
-    );
+    await this.deleteDetachedRows(detachedRows);
     return { affectedBlobIds };
   }
 
   private async deleteDetachedTables(versionIds: string[]): Promise<void> {
-    const uniqueVersionIds = [...new Set(versionIds)];
-    if (uniqueVersionIds.length === 0) {
+    if (versionIds.length === 0) {
       return;
     }
     await this.transaction.table.deleteMany({
       where: {
-        versionId: { in: uniqueVersionIds },
+        versionId: { in: versionIds },
         readonly: false,
         revisions: { none: {} },
       },
@@ -57,15 +45,14 @@ export class DraftRevisionCleanupDetachedStateHandler implements ICommandHandler
   }
 
   private findDetachedRows(versionIds: string[]) {
-    const uniqueVersionIds = [...new Set(versionIds)];
-    if (uniqueVersionIds.length === 0) {
+    if (versionIds.length === 0) {
       return Promise.resolve(
         [] as { versionId: string; fileBlobs: { id: string }[] }[],
       );
     }
     return this.transaction.row.findMany({
       where: {
-        versionId: { in: uniqueVersionIds },
+        versionId: { in: versionIds },
         readonly: false,
         tables: { none: {} },
       },
@@ -81,14 +68,15 @@ export class DraftRevisionCleanupDetachedStateHandler implements ICommandHandler
     ];
   }
 
-  private async deleteDetachedRows(versionIds: string[]): Promise<void> {
-    const uniqueVersionIds = [...new Set(versionIds)];
-    if (uniqueVersionIds.length === 0) {
+  private async deleteDetachedRows(
+    rows: { versionId: string }[],
+  ): Promise<void> {
+    if (rows.length === 0) {
       return;
     }
     await this.transaction.row.deleteMany({
       where: {
-        versionId: { in: uniqueVersionIds },
+        versionId: { in: rows.map(({ versionId }) => versionId) },
         readonly: false,
         tables: { none: {} },
       },

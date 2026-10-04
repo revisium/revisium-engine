@@ -22,6 +22,18 @@ describe('findRefPaths', () => {
     expect(result).toEqual([]);
   });
 
+  it('should preserve the root marker for a root ref', () => {
+    const schema = getRefSchema(FILE_SCHEMA_ID);
+
+    expect(findRefPaths(schema, FILE_SCHEMA_ID)).toEqual([{ path: '$' }]);
+  });
+
+  it('should preserve the root marker for root array refs', () => {
+    const schema = getArraySchema(getRefSchema(FILE_SCHEMA_ID));
+
+    expect(findRefPaths(schema, FILE_SCHEMA_ID)).toEqual([{ path: '$[*]' }]);
+  });
+
   it('should find single ref at root level', () => {
     const schema = getObjectSchema({
       file: getRefSchema(FILE_SCHEMA_ID),

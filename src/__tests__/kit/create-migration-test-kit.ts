@@ -23,6 +23,7 @@ import { TableApiService } from 'src/features/table/table-api.service';
 import { ViewsModule } from 'src/features/views/views.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { createStorageMock } from 'src/__tests__/kit/storage.mock';
@@ -47,6 +48,7 @@ export interface MigrationTestKit {
   migrationLockService: MigrationLockService;
   migrationService: MigrationService;
   migrationProgressService: MigrationProgressService;
+  transactionService: TransactionPrismaService;
   close(): Promise<void>;
 }
 
@@ -95,6 +97,7 @@ export async function createMigrationTestKit(
     migrationLockService: module.get(MigrationLockService),
     migrationService: module.get(MigrationService),
     migrationProgressService: module.get(MigrationProgressService),
+    transactionService: module.get(TransactionPrismaService),
     async close() {
       await module.close();
     },

@@ -3,6 +3,7 @@ import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { AbortMigrationCommand } from 'src/features/migration/commands/impl/abort-migration.command';
 import { GetMigrationStatusQuery } from 'src/features/migration/queries/impl/get-migration-status.query';
 import { GetActiveMigrationsQuery } from 'src/features/migration/queries/impl/get-active-migrations.query';
+import { CheckRevisionLockQuery } from 'src/features/migration/queries/impl/check-revision-lock.query';
 import {
   ActiveMigrationResult,
   MigrationStatusResult,
@@ -26,6 +27,10 @@ export class MigrationApiService {
     revisionId: string;
   }): Promise<ActiveMigrationResult[]> {
     return this.queryBus.execute(new GetActiveMigrationsQuery(data));
+  }
+
+  checkRevisionLock(data: { revisionId: string }): Promise<void> {
+    return this.queryBus.execute(new CheckRevisionLockQuery(data));
   }
 
   abortMigration(data: { revisionId: string; tableId: string }): Promise<void> {

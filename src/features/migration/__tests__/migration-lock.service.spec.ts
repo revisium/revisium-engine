@@ -3,6 +3,7 @@ import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
+import { createMigrationRecord } from './support/migration-database';
 
 describe('MigrationLockService', () => {
   let kit: MigrationTestKit;
@@ -28,20 +29,12 @@ describe('MigrationLockService', () => {
     it('should throw MigrationLockedException when PENDING migration exists', async () => {
       const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-      await kit.prisma.tableMigration.create({
-        data: {
-          revisionId: draftRevisionId,
-          tableId: 'test-table',
-          sourceTableVersionId: 'source-v1',
-          status: MigrationStatus.PENDING,
-          phase: 'INIT',
-          patches: [],
-          previousSchema: {},
-          previousSchemaHash: 'hash1',
-          targetSchemaHash: 'hash2',
-          totalRows: 500,
-        },
-      });
+      await createMigrationRecord(
+        kit.prisma,
+        draftRevisionId,
+        MigrationStatus.PENDING,
+        { tableId: 'test-table', phase: 'INIT', totalRows: 500 },
+      );
 
       await expect(
         kit.migrationLockService.checkRevisionLock(draftRevisionId),
@@ -51,21 +44,17 @@ describe('MigrationLockService', () => {
     it('should throw MigrationLockedException when COPYING migration exists', async () => {
       const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-      await kit.prisma.tableMigration.create({
-        data: {
-          revisionId: draftRevisionId,
+      await createMigrationRecord(
+        kit.prisma,
+        draftRevisionId,
+        MigrationStatus.COPYING,
+        {
           tableId: 'test-table',
-          sourceTableVersionId: 'source-v1',
-          status: MigrationStatus.COPYING,
           phase: 'COPYING',
-          patches: [],
-          previousSchema: {},
-          previousSchemaHash: 'hash1',
-          targetSchemaHash: 'hash2',
           totalRows: 1000,
           copiedRows: 300,
         },
-      });
+      );
 
       const error = await kit.migrationLockService
         .checkRevisionLock(draftRevisionId)
@@ -84,21 +73,17 @@ describe('MigrationLockService', () => {
     it('should not throw when only COMPLETED migration exists', async () => {
       const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-      await kit.prisma.tableMigration.create({
-        data: {
-          revisionId: draftRevisionId,
+      await createMigrationRecord(
+        kit.prisma,
+        draftRevisionId,
+        MigrationStatus.COMPLETED,
+        {
           tableId: 'test-table',
-          sourceTableVersionId: 'source-v1',
-          status: MigrationStatus.COMPLETED,
           phase: 'DONE',
-          patches: [],
-          previousSchema: {},
-          previousSchemaHash: 'hash1',
-          targetSchemaHash: 'hash2',
           totalRows: 500,
           copiedRows: 500,
         },
-      });
+      );
 
       await expect(
         kit.migrationLockService.checkRevisionLock(draftRevisionId),
@@ -108,20 +93,12 @@ describe('MigrationLockService', () => {
     it('should not throw when only CANCELLED migration exists', async () => {
       const { draftRevisionId } = await prepareBranch(kit.prisma);
 
-      await kit.prisma.tableMigration.create({
-        data: {
-          revisionId: draftRevisionId,
-          tableId: 'test-table',
-          sourceTableVersionId: 'source-v1',
-          status: MigrationStatus.CANCELLED,
-          phase: 'COPYING',
-          patches: [],
-          previousSchema: {},
-          previousSchemaHash: 'hash1',
-          targetSchemaHash: 'hash2',
-          totalRows: 500,
-        },
-      });
+      await createMigrationRecord(
+        kit.prisma,
+        draftRevisionId,
+        MigrationStatus.CANCELLED,
+        { tableId: 'test-table', phase: 'COPYING', totalRows: 500 },
+      );
 
       await expect(
         kit.migrationLockService.checkRevisionLock(draftRevisionId),
@@ -143,20 +120,12 @@ describe('MigrationLockService', () => {
         kit.prisma,
       );
 
-      await kit.prisma.tableMigration.create({
-        data: {
-          revisionId: draftRevisionId,
-          tableId: 'test-table',
-          sourceTableVersionId: 'source-v1',
-          status: MigrationStatus.SWAPPING,
-          phase: 'SWAPPING',
-          patches: [],
-          previousSchema: {},
-          previousSchemaHash: 'hash1',
-          targetSchemaHash: 'hash2',
-          totalRows: 500,
-        },
-      });
+      await createMigrationRecord(
+        kit.prisma,
+        draftRevisionId,
+        MigrationStatus.SWAPPING,
+        { tableId: 'test-table', phase: 'SWAPPING', totalRows: 500 },
+      );
 
       await expect(
         kit.migrationLockService.checkBranchLock(projectId, branchName),

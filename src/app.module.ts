@@ -17,6 +17,7 @@ import { RevisionChangesModule } from 'src/features/revision-changes/revision-ch
 import { SubSchemaModule } from 'src/features/sub-schema/sub-schema.module';
 import { ViewsModule } from 'src/features/views/views.module';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
+import { DraftChangesModule } from 'src/features/draft-changes/draft-changes.module';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { IStorageService } from 'src/infrastructure/storage/storage.interface';
 
@@ -38,6 +39,7 @@ const FEATURE_MODULES = [
   SubSchemaModule,
   ViewsModule,
   FileUsageModule,
+  DraftChangesModule,
 ];
 
 @Module({})

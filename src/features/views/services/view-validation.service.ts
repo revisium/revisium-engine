@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
-  getDBJsonPathByJsonSchemaStore,
+  convertSchemaPathToJsonPath,
+  getPathByStore,
   traverseStore,
 } from '@revisium/schema-toolkit/lib';
 import { JsonSchema } from '@revisium/schema-toolkit/types';
@@ -13,7 +14,6 @@ import {
 } from 'src/features/views/types';
 
 const DATA_FIELD_PREFIX = 'data.';
-const DB_PATH_PREFIX = '$.';
 
 const SYSTEM_FIELDS = new Set([
   'id',
@@ -141,10 +141,7 @@ export class ViewValidationService {
         return;
       }
 
-      const dbPath = getDBJsonPathByJsonSchemaStore(item);
-      const fieldPath = dbPath.startsWith(DB_PATH_PREFIX)
-        ? dbPath.slice(DB_PATH_PREFIX.length)
-        : dbPath;
+      const fieldPath = convertSchemaPathToJsonPath(getPathByStore(item));
 
       validFields.add(fieldPath);
     });

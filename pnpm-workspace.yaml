@@ -4,3 +4,9 @@ allowBuilds:
   '@prisma/engines': true
   prisma: true
   '@nestjs/core': false # telemetry — intentionally blocked
+
+# Temporary security pins for upstream exact dependencies. See docs/releasing.md.
+overrides:
+  'eslint-plugin-sonarjs>minimatch': 10.2.3
+  'prisma>mysql2': 3.23.1
+  '@prisma/config>deepmerge-ts': 8.0.0

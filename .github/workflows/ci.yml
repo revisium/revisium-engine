@@ -29,9 +29,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile --ignore-scripts && pnpm rebuild sharp @swc/core @prisma/engines prisma
 
+      - run: pnpm run prisma:generate
+
       - run: pnpm run lint:ci
 
       - run: pnpm run tsc
+
+      - run: pnpm run build
 
       - run: pnpm run docker:test-container-up
 
@@ -39,6 +43,8 @@ jobs:
         run: |
           cp .env.test .env
           pnpm exec prisma db push --force-reset --accept-data-loss
+          pnpm exec prisma generate --sql
+          pnpm run prisma:postgenerate
         env:
           DATABASE_URL: postgresql://engine:password@localhost:5440/engine-test
 
@@ -56,6 +62,7 @@ jobs:
           DATABASE_URL: postgresql://engine:password@localhost:5440/engine-test
 
       - run: pnpm run docker:test-container-down
+        if: always()
 
       - uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
         continue-on-error: true

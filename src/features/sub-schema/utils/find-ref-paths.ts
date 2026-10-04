@@ -3,11 +3,10 @@ import { SubSchemaPath } from '@revisium/prisma-pg-json';
 import {
   createJsonSchemaStore,
   traverseStore,
-  getDBJsonPathByJsonSchemaStore,
+  convertSchemaPathToJsonPath,
+  getPathByStore,
   pluginRefs,
 } from '@revisium/schema-toolkit/lib';
-
-const DB_PATH_PREFIX = '$.';
 
 export function findRefPaths(
   schema: JsonSchema,
@@ -18,11 +17,10 @@ export function findRefPaths(
 
   traverseStore(store, (node) => {
     if (node.$ref === schemaId) {
-      const dbPath = getDBJsonPathByJsonSchemaStore(node);
-      const fieldPath = dbPath.startsWith(DB_PATH_PREFIX)
-        ? dbPath.slice(DB_PATH_PREFIX.length)
-        : dbPath;
-      paths.push({ path: fieldPath });
+      const fieldPath = convertSchemaPathToJsonPath(getPathByStore(node));
+      const path =
+        !fieldPath || fieldPath.startsWith('[*]') ? `$${fieldPath}` : fieldPath;
+      paths.push({ path });
     }
   });
 

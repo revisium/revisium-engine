@@ -17,6 +17,23 @@ A NestJS module library that provides Git-like versioning for structured data: b
 
 Extracted from [@revisium/core](https://github.com/revisium/revisium-core). No auth, no billing, no API controllers — pure versioning engine.
 
+## Installation
+
+```bash
+npm install @revisium/engine
+```
+
+The default npm dist-tag is the stable release. Install an explicit prerelease
+version when testing the next release line; do not use it as a stable dependency.
+Check `peerDependencies` in [package.json](package.json) for the supported NestJS,
+Prisma and PostgreSQL driver versions. The image dependency requires Node.js
+20.9 or newer; repository development uses the version in [.nvmrc](.nvmrc).
+
+The engine consumes [schema-toolkit](https://github.com/revisium/schema-toolkit)
+and [prisma-pg-json](https://github.com/revisium/prisma-pg-json).
+[revisium-core](https://github.com/revisium/revisium-core) embeds the engine in the
+application assembled by [revisium](https://github.com/revisium/revisium).
+
 ## Usage
 
 ```typescript
@@ -136,19 +153,34 @@ This project uses [pnpm](https://pnpm.io) (pinned via the `packageManager` field
 
 ```bash
 corepack enable
-pnpm install
+pnpm install --frozen-lockfile
 docker compose -f docker/docker-compose.yml up -d
 cp .env.example .env
+export DATABASE_URL=postgresql://engine:password@localhost:5439/engine-dev
+pnpm exec prisma db push
 pnpm run prisma:generate
 pnpm run start:dev
 ```
 
-| Script             | Description             |
-| ------------------ | ----------------------- |
-| `pnpm run tsc`     | Type check              |
-| `pnpm run lint:ci` | ESLint (0 warnings)     |
-| `pnpm test`        | Run tests (1100+ tests) |
-| `pnpm run build`   | Production build        |
+| Script             | Description         |
+| ------------------ | ------------------- |
+| `pnpm run tsc`     | Type check          |
+| `pnpm run lint:ci` | ESLint (0 warnings) |
+| `pnpm test`        | Run tests           |
+| `pnpm run build`   | Production build    |
+
+For the test database, full checks and package inspection, follow
+[VERIFICATION.md](VERIFICATION.md). Database reset commands there are for the
+isolated test database only.
+
+## Releases
+
+Release automation uses the immutable `revisium-actions` version pinned in
+[the workflows](.github/workflows). Security fixes go through a PR to `master`,
+then a manual cherry-pick to the stable branch selected from the latest published
+stable release. Run the checks again on that branch before publishing a patch.
+See [the release procedure](docs/releasing.md) for the dry run, publication and
+artifact checks.
 
 ## Tech Stack
 

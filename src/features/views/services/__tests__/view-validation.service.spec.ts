@@ -166,6 +166,55 @@ describe('ViewValidationService', () => {
         });
       });
 
+      it('should accept hyphenated fields inside arrays', async () => {
+        const { draftRevisionId, tableId } = await givenDraftProjectWithSchema({
+          prismaService,
+          schema: {
+            type: JsonSchemaTypeName.Object,
+            properties: {
+              results: {
+                type: JsonSchemaTypeName.Array,
+                items: {
+                  type: JsonSchemaTypeName.Object,
+                  properties: {
+                    'test-case': {
+                      type: JsonSchemaTypeName.String,
+                      default: '',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['test-case'],
+                },
+              },
+            },
+            additionalProperties: false,
+            required: ['results'],
+          },
+        });
+
+        const viewsData: TableViewsData = {
+          version: 1,
+          defaultViewId: 'default',
+          views: [
+            {
+              id: 'default',
+              name: 'Default',
+              columns: [{ field: 'data.results[*].test-case' }],
+            },
+          ],
+        };
+
+        await runInTransaction(async () => {
+          await expect(
+            viewValidationService.validateViewsFields(
+              draftRevisionId,
+              tableId,
+              viewsData,
+            ),
+          ).resolves.toBeUndefined();
+        });
+      });
+
       it('should accept empty columns and sorts', async () => {
         const { draftRevisionId, tableId } =
           await givenDraftProject(prismaService);

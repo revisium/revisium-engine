@@ -28,6 +28,12 @@ import {
   DraftRevisionUpdateRowsCommand,
   DraftRevisionUpdateRowsCommandData,
   DraftRevisionUpdateRowsCommandReturnType,
+  DraftRevisionWriteStateCommand,
+  DraftRevisionWriteStateCommandData,
+  DraftRevisionWriteStateCommandResult,
+  DraftRevisionCleanupDetachedStateCommand,
+  DraftRevisionCleanupDetachedStateCommandData,
+  DraftRevisionCleanupDetachedStateCommandResult,
 } from 'src/features/draft-revision/commands/impl';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 
@@ -139,5 +145,19 @@ export class DraftRevisionApiService {
     data: DraftRevisionRevertCommandData,
   ): Promise<DraftRevisionRevertCommandReturnType> {
     return this.commandBus.execute(new DraftRevisionRevertCommand(data));
+  }
+
+  public writeState(
+    data: DraftRevisionWriteStateCommandData,
+  ): Promise<DraftRevisionWriteStateCommandResult> {
+    return this.commandBus.execute(new DraftRevisionWriteStateCommand(data));
+  }
+
+  public cleanupDetachedState(
+    data: DraftRevisionCleanupDetachedStateCommandData,
+  ): Promise<DraftRevisionCleanupDetachedStateCommandResult> {
+    return this.commandBus.execute(
+      new DraftRevisionCleanupDetachedStateCommand(data),
+    );
   }
 }

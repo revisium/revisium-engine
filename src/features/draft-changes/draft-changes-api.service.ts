@@ -5,6 +5,11 @@ import {
   ReadDraftChangesSnapshotQuery,
   ReadDraftChangesSnapshotQueryData,
 } from 'src/features/draft-changes/queries/impl/read-draft-changes-snapshot.query';
+import {
+  ProjectDraftChangesSchemaQuery,
+  ProjectDraftChangesSchemaQueryData,
+  ProjectDraftChangesSchemaResult,
+} from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
 
 @Injectable()
 export class DraftChangesApiService {
@@ -17,5 +22,14 @@ export class DraftChangesApiService {
       ReadDraftChangesSnapshotQuery,
       DraftChangesSnapshot
     >(new ReadDraftChangesSnapshotQuery(data));
+  }
+
+  projectSchema(
+    data: ProjectDraftChangesSchemaQueryData,
+  ): Promise<ProjectDraftChangesSchemaResult> {
+    return this.queryBus.execute<
+      ProjectDraftChangesSchemaQuery,
+      ProjectDraftChangesSchemaResult
+    >(new ProjectDraftChangesSchemaQuery(data));
   }
 }

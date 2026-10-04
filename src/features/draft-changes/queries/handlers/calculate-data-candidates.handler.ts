@@ -60,7 +60,10 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
     if (scopeBlockers.length > 0) {
       return { status: 'blocked', blockers: scopeBlockers };
     }
-    if (data.selection.selected.length === 0) {
+    if (
+      data.selection.selected.length === 0 &&
+      !data.additionalSchemaEffects?.length
+    ) {
       return this.calculateUnchanged(data);
     }
     const parent = missingParentRequirement(
@@ -79,6 +82,7 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
       data.operation,
       data.selection,
       (query) => this.queryBus.execute(query),
+      data.additionalSchemaEffects,
     );
     if (projected.status !== 'projected') {
       return this.resolveProjectionResult(projected, data);
@@ -107,6 +111,7 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
       states.draft,
       data,
       projected.projections,
+      projected.foreignKeyChanges,
     );
   }
 
@@ -146,6 +151,10 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
       string,
       Extract<ProjectDraftChangesSchemaResult, { status: 'projected' }>
     >,
+    foreignKeyChanges: Extract<
+      CalculateDataCandidatesResult,
+      { status: 'calculated' }
+    >['schemaForeignKeyChanges'],
   ): Promise<CalculateDataCandidatesResult> {
     const blockers = await validateCandidateStates(head, draft, this.validator);
     const denied = deniedValueChanges(
@@ -164,7 +173,7 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
         ? { status: 'needsEffects', requirements: [prerequisite] }
         : { status: 'blocked', blockers };
     }
-    return calculated(head, draft);
+    return calculated(head, draft, projections, foreignKeyChanges);
   }
 }
 
@@ -177,6 +186,33 @@ function targetState(
 function calculated(
   head: DraftRevisionState,
   draft: DraftRevisionState,
+  projections?: Map<
+    string,
+    Extract<ProjectDraftChangesSchemaResult, { status: 'projected' }>
+  >,
+  schemaForeignKeyChanges?: Extract<
+    CalculateDataCandidatesResult,
+    { status: 'calculated' }
+  >['schemaForeignKeyChanges'],
 ): CalculateDataCandidatesResult {
-  return { status: 'calculated', head, draft, migrationLedger: 'deferred' };
+  return {
+    status: 'calculated',
+    head,
+    draft,
+    migrationLedger: 'deferred',
+    ...(schemaForeignKeyChanges === undefined
+      ? {}
+      : { schemaForeignKeyChanges }),
+    ...(projections === undefined
+      ? {}
+      : {
+          schemaProjectionBindings: [...projections].map(
+            ([tableCreatedId, projection]) => ({
+              tableCreatedId,
+              rowFieldMappings: projection.rowFieldMappings,
+              rowTargetFieldMappings: projection.rowTargetFieldMappings,
+            }),
+          ),
+        }),
+  };
 }

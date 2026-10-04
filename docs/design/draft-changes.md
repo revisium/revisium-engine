@@ -4,7 +4,7 @@ Status: approved. Stages 1–3 are merged in PRs
 [#66](https://github.com/revisium/revisium-engine/pull/66),
 [#67](https://github.com/revisium/revisium-engine/pull/67), and
 [#69](https://github.com/revisium/revisium-engine/pull/69).
-The next stack implements stages 4–6.
+The current stack implements stages 4–6.
 
 ## Scope
 
@@ -127,7 +127,7 @@ linearizes this graph in the order below.
 | 3   | Schema projection: snapshot + schema history + schema effects → projections and remaining edits; defines the schema-effects representation reused by the catalogue | 2          | Tests pass effects directly; schema/data across renames; explain unrepresentable remainder           |
 | 4   | Catalogue: snapshot + projection → semantic diff, kind/selectable, refs; selection → exact catalogue entries                                                       | 2, 3       | Separate migration effects from user edits; resolve reused IDs through refs                          |
 | 5   | Data candidates: snapshot + operation + catalogue selection → intermediate Head/Draft data and schema states, without writes                                       | 3, 4       | Partial fields, include/exclude, create/delete/rename, mixed schema/data changes                     |
-| 6   | Dependencies: candidate → FK effects, required effects, and blockers                                                                                               | 5          | Cycles, reference renames, hard excludes; no invented user edits                                     |
+| 6   | Dependencies: snapshot + operation + catalogue selection → resolved Head/Draft candidates, required effects, automatic FK effects, or blockers                     | 5          | Cycles, reference renames, hard excludes; no invented user edits                                     |
 | 7   | Formulas: candidate → validated and recomputed values                                                                                                              | 5          | Valid formulas in both resulting states                                                              |
 | 8   | Files: candidate + version associations → validated file effects; apply through file-usage                                                                         | 1, 5       | Read-only preview; restore without upload; accounting rolls back with persistence                    |
 | 9   | Views: schema/view changes → resulting views and required effects                                                                                                  | 5          | Preserve independent edits or require exact confirmation                                             |
@@ -146,7 +146,7 @@ owner, and existing schema history, lineage, and JSON Pointer operations are reu
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 4     | `catalogue/`: identity pairing, lifecycle, schema effects, row fields, atomic boundaries, refs; `selection/`: entity/field selectors, union and hard excludes | Supplied snapshot and schema projections → catalogue; selection → exact entries and denied targets, including unchanged fields. Supplied-row comparison uses `RevisionChangesApiService`.                                                                     |
 | 5     | `candidates/`: commit/discard policies, candidate preparation, table/row state, field values, resulting-data validation                                       | Selected schema projection → candidate preparation → data changes → resulting JSON-data checks or exact recoverable prerequisites. Full discard restores Head even when Draft history is invalid. State/value operations do not choose commit/discard policy. |
-| 6     | `dependencies/`: reference graph, rename effects, required effects, closure, excludes, candidate-reference checks                                             | Inspect supplied candidates → expand exact effects → recalculate → check both states. Shared FK extraction follows existing engine rules; persisted-revision SQL queries remain separate.                                                                     |
+| 6     | `dependencies/`: original reference bindings, graph, rename effects, required effects, closure, exclusion policy                                              | Calculate candidates → inspect both states → expand exact existing effects → recalculate. Schema projection owns generated FK history; shared FK extraction follows existing engine rules. Persisted-revision SQL queries remain separate.                    |
 
 Tests live under the feature's `__tests__/catalogue`, `selection`, `candidates`, and
 `dependencies` directories, with support per concern. Each scenario proves one

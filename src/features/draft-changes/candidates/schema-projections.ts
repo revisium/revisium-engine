@@ -9,7 +9,11 @@ import type {
   CandidateBlocker,
   CandidateRequirement,
 } from 'src/features/draft-changes/queries/impl/calculate-data-candidates.query';
-import type { ResolvedDraftChangesSelection } from 'src/features/draft-changes/queries/impl/calculate-data-candidates.query';
+import type {
+  AdditionalCandidateSchemaEffect,
+  CandidateSchemaForeignKeyChange,
+  ResolvedDraftChangesSelection,
+} from 'src/features/draft-changes/queries/impl/calculate-data-candidates.query';
 import { pairSnapshotTables } from 'src/features/draft-changes/catalogue/snapshot-pairs';
 
 export type SchemaProjectionPreparation =
@@ -19,6 +23,7 @@ export type SchemaProjectionPreparation =
         string,
         Extract<ProjectDraftChangesSchemaResult, { status: 'projected' }>
       >;
+      foreignKeyChanges: CandidateSchemaForeignKeyChange[];
     }
   | { status: 'needsEffects'; requirements: CandidateRequirement[] }
   | { status: 'blocked'; blockers: CandidateBlocker[] };
@@ -30,6 +35,7 @@ export async function projectCandidateSchemas(
   executeProjection: (
     query: ProjectDraftChangesSchemaQuery,
   ) => Promise<ProjectDraftChangesSchemaResult>,
+  additionalSchemaEffects: AdditionalCandidateSchemaEffect[] = [],
 ): Promise<SchemaProjectionPreparation> {
   const projectionSnapshot = withoutDiscardedCreatedRows(
     snapshot,
@@ -47,6 +53,7 @@ export async function projectCandidateSchemas(
     string,
     Extract<ProjectDraftChangesSchemaResult, { status: 'projected' }>
   >();
+  const foreignKeyChanges: CandidateSchemaForeignKeyChange[] = [];
   for (const pair of paired.pairs) {
     if (!pair.head || !pair.draft) {
       continue;
@@ -55,8 +62,26 @@ export async function projectCandidateSchemas(
       selection.selected,
       pair.createdId,
     );
-    const effects = uniqueEffects(
-      schemaEntries.flatMap(({ effectRefs }) => effectRefs ?? []),
+    const historyEffects = additionalSchemaEffects.flatMap((effect) =>
+      effect.kind === 'history' && effect.tableCreatedId === pair.createdId
+        ? effect.effects
+        : [],
+    );
+    const effects = uniqueEffects([
+      ...schemaEntries.flatMap(({ effectRefs }) => effectRefs ?? []),
+      ...historyEffects,
+    ]);
+    const foreignKeyRetargets = additionalSchemaEffects.flatMap((effect) =>
+      effect.kind === 'foreignKeyRetarget' &&
+      effect.tableCreatedId === pair.createdId
+        ? [
+            {
+              targetTableCreatedId: effect.targetTableCreatedId,
+              fromTableId: effect.fromTableId,
+              toTableId: effect.toTableId,
+            },
+          ]
+        : [],
     );
     const discardedDataFields =
       operation === 'discard'
@@ -76,10 +101,17 @@ export async function projectCandidateSchemas(
         operation,
         effects,
         discardedDataFields,
+        foreignKeyRetargets,
       }),
     );
     if (result.status === 'projected') {
       projections.set(pair.createdId, result);
+      foreignKeyChanges.push(
+        ...(result.foreignKeyChanges ?? []).map((change) => ({
+          ...change,
+          tableCreatedId: pair.createdId,
+        })),
+      );
       continue;
     }
     const requirement = requiredDiscardFields(result, schemaEntries[0]);
@@ -99,7 +131,7 @@ export async function projectCandidateSchemas(
       })),
     };
   }
-  return { status: 'projected', projections };
+  return { status: 'projected', projections, foreignKeyChanges };
 }
 
 function withoutDiscardedCreatedRows(

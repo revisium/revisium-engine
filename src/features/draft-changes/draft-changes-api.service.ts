@@ -23,6 +23,11 @@ import {
   type CalculateDataCandidatesQueryData,
   type CalculateDataCandidatesResult,
 } from 'src/features/draft-changes/queries/impl/calculate-data-candidates.query';
+import {
+  ResolveCandidateDependenciesQuery,
+  type ResolveCandidateDependenciesQueryData,
+  type ResolveCandidateDependenciesResult,
+} from 'src/features/draft-changes/queries/impl/resolve-candidate-dependencies.query';
 
 @Injectable()
 export class DraftChangesApiService {
@@ -71,5 +76,14 @@ export class DraftChangesApiService {
       CalculateDataCandidatesQuery,
       CalculateDataCandidatesResult
     >(new CalculateDataCandidatesQuery(data));
+  }
+
+  resolveCandidateDependencies(
+    data: ResolveCandidateDependenciesQueryData,
+  ): Promise<ResolveCandidateDependenciesResult> {
+    return this.queryBus.execute<
+      ResolveCandidateDependenciesQuery,
+      ResolveCandidateDependenciesResult
+    >(new ResolveCandidateDependenciesQuery(data));
   }
 }

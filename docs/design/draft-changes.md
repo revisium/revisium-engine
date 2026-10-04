@@ -1,9 +1,10 @@
 # Draft Changes: API, modules, and PR plan
 
-Status: proposal for review. PR 0 adds this document; implementation starts after
-approval. PR [#63](https://github.com/revisium/revisium-engine/pull/63)
-(skipped acceptance tests) and [#64](https://github.com/revisium/revisium-engine/pull/64)
-(`rowChanges` compatibility) are merged.
+Status: approved. Stages 1–3 are merged in PRs
+[#66](https://github.com/revisium/revisium-engine/pull/66),
+[#67](https://github.com/revisium/revisium-engine/pull/67), and
+[#69](https://github.com/revisium/revisium-engine/pull/69).
+The next stack implements stages 4–6.
 
 ## Scope
 
@@ -117,7 +118,7 @@ flowchart TD
 ## PR map
 
 Numbers identify stages, not GitHub PRs. Dependencies are substantive; the stack
-linearizes this graph in the order below. All implementation stages are unstarted.
+linearizes this graph in the order below.
 
 | PR  | Module: input → output; substantive change                                                                                                                         | Depends on | Behavior to prove                                                                                    |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | ---------------------------------------------------------------------------------------------------- |
@@ -125,7 +126,7 @@ linearizes this graph in the order below. All implementation stages are unstarte
 | 2   | Snapshot reader: branch → consistent Head/Draft + fingerprint; existing migration guards                                                                           | —          | Detect edits with unchanged stored hash; active migration blocks reads                               |
 | 3   | Schema projection: snapshot + schema history + schema effects → projections and remaining edits; defines the schema-effects representation reused by the catalogue | 2          | Tests pass effects directly; schema/data across renames; explain unrepresentable remainder           |
 | 4   | Catalogue: snapshot + projection → semantic diff, kind/selectable, refs; selection → exact catalogue entries                                                       | 2, 3       | Separate migration effects from user edits; resolve reused IDs through refs                          |
-| 5   | Data candidates: snapshot + operation + catalogue selection → final Head/Draft, without writes                                                                     | 3, 4       | Partial fields, include/exclude, create/delete/rename, mixed schema/data changes                     |
+| 5   | Data candidates: snapshot + operation + catalogue selection → intermediate Head/Draft data and schema states, without writes                                       | 3, 4       | Partial fields, include/exclude, create/delete/rename, mixed schema/data changes                     |
 | 6   | Dependencies: candidate → FK effects, required effects, and blockers                                                                                               | 5          | Cycles, reference renames, hard excludes; no invented user edits                                     |
 | 7   | Formulas: candidate → validated and recomputed values                                                                                                              | 5          | Valid formulas in both resulting states                                                              |
 | 8   | Files: candidate + version associations → validated file effects; apply through file-usage                                                                         | 1, 5       | Read-only preview; restore without upload; accounting rolls back with persistence                    |
@@ -134,6 +135,33 @@ linearizes this graph in the order below. All implementation stages are unstarte
 | 11  | Planner: selection → validated candidates, effects/blockers, plan token, and acknowledgment                                                                        | 5–9        | Read-only preview; exact acknowledgment; restorative discard                                         |
 | 12  | Executor: plan token → atomic commit/discard, history, and result                                                                                                  | 1, 2, 11   | Freshness, rollback, concurrent writers, commit/commit and commit/discard; replay after its decision |
 | 13  | Consumer integration: feature operations → engine.changes and exports                                                                                              | 10–12      | Existing API compatibility; complete acceptance after the replay decision                            |
+
+## Implementation boundaries for stages 4–6
+
+One `DraftChangesModule` registers the operations. Query handlers orchestrate named
+calculations; input/result types live beside their queries. Each directory has one
+owner, and existing schema history, lineage, and JSON Pointer operations are reused.
+
+| Stage | Owners                                                                                                                                                        | Operation boundary                                                                                                                                                                                                                                            |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4     | `catalogue/`: identity pairing, lifecycle, schema effects, row fields, atomic boundaries, refs; `selection/`: entity/field selectors, union and hard excludes | Supplied snapshot and schema projections → catalogue; selection → exact entries and denied targets, including unchanged fields. Supplied-row comparison uses `RevisionChangesApiService`.                                                                     |
+| 5     | `candidates/`: commit/discard policies, candidate preparation, table/row state, field values, resulting-data validation                                       | Selected schema projection → candidate preparation → data changes → resulting JSON-data checks or exact recoverable prerequisites. Full discard restores Head even when Draft history is invalid. State/value operations do not choose commit/discard policy. |
+| 6     | `dependencies/`: reference graph, rename effects, required effects, closure, excludes, candidate-reference checks                                             | Inspect supplied candidates → expand exact effects → recalculate → check both states. Shared FK extraction follows existing engine rules; persisted-revision SQL queries remain separate.                                                                     |
+
+Tests live under the feature's `__tests__/catalogue`, `selection`, `candidates`, and
+`dependencies` directories, with support per concern. Each scenario proves one
+behavior. PostgreSQL/API scenarios verify persisted histories and feature wiring.
+
+Schema entries own their field's recorded effects. Ancestor moves update current
+paths; a required parent effect remains an explicit prerequisite subject to excludes.
+
+Data candidates remain intermediate (`migrationLedger: 'deferred'`) until the
+export history is assembled and checked. `__schema` meta-history and `__migration`
+records are separate formats; their timestamps do not establish a one-to-one
+mapping. The existing schema owner must calculate replayable export history for
+both roles before a plan can become ready. Plan and execute share that read-only
+operation; the executor persists its result. Split effects, renames, reused IDs,
+and swaps require replay proofs before that operation is integrated.
 
 ## Open decisions and workflow
 

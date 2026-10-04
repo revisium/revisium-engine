@@ -19,3 +19,27 @@ export type {
   SchemaProjectionState,
   SchemaProjectionRow,
 } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
+export { BuildDraftChangesCatalogueQuery } from './build-draft-changes-catalogue.query';
+export type {
+  BuildDraftChangesCatalogueQueryData,
+  BuildDraftChangesCatalogueResult,
+  DraftChangeRef,
+  DraftChangesCatalogue,
+  DraftChangesCatalogueBlocker,
+  DraftChangesCatalogueClassification,
+  DraftChangesCatalogueEntry,
+  DraftChangesCatalogueEntryKind,
+  DraftChangesFieldBoundary,
+  DraftChangesCatalogueScope,
+  DraftChangesCatalogueTarget,
+  DraftChangesIdentityBinding,
+} from './build-draft-changes-catalogue.query';
+export { ResolveDraftChangesSelectionQuery } from './resolve-draft-changes-selection.query';
+export type {
+  DraftChangesChoice,
+  DraftChangesDeniedTarget,
+  DraftChangesSelection,
+  DraftChangesSelectionBlocker,
+  ResolveDraftChangesSelectionQueryData,
+  ResolveDraftChangesSelectionResult,
+} from './resolve-draft-changes-selection.query';

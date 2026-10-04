@@ -236,6 +236,21 @@ export function pendingHistory(
   });
 }
 
+export function givenSchemaPatchGroups(
+  initialSchema: JsonSchema,
+  patchGroups: JsonPatch[][],
+  refs: Record<string, JsonSchema> = pluginRefs,
+): { steps: SchemaHistoryStep[]; terminalSchema: JsonSchema } {
+  let table = new SchemaTable(structuredClone(initialSchema), refs);
+  const steps = patchGroups.map((patches) => {
+    table.applyPatches(structuredClone(patches));
+    const schema = table.getSchema();
+    table = new SchemaTable(structuredClone(schema), refs);
+    return { patches: structuredClone(patches), schema };
+  });
+  return { steps, terminalSchema: table.getSchema() };
+}
+
 export function rowInput(
   createdId: string,
   data: JsonValue,

@@ -8,6 +8,7 @@ import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type { DraftChangesSelection } from 'src/features/draft-changes/queries/impl/resolve-draft-changes-selection.query';
 import type { DraftChangesSnapshot } from 'src/features/draft-changes/queries/impl/read-draft-changes-snapshot.query';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { IdService } from 'src/infrastructure/database/id.service';
 import { findStateRow } from './candidate-results';
 export {
   productStates,
@@ -438,11 +439,19 @@ export async function createPersistedCandidateTestKit() {
   const givenCreatedTableIdentityCollision = async () => {
     const product = await givenProduct();
     const revisionId = (await product.readSnapshot()).draft.id;
-    await kit.draftApi.apiCreateTable({
-      revisionId,
-      tableId: 'new-products',
-      schema: getObjectSchema({ value: getNumberSchema() }),
-    });
+    const generate = IdService.prototype.generate;
+    const identities = jest
+      .spyOn(IdService.prototype, 'generate')
+      .mockImplementation((size) => `candidate_${generate(size)}`);
+    try {
+      await kit.draftApi.apiCreateTable({
+        revisionId,
+        tableId: 'new-products',
+        schema: getObjectSchema({ value: getNumberSchema() }),
+      });
+    } finally {
+      identities.mockRestore();
+    }
     const table = (await product.readSnapshot()).draft.tables.find(
       ({ id }) => id === 'new-products',
     );

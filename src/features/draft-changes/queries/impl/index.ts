@@ -43,3 +43,11 @@ export type {
   ResolveDraftChangesSelectionQueryData,
   ResolveDraftChangesSelectionResult,
 } from './resolve-draft-changes-selection.query';
+export { CalculateDataCandidatesQuery } from './calculate-data-candidates.query';
+export type {
+  CalculateDataCandidatesQueryData,
+  CalculateDataCandidatesResult,
+  CandidateBlocker,
+  CandidateRequirement,
+  ResolvedDraftChangesSelection,
+} from './calculate-data-candidates.query';

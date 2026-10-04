@@ -32,6 +32,8 @@ export interface CatalogueScenarioOptions {
   pending?: SchemaHistoryStep[];
   headRows?: Array<{ createdId: string; data: JsonValue }>;
   draftRows?: Array<{ createdId: string; data: JsonValue }>;
+  headRowSchemaHashes?: Record<string, string>;
+  draftRowSchemaHashes?: Record<string, string>;
   headRowIds?: Record<string, string>;
   draftRowIds?: Record<string, string>;
   shareStaleRowVersion?: boolean;
@@ -78,6 +80,14 @@ export async function givenCatalogueScenario(
   }
   setRowIds(projectionInput.snapshot.head.tables, options.headRowIds);
   setRowIds(projectionInput.snapshot.draft.tables, options.draftRowIds);
+  setRowSchemaHashes(
+    projectionInput.snapshot.head.tables,
+    options.headRowSchemaHashes,
+  );
+  setRowSchemaHashes(
+    projectionInput.snapshot.draft.tables,
+    options.draftRowSchemaHashes,
+  );
   if (options.shareStaleRowVersion) {
     setSharedStoredVersion(projectionInput.snapshot.head.tables);
     setSharedStoredVersion(projectionInput.snapshot.draft.tables);
@@ -98,6 +108,23 @@ export async function givenCatalogueScenario(
       },
     ],
   };
+}
+
+function setRowSchemaHashes(
+  tables: DraftChangesFingerprintInput['head']['tables'],
+  hashes: Record<string, string> | undefined,
+): void {
+  if (!hashes) {
+    return;
+  }
+  for (const table of tables) {
+    for (const row of table.rows) {
+      const schemaHash = hashes[row.createdId];
+      if (schemaHash !== undefined) {
+        row.schemaHash = schemaHash;
+      }
+    }
+  }
 }
 
 function setRowIds(

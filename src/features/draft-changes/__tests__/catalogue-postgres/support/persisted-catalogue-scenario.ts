@@ -272,6 +272,9 @@ export async function createPersistedCatalogueTestKit() {
   };
   return {
     close: () => kit.close(),
+    changes,
+    draftApi: kit.draftApiService,
+    prisma: kit.prismaService,
     givenProduct,
     givenNestedProduct: () =>
       givenProduct(

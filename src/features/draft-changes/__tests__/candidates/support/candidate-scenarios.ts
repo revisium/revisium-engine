@@ -39,6 +39,8 @@ import { ProjectDraftChangesSchemaQuery } from 'src/features/draft-changes/queri
 import type { QueryBus } from '@nestjs/cqrs';
 import type { Cache } from '@nestjs/cache-manager';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
+import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import { FormulaValidationService } from 'src/features/plugin/formula';
 
 export const CANDIDATE_ROW_ID = 'row-product';
 export const NEW_TABLE_CREATED_ID = 'new-table-created';
@@ -1027,9 +1029,11 @@ export function calculateCandidate(
     execute: (query: ProjectDraftChangesSchemaQuery) =>
       schemaHandler.execute(query),
   } as unknown as QueryBus;
+  const schemaStore = new JsonSchemaStoreService();
   return new CalculateDataCandidatesHandler(
     queryBus,
     candidateValidator(),
+    new FormulaValidationService(schemaStore),
   ).execute(new CalculateDataCandidatesQuery(data));
 }
 

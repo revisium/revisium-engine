@@ -63,3 +63,11 @@ export type {
   ResolveCandidateDependenciesQueryData,
   ResolveCandidateDependenciesResult,
 } from './resolve-candidate-dependencies.query';
+export { RecomputeCandidateFormulasQuery } from './recompute-candidate-formulas.query';
+export type {
+  CandidateFormulaBlocker,
+  CandidateFormulaEffect,
+  CandidateFormulaError,
+  RecomputeCandidateFormulasQueryData,
+  RecomputeCandidateFormulasResult,
+} from './recompute-candidate-formulas.query';

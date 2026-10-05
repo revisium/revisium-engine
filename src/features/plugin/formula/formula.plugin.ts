@@ -1,8 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import {
-  evaluateFormulas,
-  collectFormulaNodes,
-} from '@revisium/schema-toolkit/formula';
 import { getJsonValueStoreByPath } from '@revisium/schema-toolkit/lib';
 import {
   JsonValueStore,
@@ -18,6 +14,7 @@ import {
   InternalComputeRowsOptions,
   IPluginService,
 } from 'src/features/plugin/types';
+import { calculateFormulaData } from 'src/features/plugin/formula/formula-calculation';
 
 function evaluateFormulasInStore(
   schemaStore: JsonSchemaStore,
@@ -25,18 +22,11 @@ function evaluateFormulasInStore(
 ): void {
   const schema = schemaStore.getPlainSchema();
   const data = valueStore.getPlainValue() as Record<string, unknown>;
-  const nodes = collectFormulaNodes(schema, data);
+  const result = calculateFormulaData(schema, data);
 
-  if (nodes.length === 0) {
-    return;
-  }
-
-  const { values } = evaluateFormulas(schema, data, { useDefaults: true });
-
-  for (const node of nodes) {
-    const value = values[node.path];
+  for (const [path, value] of Object.entries(result.values)) {
     if (value !== undefined) {
-      const store = getJsonValueStoreByPath(valueStore, node.path);
+      const store = getJsonValueStoreByPath(valueStore, path);
       if (store) {
         store.value = value as string | number | boolean;
       }
@@ -61,14 +51,16 @@ export class FormulaPlugin implements IPluginService {
     const allErrors = new Map<string, FormulaFieldError[]>();
 
     for (const row of options.rows) {
-      const data = row.data as Record<string, unknown>;
-      const { errors } = evaluateFormulas(schema, data, { useDefaults: true });
+      const result = calculateFormulaData(
+        schema,
+        row.data as Record<string, unknown>,
+      );
 
-      if (errors.length > 0) {
-        allErrors.set(row.id, errors);
+      if (result.errors.length > 0) {
+        allErrors.set(row.id, result.errors);
       }
 
-      row.data = data as JsonValue;
+      row.data = result.data as JsonValue;
     }
 
     return allErrors.size > 0 ? { formulaErrors: allErrors } : {};
@@ -78,9 +70,11 @@ export class FormulaPlugin implements IPluginService {
     const schema = options.schemaStore.getPlainSchema();
 
     for (const row of options.rows) {
-      const data = row.data as Record<string, unknown>;
-      evaluateFormulas(schema, data, { useDefaults: true });
-      row.data = data as JsonValue;
+      const result = calculateFormulaData(
+        schema,
+        row.data as Record<string, unknown>,
+      );
+      row.data = result.data as JsonValue;
     }
   }
 }

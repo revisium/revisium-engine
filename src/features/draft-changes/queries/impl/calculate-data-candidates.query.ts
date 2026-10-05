@@ -80,6 +80,7 @@ export interface CandidateBlocker {
     | 'SCOPE_MISMATCH'
     | 'INVALID_SELECTION'
     | 'IDENTITY_CONFLICT'
+    | 'INVALID_FORMULA_SCHEMA'
     | 'INVALID_RESULT_DATA'
     | 'SCHEMA_PROJECTION_BLOCKED'
     | 'EXCLUDED_PREREQUISITE';
@@ -89,6 +90,7 @@ export interface CandidateBlocker {
   rowCreatedId?: string;
   identityScope?: 'tableId' | 'rowId';
   identityId?: string;
+  /** Schema pointer for INVALID_FORMULA_SCHEMA; data pointer for row blockers. */
   path?: string;
   schemaBlocker?: SchemaProjectionBlocker;
 }

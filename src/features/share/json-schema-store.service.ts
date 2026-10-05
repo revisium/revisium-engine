@@ -19,17 +19,21 @@ import { JsonSchema } from '@revisium/schema-toolkit/types';
 
 @Injectable()
 export class JsonSchemaStoreService {
-  public readonly refs: Readonly<Record<string, JsonSchema>> = {
-    [SystemSchemaIds.RowId]: rowIdSchema,
-    [SystemSchemaIds.RowCreatedId]: rowCreatedIdSchema,
-    [SystemSchemaIds.RowVersionId]: rowVersionIdSchema,
-    [SystemSchemaIds.RowCreatedAt]: rowCreatedAtSchema,
-    [SystemSchemaIds.RowPublishedAt]: rowPublishedAtSchema,
-    [SystemSchemaIds.RowUpdatedAt]: rowUpdatedAtSchema,
-    [SystemSchemaIds.RowHash]: rowHashSchema,
-    [SystemSchemaIds.RowSchemaHash]: rowSchemaHashSchema,
-    [SystemSchemaIds.File]: fileSchema,
-  };
+  // The toolkit looks up refs by property access; a null prototype keeps only configured refs resolvable.
+  public readonly refs: Readonly<Record<string, JsonSchema>> = Object.assign(
+    Object.create(null) as Record<string, JsonSchema>,
+    {
+      [SystemSchemaIds.RowId]: rowIdSchema,
+      [SystemSchemaIds.RowCreatedId]: rowCreatedIdSchema,
+      [SystemSchemaIds.RowVersionId]: rowVersionIdSchema,
+      [SystemSchemaIds.RowCreatedAt]: rowCreatedAtSchema,
+      [SystemSchemaIds.RowPublishedAt]: rowPublishedAtSchema,
+      [SystemSchemaIds.RowUpdatedAt]: rowUpdatedAtSchema,
+      [SystemSchemaIds.RowHash]: rowHashSchema,
+      [SystemSchemaIds.RowSchemaHash]: rowSchemaHashSchema,
+      [SystemSchemaIds.File]: fileSchema,
+    },
+  );
 
   constructor() {}
 

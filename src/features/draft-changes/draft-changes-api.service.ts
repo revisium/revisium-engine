@@ -28,6 +28,11 @@ import {
   type ResolveCandidateDependenciesQueryData,
   type ResolveCandidateDependenciesResult,
 } from 'src/features/draft-changes/queries/impl/resolve-candidate-dependencies.query';
+import {
+  RecomputeCandidateFormulasQuery,
+  type RecomputeCandidateFormulasQueryData,
+  type RecomputeCandidateFormulasResult,
+} from 'src/features/draft-changes/queries/impl/recompute-candidate-formulas.query';
 
 @Injectable()
 export class DraftChangesApiService {
@@ -85,5 +90,14 @@ export class DraftChangesApiService {
       ResolveCandidateDependenciesQuery,
       ResolveCandidateDependenciesResult
     >(new ResolveCandidateDependenciesQuery(data));
+  }
+
+  recomputeCandidateFormulas(
+    data: RecomputeCandidateFormulasQueryData,
+  ): Promise<RecomputeCandidateFormulasResult> {
+    return this.queryBus.execute<
+      RecomputeCandidateFormulasQuery,
+      RecomputeCandidateFormulasResult
+    >(new RecomputeCandidateFormulasQuery(data));
   }
 }

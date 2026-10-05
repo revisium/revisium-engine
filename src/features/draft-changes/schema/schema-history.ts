@@ -6,6 +6,7 @@ import type {
   SchemaProjectionBlocker,
 } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
 import type { HistoryPatches } from 'src/features/share/queries/impl/transactional/get-table-schema.query';
+import { exportSchemaModel } from 'src/features/draft-changes/schema/schema-model';
 
 export interface HistoryGroup {
   historyIndex: number;
@@ -52,7 +53,7 @@ export function validateSchemaHistory(
     for (const [offset, entry] of history.slice(1).entries()) {
       const table = new SchemaTable(structuredClone(replayedSchema), refs);
       table.applyPatches(structuredClone(entry.patches));
-      replayedSchema = table.getSchema();
+      replayedSchema = exportSchemaModel(table);
       const replayedHash = objectHash(replayedSchema);
       if (replayedHash !== entry.hash) {
         return blocker(
@@ -166,7 +167,7 @@ export function replayHistorySchema(
     for (const group of groups) {
       const table = new SchemaTable(structuredClone(currentSchema), refs);
       table.applyPatches(structuredClone(group.patches));
-      currentSchema = table.getSchema();
+      currentSchema = exportSchemaModel(table);
       history.push({
         ...structuredClone(group.source),
         patches: structuredClone(group.patches),

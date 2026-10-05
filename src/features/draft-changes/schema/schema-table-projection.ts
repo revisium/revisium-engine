@@ -6,6 +6,7 @@ import objectHash from 'object-hash';
 import type { JsonSchema, JsonValue } from '@revisium/schema-toolkit/types';
 import type { HistoryGroup } from 'src/features/draft-changes/schema/schema-history';
 import type { HistoryPatches } from 'src/features/share/queries/impl/transactional/get-table-schema.query';
+import { exportSchemaModel } from 'src/features/draft-changes/schema/schema-model';
 
 interface TableProjection {
   schema: JsonSchema;
@@ -27,6 +28,7 @@ export function projectTable(
     };
   }
   let table = new SchemaTable(structuredClone(schema), refs);
+  let exportedSchema = structuredClone(schema);
   for (const row of rows) {
     table.addRow(row.createdId, structuredClone(row.data));
   }
@@ -39,22 +41,24 @@ export function projectTable(
     }
     if (needsBoundaryNormalization(hasUnnormalizedMove, group)) {
       const normalizedRows = table.getRows();
-      table = new SchemaTable(structuredClone(table.getSchema()), refs);
+      exportedSchema = exportSchemaModel(table);
+      table = new SchemaTable(exportedSchema, refs);
       for (const row of normalizedRows) {
         table.addRow(row.id, structuredClone(row.data));
       }
       hasUnnormalizedMove = false;
     }
     table.applyPatches(structuredClone(group.patches));
+    exportedSchema = exportSchemaModel(table);
     hasUnnormalizedMove ||= group.patches.some((patch) => patch.op === 'move');
     history.push({
       ...structuredClone(group.source),
       patches: structuredClone(group.patches),
-      hash: objectHash(table.getSchema()),
+      hash: objectHash(exportedSchema),
     });
   }
   return {
-    schema: table.getSchema(),
+    schema: exportedSchema,
     history,
     rows: table.getRows().map(({ id, data }) => ({
       createdId: id,

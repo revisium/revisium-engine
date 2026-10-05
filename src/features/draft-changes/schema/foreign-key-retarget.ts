@@ -10,6 +10,7 @@ import type {
 import { escapePointer } from 'src/features/draft-changes/schema/json-value-path';
 import type { DraftChangesRevisionSnapshot } from 'src/features/draft-changes/queries/impl/read-draft-changes-snapshot.query';
 import type { HistoryPatches } from 'src/features/share/queries/impl/transactional/get-table-schema.query';
+import { exportSchemaModel } from 'src/features/draft-changes/schema/schema-model';
 import type { HistoryGroup } from 'src/features/draft-changes/schema/schema-history';
 
 type RevisionTable = DraftChangesRevisionSnapshot['tables'][number];
@@ -176,7 +177,7 @@ export function applyForeignKeyRetargets(
   try {
     const table = new SchemaTable(structuredClone(state.schema), refs);
     table.applyPatches(structuredClone(patches));
-    const schema = table.getSchema();
+    const schema = exportSchemaModel(table);
     const history = [
       ...structuredClone(state.history),
       createRetargetHistory(state.history, patches, schema),

@@ -76,3 +76,8 @@ export type {
   PrepareCandidateFilesQueryData,
   PrepareCandidateFilesResult,
 } from './prepare-candidate-files.query';
+export { ResolveCandidateViewsQuery } from './resolve-candidate-views.query';
+export type {
+  ResolveCandidateViewsQueryData,
+  ResolveCandidateViewsResult,
+} from './resolve-candidate-views.query';

@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { CommandBus, CommandHandler } from '@nestjs/cqrs';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import { InternalCreateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-create-row.command';
@@ -10,13 +9,9 @@ import { JsonSchemaValidatorService } from 'src/features/share/json-schema-valid
 import { tableViewsSchema } from 'src/features/share/schema/table-views-schema';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { SystemTablesService } from 'src/features/share/system-tables.service';
-import { VALIDATE_URL_LIKE_ID_ERROR_MESSAGE } from 'src/features/share/utils/validateUrlLikeId/validateUrlLikeId';
 import { UpdateTableViewsCommand } from 'src/features/views/commands/impl';
 import { ViewValidationService } from 'src/features/views/services';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-
-const VIEW_ID_PATTERN = /^(?!__)[a-zA-Z_][a-zA-Z0-9-_]*$/;
-const VIEW_ID_MAX_LENGTH = 64;
 
 @CommandHandler(UpdateTableViewsCommand)
 export class UpdateTableViewsHandler extends DraftHandler<
@@ -40,30 +35,7 @@ export class UpdateTableViewsHandler extends DraftHandler<
   }
 
   protected async handler({ data }: UpdateTableViewsCommand): Promise<boolean> {
-    const { result, errors } = await this.jsonSchemaValidator.validate(
-      data.viewsData,
-      tableViewsSchema,
-      this.viewsSchemaHash,
-    );
-
-    if (!result) {
-      throw new BadRequestException('Invalid views data', {
-        cause: errors,
-      });
-    }
-
-    const viewIds = new Set(data.viewsData.views.map((v) => v.id));
-    if (!viewIds.has(data.viewsData.defaultViewId)) {
-      throw new BadRequestException(
-        `Default view "${data.viewsData.defaultViewId}" does not exist in views list`,
-      );
-    }
-
-    if (viewIds.size !== data.viewsData.views.length) {
-      throw new BadRequestException('View IDs must be unique');
-    }
-
-    this.validateViewIds(data.viewsData.views.map((v) => v.id));
+    await this.viewValidationService.validateViewsData(data.viewsData);
 
     await this.draftTransactionalCommands.resolveDraftRevision(data.revisionId);
 
@@ -133,19 +105,5 @@ export class UpdateTableViewsHandler extends DraftHandler<
       where: { id: revisionId, hasChanges: false },
       data: { hasChanges: true },
     });
-  }
-
-  private validateViewIds(viewIds: string[]): void {
-    for (const id of viewIds) {
-      if (
-        id.length < 1 ||
-        id.length > VIEW_ID_MAX_LENGTH ||
-        !VIEW_ID_PATTERN.test(id)
-      ) {
-        throw new BadRequestException(
-          `View ID "${id}" is invalid. ${VALIDATE_URL_LIKE_ID_ERROR_MESSAGE}`,
-        );
-      }
-    }
   }
 }

@@ -47,7 +47,7 @@ function catalogueEntryDeniedByTarget(
 }
 
 function deniedByTableFacet(
-  facets: Array<'lifecycle' | 'rows' | 'schemaFields'>,
+  facets: Extract<DraftChangesDeniedTarget, { kind: 'table' }>['facets'],
   entry: DraftChangesCatalogueEntry,
 ): boolean {
   return (

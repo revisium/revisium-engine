@@ -116,6 +116,25 @@ export class PluginService {
 
     const { schemaStore } = await this.prepareSchemaContext(options);
 
+    return this.computeRowsWithSchemaStore(options, schemaStore);
+  }
+
+  public async computeRowsWithSchema(
+    options: ComputeRowsOptions & { schema: JsonSchema },
+  ): Promise<ComputeRowsResult> {
+    if (systemTablesIds.includes(options.tableId)) {
+      return {};
+    }
+
+    const schemaStore = this.jsonSchemaStore.create(options.schema);
+
+    return this.computeRowsWithSchemaStore(options, schemaStore);
+  }
+
+  private async computeRowsWithSchemaStore(
+    options: ComputeRowsOptions,
+    schemaStore: ReturnType<JsonSchemaStoreService['create']>,
+  ): Promise<ComputeRowsResult> {
     const internalOptions: InternalComputeRowsOptions = {
       ...options,
       schemaStore,

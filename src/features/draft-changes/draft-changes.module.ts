@@ -9,6 +9,8 @@ import { PluginModule } from 'src/features/plugin/plugin.module';
 import { ViewsModule } from 'src/features/views/views.module';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { DRAFT_CHANGES_COMMAND_HANDLERS } from 'src/features/draft-changes/commands/handlers';
+import { DraftChangesReadContext } from 'src/features/draft-changes/reading/read-context';
+import { DraftChangesReadProjection } from 'src/features/draft-changes/reading/projection/draft-changes-read-projection';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { DRAFT_CHANGES_COMMAND_HANDLERS } from 'src/features/draft-changes/comma
   ],
   providers: [
     DraftChangesApiService,
+    DraftChangesReadContext,
+    DraftChangesReadProjection,
     ...DRAFT_CHANGES_QUERY_HANDLERS,
     ...DRAFT_CHANGES_COMMAND_HANDLERS,
   ],

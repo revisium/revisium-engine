@@ -45,6 +45,33 @@ export type {
   ResolveDraftChangesSelectionQueryData,
   ResolveDraftChangesSelectionResult,
 } from './resolve-draft-changes-selection.query';
+export { ReadDraftChangesQuery } from './read-draft-changes.query';
+export type {
+  ReadDraftChangesQueryData,
+  ReadDraftChangesResult,
+} from './read-draft-changes.query';
+export { ReadDraftChangedTablesQuery } from './read-draft-changed-tables.query';
+export type {
+  DraftChangedTableItem,
+  ReadDraftChangedTablesQueryData,
+  ReadDraftChangedTablesResult,
+} from './read-draft-changed-tables.query';
+export { ReadDraftChangedRowsQuery } from './read-draft-changed-rows.query';
+export type {
+  DraftChangedRowItem,
+  ReadDraftChangedRowsQueryData,
+  ReadDraftChangedRowsResult,
+} from './read-draft-changed-rows.query';
+export { ReadDraftTableChangesQuery } from './read-draft-table-changes.query';
+export type {
+  ReadDraftTableChangesQueryData,
+  ReadDraftTableChangesResult,
+} from './read-draft-table-changes.query';
+export { ReadDraftRowChangesQuery } from './read-draft-row-changes.query';
+export type {
+  ReadDraftRowChangesQueryData,
+  ReadDraftRowChangesResult,
+} from './read-draft-row-changes.query';
 export { CalculateDataCandidatesQuery } from './calculate-data-candidates.query';
 export type {
   AdditionalCandidateSchemaEffect,

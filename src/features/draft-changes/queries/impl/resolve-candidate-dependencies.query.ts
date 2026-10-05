@@ -60,13 +60,11 @@ export interface CandidateDependencyBlocker {
 }
 
 export type ResolveCandidateDependenciesResult =
-  | (Omit<
-      CalculatedCandidate,
-      'status' | 'schemaForeignKeyChanges' | 'schemaProjectionBindings'
-    > & {
+  | (Omit<CalculatedCandidate, 'status' | 'schemaForeignKeyChanges'> & {
       status: 'resolved';
       required: RequiredCandidateEffect[];
       automatic: AutomaticForeignKeyEffect[];
+      effectiveRefs?: DraftChangeRef[];
     })
   | {
       status: 'blocked';

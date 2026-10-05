@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { QueryBus } from '@nestjs/cqrs';
+import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import {
   DraftChangesSnapshot,
   ReadDraftChangesSnapshotQuery,
@@ -33,10 +33,22 @@ import {
   type RecomputeCandidateFormulasQueryData,
   type RecomputeCandidateFormulasResult,
 } from 'src/features/draft-changes/queries/impl/recompute-candidate-formulas.query';
+import {
+  PrepareCandidateFilesQuery,
+  type PrepareCandidateFilesQueryData,
+  type PrepareCandidateFilesResult,
+} from 'src/features/draft-changes/queries/impl/prepare-candidate-files.query';
+import {
+  ApplyCandidateFilesCommand,
+  type ApplyCandidateFilesCommandData,
+} from 'src/features/draft-changes/commands/impl/apply-candidate-files.command';
 
 @Injectable()
 export class DraftChangesApiService {
-  constructor(private readonly queryBus: QueryBus) {}
+  constructor(
+    private readonly queryBus: QueryBus,
+    private readonly commandBus: CommandBus,
+  ) {}
 
   readSnapshot(
     data: ReadDraftChangesSnapshotQueryData,
@@ -99,5 +111,20 @@ export class DraftChangesApiService {
       RecomputeCandidateFormulasQuery,
       RecomputeCandidateFormulasResult
     >(new RecomputeCandidateFormulasQuery(data));
+  }
+
+  prepareCandidateFiles(
+    data: PrepareCandidateFilesQueryData,
+  ): Promise<PrepareCandidateFilesResult> {
+    return this.queryBus.execute<
+      PrepareCandidateFilesQuery,
+      PrepareCandidateFilesResult
+    >(new PrepareCandidateFilesQuery(data));
+  }
+
+  applyCandidateFiles(data: ApplyCandidateFilesCommandData): Promise<true> {
+    return this.commandBus.execute<ApplyCandidateFilesCommand, true>(
+      new ApplyCandidateFilesCommand(data),
+    );
   }
 }

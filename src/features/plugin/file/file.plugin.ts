@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { nanoid } from 'nanoid';
-import { FileStatus, ID_LENGTH } from 'src/features/plugin/file/consts';
 import { FileValueStore } from 'src/features/plugin/file/file-value.store';
+import { FileStatus } from 'src/features/plugin/file/consts';
+import { initializeReadyFile } from 'src/features/plugin/file/utils/initialize-ready-file';
 import { forEachFile } from 'src/features/plugin/file/utils/fore-each-file';
 import { validateFileDataForRestore } from 'src/features/plugin/file/utils/validate-file-data-for-restore';
 import {
@@ -153,7 +153,6 @@ export class FilePlugin implements IPluginService {
   }
 
   private prepareReadyFile(store: FileValueStore) {
-    store.status = FileStatus.ready;
-    store.fileId = nanoid(ID_LENGTH);
+    initializeReadyFile(store);
   }
 }

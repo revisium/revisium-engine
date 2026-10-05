@@ -32,6 +32,8 @@ import {
   validateForeignKeyRetargets,
 } from 'src/features/draft-changes/schema/foreign-key-retarget';
 import type { ValidatedForeignKeyRetarget } from 'src/features/draft-changes/schema/foreign-key-retarget';
+import { projectFileSlots } from 'src/features/draft-changes/schema/file-slot-lineage';
+import { applyReadyFileBaseline } from 'src/features/draft-changes/schema/ready-file-baseline';
 
 type ProjectedSchemaPayload = Omit<
   Extract<ProjectDraftChangesSchemaResult, { status: 'projected' }>,
@@ -156,6 +158,12 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
       partitions.selected,
       refs,
     );
+    selected.rows = applyReadyFileBaseline(
+      selected.rows,
+      draft.rows,
+      projectFileSlots(partitions.all, partitions.selected, 'head'),
+      'head',
+    );
     const selectedState = makeState(
       selected.schema,
       [...head.history, ...selected.history],
@@ -228,6 +236,12 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
     }
 
     const all = projectTable(head.schema, head.rows, partitions.all, refs);
+    all.rows = applyReadyFileBaseline(
+      all.rows,
+      draft.rows,
+      projectFileSlots(partitions.all, partitions.all, 'head'),
+      'head',
+    );
     const migratedBase = makeState(
       all.schema,
       [...head.history, ...all.history],
@@ -266,6 +280,10 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
       rowFieldMappings: mapFieldCoordinates(fullLineage, lineage),
       rowTargetFieldMappings: mapFieldCoordinates(fullLineage, selectedLineage),
       selectedEffects: partitions.selectedEffects,
+      fileSlots: [
+        ...projectFileSlots(partitions.all, partitions.selected, 'head'),
+        ...projectFileSlots(partitions.all, partitions.all, 'draft'),
+      ],
       ...withForeignKeyChanges([
         ...selectedRetargeted.changes,
         ...projectedDraft.changes,
@@ -290,6 +308,24 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
       refs,
     );
     const full = projectTable(head.schema, head.rows, partitions.all, refs);
+    const retainedSlots = projectFileSlots(
+      partitions.all,
+      partitions.remaining,
+      'draft',
+    );
+    const fullSlots = projectFileSlots(partitions.all, partitions.all, 'draft');
+    retained.rows = applyReadyFileBaseline(
+      retained.rows,
+      draft.rows,
+      retainedSlots,
+      'draft',
+    );
+    full.rows = applyReadyFileBaseline(
+      full.rows,
+      draft.rows,
+      fullSlots,
+      'draft',
+    );
     const lineage = createFieldIdentities(head.schema);
     const fullLineage = applyFieldLineage(lineage, partitions.all);
     const retainedLineage = applyFieldLineage(lineage, partitions.remaining);
@@ -381,6 +417,7 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
       rowFieldMappings: mapFieldCoordinates(fullLineage, lineage),
       rowTargetFieldMappings: mapFieldCoordinates(fullLineage, retainedLineage),
       selectedEffects: partitions.selectedEffects,
+      fileSlots: retainedSlots,
       ...withForeignKeyChanges(draftRetargeted.changes),
     };
   }

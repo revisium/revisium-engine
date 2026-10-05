@@ -5,6 +5,7 @@ import { ResolveDraftChangesSelectionHandler } from './resolve-draft-changes-sel
 import { CalculateDataCandidatesHandler } from './calculate-data-candidates.handler';
 import { ResolveCandidateDependenciesHandler } from './resolve-candidate-dependencies.handler';
 import { RecomputeCandidateFormulasHandler } from './recompute-candidate-formulas.handler';
+import { PrepareCandidateFilesHandler } from './prepare-candidate-files.handler';
 
 export const DRAFT_CHANGES_QUERY_HANDLERS = [
   ReadDraftChangesSnapshotHandler,
@@ -14,4 +15,5 @@ export const DRAFT_CHANGES_QUERY_HANDLERS = [
   CalculateDataCandidatesHandler,
   ResolveCandidateDependenciesHandler,
   RecomputeCandidateFormulasHandler,
+  PrepareCandidateFilesHandler,
 ];

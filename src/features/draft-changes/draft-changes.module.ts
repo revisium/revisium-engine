@@ -6,6 +6,8 @@ import { DraftChangesApiService } from 'src/features/draft-changes/draft-changes
 import { RevisionChangesModule } from 'src/features/revision-changes/revision-changes.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
+import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
+import { DRAFT_CHANGES_COMMAND_HANDLERS } from 'src/features/draft-changes/commands/handlers';
 
 @Module({
   imports: [
@@ -14,8 +16,13 @@ import { PluginModule } from 'src/features/plugin/plugin.module';
     RevisionChangesModule,
     ShareModule,
     PluginModule,
+    FileUsageModule,
   ],
-  providers: [DraftChangesApiService, ...DRAFT_CHANGES_QUERY_HANDLERS],
+  providers: [
+    DraftChangesApiService,
+    ...DRAFT_CHANGES_QUERY_HANDLERS,
+    ...DRAFT_CHANGES_COMMAND_HANDLERS,
+  ],
   exports: [DraftChangesApiService],
 })
 export class DraftChangesModule {}

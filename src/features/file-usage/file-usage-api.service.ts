@@ -23,6 +23,11 @@ import {
   RestoreProjectFileBytesResult,
   ValidateProjectFileBytesResult,
 } from 'src/features/file-usage/types';
+import {
+  GetProjectFileBlobsQuery,
+  type GetProjectFileBlobsQueryData,
+  type GetProjectFileBlobsResult,
+} from 'src/features/file-usage/queries/impl/get-project-file-blobs.query';
 
 @Injectable()
 export class FileUsageApiService {
@@ -33,6 +38,15 @@ export class FileUsageApiService {
 
   public getProjectStorageBytes(data: { projectId: string }): Promise<bigint> {
     return this.queryBus.execute(new GetProjectStorageBytesQuery(data));
+  }
+
+  public getProjectFileBlobs(
+    data: GetProjectFileBlobsQueryData,
+  ): Promise<GetProjectFileBlobsResult> {
+    return this.queryBus.execute<
+      GetProjectFileBlobsQuery,
+      GetProjectFileBlobsResult
+    >(new GetProjectFileBlobsQuery(data));
   }
 
   public getStorageBytesForProjects(data: {

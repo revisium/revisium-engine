@@ -190,7 +190,13 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
         ? { status: 'needsEffects', requirements: [prerequisite] }
         : { status: 'blocked', blockers };
     }
-    return calculated(head, draft, projections, foreignKeyChanges);
+    return calculated(
+      head,
+      draft,
+      projections,
+      foreignKeyChanges,
+      data.operation,
+    );
   }
 }
 
@@ -211,6 +217,7 @@ function calculated(
     CalculateDataCandidatesResult,
     { status: 'calculated' }
   >['schemaForeignKeyChanges'],
+  operation?: 'commit' | 'discard',
 ): CalculateDataCandidatesResult {
   return {
     status: 'calculated',
@@ -226,6 +233,10 @@ function calculated(
           schemaProjectionBindings: [...projections].map(
             ([tableCreatedId, projection]) => ({
               tableCreatedId,
+              sourceFingerprint: projection.sourceFingerprint,
+              ...(operation === undefined ? {} : { operation }),
+              selectedEffects: projection.selectedEffects,
+              fileSlots: projection.fileSlots,
               rowFieldMappings: projection.rowFieldMappings,
               rowTargetFieldMappings: projection.rowTargetFieldMappings,
             }),

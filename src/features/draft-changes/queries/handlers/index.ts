@@ -3,6 +3,7 @@ import { ProjectDraftChangesSchemaHandler } from 'src/features/draft-changes/que
 import { BuildDraftChangesCatalogueHandler } from './build-draft-changes-catalogue.handler';
 import { ResolveDraftChangesSelectionHandler } from './resolve-draft-changes-selection.handler';
 import { CalculateDataCandidatesHandler } from './calculate-data-candidates.handler';
+import { ResolveCandidateDependenciesHandler } from './resolve-candidate-dependencies.handler';
 
 export const DRAFT_CHANGES_QUERY_HANDLERS = [
   ReadDraftChangesSnapshotHandler,
@@ -10,4 +11,5 @@ export const DRAFT_CHANGES_QUERY_HANDLERS = [
   BuildDraftChangesCatalogueHandler,
   ResolveDraftChangesSelectionHandler,
   CalculateDataCandidatesHandler,
+  ResolveCandidateDependenciesHandler,
 ];

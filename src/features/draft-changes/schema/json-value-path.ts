@@ -1,4 +1,10 @@
 import type { JsonValue } from '@revisium/schema-toolkit/types';
+import { unescapePointer } from 'src/features/share/json-pointer';
+
+export {
+  escapePointer,
+  unescapePointer,
+} from 'src/features/share/json-pointer';
 
 export const missingValue = Symbol('missing');
 export type MaybeJson = JsonValue | typeof missingValue;
@@ -121,12 +127,4 @@ export function isObject(value: MaybeJson): value is Record<string, JsonValue> {
     value !== null &&
     !Array.isArray(value)
   );
-}
-
-export function escapePointer(value: string): string {
-  return value.replace(/~/g, '~0').replace(/\//g, '~1');
-}
-
-export function unescapePointer(value: string): string {
-  return value.replace(/~1/g, '/').replace(/~0/g, '~');
 }

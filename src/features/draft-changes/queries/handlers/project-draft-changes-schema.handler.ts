@@ -23,6 +23,15 @@ import { readSchemaStates } from 'src/features/draft-changes/schema/schema-snaps
 import type { RevisionSchemaState } from 'src/features/draft-changes/schema/schema-snapshot';
 import { projectTable } from 'src/features/draft-changes/schema/schema-table-projection';
 import { transferRowResiduals } from 'src/features/draft-changes/schema/row-residual';
+import type { DraftChangesRevisionSnapshot } from 'src/features/draft-changes/queries/impl/read-draft-changes-snapshot.query';
+import type { SchemaForeignKeyChange } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
+import {
+  applyForeignKeyHistoryProvenance,
+  applyForeignKeyRetargets,
+  createForeignKeyProvenance,
+  validateForeignKeyRetargets,
+} from 'src/features/draft-changes/schema/foreign-key-retarget';
+import type { ValidatedForeignKeyRetarget } from 'src/features/draft-changes/schema/foreign-key-retarget';
 
 type ProjectedSchemaPayload = Omit<
   Extract<ProjectDraftChangesSchemaResult, { status: 'projected' }>,
@@ -85,6 +94,14 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
     if (prefixBlocker) {
       return blocked(prefixBlocker);
     }
+    const retargetValidation = validateForeignKeyRetargets(
+      query.data.foreignKeyRetargets,
+      snapshot.head.tables,
+      snapshot.draft.tables,
+    );
+    if ('blocker' in retargetValidation) {
+      return blocked(retargetValidation.blocker);
+    }
     const partitions = partitionHistory(
       draft.history,
       head.history.length,
@@ -96,13 +113,24 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
 
     try {
       return operation === 'commit'
-        ? this.commit(head, draft, partitions, refs)
+        ? this.commit(
+            head,
+            draft,
+            partitions,
+            refs,
+            snapshot.head.tables,
+            snapshot.draft.tables,
+            retargetValidation.retargets,
+          )
         : this.discard(
             head,
             draft,
             partitions,
             query.data.discardedDataFields ?? [],
             refs,
+            snapshot.head.tables,
+            snapshot.draft.tables,
+            retargetValidation.retargets,
           );
     } catch {
       return blocked({
@@ -118,6 +146,9 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
     draft: RevisionSchemaState,
     partitions: HistoryPartition,
     refs: Record<string, JsonSchema>,
+    headTables: DraftChangesRevisionSnapshot['tables'],
+    draftTables: DraftChangesRevisionSnapshot['tables'],
+    retargets: ValidatedForeignKeyRetarget[],
   ): InternalProjectionResult {
     const selected = projectTable(
       head.schema,
@@ -125,15 +156,70 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
       partitions.selected,
       refs,
     );
-    const remaining = replayHistorySchema(
+    const selectedState = makeState(
       selected.schema,
+      [...head.history, ...selected.history],
+      selected.rows,
+    );
+    const headProvenance = createForeignKeyProvenance(head.schema, 'head');
+    const selectedProvenance = applyForeignKeyHistoryProvenance(
+      headProvenance,
+      partitions.selected,
+      partitions.all,
+    );
+    const selectedRetargeted = applyForeignKeyRetargets(
+      selectedState,
+      'head',
+      { head: headTables, draft: draftTables },
+      selectedProvenance,
+      retargets,
+      'commit',
+      refs,
+    );
+    if ('blocker' in selectedRetargeted) {
+      return blocked(selectedRetargeted.blocker);
+    }
+    const remaining = replayHistorySchema(
+      selectedRetargeted.state.schema,
       partitions.remaining,
       refs,
     );
     if ('code' in remaining) {
       return blocked(remaining);
     }
-    if (!deepEqual(remaining.schema, draft.schema)) {
+    const draftOriginal = applyForeignKeyRetargets(
+      makeState(draft.schema, draft.history, draft.rows),
+      'draft',
+      { head: headTables, draft: draftTables },
+      createForeignKeyProvenance(draft.schema, 'draft'),
+      retargets,
+      'commit',
+      refs,
+    );
+    if ('blocker' in draftOriginal) {
+      return blocked(draftOriginal.blocker);
+    }
+    const projectedDraftProvenance = applyForeignKeyHistoryProvenance(
+      selectedProvenance,
+      partitions.remaining,
+    );
+    const projectedDraft = applyForeignKeyRetargets(
+      makeState(
+        remaining.schema,
+        [...selectedRetargeted.state.history, ...remaining.history],
+        draft.rows,
+      ),
+      'draft',
+      { head: headTables, draft: draftTables },
+      projectedDraftProvenance,
+      retargets,
+      'commit',
+      refs,
+    );
+    if ('blocker' in projectedDraft) {
+      return blocked(projectedDraft.blocker);
+    }
+    if (!deepEqual(projectedDraft.state.schema, draftOriginal.state.schema)) {
       return blocked({
         code: 'DEPENDENT_EFFECT_SPLIT',
         message:
@@ -142,34 +228,48 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
     }
 
     const all = projectTable(head.schema, head.rows, partitions.all, refs);
-    const headState = makeState(
-      selected.schema,
-      [...head.history, ...selected.history],
-      selected.rows,
-    );
-    const draftState = makeState(
-      draft.schema,
-      [...head.history, ...selected.history, ...remaining.history],
-      draft.rows,
-    );
-    const migratedHead = makeState(
+    const migratedBase = makeState(
       all.schema,
       [...head.history, ...all.history],
       all.rows,
     );
+    const migrated = applyForeignKeyRetargets(
+      migratedBase,
+      'head',
+      { head: headTables, draft: draftTables },
+      applyForeignKeyHistoryProvenance(headProvenance, partitions.all),
+      retargets,
+      'commit',
+      refs,
+    );
+    if ('blocker' in migrated) {
+      return blocked(migrated.blocker);
+    }
+    const historyBlocker = validateProjectedHistories(
+      selectedRetargeted.state,
+      projectedDraft.state,
+      refs,
+    );
+    if (historyBlocker) {
+      return blocked(historyBlocker);
+    }
     const lineage = createFieldIdentities(head.schema);
     const fullLineage = applyFieldLineage(lineage, partitions.all);
     const selectedLineage = applyFieldLineage(lineage, partitions.selected);
 
     return {
       status: 'projected',
-      head: headState,
-      draft: draftState,
-      retainedHead: headState,
-      migratedHead,
+      head: selectedRetargeted.state,
+      draft: projectedDraft.state,
+      retainedHead: selectedRetargeted.state,
+      migratedHead: migrated.state,
       rowFieldMappings: mapFieldCoordinates(fullLineage, lineage),
       rowTargetFieldMappings: mapFieldCoordinates(fullLineage, selectedLineage),
       selectedEffects: partitions.selectedEffects,
+      ...withForeignKeyChanges([
+        ...selectedRetargeted.changes,
+        ...projectedDraft.changes,
+      ]),
     };
   }
 
@@ -179,6 +279,9 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
     partitions: HistoryPartition,
     discardedDataFields: Array<{ rowCreatedId: string; path: string }>,
     refs: Record<string, JsonSchema>,
+    headTables: DraftChangesRevisionSnapshot['tables'],
+    draftTables: DraftChangesRevisionSnapshot['tables'],
+    retargets: ValidatedForeignKeyRetarget[],
   ): InternalProjectionResult {
     const retained = projectTable(
       head.schema,
@@ -213,32 +316,72 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
     if ('code' in retainedHistory) {
       return blocked(retainedHistory);
     }
-    const draftState = makeState(
+    const draftBase = makeState(
       retained.schema,
       [...head.history, ...retainedHistory.history],
       residual.rows,
     );
     const headState = makeState(head.schema, head.history, head.rows);
+    const draftRetargeted = applyForeignKeyRetargets(
+      draftBase,
+      'draft',
+      { head: headTables, draft: draftTables },
+      applyForeignKeyHistoryProvenance(
+        createForeignKeyProvenance(head.schema, 'head'),
+        partitions.remaining,
+        partitions.all,
+      ),
+      retargets,
+      'discard',
+      refs,
+    );
+    if ('blocker' in draftRetargeted) {
+      return blocked(draftRetargeted.blocker);
+    }
     const retainedHead = makeState(
-      retained.schema,
-      [...head.history, ...retainedHistory.history],
+      draftRetargeted.state.schema,
+      draftRetargeted.state.history,
       retained.rows,
     );
-    const migratedHead = makeState(
+    const migratedBase = makeState(
       full.schema,
       [...head.history, ...full.history],
       full.rows,
     );
+    const migrated = applyForeignKeyRetargets(
+      migratedBase,
+      'draft',
+      { head: headTables, draft: draftTables },
+      applyForeignKeyHistoryProvenance(
+        createForeignKeyProvenance(head.schema, 'head'),
+        partitions.all,
+      ),
+      retargets,
+      'discard',
+      refs,
+    );
+    if ('blocker' in migrated) {
+      return blocked(migrated.blocker);
+    }
+    const historyBlocker = validateProjectedHistories(
+      headState,
+      draftRetargeted.state,
+      refs,
+    );
+    if (historyBlocker) {
+      return blocked(historyBlocker);
+    }
 
     return {
       status: 'projected',
       head: headState,
-      draft: draftState,
+      draft: draftRetargeted.state,
       retainedHead,
-      migratedHead,
+      migratedHead: migrated.state,
       rowFieldMappings: mapFieldCoordinates(fullLineage, lineage),
       rowTargetFieldMappings: mapFieldCoordinates(fullLineage, retainedLineage),
       selectedEffects: partitions.selectedEffects,
+      ...withForeignKeyChanges(draftRetargeted.changes),
     };
   }
 }
@@ -259,4 +402,35 @@ function blocked(
   blocker: SchemaProjectionBlocker,
 ): ProjectDraftChangesSchemaResult {
   return { status: 'blocked', blockers: [blocker] };
+}
+
+function validateProjectedHistories(
+  head: SchemaProjectionState,
+  draft: SchemaProjectionState,
+  refs: Record<string, JsonSchema>,
+): SchemaProjectionBlocker | undefined {
+  const prefixBlocker = validateHistoryPrefix(head.history, draft.history);
+  if (prefixBlocker) {
+    return prefixBlocker;
+  }
+  return (
+    validateSchemaHistory(head.schema, head.history, refs) ??
+    validateSchemaHistory(draft.schema, draft.history, refs)
+  );
+}
+
+function withForeignKeyChanges(changes: SchemaForeignKeyChange[]): {
+  foreignKeyChanges?: SchemaForeignKeyChange[];
+} {
+  if (changes.length === 0) {
+    return {};
+  }
+  return {
+    foreignKeyChanges: changes.sort(
+      (left, right) =>
+        (left.role === 'head' ? 0 : 1) - (right.role === 'head' ? 0 : 1) ||
+        left.path.localeCompare(right.path) ||
+        left.targetTableCreatedId.localeCompare(right.targetTableCreatedId),
+    ),
+  };
 }

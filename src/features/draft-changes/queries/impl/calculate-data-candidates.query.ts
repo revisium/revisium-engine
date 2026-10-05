@@ -6,6 +6,7 @@ import type {
 import type { DraftChangesSnapshot } from 'src/features/draft-changes/queries/impl/read-draft-changes-snapshot.query';
 import type {
   DiscardedDataField,
+  SchemaForeignKeyChange,
   SchemaEffectRef,
   SchemaProjectionBlocker,
 } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
@@ -28,6 +29,23 @@ export type CalculateDataCandidatesQueryData =
       mode: 'selected';
       catalogue: DraftChangesCatalogue;
       selection: ResolvedDraftChangesSelection;
+      additionalSchemaEffects?: AdditionalCandidateSchemaEffect[];
+    };
+
+export type AdditionalCandidateSchemaEffect =
+  | {
+      kind: 'history';
+      tableCreatedId: string;
+      effects: SchemaEffectRef[];
+      causeRef: DraftChangeRef;
+    }
+  | {
+      kind: 'foreignKeyRetarget';
+      tableCreatedId: string;
+      targetTableCreatedId: string;
+      fromTableId: string;
+      toTableId: string;
+      causeRef: DraftChangeRef;
     };
 
 export type CandidateRequirement = {
@@ -46,6 +64,16 @@ export type CandidateRequirement = {
       fields: DiscardedDataField[];
     }
 );
+
+export interface CandidateSchemaForeignKeyChange extends SchemaForeignKeyChange {
+  tableCreatedId: string;
+}
+
+export interface CandidateSchemaProjectionBinding {
+  tableCreatedId: string;
+  rowFieldMappings: Array<{ fromPath: string; toPath: string }>;
+  rowTargetFieldMappings: Array<{ fromPath: string; toPath: string }>;
+}
 
 export interface CandidateBlocker {
   code:
@@ -71,6 +99,8 @@ export type CalculateDataCandidatesResult =
       head: DraftRevisionState;
       draft: DraftRevisionState;
       migrationLedger: 'deferred';
+      schemaForeignKeyChanges?: CandidateSchemaForeignKeyChange[];
+      schemaProjectionBindings?: CandidateSchemaProjectionBinding[];
     }
   | { status: 'needsEffects'; requirements: CandidateRequirement[] }
   | { status: 'blocked'; blockers: CandidateBlocker[] };

@@ -1,17 +1,5 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
-import {
-  createJsonValueStore,
-  traverseValue,
-} from '@revisium/schema-toolkit/lib';
-import {
-  JsonValueStore,
-  JsonValueStoreParent,
-} from '@revisium/schema-toolkit/model';
-import {
-  JsonSchema,
-  JsonSchemaTypeName,
-  JsonValue,
-} from '@revisium/schema-toolkit/types';
+import { JsonSchema, JsonValue } from '@revisium/schema-toolkit/types';
 import { ErrorObject } from 'ajv/dist/2020';
 import {
   ValidateDataCommand,
@@ -27,12 +15,10 @@ import {
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
-
-interface ForeignKeyReference {
-  tableId: string;
-  rowId: string;
-  path: string;
-}
+import {
+  ForeignKeyReference,
+  getForeignKeyReferences,
+} from 'src/features/share/foreign-key-references';
 
 interface RowData {
   rowId: string;
@@ -120,12 +106,7 @@ export class ValidateDataHandler implements ICommandHandler<
     schema: JsonSchema,
   ): ForeignKeyReference[] {
     const schemaStore = this.jsonSchemaStore.create(schema);
-    const valueStore = createJsonValueStore(
-      schemaStore,
-      row.rowId,
-      row.data as JsonValue,
-    );
-    return this.collectForeignKeysWithPaths(valueStore);
+    return getForeignKeyReferences(schemaStore, row.data as JsonValue);
   }
 
   private async checkForeignKeyReferences(
@@ -180,76 +161,6 @@ export class ValidateDataHandler implements ICommandHandler<
     return result.schema;
   }
 
-  private collectForeignKeysWithPaths(
-    valueStore: JsonValueStore,
-  ): ForeignKeyReference[] {
-    const references: ForeignKeyReference[] = [];
-
-    traverseValue(valueStore, (node) => {
-      const reference = this.extractForeignKeyFromNode(node);
-      if (reference) {
-        references.push(reference);
-      }
-    });
-
-    return references;
-  }
-
-  private extractForeignKeyFromNode(
-    node: JsonValueStore,
-  ): ForeignKeyReference | null {
-    if (node.type !== JsonSchemaTypeName.String) {
-      return null;
-    }
-
-    const stringNode = node;
-    const foreignKey = stringNode.foreignKey;
-
-    if (!foreignKey || typeof stringNode.value !== 'string') {
-      return null;
-    }
-
-    return {
-      tableId: foreignKey,
-      rowId: stringNode.value,
-      path: this.buildInstancePath(stringNode),
-    };
-  }
-
-  private buildInstancePath(node: JsonValueStore): string {
-    const pathParts: string[] = [];
-    let current: JsonValueStore | JsonValueStoreParent | null = node;
-
-    while (current?.parent) {
-      const parentKey = this.getKeyInParent(current, current.parent);
-      if (parentKey !== null) {
-        pathParts.unshift(parentKey);
-      }
-      current = current.parent;
-    }
-
-    return pathParts.length > 0 ? '/' + pathParts.join('/') : '/';
-  }
-
-  private getKeyInParent(
-    node: JsonValueStore | JsonValueStoreParent,
-    parent: JsonValueStoreParent,
-  ): string | null {
-    if (parent.type === JsonSchemaTypeName.Object) {
-      for (const [key, value] of Object.entries(parent.value)) {
-        if (value === node) {
-          return key;
-        }
-      }
-    } else if (parent.type === JsonSchemaTypeName.Array) {
-      const index = parent.value.indexOf(node);
-      if (index >= 0) {
-        return String(index);
-      }
-    }
-    return null;
-  }
-
   private groupForeignKeysByTable(
     foreignKeys: ForeignKeyReference[],
   ): Map<string, Array<{ rowId: string; path: string }>> {
@@ -257,7 +168,7 @@ export class ValidateDataHandler implements ICommandHandler<
 
     for (const fk of foreignKeys) {
       const existing = grouped.get(fk.tableId) || [];
-      existing.push({ rowId: fk.rowId, path: fk.path });
+      existing.push({ rowId: fk.rowId, path: fk.legacyPath });
       grouped.set(fk.tableId, existing);
     }
 

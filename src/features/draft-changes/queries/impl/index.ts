@@ -16,6 +16,8 @@ export type {
   SchemaEffectRef,
   SchemaProjectionBlocker,
   SchemaProjectionBlockerCode,
+  SchemaForeignKeyChange,
+  SchemaForeignKeyRetarget,
   SchemaProjectionState,
   SchemaProjectionRow,
 } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
@@ -45,9 +47,19 @@ export type {
 } from './resolve-draft-changes-selection.query';
 export { CalculateDataCandidatesQuery } from './calculate-data-candidates.query';
 export type {
+  AdditionalCandidateSchemaEffect,
   CalculateDataCandidatesQueryData,
   CalculateDataCandidatesResult,
   CandidateBlocker,
   CandidateRequirement,
+  CandidateSchemaForeignKeyChange,
   ResolvedDraftChangesSelection,
 } from './calculate-data-candidates.query';
+export { ResolveCandidateDependenciesQuery } from './resolve-candidate-dependencies.query';
+export type {
+  AutomaticForeignKeyEffect,
+  CandidateDependencyBlocker,
+  RequiredCandidateEffect,
+  ResolveCandidateDependenciesQueryData,
+  ResolveCandidateDependenciesResult,
+} from './resolve-candidate-dependencies.query';

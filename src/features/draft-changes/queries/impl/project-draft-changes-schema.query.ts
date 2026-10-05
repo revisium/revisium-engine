@@ -12,6 +12,20 @@ export interface DiscardedDataField {
   path: string;
 }
 
+export interface SchemaForeignKeyRetarget {
+  targetTableCreatedId: string;
+  fromTableId: string;
+  toTableId: string;
+}
+
+export interface SchemaForeignKeyChange {
+  role: 'head' | 'draft';
+  targetTableCreatedId: string;
+  path: string;
+  before: string;
+  after: string;
+}
+
 export interface ProjectDraftChangesSchemaQueryData {
   snapshot: DraftChangesSnapshot;
   tableCreatedId: string;
@@ -19,6 +33,7 @@ export interface ProjectDraftChangesSchemaQueryData {
   effects: SchemaEffectRef[];
   discardedDataFields?: DiscardedDataField[];
   schemaRefs?: Record<string, JsonSchema>;
+  foreignKeyRetargets?: SchemaForeignKeyRetarget[];
 }
 
 export interface SchemaProjectionRow {
@@ -64,6 +79,7 @@ export type ProjectDraftChangesSchemaResult =
       rowFieldMappings: Array<{ fromPath: string; toPath: string }>;
       rowTargetFieldMappings: Array<{ fromPath: string; toPath: string }>;
       selectedEffects: SchemaEffectRef[];
+      foreignKeyChanges?: SchemaForeignKeyChange[];
     }
   | {
       status: 'blocked';

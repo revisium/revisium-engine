@@ -41,6 +41,13 @@ export interface SchemaProjectionRow {
   data: JsonValue;
 }
 
+export interface SchemaFileSlotProjectionBinding {
+  role: 'head' | 'draft';
+  introducedBy: SchemaEffectRef;
+  sourceDraftPath: string;
+  projectedPath: string;
+}
+
 export interface SchemaProjectionState {
   schema: JsonSchema;
   history: HistoryPatches[];
@@ -79,6 +86,7 @@ export type ProjectDraftChangesSchemaResult =
       rowFieldMappings: Array<{ fromPath: string; toPath: string }>;
       rowTargetFieldMappings: Array<{ fromPath: string; toPath: string }>;
       selectedEffects: SchemaEffectRef[];
+      fileSlots?: SchemaFileSlotProjectionBinding[];
       foreignKeyChanges?: SchemaForeignKeyChange[];
     }
   | {

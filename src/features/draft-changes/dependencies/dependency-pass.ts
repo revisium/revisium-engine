@@ -134,6 +134,10 @@ function processCalculatedCandidate(
       status: 'resolved',
       ...candidate,
       migrationLedger: calculated.migrationLedger,
+      ...(calculated.schemaProjectionBindings === undefined
+        ? {}
+        : { schemaProjectionBindings: calculated.schemaProjectionBindings }),
+      effectiveRefs: data.selection.selected.map(({ ref }) => ref),
       required: [],
       automatic: uniqueAutomaticEffects([
         ...schemaAutomaticEffects(data, calculated),

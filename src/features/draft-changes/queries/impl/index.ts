@@ -71,3 +71,8 @@ export type {
   RecomputeCandidateFormulasQueryData,
   RecomputeCandidateFormulasResult,
 } from './recompute-candidate-formulas.query';
+export { PrepareCandidateFilesQuery } from './prepare-candidate-files.query';
+export type {
+  PrepareCandidateFilesQueryData,
+  PrepareCandidateFilesResult,
+} from './prepare-candidate-files.query';

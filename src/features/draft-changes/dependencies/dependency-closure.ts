@@ -46,6 +46,7 @@ async function resolveRestoredHead(
     migrationLedger: calculated.migrationLedger,
     required: [],
     automatic: [],
+    effectiveRefs: [],
   };
 }
 

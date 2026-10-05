@@ -7,7 +7,9 @@ Status: approved. Stages 1–6 are merged in PRs
 [#70](https://github.com/revisium/revisium-engine/pull/70),
 [#71](https://github.com/revisium/revisium-engine/pull/71), and
 [#73](https://github.com/revisium/revisium-engine/pull/73).
-The next stack implements stages 7–9.
+Stage 7 is ready for review in
+[#75](https://github.com/revisium/revisium-engine/pull/75).
+Stages 8–9 build on that branch.
 
 ## Scope
 
@@ -193,6 +195,11 @@ identify a concrete data JSON Pointer, including array indexes.
   removal of detached row versions; `file-usage` owns blob status and accounting.
   File-slot initialization must precede final formula calculation when it changes
   an input that formulas read; PR order does not determine runtime order.
+  A proven schema ADD initializes the slot with its existing source file ID.
+  Catalogue comparison and partial schema restoration share that ready baseline;
+  a later upload remains an independent atomic edit. Successful projection
+  bindings retain source fingerprint, effects and field/slot lineage. Dependency
+  closure forwards its final bindings and effective refs.
 - `views/` projects original views and their independent edits onto each resulting
   schema. Keep the source snapshot and actual schema projection context; do not
   infer provenance from candidate field names. Native migration and validation

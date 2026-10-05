@@ -18,6 +18,7 @@ import {
   readJsonPath,
 } from 'src/features/draft-changes/schema/json-value-path';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { exportSchemaModel } from 'src/features/draft-changes/schema/schema-model';
 
 interface SchemaTableState {
   schema: JsonSchema;
@@ -70,10 +71,10 @@ export function buildSchemaEffectEntries(
         continue;
       }
       const effectRef = { historyIndex, patchIndex };
-      const previousSchema = table.getSchema();
+      const previousSchema = exportSchemaModel(table);
       const beforeIdentities = identities;
       table.applyPatches([structuredClone(patch)]);
-      schema = table.getSchema();
+      schema = exportSchemaModel(table);
       identities = applyFieldLineage(beforeIdentities, [
         historyGroup(historyIndex, history, patch, patchIndex),
       ]);

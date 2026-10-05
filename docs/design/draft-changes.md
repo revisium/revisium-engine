@@ -1,10 +1,13 @@
 # Draft Changes: API, modules, and PR plan
 
-Status: approved. Stages 1–3 are merged in PRs
+Status: approved. Stages 1–6 are merged in PRs
 [#66](https://github.com/revisium/revisium-engine/pull/66),
 [#67](https://github.com/revisium/revisium-engine/pull/67), and
-[#69](https://github.com/revisium/revisium-engine/pull/69).
-The current stack implements stages 4–6.
+[#69](https://github.com/revisium/revisium-engine/pull/69), followed by
+[#70](https://github.com/revisium/revisium-engine/pull/70),
+[#71](https://github.com/revisium/revisium-engine/pull/71), and
+[#73](https://github.com/revisium/revisium-engine/pull/73).
+The next stack implements stages 7–9.
 
 ## Scope
 
@@ -58,7 +61,8 @@ cannot proceed. COW (copy on write) reuses unchanged versions during persistence
 - `draft-revision`: the COW writer persists a candidate into a mutable revision,
   links versions, and removes only detached versions. It has no selection/plan
   logic. Fully equivalent rows and tables reconnect to Head versions. It returns
-  created versionIds for file accounting; blobIds are collected before deletion.
+  created versionIds; file accounting covers all final file-bearing versions,
+  including reused versions. Blob IDs are collected before deletion.
 - `draft-changes`: Head/Draft reads, the change/ref catalogue, partial-state
   calculation, user-schema projection, FK effects, browsing, and execution.
   These are separate responsibilities within one feature.
@@ -163,6 +167,47 @@ mapping. The existing schema owner must calculate replayable export history for
 both roles before a plan can become ready. Plan and execute share that read-only
 operation; the executor persists its result. Split effects, renames, reused IDs,
 and swaps require replay proofs before that operation is integrated.
+
+Formula calculation is shared with the existing plugin owner. Data validation
+inspects temporary recomputed values and leaves derived values in the returned
+candidate for the formula operation to materialize and report. The existing
+prohibition on combining `foreignKey` and `x-formula` remains unchanged. Formula
+calculation preserves native fallback values and diagnostics, then validates the
+resulting data against ordinary engine rules.
+
+Formula-schema blockers identify a schema JSON Pointer, including `properties`
+and `items`. Formula effects, evaluation diagnostics, and resulting-data blockers
+identify a concrete data JSON Pointer, including array indexes.
+
+## Implementation boundaries for stages 7–9
+
+- `formulas/` materializes computed values, hashes, effects, and diagnostics for
+  detached Head/Draft. The existing `plugin/formula` owner supplies the shared
+  evaluator; intermediate data validation consumes it too. Candidates contain
+  stored values; the changes reader uses native read projection for metadata
+  references and their formulas.
+- `files/` validates source file identity and project-scoped blobs, then prepares
+  exact detached associations without writes. Applying file effects requires the
+  caller's transaction and both saved states. Register all final file-bearing
+  versions, including reused versions, before blob cleanup. The caller owns
+  removal of detached row versions; `file-usage` owns blob status and accounting.
+  File-slot initialization must precede final formula calculation when it changes
+  an input that formulas read; PR order does not determine runtime order.
+- `views/` projects original views and their independent edits onto each resulting
+  schema. Keep the source snapshot and actual schema projection context; do not
+  infer provenance from candidate field names. Native migration and validation
+  operations remain shared with their existing owners.
+
+View changes use the existing opaque `change` selector. Catalogue refs identify
+the stable table, view ID, and component: lifecycle, name, description, search,
+columns, sorts, or filters. Configuration arrays are atomic for selection, while
+schema projection preserves independent edits within them. Default-view and
+view-order edits have separate table-configuration refs. Table selection with
+`rows: 'none'` includes views; row and schema-field selectors do not select view
+edits. Required view effects obey explicit exclusions. Ambiguous restoration of
+duplicate occurrences returns a blocker rather than choosing an occurrence.
+Stored view-format version has its own scalar configuration ref; values are
+preserved under the existing native rules.
 
 ## Open decisions and workflow
 

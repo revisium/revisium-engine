@@ -221,7 +221,7 @@ export function pendingHistory(
   let table = new SchemaTable(structuredClone(initialSchema), refs);
   return steps.map(({ patches, schema }) => {
     table.applyPatches(structuredClone(patches));
-    const nextSchema = table.getSchema();
+    const nextSchema = persistedSchema(table.getSchema());
     if (!deepEqual(nextSchema, schema)) {
       throw new Error(
         'Pending schema step does not match its recorded patches.',
@@ -244,11 +244,11 @@ export function givenSchemaPatchGroups(
   let table = new SchemaTable(structuredClone(initialSchema), refs);
   const steps = patchGroups.map((patches) => {
     table.applyPatches(structuredClone(patches));
-    const schema = table.getSchema();
+    const schema = persistedSchema(table.getSchema());
     table = new SchemaTable(structuredClone(schema), refs);
     return { patches: structuredClone(patches), schema };
   });
-  return { steps, terminalSchema: table.getSchema() };
+  return { steps, terminalSchema: persistedSchema(table.getSchema()) };
 }
 
 export function rowInput(
@@ -267,7 +267,11 @@ export function replaySchemaHistory(
   for (const entry of history.slice(firstHistoryIndex)) {
     table.applyPatches(entry.patches);
   }
-  return table.getSchema();
+  return persistedSchema(table.getSchema());
+}
+
+function persistedSchema(schema: JsonSchema): JsonSchema {
+  return JSON.parse(JSON.stringify(schema)) as JsonSchema;
 }
 
 export function requiredArrayItem<T>(

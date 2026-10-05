@@ -36,6 +36,7 @@ import { CalculateDataCandidatesQuery } from 'src/features/draft-changes/queries
 import { ProjectDraftChangesSchemaQuery } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
+import { FormulaValidationService } from 'src/features/plugin/formula';
 import type { QueryBus } from '@nestjs/cqrs';
 import {
   ResolveCandidateDependenciesQuery,
@@ -58,6 +59,7 @@ function createCandidateQueryBus(): QueryBus {
     set: async () => undefined,
   };
   const validator = new JsonSchemaValidatorService(cache as never);
+  const schemaStore = new JsonSchemaStoreService();
   const schemaHandler = new ProjectDraftChangesSchemaHandler();
   const candidateHandlerRef: { current?: CalculateDataCandidatesHandler } = {};
   const bus = {
@@ -74,6 +76,7 @@ function createCandidateQueryBus(): QueryBus {
   candidateHandlerRef.current = new CalculateDataCandidatesHandler(
     bus,
     validator,
+    new FormulaValidationService(schemaStore),
   );
   return bus;
 }

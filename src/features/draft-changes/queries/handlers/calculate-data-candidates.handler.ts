@@ -21,6 +21,7 @@ import {
   type CalculateDataCandidatesResult,
 } from 'src/features/draft-changes/queries/impl/calculate-data-candidates.query';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
+import { FormulaValidationService } from 'src/features/plugin/formula';
 import type { ProjectDraftChangesSchemaResult } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
 
 @QueryHandler(CalculateDataCandidatesQuery)
@@ -31,6 +32,7 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
   constructor(
     private readonly queryBus: QueryBus,
     private readonly validator: JsonSchemaValidatorService,
+    private readonly formulaValidation: FormulaValidationService,
   ) {}
 
   async execute(
@@ -47,7 +49,12 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
   ): Promise<CalculateDataCandidatesResult> {
     const head = detachState(data.snapshot.head);
     const draft = detachState(data.snapshot.head);
-    const blockers = await validateCandidateStates(head, draft, this.validator);
+    const blockers = await validateCandidateStates(
+      head,
+      draft,
+      this.validator,
+      this.formulaValidation,
+    );
     return blockers.length > 0
       ? { status: 'blocked', blockers }
       : calculated(head, draft);
@@ -120,7 +127,12 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
   ): Promise<CalculateDataCandidatesResult> {
     const head = detachState(data.snapshot.head);
     const draft = detachState(data.snapshot.draft);
-    const blockers = await validateCandidateStates(head, draft, this.validator);
+    const blockers = await validateCandidateStates(
+      head,
+      draft,
+      this.validator,
+      this.formulaValidation,
+    );
     return blockers.length > 0
       ? { status: 'blocked', blockers }
       : calculated(head, draft);
@@ -156,7 +168,12 @@ export class CalculateDataCandidatesHandler implements IQueryHandler<
       { status: 'calculated' }
     >['schemaForeignKeyChanges'],
   ): Promise<CalculateDataCandidatesResult> {
-    const blockers = await validateCandidateStates(head, draft, this.validator);
+    const blockers = await validateCandidateStates(
+      head,
+      draft,
+      this.validator,
+      this.formulaValidation,
+    );
     const denied = deniedValueChanges(
       data.operation,
       targetState(data),

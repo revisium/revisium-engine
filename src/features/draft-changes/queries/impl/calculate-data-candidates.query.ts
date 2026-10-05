@@ -8,8 +8,8 @@ import type {
   DiscardedDataField,
   SchemaForeignKeyChange,
   SchemaEffectRef,
-  SchemaFileSlotProjectionBinding,
   SchemaProjectionBlocker,
+  SchemaProjectionBinding,
 } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
 import type { ResolveDraftChangesSelectionResult } from 'src/features/draft-changes/queries/impl/resolve-draft-changes-selection.query';
 
@@ -70,15 +70,7 @@ export interface CandidateSchemaForeignKeyChange extends SchemaForeignKeyChange 
   tableCreatedId: string;
 }
 
-export interface CandidateSchemaProjectionBinding {
-  tableCreatedId: string;
-  sourceFingerprint?: string;
-  operation?: 'commit' | 'discard';
-  selectedEffects?: SchemaEffectRef[];
-  fileSlots?: SchemaFileSlotProjectionBinding[];
-  rowFieldMappings: Array<{ fromPath: string; toPath: string }>;
-  rowTargetFieldMappings: Array<{ fromPath: string; toPath: string }>;
-}
+export type CandidateSchemaProjectionBinding = SchemaProjectionBinding;
 
 export interface CandidateBlocker {
   code:

@@ -56,7 +56,9 @@ function tableChoice(
       entry.target.tableCreatedId === table.entityCreatedId &&
       (rows !== 'none' ||
         entry.kind === 'table' ||
-        entry.kind === 'schemaField') &&
+        entry.kind === 'schemaField' ||
+        entry.kind === 'view' ||
+        entry.kind === 'viewConfiguration') &&
       entry.selectable,
   );
   const deniedTargets: DraftChangesDeniedTarget[] =
@@ -67,8 +69,8 @@ function tableChoice(
             tableCreatedId: table.entityCreatedId,
             facets:
               rows === 'none'
-                ? ['lifecycle', 'schemaFields']
-                : ['lifecycle', 'rows', 'schemaFields'],
+                ? ['lifecycle', 'schemaFields', 'views']
+                : ['lifecycle', 'rows', 'schemaFields', 'views'],
           },
         ]
       : [];
@@ -201,7 +203,7 @@ function allDeniedTargets(
       result.push({
         kind: 'table',
         tableCreatedId: binding.entityCreatedId,
-        facets: ['lifecycle', 'rows', 'schemaFields'],
+        facets: ['lifecycle', 'rows', 'schemaFields', 'views'],
       });
     } else {
       result.push({

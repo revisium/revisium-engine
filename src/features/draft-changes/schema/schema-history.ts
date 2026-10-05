@@ -22,6 +22,16 @@ export interface HistoryPartition {
   selectedEffects: SchemaEffectRef[];
 }
 
+export interface HistoryGroupSchemaState {
+  group: HistoryGroup;
+  previousSchema: JsonSchema;
+  schema: JsonSchema;
+}
+
+export type HistoryGroupSchemaFoldResult =
+  | { states: HistoryGroupSchemaState[]; schema: JsonSchema }
+  | { blocker: SchemaProjectionBlocker };
+
 export function validateSchemaHistory(
   terminalSchema: JsonSchema,
   history: HistoryPatches[],
@@ -158,28 +168,45 @@ export function replayHistorySchema(
   groups: HistoryGroup[],
   refs: Record<string, JsonSchema>,
 ): { schema: JsonSchema; history: HistoryPatches[] } | SchemaProjectionBlocker {
-  if (groups.length === 0) {
-    return { schema: structuredClone(initialSchema), history: [] };
+  const folded = foldHistoryGroups(initialSchema, groups, refs);
+  if ('blocker' in folded) {
+    return folded.blocker;
   }
+  const history = folded.states.map(({ group, schema }) => ({
+    ...structuredClone(group.source),
+    patches: structuredClone(group.patches),
+    hash: objectHash(schema),
+  }));
+  return { schema: folded.schema, history };
+}
+
+export function foldHistoryGroups(
+  initialSchema: JsonSchema,
+  groups: HistoryGroup[],
+  refs: Record<string, JsonSchema>,
+): HistoryGroupSchemaFoldResult {
   try {
     let currentSchema = structuredClone(initialSchema);
-    const history: HistoryPatches[] = [];
+    const states: HistoryGroupSchemaState[] = [];
     for (const group of groups) {
-      const table = new SchemaTable(structuredClone(currentSchema), refs);
+      const previousSchema = structuredClone(currentSchema);
+      const table = new SchemaTable(structuredClone(previousSchema), refs);
       table.applyPatches(structuredClone(group.patches));
       currentSchema = exportSchemaModel(table);
-      history.push({
-        ...structuredClone(group.source),
-        patches: structuredClone(group.patches),
-        hash: objectHash(currentSchema),
+      states.push({
+        group,
+        previousSchema,
+        schema: structuredClone(currentSchema),
       });
     }
-    return { schema: currentSchema, history };
+    return { states, schema: currentSchema };
   } catch {
-    return blocker(
-      'DEPENDENT_EFFECT_SPLIT',
-      'Selected schema effects cannot be replayed from the target schema.',
-    );
+    return {
+      blocker: blocker(
+        'DEPENDENT_EFFECT_SPLIT',
+        'Selected schema effects cannot be replayed from the target schema.',
+      ),
+    };
   }
 }
 

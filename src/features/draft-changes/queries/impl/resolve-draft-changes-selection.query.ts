@@ -44,7 +44,7 @@ export type DraftChangesDeniedTarget =
   | {
       kind: 'table';
       tableCreatedId: string;
-      facets: Array<'lifecycle' | 'rows' | 'schemaFields'>;
+      facets: Array<'lifecycle' | 'rows' | 'schemaFields' | 'views'>;
     }
   | {
       kind: 'row';

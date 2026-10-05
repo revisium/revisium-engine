@@ -83,6 +83,20 @@ describe('ViewsMigrationService', () => {
     });
 
   describe('move patch - rename field', () => {
+    it('preserves omitted view properties through a schema rename', () => {
+      const original = createViewsData([
+        createView({ id: 'default', columns: null }),
+      ]);
+
+      const result = service.migrateViews({
+        viewsData: original,
+        patches: renamePatch('name', 'fullName'),
+        previousSchema: createBaseSchema(),
+      });
+
+      expect(result).toStrictEqual(original);
+    });
+
     it('should rename field in columns', () => {
       const result = migrate(
         [

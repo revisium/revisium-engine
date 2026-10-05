@@ -6,6 +6,7 @@ import type {
 } from 'src/features/draft-changes/queries/impl/build-draft-changes-catalogue.query';
 import type { SchemaEffectRef } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import { BuildDraftChangesCatalogueQuery } from 'src/features/draft-changes/queries/impl/build-draft-changes-catalogue.query';
 import { BuildDraftChangesCatalogueHandler } from 'src/features/draft-changes/queries/handlers/build-draft-changes-catalogue.handler';
 import { RowDiffService } from 'src/features/revision-changes/services/row-diff.service';
@@ -21,6 +22,11 @@ import {
   type SchemaHistoryStep,
 } from 'src/features/draft-changes/__tests__/schema/support/schema-projection-fixture';
 import type { RevisionChangesApiService } from 'src/features/revision-changes/revision-changes-api.service';
+import { createCache } from 'cache-manager';
+import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
+import type { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
+import { ViewValidationService } from 'src/features/views/services/view-validation.service';
 
 export const CATALOGUE_TABLE_CREATED_ID = 'stable-products';
 export const CATALOGUE_ROW_CREATED_ID = 'row-product';
@@ -187,7 +193,23 @@ export async function catalogueResult(
   };
   return new BuildDraftChangesCatalogueHandler(
     revisionChangesApi as unknown as RevisionChangesApiService,
+    new ViewsMigrationService(),
+    createNativeViewValidation(),
   ).execute(new BuildDraftChangesCatalogueQuery(data));
+}
+
+function createNativeViewValidation(): ViewValidationService {
+  const schemaQueries = {
+    getTableSchema: async () => {
+      throw new Error('Catalogue validation must consume supplied documents.');
+    },
+  };
+
+  return new ViewValidationService(
+    schemaQueries as unknown as ShareTransactionalQueries,
+    new JsonSchemaStoreService(),
+    new JsonSchemaValidatorService(createCache()),
+  );
 }
 
 export function requiredScenarioProjection(scenario: CatalogueScenario) {

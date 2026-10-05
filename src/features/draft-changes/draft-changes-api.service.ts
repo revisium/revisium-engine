@@ -39,6 +39,11 @@ import {
   type PrepareCandidateFilesResult,
 } from 'src/features/draft-changes/queries/impl/prepare-candidate-files.query';
 import {
+  ResolveCandidateViewsQuery,
+  type ResolveCandidateViewsQueryData,
+  type ResolveCandidateViewsResult,
+} from 'src/features/draft-changes/queries/impl/resolve-candidate-views.query';
+import {
   ApplyCandidateFilesCommand,
   type ApplyCandidateFilesCommandData,
 } from 'src/features/draft-changes/commands/impl/apply-candidate-files.command';
@@ -120,6 +125,15 @@ export class DraftChangesApiService {
       PrepareCandidateFilesQuery,
       PrepareCandidateFilesResult
     >(new PrepareCandidateFilesQuery(data));
+  }
+
+  resolveCandidateViews(
+    data: ResolveCandidateViewsQueryData,
+  ): Promise<ResolveCandidateViewsResult> {
+    return this.queryBus.execute<
+      ResolveCandidateViewsQuery,
+      ResolveCandidateViewsResult
+    >(new ResolveCandidateViewsQuery(data));
   }
 
   applyCandidateFiles(data: ApplyCandidateFilesCommandData): Promise<true> {

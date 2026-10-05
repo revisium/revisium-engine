@@ -514,6 +514,10 @@ function entryChanged(
       (before !== undefined && after !== undefined && before.id !== after.id)
     );
   }
+  if (entry.target.kind !== 'schemaField') {
+    return false;
+  }
+
   const beforeTable = findTable(source, entry.target.tableCreatedId);
   const afterTable = findTable(candidate, entry.target.tableCreatedId);
   const beforeSchema = schemaRowFor(source, beforeTable?.id);

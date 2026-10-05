@@ -7,9 +7,10 @@ Status: approved. Stages 1–6 are merged in PRs
 [#70](https://github.com/revisium/revisium-engine/pull/70),
 [#71](https://github.com/revisium/revisium-engine/pull/71), and
 [#73](https://github.com/revisium/revisium-engine/pull/73).
-Stage 7 is ready for review in
-[#75](https://github.com/revisium/revisium-engine/pull/75).
-Stages 8–9 build on that branch.
+Stages 7–8 are ready for review in
+[#75](https://github.com/revisium/revisium-engine/pull/75) and
+[#76](https://github.com/revisium/revisium-engine/pull/76).
+Stage 9 builds on that stack.
 
 ## Scope
 
@@ -136,7 +137,7 @@ linearizes this graph in the order below.
 | 6   | Dependencies: snapshot + operation + catalogue selection → resolved Head/Draft candidates, required effects, automatic FK effects, or blockers                     | 5          | Cycles, reference renames, hard excludes; no invented user edits                                     |
 | 7   | Formulas: candidate → validated and recomputed values                                                                                                              | 5          | Valid formulas in both resulting states                                                              |
 | 8   | Files: candidate + version associations → validated file effects; apply through file-usage                                                                         | 1, 5       | Read-only preview; restore without upload; accounting rolls back with persistence                    |
-| 9   | Views: schema/view changes → resulting views and required effects                                                                                                  | 5          | Preserve independent edits or require exact confirmation                                             |
+| 9   | Views: schema/view changes + final projection bindings → resulting views and required effects                                                                      | 3, 5, 6    | Preserve independent edits or require exact confirmation                                             |
 | 10  | Changes reader: catalogue → change pages, refs, and details                                                                                                        | 4          | Bounded responses, pagination, stale cursors, ambiguous IDs                                          |
 | 11  | Planner: selection → validated candidates, effects/blockers, plan token, and acknowledgment                                                                        | 5–9        | Read-only preview; exact acknowledgment; restorative discard                                         |
 | 12  | Executor: plan token → atomic commit/discard, history, and result                                                                                                  | 1, 2, 11   | Freshness, rollback, concurrent writers, commit/commit and commit/discard; replay after its decision |
@@ -211,10 +212,38 @@ columns, sorts, or filters. Configuration arrays are atomic for selection, while
 schema projection preserves independent edits within them. Default-view and
 view-order edits have separate table-configuration refs. Table selection with
 `rows: 'none'` includes views; row and schema-field selectors do not select view
-edits. Required view effects obey explicit exclusions. Ambiguous restoration of
-duplicate occurrences returns a blocker rather than choosing an occurrence.
+edits. Required view effects obey explicit exclusions. Restoration with competing
+results returns a blocker; equivalent occurrence mappings may share one result.
 Stored view-format version has its own scalar configuration ref; values are
 preserved under the existing native rules.
+
+The view query consumes the original snapshot and the last successful projection
+bindings from dependency resolution. Schema history stays in `schema/`; native
+migration runs once per original history group. `restoreHead` uses authoritative
+Head views without requiring Draft history or a catalogue.
+
+| Owner                                   | Responsibility                                                                     |
+| --------------------------------------- | ---------------------------------------------------------------------------------- |
+| `schema/schema-view-baselines.ts`       | Original schema-history validation and native migrated/role baselines              |
+| `catalogue/view-changes.ts`             | Stable table identity and view/configuration refs                                  |
+| `views/resolve-candidate-view-state.ts` | Coordinate commit/discard projection                                               |
+| `views/view-source.ts`                  | Validate stored source identity and choose the source for each resulting role      |
+| `views/view-selection.ts`               | Exact selections, exclusions, and prerequisites                                    |
+| `views/view-lifecycle.ts`               | One-sided stored-view lifecycle and configuration prerequisites                    |
+| `views/view-state.ts`                   | Assemble or remove native system rows from concrete source/destination bindings    |
+| `views/view-residual.ts`                | Transfer already applicable component changes                                      |
+| `views/view-configuration.ts`           | Apply version, default, and order values                                           |
+| `views/view-field-values.ts`            | Map native field paths through the final schema binding                            |
+| `views/view-residual-values.ts`         | Match array occurrences and filter trees; transfer values and prove placement      |
+| `views/view-validation.ts`              | Validate each resulting document against its final schema through the native owner |
+| `views/view-effects.ts`                 | Report presence-aware automatic changes                                            |
+
+`ViewValidationService` in the existing `views` feature owns document shape,
+view IDs, default membership, and schema field checks. Native update and candidate
+projection share those rules; neither inserts presentation defaults.
+
+Missing stored views remain absent. A first document uses real native source
+metadata; the native views schema is static and does not require a schema row.
 
 ## Open decisions and workflow
 

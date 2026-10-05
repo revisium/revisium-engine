@@ -244,7 +244,7 @@ describe('draft changes entity selectors', () => {
         {
           kind: 'table',
           tableCreatedId: 'table-created',
-          facets: ['lifecycle', 'rows', 'schemaFields'],
+          facets: ['lifecycle', 'rows', 'schemaFields', 'views'],
         },
         {
           kind: 'row',

@@ -1,5 +1,7 @@
 import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { RevisionChangesApiService } from 'src/features/revision-changes/revision-changes-api.service';
+import { ViewsMigrationService } from 'src/features/share/views-migration.service';
+import { projectSchemaViewBaselines } from 'src/features/draft-changes/schema/schema-view-baselines';
 import {
   pairSnapshotRows,
   pairSnapshotTables,
@@ -10,6 +12,7 @@ import { buildTableEntries } from 'src/features/draft-changes/catalogue/table-ch
 import { collectFieldBoundaries } from 'src/features/draft-changes/catalogue/field-boundaries';
 import { buildProjectedRowFieldEntries } from 'src/features/draft-changes/catalogue/row-fields';
 import { validateSchemaProjections } from 'src/features/draft-changes/catalogue/schema-projections';
+import { buildViewChangeEntries } from 'src/features/draft-changes/catalogue/view-changes';
 import {
   blockedCatalogueResult,
   buildCatalogueResult,
@@ -23,10 +26,25 @@ import { BuildDraftChangesCatalogueQuery } from '../impl/build-draft-changes-cat
 import type { TablePair } from 'src/features/draft-changes/catalogue/snapshot-pairs';
 import type { DraftChangesSnapshot } from 'src/features/draft-changes/queries/impl/read-draft-changes-snapshot.query';
 import type { ProjectDraftChangesSchemaResult } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
+import type { StoredViewsSource } from 'src/features/draft-changes/schema/schema-view-baselines';
+import {
+  readValidatedViewsSource,
+  viewSourceCatalogueBlocker,
+} from 'src/features/draft-changes/views/view-source';
+import { ViewValidationService } from 'src/features/views/services/view-validation.service';
+
+interface TableViewsSources {
+  head: StoredViewsSource;
+  draft: StoredViewsSource;
+}
 
 @QueryHandler(BuildDraftChangesCatalogueQuery)
 export class BuildDraftChangesCatalogueHandler implements IQueryHandler<BuildDraftChangesCatalogueQuery> {
-  constructor(private readonly revisionChangesApi: RevisionChangesApiService) {}
+  constructor(
+    private readonly revisionChangesApi: RevisionChangesApiService,
+    private readonly viewsMigrationService: ViewsMigrationService,
+    private readonly viewValidation: ViewValidationService,
+  ) {}
 
   async execute(
     query: BuildDraftChangesCatalogueQuery,
@@ -41,6 +59,13 @@ export class BuildDraftChangesCatalogueHandler implements IQueryHandler<BuildDra
     const paired = pairSnapshotTables(snapshot);
     if ('blocker' in paired) {
       return blockedCatalogueResult('AMBIGUOUS_IDENTITY', paired.blocker);
+    }
+    const viewSources = await this.readTableViewsSources(
+      snapshot,
+      paired.pairs,
+    );
+    if ('blocker' in viewSources) {
+      return viewSources.blocker;
     }
     const projections = validateSchemaProjections(
       snapshot.fingerprint,
@@ -57,6 +82,7 @@ export class BuildDraftChangesCatalogueHandler implements IQueryHandler<BuildDra
         snapshot,
         pair,
         projections.get(pair.createdId),
+        viewSources.sources.get(pair.createdId),
       );
       if ('blocker' in result) {
         return result.blocker;
@@ -72,6 +98,7 @@ export class BuildDraftChangesCatalogueHandler implements IQueryHandler<BuildDra
     projection:
       | Extract<ProjectDraftChangesSchemaResult, { status: 'projected' }>
       | undefined,
+    viewSources: TableViewsSources | undefined,
   ): Promise<
     TableCatalogueParts | { blocker: BuildDraftChangesCatalogueResult }
   > {
@@ -89,7 +116,6 @@ export class BuildDraftChangesCatalogueHandler implements IQueryHandler<BuildDra
         ),
       };
     }
-
     const entries: DraftChangesCatalogueEntry[] = [
       ...buildTableEntries(pair),
       ...buildRowEntries(
@@ -102,6 +128,13 @@ export class BuildDraftChangesCatalogueHandler implements IQueryHandler<BuildDra
     const identityBindings = rowPairs.bindings;
     const fieldBoundaries = [] as ReturnType<typeof collectFieldBoundaries>;
     if (!pair.head || !pair.draft) {
+      entries.push(
+        ...buildViewChangeEntries(
+          pair,
+          viewSources?.head ?? { present: false },
+          viewSources?.draft ?? { present: false },
+        ),
+      );
       return { entries, identityBindings, fieldBoundaries };
     }
     if (!projection) {
@@ -113,6 +146,16 @@ export class BuildDraftChangesCatalogueHandler implements IQueryHandler<BuildDra
         ),
       };
     }
+
+    const views = await this.projectViewEntries(
+      snapshot,
+      pair,
+      viewSources ?? { head: { present: false }, draft: { present: false } },
+    );
+    if ('blocker' in views) {
+      return { blocker: views.blocker };
+    }
+    entries.push(...views.entries);
 
     entries.push(
       ...buildSchemaEffectEntries(snapshot, pair.createdId, pair.draft.id),
@@ -149,5 +192,86 @@ export class BuildDraftChangesCatalogueHandler implements IQueryHandler<BuildDra
     }
     entries.push(...rowFields);
     return { entries, identityBindings, fieldBoundaries };
+  }
+
+  private async projectViewEntries(
+    snapshot: DraftChangesSnapshot,
+    pair: TablePair,
+    sources: TableViewsSources,
+  ): Promise<
+    | { entries: DraftChangesCatalogueEntry[] }
+    | { blocker: BuildDraftChangesCatalogueResult }
+  > {
+    const viewBaselines = projectSchemaViewBaselines(
+      this.viewsMigrationService,
+      {
+        snapshot,
+        tableCreatedId: pair.createdId,
+        operation: 'commit',
+        headViews: sources.head,
+      },
+    );
+    if (viewBaselines.status === 'blocked') {
+      return {
+        blocker: blockedCatalogueResult(
+          'SCHEMA_PROJECTION_BLOCKED',
+          viewBaselines.blocker.message,
+          pair.createdId,
+        ),
+      };
+    }
+    return {
+      entries: buildViewChangeEntries(
+        pair,
+        sources.head,
+        sources.draft,
+        viewBaselines.baselines.migratedHead,
+      ),
+    };
+  }
+
+  private async readTableViewsSources(
+    snapshot: DraftChangesSnapshot,
+    pairs: TablePair[],
+  ): Promise<
+    | { sources: Map<string, TableViewsSources> }
+    | { blocker: BuildDraftChangesCatalogueResult }
+  > {
+    const sources = new Map<string, TableViewsSources>();
+    for (const pair of pairs) {
+      const head = pair.head
+        ? await readValidatedViewsSource(
+            snapshot.head,
+            pair.createdId,
+            pair.head.id,
+            this.viewValidation,
+          )
+        : { status: 'loaded' as const, source: { present: false } as const };
+      if (head.status === 'blocked') {
+        const failure = viewSourceCatalogueBlocker(head, pair.createdId);
+        return {
+          blocker: { status: 'blocked', blockers: [failure] },
+        };
+      }
+      const draft = pair.draft
+        ? await readValidatedViewsSource(
+            snapshot.draft,
+            pair.createdId,
+            pair.draft.id,
+            this.viewValidation,
+          )
+        : { status: 'loaded' as const, source: { present: false } as const };
+      if (draft.status === 'blocked') {
+        const failure = viewSourceCatalogueBlocker(draft, pair.createdId);
+        return {
+          blocker: { status: 'blocked', blockers: [failure] },
+        };
+      }
+      sources.set(pair.createdId, {
+        head: head.source,
+        draft: draft.source,
+      });
+    }
+    return { sources };
   }
 }

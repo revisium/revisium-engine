@@ -13,7 +13,9 @@ export type DraftChangesCatalogueEntryKind =
   | 'table'
   | 'row'
   | 'rowField'
-  | 'schemaField';
+  | 'schemaField'
+  | 'view'
+  | 'viewConfiguration';
 
 export type DraftChangesCatalogueClassification =
   | 'created'
@@ -45,6 +47,26 @@ export type DraftChangesCatalogueTarget =
       tableCreatedId: string;
       tableId: string;
       path: string;
+    }
+  | {
+      kind: 'view';
+      tableCreatedId: string;
+      tableId: string;
+      viewId: string;
+      component:
+        | 'lifecycle'
+        | 'name'
+        | 'description'
+        | 'search'
+        | 'columns'
+        | 'sorts'
+        | 'filters';
+    }
+  | {
+      kind: 'viewConfiguration';
+      tableCreatedId: string;
+      tableId: string;
+      component: 'version' | 'defaultViewId' | 'order';
     };
 
 export interface DraftChangesCatalogueEntry {

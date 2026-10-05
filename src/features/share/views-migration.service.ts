@@ -206,46 +206,51 @@ export class ViewsMigrationService {
     oldFieldPath: string,
     newFieldPath: string,
   ): View {
-    return {
-      ...view,
-      columns: view.columns
-        ? this.renameFieldInColumns(view.columns, oldFieldPath, newFieldPath)
-        : view.columns,
-      sorts: view.sorts
-        ? this.renameFieldInSorts(view.sorts, oldFieldPath, newFieldPath)
-        : view.sorts,
-      filters: view.filters
-        ? this.renameFieldInFilterGroup(
-            view.filters,
-            oldFieldPath,
-            newFieldPath,
-          )
-        : view.filters,
-    };
+    const result = { ...view };
+    if (view.columns) {
+      result.columns = this.renameFieldInColumns(
+        view.columns,
+        oldFieldPath,
+        newFieldPath,
+      );
+    }
+    if (view.sorts) {
+      result.sorts = this.renameFieldInSorts(
+        view.sorts,
+        oldFieldPath,
+        newFieldPath,
+      );
+    }
+    if (view.filters) {
+      result.filters = this.renameFieldInFilterGroup(
+        view.filters,
+        oldFieldPath,
+        newFieldPath,
+      );
+    }
+    return result;
   }
 
   private removeFieldFromView(view: View, fieldPath: string): View {
-    return {
-      ...view,
-      columns: view.columns
-        ? this.removeFieldFromColumns(view.columns, fieldPath)
-        : view.columns,
-      sorts: view.sorts
-        ? this.removeFieldFromSorts(view.sorts, fieldPath)
-        : view.sorts,
-      filters: view.filters
-        ? this.removeFieldFromFilterGroup(view.filters, fieldPath)
-        : view.filters,
-    };
+    const result = { ...view };
+    if (view.columns) {
+      result.columns = this.removeFieldFromColumns(view.columns, fieldPath);
+    }
+    if (view.sorts) {
+      result.sorts = this.removeFieldFromSorts(view.sorts, fieldPath);
+    }
+    if (view.filters) {
+      result.filters = this.removeFieldFromFilterGroup(view.filters, fieldPath);
+    }
+    return result;
   }
 
   private removeFiltersForField(view: View, fieldPath: string): View {
-    return {
-      ...view,
-      filters: view.filters
-        ? this.removeFieldFromFilterGroup(view.filters, fieldPath)
-        : view.filters,
-    };
+    const result = { ...view };
+    if (view.filters) {
+      result.filters = this.removeFieldFromFilterGroup(view.filters, fieldPath);
+    }
+    return result;
   }
 
   private renameFieldInColumns(
@@ -275,17 +280,20 @@ export class ViewsMigrationService {
     oldFieldPath: string,
     newFieldPath: string,
   ): ViewFilterGroup {
-    return {
-      ...filterGroup,
-      conditions: filterGroup.conditions?.map((condition) => ({
+    const result = { ...filterGroup };
+    if (filterGroup.conditions) {
+      result.conditions = filterGroup.conditions.map((condition) => ({
         ...condition,
         field:
           condition.field === oldFieldPath ? newFieldPath : condition.field,
-      })),
-      groups: filterGroup.groups?.map((group) =>
+      }));
+    }
+    if (filterGroup.groups) {
+      result.groups = filterGroup.groups.map((group) =>
         this.renameFieldInFilterGroup(group, oldFieldPath, newFieldPath),
-      ),
-    };
+      );
+    }
+    return result;
   }
 
   private removeFieldFromColumns(
@@ -306,20 +314,21 @@ export class ViewsMigrationService {
     filterGroup: ViewFilterGroup,
     fieldPath: string,
   ): ViewFilterGroup {
-    const result: ViewFilterGroup = {
-      ...filterGroup,
-      conditions: filterGroup.conditions?.filter(
+    const result: ViewFilterGroup = { ...filterGroup };
+    if (filterGroup.conditions) {
+      result.conditions = filterGroup.conditions.filter(
         (condition) => condition.field !== fieldPath,
-      ),
-      groups: filterGroup.groups
-        ?.map((group) => this.removeFieldFromFilterGroup(group, fieldPath))
+      );
+    }
+    if (filterGroup.groups) {
+      result.groups = filterGroup.groups
+        .map((group) => this.removeFieldFromFilterGroup(group, fieldPath))
         .filter(
           (group) =>
             (group.conditions && group.conditions.length > 0) ||
             (group.groups && group.groups.length > 0),
-        ),
-    };
-
+        );
+    }
     return result;
   }
 

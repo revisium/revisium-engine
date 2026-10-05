@@ -6,6 +6,7 @@ import { DraftChangesApiService } from 'src/features/draft-changes/draft-changes
 import { RevisionChangesModule } from 'src/features/revision-changes/revision-changes.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
+import { ViewsModule } from 'src/features/views/views.module';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { DRAFT_CHANGES_COMMAND_HANDLERS } from 'src/features/draft-changes/commands/handlers';
 
@@ -17,6 +18,7 @@ import { DRAFT_CHANGES_COMMAND_HANDLERS } from 'src/features/draft-changes/comma
     ShareModule,
     PluginModule,
     FileUsageModule,
+    ViewsModule,
   ],
   providers: [
     DraftChangesApiService,

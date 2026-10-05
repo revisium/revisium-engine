@@ -55,6 +55,8 @@ export interface SchemaProjectionBlocker {
 export type ProjectDraftChangesSchemaResult =
   | {
       status: 'projected';
+      tableCreatedId: string;
+      sourceFingerprint: string;
       head: SchemaProjectionState;
       draft: SchemaProjectionState;
       migratedHead: SchemaProjectionState;

@@ -24,6 +24,14 @@ import type { RevisionSchemaState } from 'src/features/draft-changes/schema/sche
 import { projectTable } from 'src/features/draft-changes/schema/schema-table-projection';
 import { transferRowResiduals } from 'src/features/draft-changes/schema/row-residual';
 
+type ProjectedSchemaPayload = Omit<
+  Extract<ProjectDraftChangesSchemaResult, { status: 'projected' }>,
+  'tableCreatedId' | 'sourceFingerprint'
+>;
+type InternalProjectionResult =
+  | ProjectedSchemaPayload
+  | { status: 'blocked'; blockers: SchemaProjectionBlocker[] };
+
 @QueryHandler(ProjectDraftChangesSchemaQuery)
 export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
   ProjectDraftChangesSchemaQuery,
@@ -32,12 +40,20 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
   async execute(
     query: ProjectDraftChangesSchemaQuery,
   ): Promise<ProjectDraftChangesSchemaResult> {
-    return this.project(query);
+    const result = this.project(query);
+    if (result.status === 'blocked') {
+      return result;
+    }
+    return {
+      ...result,
+      tableCreatedId: query.data.tableCreatedId,
+      sourceFingerprint: query.data.snapshot.fingerprint,
+    };
   }
 
   private project(
     query: ProjectDraftChangesSchemaQuery,
-  ): ProjectDraftChangesSchemaResult {
+  ): InternalProjectionResult {
     const { snapshot, tableCreatedId, operation, effects } = query.data;
     const refs = {
       ...pluginRefs,
@@ -102,7 +118,7 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
     draft: RevisionSchemaState,
     partitions: HistoryPartition,
     refs: Record<string, JsonSchema>,
-  ): ProjectDraftChangesSchemaResult {
+  ): InternalProjectionResult {
     const selected = projectTable(
       head.schema,
       head.rows,
@@ -162,7 +178,7 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
     partitions: HistoryPartition,
     discardedDataFields: Array<{ rowCreatedId: string; path: string }>,
     refs: Record<string, JsonSchema>,
-  ): ProjectDraftChangesSchemaResult {
+  ): InternalProjectionResult {
     const retained = projectTable(
       head.schema,
       head.rows,

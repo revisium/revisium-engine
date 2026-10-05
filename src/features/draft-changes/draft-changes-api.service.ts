@@ -10,6 +10,14 @@ import {
   ProjectDraftChangesSchemaQueryData,
   ProjectDraftChangesSchemaResult,
 } from 'src/features/draft-changes/queries/impl/project-draft-changes-schema.query';
+import {
+  BuildDraftChangesCatalogueQuery,
+  type BuildDraftChangesCatalogueQueryData,
+  type BuildDraftChangesCatalogueResult,
+  ResolveDraftChangesSelectionQuery,
+  type ResolveDraftChangesSelectionQueryData,
+  type ResolveDraftChangesSelectionResult,
+} from 'src/features/draft-changes/queries/impl';
 
 @Injectable()
 export class DraftChangesApiService {
@@ -31,5 +39,23 @@ export class DraftChangesApiService {
       ProjectDraftChangesSchemaQuery,
       ProjectDraftChangesSchemaResult
     >(new ProjectDraftChangesSchemaQuery(data));
+  }
+
+  buildCatalogue(
+    data: BuildDraftChangesCatalogueQueryData,
+  ): Promise<BuildDraftChangesCatalogueResult> {
+    return this.queryBus.execute<
+      BuildDraftChangesCatalogueQuery,
+      BuildDraftChangesCatalogueResult
+    >(new BuildDraftChangesCatalogueQuery(data));
+  }
+
+  resolveSelection(
+    data: ResolveDraftChangesSelectionQueryData,
+  ): Promise<ResolveDraftChangesSelectionResult> {
+    return this.queryBus.execute<
+      ResolveDraftChangesSelectionQuery,
+      ResolveDraftChangesSelectionResult
+    >(new ResolveDraftChangesSelectionQuery(data));
   }
 }

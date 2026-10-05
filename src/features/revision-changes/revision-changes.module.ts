@@ -10,6 +10,7 @@ import {
   GetRevisionChangesHandler,
   GetRowChangesHandler,
   GetTableChangesHandler,
+  CompareSuppliedRowsHandler,
 } from './queries/handlers';
 import { ShareModule } from 'src/features/share/share.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
@@ -22,6 +23,7 @@ const queryHandlers = [
   GetRevisionChangesHandler,
   GetRowChangesHandler,
   GetTableChangesHandler,
+  CompareSuppliedRowsHandler,
 ];
 
 const services = [

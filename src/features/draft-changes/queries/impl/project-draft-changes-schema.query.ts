@@ -59,6 +59,7 @@ export type ProjectDraftChangesSchemaResult =
       sourceFingerprint: string;
       head: SchemaProjectionState;
       draft: SchemaProjectionState;
+      retainedHead: SchemaProjectionState;
       migratedHead: SchemaProjectionState;
       rowFieldMappings: Array<{ fromPath: string; toPath: string }>;
       rowTargetFieldMappings: Array<{ fromPath: string; toPath: string }>;

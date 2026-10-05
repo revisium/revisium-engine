@@ -165,6 +165,7 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
       status: 'projected',
       head: headState,
       draft: draftState,
+      retainedHead: headState,
       migratedHead,
       rowFieldMappings: mapFieldCoordinates(fullLineage, lineage),
       rowTargetFieldMappings: mapFieldCoordinates(fullLineage, selectedLineage),
@@ -218,6 +219,11 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
       residual.rows,
     );
     const headState = makeState(head.schema, head.history, head.rows);
+    const retainedHead = makeState(
+      retained.schema,
+      [...head.history, ...retainedHistory.history],
+      retained.rows,
+    );
     const migratedHead = makeState(
       full.schema,
       [...head.history, ...full.history],
@@ -228,6 +234,7 @@ export class ProjectDraftChangesSchemaHandler implements IQueryHandler<
       status: 'projected',
       head: headState,
       draft: draftState,
+      retainedHead,
       migratedHead,
       rowFieldMappings: mapFieldCoordinates(fullLineage, lineage),
       rowTargetFieldMappings: mapFieldCoordinates(fullLineage, retainedLineage),

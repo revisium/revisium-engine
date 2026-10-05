@@ -156,7 +156,8 @@ Schema entries own their field's recorded effects. Ancestor moves update current
 paths; a required parent effect remains an explicit prerequisite subject to excludes.
 
 Data candidates remain intermediate (`migrationLedger: 'deferred'`) until the
-export history is assembled and checked. `__schema` meta-history and `__migration`
+export history is assembled and checked. `revisium_schema_table` meta-history and
+`revisium_migration_table`
 records are separate formats; their timestamps do not establish a one-to-one
 mapping. The existing schema owner must calculate replayable export history for
 both roles before a plan can become ready. Plan and execute share that read-only

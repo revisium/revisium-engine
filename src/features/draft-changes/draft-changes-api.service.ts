@@ -18,6 +18,11 @@ import {
   type ResolveDraftChangesSelectionQueryData,
   type ResolveDraftChangesSelectionResult,
 } from 'src/features/draft-changes/queries/impl';
+import {
+  CalculateDataCandidatesQuery,
+  type CalculateDataCandidatesQueryData,
+  type CalculateDataCandidatesResult,
+} from 'src/features/draft-changes/queries/impl/calculate-data-candidates.query';
 
 @Injectable()
 export class DraftChangesApiService {
@@ -57,5 +62,14 @@ export class DraftChangesApiService {
       ResolveDraftChangesSelectionQuery,
       ResolveDraftChangesSelectionResult
     >(new ResolveDraftChangesSelectionQuery(data));
+  }
+
+  calculateDataCandidates(
+    data: CalculateDataCandidatesQueryData,
+  ): Promise<CalculateDataCandidatesResult> {
+    return this.queryBus.execute<
+      CalculateDataCandidatesQuery,
+      CalculateDataCandidatesResult
+    >(new CalculateDataCandidatesQuery(data));
   }
 }

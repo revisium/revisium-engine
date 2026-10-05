@@ -7,10 +7,10 @@ Status: approved. Stages 1–6 are merged in PRs
 [#70](https://github.com/revisium/revisium-engine/pull/70),
 [#71](https://github.com/revisium/revisium-engine/pull/71), and
 [#73](https://github.com/revisium/revisium-engine/pull/73).
-Stages 7–8 are ready for review in
-[#75](https://github.com/revisium/revisium-engine/pull/75) and
-[#76](https://github.com/revisium/revisium-engine/pull/76).
-Stage 9 builds on that stack.
+Stages 7–9 form the current review batch:
+[#75](https://github.com/revisium/revisium-engine/pull/75) →
+[#76](https://github.com/revisium/revisium-engine/pull/76) →
+[#78](https://github.com/revisium/revisium-engine/pull/78).
 
 ## Scope
 

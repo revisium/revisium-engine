@@ -8,6 +8,7 @@ import {
 } from '@revisium/schema-toolkit/mocks';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type { DraftChangesRevisionSnapshot } from 'src/features/draft-changes/queries/impl/read-draft-changes-snapshot.query';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 import { givenReadingScenario } from './support/reading-scenario';
 import { useReadingTestKit } from './support/reading-test-kit';
 
@@ -50,7 +51,10 @@ describe('Draft Changes reader: native computed projection', () => {
         }),
       ]),
     );
-    expect(await scenario.readSnapshot()).toEqual(storedBeforeRead);
+    expectUnchangedDraftSnapshot(
+      storedBeforeRead,
+      await scenario.readSnapshot(),
+    );
   });
 
   it('projects original Head metadata through a renamed Draft schema pointer', async () => {
@@ -154,7 +158,10 @@ describe('Draft Changes reader: native computed projection', () => {
     );
     expect(summary.isEmpty).toBe(false);
     expect(summary.counts.fields).toBe(2);
-    expect(await scenario.readSnapshot()).toEqual(storedBeforeRead);
+    expectUnchangedDraftSnapshot(
+      storedBeforeRead,
+      await scenario.readSnapshot(),
+    );
   });
 
   it('keeps a canonical computed ref when native formula values are equal', async () => {

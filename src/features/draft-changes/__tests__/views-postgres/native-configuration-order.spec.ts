@@ -7,6 +7,7 @@ import {
   storedTableViews,
   tableViews,
 } from '../views/support/view-test-data';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 
 describe('Draft Changes native view configuration order', () => {
   it('commits only the selected stored view order and preserves the default', async () => {
@@ -42,7 +43,7 @@ describe('Draft Changes native view configuration order', () => {
       expect(storedTableViews(result.head, 'products')?.defaultViewId).toBe(
         'main',
       );
-      expect(await scenario.readSnapshot()).toEqual(source);
+      expectUnchangedDraftSnapshot(source, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }

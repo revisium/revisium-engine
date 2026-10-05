@@ -5,6 +5,7 @@ import {
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { storedTableViews, tableViews } from '../views/support/view-test-data';
 import type { DraftRevisionState } from 'src/features/draft-revision/commands/impl/draft-revision-write-state.command';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 
 describe('Draft Changes native first stored view document', () => {
   it('publishes all exact first-document refs when the source has no views container', async () => {
@@ -63,7 +64,7 @@ describe('Draft Changes native first stored view document', () => {
         meta: sourceViewRow.meta,
         data: sourceViewRow.data,
       });
-      expect(await scenario.readSnapshot()).toEqual(afterSave);
+      expectUnchangedDraftSnapshot(afterSave, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }
@@ -106,7 +107,7 @@ describe('Draft Changes native first stored view document', () => {
       expect(systemTable(result.head, SystemTables.Views)).toBeUndefined();
       expect(schemaRow(result.head, SystemTables.Views)).toBeUndefined();
       expect(schemaRow(result.draft, SystemTables.Views)).toBeUndefined();
-      expect(await scenario.readSnapshot()).toEqual(afterSave);
+      expectUnchangedDraftSnapshot(afterSave, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }

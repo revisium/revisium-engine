@@ -1,6 +1,7 @@
 import { createCandidateViewScenario } from '../views/support/candidate-view-scenario';
 import { tableViews } from '../views/support/view-test-data';
 import type { TableViewsData } from 'src/features/views/types';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 
 const invalidCandidates = [
   {
@@ -56,7 +57,7 @@ describe('Draft Changes native restore candidate validation', () => {
           status: 'blocked',
           blockers: [expect.objectContaining({ code })],
         });
-        expect(await scenario.readSnapshot()).toEqual(source);
+        expectUnchangedDraftSnapshot(source, await scenario.readSnapshot());
       } finally {
         await scenario.close();
       }

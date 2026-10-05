@@ -3,6 +3,7 @@ import {
   requireCatalogueEntry,
 } from '../views/support/candidate-view-scenario';
 import { addView, tableViews } from '../views/support/view-test-data';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 
 describe('Draft Changes native reverse default-view dependency', () => {
   it('requires the exact deleted-view ref when discarding only its default change', async () => {
@@ -41,7 +42,7 @@ describe('Draft Changes native reverse default-view dependency', () => {
           }),
         ],
       });
-      expect(await scenario.readSnapshot()).toEqual(afterEdit);
+      expectUnchangedDraftSnapshot(afterEdit, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }

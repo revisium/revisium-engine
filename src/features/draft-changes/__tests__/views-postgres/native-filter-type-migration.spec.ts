@@ -1,4 +1,5 @@
 import { getStringSchema } from '@revisium/schema-toolkit/mocks';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 import {
   createCandidateViewScenario,
   requireProjected,
@@ -79,7 +80,7 @@ describe('Draft Changes native filter type migration', () => {
       expect(storedTableViews(result.draft, 'products')).toMatchObject({
         views: [{ id: 'main', name: 'Draft name' }],
       });
-      expect(await scenario.readSnapshot()).toEqual(source);
+      expectUnchangedDraftSnapshot(source, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }

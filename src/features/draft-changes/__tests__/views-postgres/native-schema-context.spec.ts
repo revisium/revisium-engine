@@ -8,6 +8,7 @@ import {
   storedTableViews,
   tableViews,
 } from '../views/support/view-test-data';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 
 describe('Draft Changes native schema context', () => {
   it('uses schema context for a selected rename while an excluded name edit stays in Draft', async () => {
@@ -54,7 +55,7 @@ describe('Draft Changes native schema context', () => {
       expect(storedTableViews(result.draft, 'products')).toEqual(
         draftViewsAfterPriceRename(),
       );
-      expect(await scenario.readSnapshot()).toEqual(source);
+      expectUnchangedDraftSnapshot(source, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }

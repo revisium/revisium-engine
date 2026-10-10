@@ -8,6 +8,15 @@ import {
 } from 'src/features/plugin/types';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { FormulaPlugin } from 'src/features/plugin/formula/formula.plugin';
+import { RowIdPlugin } from 'src/features/plugin/row-id/row-id.plugin';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import type { JsonSchema } from '@revisium/schema-toolkit/types';
+import {
+  getObjectSchema,
+  getRefSchema,
+  getStringSchema,
+} from '@revisium/schema-toolkit/mocks';
 
 describe('PluginService', () => {
   describe('groupRowsByTable', () => {
@@ -148,6 +157,25 @@ describe('PluginService', () => {
     });
   });
 
+  describe('computeRowsWithSchema', () => {
+    it('uses the supplied schema for native metadata and formula projection', async () => {
+      const fixture = givenNativeMetadataFormulaProjection();
+
+      await fixture.service.computeRowsWithSchema({
+        revisionId: 'revision-1',
+        tableId: 'products',
+        rows: [fixture.row],
+        schema: fixture.schema,
+      });
+
+      expect(fixture.row.data).toMatchObject({
+        identity: 'row-9',
+        label: 'row-9',
+      });
+      expect(fixture.schemaLookup).not.toHaveBeenCalled();
+    });
+  });
+
   const pluginService = new PluginService(
     null as never,
     null as never,
@@ -157,8 +185,38 @@ describe('PluginService', () => {
     null as never,
   );
 
-  function createRow(versionId: string): Row {
-    return { versionId } as Row;
+  function createRow(
+    versionId: string,
+    data: Record<string, unknown> = {},
+  ): Row {
+    return { versionId, data } as Row;
+  }
+
+  function givenNativeMetadataFormulaProjection() {
+    const schemaLookup = jest.fn();
+    const plugins = {
+      orderedPlugins: [new RowIdPlugin(), new FormulaPlugin()],
+    } as unknown as PluginListService;
+    const service = new PluginService(
+      { getTableSchema: schemaLookup } as never,
+      null as never,
+      null as never,
+      new JsonSchemaStoreService(),
+      null as never,
+      plugins,
+    );
+    const row = createRow('version-1', { identity: '', label: '' });
+    row.id = 'row-9';
+    const schema: JsonSchema = getObjectSchema({
+      identity: getRefSchema(SystemSchemaIds.RowId),
+      label: {
+        ...getStringSchema(),
+        readOnly: true,
+        'x-formula': { version: 1, expression: 'identity' },
+      },
+    });
+
+    return { service, schemaLookup, row, schema };
   }
 
   function createError(field: string, expression: string): FormulaFieldError {

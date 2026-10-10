@@ -47,6 +47,31 @@ import {
   ApplyCandidateFilesCommand,
   type ApplyCandidateFilesCommandData,
 } from 'src/features/draft-changes/commands/impl/apply-candidate-files.command';
+import {
+  ReadDraftChangesQuery,
+  type ReadDraftChangesQueryData,
+  type ReadDraftChangesResult,
+} from 'src/features/draft-changes/queries/impl/read-draft-changes.query';
+import {
+  ReadDraftChangedTablesQuery,
+  type ReadDraftChangedTablesQueryData,
+  type ReadDraftChangedTablesResult,
+} from 'src/features/draft-changes/queries/impl/read-draft-changed-tables.query';
+import {
+  ReadDraftChangedRowsQuery,
+  type ReadDraftChangedRowsQueryData,
+  type ReadDraftChangedRowsResult,
+} from 'src/features/draft-changes/queries/impl/read-draft-changed-rows.query';
+import {
+  ReadDraftTableChangesQuery,
+  type ReadDraftTableChangesQueryData,
+  type ReadDraftTableChangesResult,
+} from 'src/features/draft-changes/queries/impl/read-draft-table-changes.query';
+import {
+  ReadDraftRowChangesQuery,
+  type ReadDraftRowChangesQueryData,
+  type ReadDraftRowChangesResult,
+} from 'src/features/draft-changes/queries/impl/read-draft-row-changes.query';
 
 @Injectable()
 export class DraftChangesApiService {
@@ -140,5 +165,49 @@ export class DraftChangesApiService {
     return this.commandBus.execute<ApplyCandidateFilesCommand, true>(
       new ApplyCandidateFilesCommand(data),
     );
+  }
+
+  draftChanges(
+    data: ReadDraftChangesQueryData,
+  ): Promise<ReadDraftChangesResult> {
+    return this.queryBus.execute<ReadDraftChangesQuery, ReadDraftChangesResult>(
+      new ReadDraftChangesQuery(data),
+    );
+  }
+
+  draftChangedTables(
+    data: ReadDraftChangedTablesQueryData,
+  ): Promise<ReadDraftChangedTablesResult> {
+    return this.queryBus.execute<
+      ReadDraftChangedTablesQuery,
+      ReadDraftChangedTablesResult
+    >(new ReadDraftChangedTablesQuery(data));
+  }
+
+  draftChangedRows(
+    data: ReadDraftChangedRowsQueryData,
+  ): Promise<ReadDraftChangedRowsResult> {
+    return this.queryBus.execute<
+      ReadDraftChangedRowsQuery,
+      ReadDraftChangedRowsResult
+    >(new ReadDraftChangedRowsQuery(data));
+  }
+
+  draftTableChanges(
+    data: ReadDraftTableChangesQueryData,
+  ): Promise<ReadDraftTableChangesResult> {
+    return this.queryBus.execute<
+      ReadDraftTableChangesQuery,
+      ReadDraftTableChangesResult
+    >(new ReadDraftTableChangesQuery(data));
+  }
+
+  draftRowChanges(
+    data: ReadDraftRowChangesQueryData,
+  ): Promise<ReadDraftRowChangesResult> {
+    return this.queryBus.execute<
+      ReadDraftRowChangesQuery,
+      ReadDraftRowChangesResult
+    >(new ReadDraftRowChangesQuery(data));
   }
 }

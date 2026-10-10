@@ -7,10 +7,11 @@ Status: approved. Stages 1–6 are merged in PRs
 [#70](https://github.com/revisium/revisium-engine/pull/70),
 [#71](https://github.com/revisium/revisium-engine/pull/71), and
 [#73](https://github.com/revisium/revisium-engine/pull/73).
-Stages 7–9 form the current review batch:
+Stages 7–9 are merged:
 [#75](https://github.com/revisium/revisium-engine/pull/75) →
 [#76](https://github.com/revisium/revisium-engine/pull/76) →
 [#78](https://github.com/revisium/revisium-engine/pull/78).
+Stage 10 implements browsing; stages 11–13 remain.
 
 ## Scope
 
@@ -138,7 +139,7 @@ linearizes this graph in the order below.
 | 7   | Formulas: candidate → validated and recomputed values                                                                                                              | 5          | Valid formulas in both resulting states                                                              |
 | 8   | Files: candidate + version associations → validated file effects; apply through file-usage                                                                         | 1, 5       | Read-only preview; restore without upload; accounting rolls back with persistence                    |
 | 9   | Views: schema/view changes + final projection bindings → resulting views and required effects                                                                      | 3, 5, 6    | Preserve independent edits or require exact confirmation                                             |
-| 10  | Changes reader: catalogue → change pages, refs, and details                                                                                                        | 4          | Bounded responses, pagination, stale cursors, ambiguous IDs                                          |
+| 10  | Changes reader: catalogue → change pages, refs, and details                                                                                                        | 4          | Page-size bounds, pagination, stale cursors, ambiguous IDs                                           |
 | 11  | Planner: selection → validated candidates, effects/blockers, plan token, and acknowledgment                                                                        | 5–9        | Read-only preview; exact acknowledgment; restorative discard                                         |
 | 12  | Executor: plan token → atomic commit/discard, history, and result                                                                                                  | 1, 2, 11   | Freshness, rollback, concurrent writers, commit/commit and commit/discard; replay after its decision |
 | 13  | Consumer integration: feature operations → engine.changes and exports                                                                                              | 10–12      | Existing API compatibility; complete acceptance after the replay decision                            |
@@ -244,6 +245,27 @@ projection share those rules; neither inserts presentation defaults.
 
 Missing stored views remain absent. A first document uses real native source
 metadata; the native views schema is static and does not require a schema row.
+
+## Implementation boundaries for stage 10
+
+Five query handlers own summary, table/row lists, and table/row details. A shared
+read context prepares one snapshot, full shared-table schema projections, and
+the authoritative catalogue through existing feature APIs. Lower `reading/`
+operations own grouping, counts, identity lookup, leaf presentation, and paging.
+
+`reading/projection/` computes detached display values through the native plugin
+order with a supplied schema. Migrated Head data retains original Head metadata;
+Draft uses actual Draft metadata. Enrichment preserves selectable refs and atomic
+boundaries; computed-only leaves remain informational. Reads do not change stored
+rows, schema history, or the catalogue used for selection.
+
+Table/row lists and row-detail pages default to 100 items and accept `first` from
+1 to 100. Browse rows attach at most 100 refs with `hasMoreChanges`. Cursors bind
+the endpoint, branch, snapshot fingerprint, stable entity identity, and position;
+invalid or stale cursors reject. Table refs and unpaged schema/view detail arrays
+remain exhaustive; their sizes and individual atomic payloads are not bounded
+by the current contract. Summary counts distinct affected tables/rows and all
+schema/row field leaves, including computed leaves.
 
 ## Open decisions and workflow
 

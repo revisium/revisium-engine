@@ -8,6 +8,7 @@ import {
   storedTableViews,
   tableViews,
 } from '../views/support/view-test-data';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 
 describe('Draft Changes native convergent duplicate restoration', () => {
   it('restores a changed adjacent duplicate when both placements converge', async () => {
@@ -65,7 +66,7 @@ describe('Draft Changes native convergent duplicate restoration', () => {
         { field: 'data.title', width: 100 },
         { field: 'data.price', width: 240 },
       ]);
-      expect(await scenario.readSnapshot()).toEqual(afterEdit);
+      expectUnchangedDraftSnapshot(afterEdit, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }

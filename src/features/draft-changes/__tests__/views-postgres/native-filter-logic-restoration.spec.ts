@@ -1,4 +1,5 @@
 import type { TableViewsData } from 'src/features/views/types';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 import {
   createCandidateViewScenario,
   requireCatalogueEntry,
@@ -68,7 +69,7 @@ describe('Draft Changes native mutable filter-group logic restoration', () => {
           },
         ],
       });
-      expect(await scenario.readSnapshot()).toEqual(afterEdit);
+      expectUnchangedDraftSnapshot(afterEdit, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }

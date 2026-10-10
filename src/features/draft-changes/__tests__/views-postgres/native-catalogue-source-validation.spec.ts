@@ -1,5 +1,6 @@
 import { createCandidateViewScenario } from '../views/support/candidate-view-scenario';
 import { tableViews } from '../views/support/view-test-data';
+import { expectUnchangedDraftSnapshot } from '../support/snapshot-assertions';
 
 describe('Draft Changes native catalogue source validation', () => {
   it('blocks a malformed stored Draft document instead of advertising deletions', async () => {
@@ -14,7 +15,7 @@ describe('Draft Changes native catalogue source validation', () => {
         status: 'blocked',
         blockers: [expect.objectContaining({ code: 'INVALID_SNAPSHOT' })],
       });
-      expect(await scenario.readSnapshot()).toEqual(source);
+      expectUnchangedDraftSnapshot(source, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }
@@ -35,7 +36,7 @@ describe('Draft Changes native catalogue source validation', () => {
         status: 'blocked',
         blockers: [expect.objectContaining({ code: 'AMBIGUOUS_IDENTITY' })],
       });
-      expect(await scenario.readSnapshot()).toEqual(source);
+      expectUnchangedDraftSnapshot(source, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }
@@ -53,7 +54,7 @@ describe('Draft Changes native catalogue source validation', () => {
         status: 'blocked',
         blockers: [expect.objectContaining({ code: 'AMBIGUOUS_IDENTITY' })],
       });
-      expect(await scenario.readSnapshot()).toEqual(source);
+      expectUnchangedDraftSnapshot(source, await scenario.readSnapshot());
     } finally {
       await scenario.close();
     }

@@ -7,6 +7,11 @@ import { ResolveCandidateDependenciesHandler } from './resolve-candidate-depende
 import { RecomputeCandidateFormulasHandler } from './recompute-candidate-formulas.handler';
 import { PrepareCandidateFilesHandler } from './prepare-candidate-files.handler';
 import { ResolveCandidateViewsHandler } from './resolve-candidate-views.handler';
+import { ReadDraftChangesHandler } from './read-draft-changes.handler';
+import { ReadDraftChangedTablesHandler } from './read-draft-changed-tables.handler';
+import { ReadDraftChangedRowsHandler } from './read-draft-changed-rows.handler';
+import { ReadDraftTableChangesHandler } from './read-draft-table-changes.handler';
+import { ReadDraftRowChangesHandler } from './read-draft-row-changes.handler';
 
 export const DRAFT_CHANGES_QUERY_HANDLERS = [
   ReadDraftChangesSnapshotHandler,
@@ -18,4 +23,9 @@ export const DRAFT_CHANGES_QUERY_HANDLERS = [
   RecomputeCandidateFormulasHandler,
   PrepareCandidateFilesHandler,
   ResolveCandidateViewsHandler,
+  ReadDraftChangesHandler,
+  ReadDraftChangedTablesHandler,
+  ReadDraftChangedRowsHandler,
+  ReadDraftTableChangesHandler,
+  ReadDraftRowChangesHandler,
 ];

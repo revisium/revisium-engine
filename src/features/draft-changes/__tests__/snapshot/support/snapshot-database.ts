@@ -5,6 +5,7 @@ import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { createMigrationRecord } from 'src/features/migration/__tests__/support/migration-database';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { normalizeRevisionRelations } from './fingerprint-fixtures';
 
 const blobSize = 7;
 
@@ -127,7 +128,13 @@ export async function readPersistedState(
       orderBy: { id: 'asc' },
     }),
   ]);
-  return { branch: persistedBranch, head, draft, migrations, blobs };
+  return {
+    branch: persistedBranch,
+    head: normalizeRevisionRelations(head),
+    draft: normalizeRevisionRelations(draft),
+    migrations,
+    blobs,
+  };
 }
 
 export async function readDatabaseInventory(prisma: PrismaService) {

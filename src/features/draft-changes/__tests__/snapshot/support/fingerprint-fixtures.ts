@@ -154,6 +154,27 @@ export function requiredBlob(
   return found;
 }
 
+export function normalizeRevisionRelations(
+  revision: DraftChangesRevisionSnapshot,
+): DraftChangesRevisionSnapshot {
+  return {
+    ...revision,
+    tables: revision.tables
+      .map((tableSnapshot) => ({
+        ...tableSnapshot,
+        rows: tableSnapshot.rows
+          .map((rowSnapshot) => ({
+            ...rowSnapshot,
+            fileBlobs: [...rowSnapshot.fileBlobs].sort((left, right) =>
+              left.id.localeCompare(right.id),
+            ),
+          }))
+          .sort((left, right) => left.versionId.localeCompare(right.versionId)),
+      }))
+      .sort((left, right) => left.versionId.localeCompare(right.versionId)),
+  };
+}
+
 export function requiredRevisionTable(
   revision: DraftChangesRevisionSnapshot,
   id: string,

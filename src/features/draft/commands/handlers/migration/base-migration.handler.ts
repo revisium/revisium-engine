@@ -12,6 +12,8 @@ import { JsonSchemaValidatorService } from 'src/features/share/json-schema-valid
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { Migration } from '@revisium/schema-toolkit/types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { MigrationContextService } from 'src/features/draft/migration-context.service';
+import { nextNativeMigrationId } from './native-migration-id';
 
 export abstract class BaseMigrationHandler<
   T extends { data: { revisionId: string } },
@@ -20,6 +22,7 @@ export abstract class BaseMigrationHandler<
     protected readonly transactionService: TransactionPrismaService,
     protected readonly commandBus: CommandBus,
     protected readonly jsonSchemaValidator: JsonSchemaValidatorService,
+    protected readonly migrationContextService: MigrationContextService,
   ) {}
 
   protected abstract readonly logger: Logger;
@@ -57,6 +60,31 @@ export abstract class BaseMigrationHandler<
   protected abstract getMigration(data: {
     revisionId: string;
   }): Promise<Migration>;
+
+  protected async getMigrationId(revisionId: string): Promise<string> {
+    const explicitId = this.migrationContextService.migrationId;
+    if (explicitId !== undefined) {
+      return explicitId;
+    }
+
+    const bounds = await this.readMigrationBounds(revisionId);
+    return nextNativeMigrationId(bounds);
+  }
+
+  private async readMigrationBounds(revisionId: string) {
+    const { _max } = await this.transaction.row.aggregate({
+      where: {
+        tables: {
+          some: {
+            id: SystemTables.Migration,
+            revisions: { some: { id: revisionId } },
+          },
+        },
+      },
+      _max: { id: true, publishedAt: true },
+    });
+    return _max;
+  }
 
   protected async checkTableExisting(command: T): Promise<boolean> {
     const table = await this.transaction.table.findFirst({

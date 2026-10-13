@@ -23,7 +23,12 @@ export class CreateInitMigrationHandler extends BaseMigrationHandler<CreateInitM
     protected readonly jsonSchemaValidator: JsonSchemaValidatorService,
     protected readonly migrationContextService: MigrationContextService,
   ) {
-    super(transactionService, commandBus, jsonSchemaValidator);
+    super(
+      transactionService,
+      commandBus,
+      jsonSchemaValidator,
+      migrationContextService,
+    );
   }
 
   protected async getMigration(
@@ -32,7 +37,7 @@ export class CreateInitMigrationHandler extends BaseMigrationHandler<CreateInitM
     return {
       changeType: 'init',
       tableId: data.tableId,
-      id: this.migrationContextService.migrationId ?? new Date().toISOString(),
+      id: await this.getMigrationId(data.revisionId),
       hash: await this.hashService.hashObject(data.schema),
       schema: data.schema,
     };

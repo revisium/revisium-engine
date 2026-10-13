@@ -43,6 +43,7 @@ describe('Concurrent native migration writers', () => {
     ]);
     expect(observedBounds.slice(0, 2)).toEqual([prefixId, prefixId]);
     expect(observedBounds.length).toBeGreaterThan(2);
+    expect(observedBounds[2]).toBe('2099-01-01T00:00:01.000Z');
     const ledger = await readNativeLedger(kit, project.draftRevisionId);
     expect(ledger[0]?.id).toBe(prefixId);
     expect(new Set(ledger.slice(1).map(({ tableId }) => tableId))).toEqual(

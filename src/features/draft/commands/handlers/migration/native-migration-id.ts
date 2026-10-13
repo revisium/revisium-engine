@@ -39,7 +39,7 @@ function afterExportId(id: string | null): number {
     return parsed.getTime() + 1;
   }
 
-  if (id[10] === 't') {
+  if (id[DATE_LENGTH] === 't') {
     const displayedDay = Date.parse(`${id.slice(0, DATE_LENGTH)}T00:00:00Z`);
     return displayedDay + MILLISECONDS_PER_DAY;
   }

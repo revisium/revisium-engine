@@ -43,6 +43,7 @@ describe('Native migration ID order', () => {
       async ({ name, write }) => {
         const project = await givenNativeTable(kit, id);
         const prefix = await readNativeLedger(kit, project.draftRevisionId);
+        expect(prefix.map(({ id }) => id)).toEqual([id]);
 
         await write(kit, project.draftRevisionId);
 

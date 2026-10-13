@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import { NotFoundException } from '@nestjs/common';
 import { createDraftChangesSnapshotTestKit } from './support/snapshot-scenario';
 import {
+  normalizeRevisionRelations,
   requiredRevisionRow,
   requiredRevisionTable,
   requiredSystemTable,
@@ -30,11 +31,15 @@ describe('DraftChanges snapshot state', () => {
       projectId: scenario.branch.projectId,
       name: scenario.branch.branchName,
     });
-    expect(snapshot.head).toEqual(
-      await scenario.readPersistedRevision(scenario.branch.headRevisionId),
+    expect(normalizeRevisionRelations(snapshot.head)).toEqual(
+      normalizeRevisionRelations(
+        await scenario.readPersistedRevision(scenario.branch.headRevisionId),
+      ),
     );
-    expect(snapshot.draft).toEqual(
-      await scenario.readPersistedRevision(scenario.branch.draftRevisionId),
+    expect(normalizeRevisionRelations(snapshot.draft)).toEqual(
+      normalizeRevisionRelations(
+        await scenario.readPersistedRevision(scenario.branch.draftRevisionId),
+      ),
     );
     expect(snapshot.head).toMatchObject({
       id: scenario.branch.headRevisionId,

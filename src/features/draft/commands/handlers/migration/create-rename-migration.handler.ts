@@ -21,7 +21,12 @@ export class CreateRenameMigrationHandler extends BaseMigrationHandler<CreateRen
     protected readonly jsonSchemaValidator: JsonSchemaValidatorService,
     protected readonly migrationContextService: MigrationContextService,
   ) {
-    super(transactionService, commandBus, jsonSchemaValidator);
+    super(
+      transactionService,
+      commandBus,
+      jsonSchemaValidator,
+      migrationContextService,
+    );
   }
 
   protected async getMigration(
@@ -29,7 +34,7 @@ export class CreateRenameMigrationHandler extends BaseMigrationHandler<CreateRen
   ): Promise<RenameMigration> {
     return {
       changeType: 'rename',
-      id: this.migrationContextService.migrationId ?? new Date().toISOString(),
+      id: await this.getMigrationId(data.revisionId),
       tableId: data.tableId,
       nextTableId: data.nextTableId,
     };

@@ -61,7 +61,11 @@ export class DraftRevisionInternalService {
   public async findRevisionOrThrow(revisionId: string) {
     try {
       return await this.revisionsApiService.revision({ revisionId });
-    } catch {
+    } catch (err) {
+      if ((err as Error & { code?: string }).code !== 'P2025') {
+        throw err;
+      }
+
       throw new BadRequestException('Revision not found');
     }
   }

@@ -267,6 +267,32 @@ remain exhaustive; their sizes and individual atomic payloads are not bounded
 by the current contract. Summary counts distinct affected tables/rows and all
 schema/row field leaves, including computed leaves.
 
+## Implementation boundaries for stage 11
+
+Export history is assembled before a plan can become ready: source history,
+transition assembly, replay of tables created and removed within Draft, then
+candidate installation.
+
+`schema/source-history/` reads one snapshot. For each table it attributes the
+pending schema-history groups before any inconsistency to the native ledger
+event that produced them and resolves their references to stable table
+identities. It proves provenance only; assembled ledgers prove their own replay.
+
+- Head data is the start state. Head history and Head ledger order are not
+  validated, so committed history never blocks later operations.
+- Pending events are Draft ledger rows absent from Head, ordered by
+  `publishedAt`. After the native ID allocation fix this is the application
+  order of sequential writes and imports; export order (`ORDER BY id` in
+  database collation) can differ for imported offset spellings. In older
+  Drafts, native writes after future-dated imports can block the trace or mark
+  the affected tables.
+- An inconsistency confined to one table, such as an asynchronous schema
+  migration that leaves no history, marks that table from the first affected
+  entry instead of blocking the trace. Ledger corruption and name conflicts
+  block it.
+- A Draft without a migration table has no ledger to assemble when Head keeps
+  no ledger rows; under a Head with ledger rows it blocks.
+
 ## Open decisions and workflow
 
 **Plan token: proposal for approval.** A self-contained signed handle binds branch,

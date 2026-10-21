@@ -23,7 +23,12 @@ export class CreateUpdateMigrationHandler extends BaseMigrationHandler<CreateUpd
     protected readonly jsonSchemaValidator: JsonSchemaValidatorService,
     protected readonly migrationContextService: MigrationContextService,
   ) {
-    super(transactionService, commandBus, jsonSchemaValidator);
+    super(
+      transactionService,
+      commandBus,
+      jsonSchemaValidator,
+      migrationContextService,
+    );
   }
 
   protected async getMigration(
@@ -32,7 +37,7 @@ export class CreateUpdateMigrationHandler extends BaseMigrationHandler<CreateUpd
     return {
       changeType: 'update',
       tableId: data.tableId,
-      id: this.migrationContextService.migrationId ?? new Date().toISOString(),
+      id: await this.getMigrationId(data.revisionId),
       hash: await this.hashService.hashObject(data.schema),
       patches: data.patches,
     };

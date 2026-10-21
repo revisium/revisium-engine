@@ -21,7 +21,12 @@ export class CreateRemoveMigrationHandler extends BaseMigrationHandler<CreateRem
     protected readonly jsonSchemaValidator: JsonSchemaValidatorService,
     protected readonly migrationContextService: MigrationContextService,
   ) {
-    super(transactionService, commandBus, jsonSchemaValidator);
+    super(
+      transactionService,
+      commandBus,
+      jsonSchemaValidator,
+      migrationContextService,
+    );
   }
 
   protected async getMigration(
@@ -29,7 +34,7 @@ export class CreateRemoveMigrationHandler extends BaseMigrationHandler<CreateRem
   ): Promise<RemoveMigration> {
     return {
       changeType: 'remove',
-      id: this.migrationContextService.migrationId ?? new Date().toISOString(),
+      id: await this.getMigrationId(data.revisionId),
       tableId: data.tableId,
     };
   }

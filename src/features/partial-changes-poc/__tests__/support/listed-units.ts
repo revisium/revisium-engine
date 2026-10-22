@@ -13,6 +13,8 @@ const SELECTION_ITEMS = [
   'views',
   'sharedSchemas',
   'rows',
+  'renames',
+  'rowColumns',
   'fields',
 ] as const;
 
@@ -23,6 +25,7 @@ const PUBLIC_UNIT_KEYS = [
   'rowId',
   'previousRowId',
   'path',
+  'columns',
 ] as const;
 
 export function publicPartOf(unit: ListedUnit): PublicUnit {

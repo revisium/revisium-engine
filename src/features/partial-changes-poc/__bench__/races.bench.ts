@@ -155,6 +155,11 @@ describe(`races at ${ROWS} rows per table`, () => {
         !measurement.error &&
         (operation === 'native-commit' || result?.status === 'applied');
       const checked = fenceFree(operation);
+      const consistency = await writerRaceConsistency(kit, after, {
+        operation: checked,
+        report,
+        applied,
+      });
 
       emitResult({
         kind: 'race',
@@ -170,13 +175,10 @@ describe(`races at ${ROWS} rows per table`, () => {
         writerFailures: report.failures,
         writerTransactionAttempts: difference(writerAttempts, attemptsBefore),
         revisionsAdded: (await revisionCount(kit, run)) - revisionsBefore,
-        consistency: await writerRaceConsistency(kit, after, {
-          operation: checked,
-          report,
-          applied,
-        }),
+        consistency,
       });
       await dropProjects(kit.prisma, exactProject(run.projectId));
+      expect(consistency.problems).toEqual([]);
     },
   );
 
@@ -206,6 +208,11 @@ describe(`races at ${ROWS} rows per table`, () => {
         await dropProjects(kit.prisma, exactProject(run.projectId));
       }
       emitResult({ kind: 'race', scenario: pairCase, rows: ROWS, outcomes });
+      expect(
+        outcomes.flatMap(
+          (outcome) => (outcome.consistency as { problems: string[] }).problems,
+        ),
+      ).toEqual([]);
     },
   );
 });

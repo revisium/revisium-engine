@@ -150,6 +150,35 @@ describe('listChanges: paged list of selectable units', () => {
     }
   });
 
+  it('lists a row rename with a renames selector (decision 4)', async () => {
+    const scenario = await givenEveryDataUnitKind();
+
+    const units = await scenario.listAllChanges();
+
+    expect(units.find((unit) => unit.kind === 'rowRename')?.selector).toEqual({
+      renames: [{ tableId: 'products', rowId: 'p4b' }],
+    });
+  });
+
+  it('applies a listed rename selector without field edits made after the listing (N5)', async () => {
+    const scenario = await givenEveryDataUnitKind();
+    const rename = (await scenario.listAllChanges()).find(
+      (unit) => unit.kind === 'rowRename',
+    );
+    await scenario.patchRow('products', 'p4b', { title: 'edited later' });
+
+    const result = await scenario.commit(rename?.selector ?? {});
+
+    expect(result.status).toBe('applied');
+    expect((await scenario.headRow('products', 'p4b')).data).toEqual(
+      product('four', 40),
+    );
+    expect((await scenario.draftRow('products', 'p4b')).data).toEqual({
+      ...product('four', 41),
+      title: 'edited later',
+    });
+  });
+
   it('addresses a deleted row whose id a rename took over through the Head side', async () => {
     const scenario = await ChangesScenario.committed(kit, {
       products: {
@@ -251,7 +280,6 @@ describe('listChanges: paged list of selectable units', () => {
       limit: 4,
     });
 
-    expect(first.total).toBe(6);
     expect(first.units).toEqual(all.units.slice(0, 4));
     expect(second.units).toEqual(all.units.slice(4));
     expect(second.nextCursor).toBeUndefined();

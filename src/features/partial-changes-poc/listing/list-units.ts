@@ -10,33 +10,64 @@ import { ListedUnit } from 'src/features/partial-changes-poc/partial-changes.typ
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 1000;
 
+export interface UnitsPageRequest {
+  cursor?: string;
+  limit?: number;
+  tableId?: string;
+}
+
 export interface UnitsPage {
-  total: number;
   units: ListedUnit[];
   nextCursor?: string;
+  complete: boolean;
+}
+
+interface Cursor {
+  after: string[];
+  from: string;
 }
 
 export function listUnits(
   catalogue: ChangeCatalogue,
-  page: { cursor?: string; limit?: number },
+  page: UnitsPageRequest,
+  unreadFrom?: string,
 ): UnitsPage {
   const limit = pageSizeOf(page.limit);
-  const after = page.cursor ? decodeCursor(page.cursor) : undefined;
-  const ordered = [...catalogue.units.values()]
+  const after = page.cursor ? decodeCursor(page.cursor).after : undefined;
+  const known = [...catalogue.units.values()]
+    .filter(
+      (unit) => page.tableId === undefined || unit.tableId === page.tableId,
+    )
+    .filter((unit) => unreadFrom === undefined || unit.tableId < unreadFrom)
     .map((unit) => ({ unit, order: orderOf(unit) }))
+    .filter(({ order }) => !after || compareOrder(order, after) > 0)
     .sort((a, b) => compareOrder(a.order, b.order));
-  const remaining = after
-    ? ordered.filter(({ order }) => compareOrder(order, after) > 0)
-    : ordered;
-  const slice = remaining.slice(0, limit);
+  const slice = known.slice(0, limit);
+  const units = slice.map(({ unit }) => listedUnit(catalogue, unit));
   const last = slice.at(-1);
 
-  return {
-    total: ordered.length,
-    units: slice.map(({ unit }) => listedUnit(catalogue, unit)),
-    nextCursor:
-      last && remaining.length > limit ? encodeCursor(last.order) : undefined,
-  };
+  if (last && known.length > limit) {
+    return {
+      units,
+      nextCursor: encodeCursor({ after: last.order, from: last.unit.tableId }),
+      complete: true,
+    };
+  }
+  if (unreadFrom === undefined) {
+    return { units, complete: true };
+  }
+  if (last && known.length === limit) {
+    return {
+      units,
+      nextCursor: encodeCursor({ after: last.order, from: unreadFrom }),
+      complete: true,
+    };
+  }
+  return { units, complete: false };
+}
+
+export function cursorTableOf(page: UnitsPageRequest): string | undefined {
+  return page.cursor ? decodeCursor(page.cursor).from : undefined;
 }
 
 function listedUnit(
@@ -101,14 +132,18 @@ function pageSizeOf(limit: number | undefined): number {
   return limit;
 }
 
-function encodeCursor(order: readonly string[]): string {
-  return Buffer.from(JSON.stringify(order)).toString('base64url');
+function encodeCursor(cursor: Cursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
-function decodeCursor(cursor: string): string[] {
-  const order = parseCursor(cursor);
-  if (Array.isArray(order) && order.every((item) => typeof item === 'string')) {
-    return order as string[];
+function decodeCursor(cursor: string): Cursor {
+  const parsed = parseCursor(cursor) as Partial<Cursor> | undefined;
+  if (
+    Array.isArray(parsed?.after) &&
+    parsed.after.every((item) => typeof item === 'string') &&
+    typeof parsed.from === 'string'
+  ) {
+    return { after: parsed.after, from: parsed.from };
   }
   throw new BadRequestException('cursor is not a listChanges cursor');
 }

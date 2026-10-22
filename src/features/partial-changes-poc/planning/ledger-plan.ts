@@ -1,6 +1,6 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
 import type { AssemblyInput } from 'src/features/partial-changes-poc/assembly/target-assembler.service';
-import { takenFromDraft } from 'src/features/partial-changes-poc/assembly/target-assembler.service';
+import { takenFromDraft } from 'src/features/partial-changes-poc/assembly/outcome-plan';
 import { structureUnitOfOwner } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
 import type { RowVersion } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
 import {

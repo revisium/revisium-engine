@@ -6,6 +6,8 @@
 #   run-bench.sh structure [case,...]               100k-row structure commit with renumbering, replica sync
 #   run-bench.sh fkfiles <changed> [case,...]       FK/files/deletions/required units (M4), BENCH_RUNS runs per case
 #       cases: ensure verify preview-required commit-required commit-photos commit-prices revert-required revert-photos native-commit
+#   run-bench.sh scoped <unrelated rows> [case,...] one-field commit/revert next to a changed unrelated table (M5)
+#       cases: ensure commit-field revert-field full-read-commit-field; BENCH_DATASETS=busy,quiet; BENCH_RUNS
 #   run-bench.sh races [case,...]                   concurrency stress
 #   run-bench.sh limits [sizes]                     first native write to a committed table of N rows
 #   run-bench.sh drop <like-pattern>                drops matching bench-* projects (e.g. 'bench-run-%')
@@ -13,7 +15,7 @@
 #   run-bench.sh size                               database size and number of bench-* branches
 #
 # Env:
-#   BENCH_TX_TIMEOUT    TRANSACTION_TIMEOUT for the run in ms (default 3600000; use 15000 for the native default)
+#   BENCH_TX_TIMEOUT    TRANSACTION_TIMEOUT and PARTIAL_CHANGES_OPERATION_TIMEOUT_MS in ms (default 3600000)
 #   BENCH_NODE_OPTIONS  NODE_OPTIONS (default --expose-gc)
 #   BENCH_KEEP_RUNS=1   keep the cloned branch of every case
 # Every measurement is printed as one line "BENCH_RESULT {json}".
@@ -23,6 +25,7 @@ cd "$(dirname "$0")/../../../.."
 CONFIG=src/features/partial-changes-poc/__bench__/jest-bench.config.json
 DIR=src/features/partial-changes-poc/__bench__
 export TRANSACTION_TIMEOUT="${BENCH_TX_TIMEOUT:-3600000}"
+export PARTIAL_CHANGES_OPERATION_TIMEOUT_MS="${BENCH_TX_TIMEOUT:-3600000}"
 export NODE_OPTIONS="${BENCH_NODE_OPTIONS:---expose-gc}"
 
 jest_run() {
@@ -44,6 +47,14 @@ case "$mode" in
     cases="${3:-ensure,verify,preview-required,commit-required,commit-photos,commit-prices,revert-required,revert-photos,native-commit}"
     for item in ${cases//,/ }; do
       BENCH_CASES="$item" jest_run "$DIR/fk-files.bench.ts"
+    done
+    ;;
+  scoped)
+    export BENCH_UNRELATED_ROWS="${2:?unrelated changed rows, e.g. 200000}"
+    export BENCH_RUNS="${BENCH_RUNS:-3}"
+    cases="${3:-ensure,commit-field,revert-field,full-read-commit-field}"
+    for item in ${cases//,/ }; do
+      BENCH_CASES="$item" jest_run "$DIR/scoped.bench.ts"
     done
     ;;
   structure)

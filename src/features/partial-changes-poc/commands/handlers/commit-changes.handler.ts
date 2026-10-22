@@ -4,6 +4,7 @@ import {
   CommitChangesCommandReturnType,
 } from 'src/features/partial-changes-poc/commands/impl/commit-changes.command';
 import { ChangePlanner } from 'src/features/partial-changes-poc/planning/change-planner.service';
+import { OperationLimits } from 'src/features/partial-changes-poc/planning/operation-limits.service';
 import {
   appliedCounts,
   refusalOf,
@@ -23,6 +24,7 @@ export class CommitChangesHandler implements ICommandHandler<
     private readonly transactionService: TransactionPrismaService,
     private readonly migrationLockService: MigrationLockService,
     private readonly planner: ChangePlanner,
+    private readonly limits: OperationLimits,
     private readonly commitWriter: CommitWriter,
   ) {}
 
@@ -30,7 +32,9 @@ export class CommitChangesHandler implements ICommandHandler<
     data,
   }: CommitChangesCommand): Promise<CommitChangesCommandReturnType> {
     rejectUnreviewedRequired(data);
-    return this.transactionService.runSerializable(() => this.commit(data));
+    return this.transactionService.runSerializable(() => this.commit(data), {
+      timeout: this.limits.values().operationTimeoutMs,
+    });
   }
 
   private async commit(

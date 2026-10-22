@@ -57,9 +57,14 @@ const shape = shapeOf(spec);
 const cases = (process.env.BENCH_CASES ?? 'ensure').split(',') as BenchCase[];
 const runs = Number(process.env.BENCH_RUNS ?? DEFAULT_RUNS);
 const NO_LIMITS = {
+  ...DEFAULT_LIMITS,
   maxChangedRows: Number.MAX_SAFE_INTEGER,
   maxMixedTableLinks: Number.MAX_SAFE_INTEGER,
-  maxFormulaMerges: Number.MAX_SAFE_INTEGER,
+  maxPerRowWork: Number.MAX_SAFE_INTEGER,
+  operationTimeoutMs: Number(
+    process.env.PARTIAL_CHANGES_OPERATION_TIMEOUT_MS ??
+      DEFAULT_LIMITS.operationTimeoutMs,
+  ),
 };
 const RUN_SUFFIX = 6;
 const REPORTED_FAILURES = 10;

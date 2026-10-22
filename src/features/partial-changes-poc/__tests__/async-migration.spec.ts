@@ -1,5 +1,6 @@
 import { str } from '@revisium/schema-toolkit/mocks';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
+import { SystemTables } from 'src/features/share/system-tables.consts';
 import { ChangesScenario } from 'src/features/partial-changes-poc/__tests__/support/changes-scenario';
 import {
   createPartialChangesTestKit,
@@ -93,9 +94,14 @@ describe('async table migrations', () => {
 
   it('records that the background swap rewrites the Head schema row it shares with the Draft (known native defect)', async () => {
     const { scenario, migrationId } = await givenBackgroundColorUpdate();
+    const headSchemaRow = await scenario.systemRowVersionId(
+      'head',
+      SystemTables.Schema,
+      'products',
+    );
 
     await kit.migrations.processMigration(migrationId);
-    kit.guard.acceptKnownNativeMutation();
+    kit.guard.acceptKnownNativeMutation([headSchemaRow]);
 
     expect((await scenario.schemas('head')).products).toEqual(
       (await scenario.schemas('draft')).products,

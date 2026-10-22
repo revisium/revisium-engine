@@ -1,5 +1,6 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
 import { isDeepStrictEqual } from 'node:util';
+import objectHash from 'object-hash';
 import {
   BenchBranch,
   cloneBranch,
@@ -25,7 +26,9 @@ import {
 import { instrumentOperations } from 'src/features/partial-changes-poc/__bench__/support/instrumentation';
 import {
   ADD_COLOR,
+  editedIndexes,
   editedItem,
+  migratedItem,
   ensureStructureDataset,
   ensureStructureEditsDataset,
   OTHER,
@@ -64,6 +67,7 @@ const BYTES_PER_KB = 1024;
 const BYTES_PER_MB = BYTES_PER_KB * BYTES_PER_KB;
 const MIGRATION_POLL_MS = 500;
 const MIGRATION_WAIT_MS = 1_800_000;
+const REPORTED_FAILURES = 10;
 
 describe(`structure at scale: ${ROWS} rows`, () => {
   let kit: PartialChangesTestKit;
@@ -85,17 +89,23 @@ describe(`structure at scale: ${ROWS} rows`, () => {
 
   it.each(cases)('%s', async (structureCase) => {
     if (structureCase === 'ensure') {
+      const migration = await verifyMigration(kit, base);
       emitResult({
         kind: 'verify',
         dataset: structureName(ROWS, false),
-        ...(await verifyMigration(kit, base)),
+        ...migration,
       });
       const edits = await ensureStructureEditsDataset(kit, base, ROWS);
+      const editVerification = await verifyEdits(kit, base, edits);
       emitResult({
         kind: 'verify',
         dataset: structureName(ROWS, true),
-        ...(await verifyEdits(kit, base, edits)),
+        ...editVerification,
       });
+      expect({
+        migration: migration.matches,
+        edits: editVerification.matches,
+      }).toEqual({ migration: true, edits: true });
       return;
     }
     if (structureCase === 'replica-sync') {
@@ -121,6 +131,12 @@ describe(`structure at scale: ${ROWS} rows`, () => {
       runCase(kit, branchOf(run), structureCase),
     );
     const after = await loadBranch(kit.prisma, run.branchId);
+    const checks = measurement.error
+      ? undefined
+      : await structureChecks(kit, after, structureCase);
+    const rowFailures = measurement.error
+      ? []
+      : await structureRowFailures(kit, after, structureCase);
 
     emitResult({
       kind: 'operation',
@@ -130,12 +146,22 @@ describe(`structure at scale: ${ROWS} rows`, () => {
       result: measurement.value,
       pendingBefore,
       pendingAfter: await pendingMigrations(kit, after),
-      checks: measurement.error
-        ? undefined
-        : await structureChecks(kit, after, structureCase),
+      checks,
+      rowFailures,
       ...withoutValue(measurement),
     });
     await dropProjects(kit.prisma, exactProject(run.projectId));
+    expect({
+      error: measurement.error,
+      status: (measurement.value as { status?: string } | undefined)?.status,
+      sample: checks?.ok,
+      rowFailures,
+    }).toEqual({
+      error: undefined,
+      status: structureCase === 'native-commit' ? undefined : 'applied',
+      sample: true,
+      rowFailures: [],
+    });
   });
 });
 
@@ -196,6 +222,78 @@ async function structureChecks(
       isDeepStrictEqual(head?.data, expectedHead) &&
       isDeepStrictEqual(draft?.data, expectedDraft),
   };
+}
+
+async function structureRowFailures(
+  kit: PartialChangesTestKit,
+  after: BenchBranch,
+  structureCase: StructureCase,
+): Promise<string[]> {
+  const reverted = structureCase === 'revert-structure';
+  const edited = new Set(
+    structureCase === 'commit-structure-with-edits' ? editedIndexes(ROWS) : [],
+  );
+  const headOf = (index: number) =>
+    reverted ? headItem(index) : migratedItem(index);
+  const draftOf = (index: number) =>
+    edited.has(index) ? editedItem(index) : headOf(index);
+
+  return [
+    ...(await itemRowFailures(kit, after.headRevisionId, 'head', headOf)),
+    ...(await itemRowFailures(kit, after.draftRevisionId, 'draft', draftOf)),
+    ...(await mutableHeadTables(kit, after.headRevisionId)),
+  ];
+}
+
+async function itemRowFailures(
+  kit: PartialChangesTestKit,
+  revisionId: string,
+  role: 'head' | 'draft',
+  expectedOf: (index: number) => Record<string, unknown>,
+): Promise<string[]> {
+  const rows = await kit.prisma.$queryRaw<
+    { id: string; data: unknown; hash: string; readonly: boolean }[]
+  >`
+    SELECT r."id", r."data", r."hash", r."readonly"
+    FROM "_RevisionToTable" rvt
+    JOIN "Table" t ON t."versionId" = rvt."B" AND t."id" = ${ITEMS}
+    JOIN "_RowToTable" rt ON rt."B" = t."versionId"
+    JOIN "Row" r ON r."versionId" = rt."A"
+    WHERE rvt."A" = ${revisionId}
+  `;
+  const failures: string[] = [];
+  if (rows.length !== ROWS) {
+    failures.push(`${role}: ${rows.length} item rows, expected ${ROWS}`);
+  }
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const index = Number(row.id.slice(1));
+    if (ids.has(row.id)) {
+      failures.push(`${role}: duplicate ${row.id}`);
+    }
+    ids.add(row.id);
+    if (!isDeepStrictEqual(row.data, expectedOf(index))) {
+      failures.push(`${role}: ${row.id} data ${JSON.stringify(row.data)}`);
+    }
+    if (row.hash !== objectHash(row.data as object)) {
+      failures.push(`${role}: ${row.id} hash`);
+    }
+    if (role === 'head' && !row.readonly) {
+      failures.push(`${role}: ${row.id} mutable`);
+    }
+  }
+  return failures.slice(0, REPORTED_FAILURES);
+}
+
+async function mutableHeadTables(
+  kit: PartialChangesTestKit,
+  headRevisionId: string,
+): Promise<string[]> {
+  const tables = await kit.prisma.$queryRaw<{ id: string }[]>`
+    SELECT t."id" FROM "_RevisionToTable" rvt JOIN "Table" t ON t."versionId" = rvt."B"
+    WHERE rvt."A" = ${headRevisionId} AND NOT t."readonly"
+  `;
+  return tables.map(({ id }) => `head: mutable table version ${id}`);
 }
 
 async function schemaIds(
@@ -346,6 +444,7 @@ async function asyncStructure(
       blockers: preview.value?.blockers,
       wallMs: preview.wallMs,
     });
+    expect(preview.value?.status).not.toBe('ready');
   } finally {
     emitResult({ kind: 'async-structure', rows: ROWS, steps: steps.items });
     await asyncKit.close();
@@ -408,7 +507,20 @@ async function replicaSync(
       await syncStep(replicaKit, kit, source, replica, probe, 'sync 3'),
     );
     steps.push(await waitForMigrations(replicaKit, replica));
-    steps.push(await replicaState(replicaKit, replica, 'final'));
+    const final = await replicaState(replicaKit, replica, 'final');
+    steps.push(final);
+    expect({
+      commit: commit.status,
+      remainder: remainder.status,
+      replicaHeadLedger: final.headLedger,
+    }).toEqual({
+      commit: 'applied',
+      remainder: 'applied',
+      replicaHeadLedger: await ledgerIds(
+        kit,
+        await loadBranch(kit.prisma, source.branchId),
+      ),
+    });
   } finally {
     emitResult({
       kind: 'replica',

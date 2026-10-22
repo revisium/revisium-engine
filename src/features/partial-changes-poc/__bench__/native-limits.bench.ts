@@ -21,6 +21,7 @@ import {
   PartialChangesTestKit,
 } from 'src/features/partial-changes-poc/__tests__/support/partial-changes-test-kit';
 
+const NATIVE_PARAMETER_LIMIT = 32_767;
 const SIZES = (process.env.BENCH_LIMIT_SIZES ?? '32700,32800,65500,65600')
   .split(',')
   .map(Number);
@@ -67,6 +68,11 @@ describe('native limits', () => {
         error,
       });
       await dropProjects(kit.prisma, exactProject(committed.projectId));
+      expect(error).toEqual(
+        rows > NATIVE_PARAMETER_LIMIT
+          ? expect.stringContaining('P2029')
+          : undefined,
+      );
     },
   );
 });

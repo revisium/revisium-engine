@@ -32,8 +32,10 @@ export class CommittedVersionsGuard {
     expect(violations.slice(0, REPORTED_VIOLATIONS)).toEqual([]);
   }
 
-  acceptKnownNativeMutation(): void {
-    this.observed = emptyObservation();
+  acceptKnownNativeMutation(rowVersionIds: readonly string[]): void {
+    for (const versionId of rowVersionIds) {
+      delete this.observed.rows[versionId];
+    }
   }
 
   async verifyAndForget(): Promise<void> {

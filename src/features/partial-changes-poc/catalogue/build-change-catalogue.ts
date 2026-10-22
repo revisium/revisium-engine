@@ -1,12 +1,18 @@
 import {
   CatalogueLedger,
   CatalogueRow,
+  catalogueRowOf,
   CatalogueTable,
   CatalogueUnit,
   ChangeCatalogue,
   ViewsMigrator,
   ViewsPair,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
+import {
+  differingColumns,
+  publishedAtFieldOf,
+  RowColumn,
+} from 'src/features/partial-changes-poc/catalogue/row-columns';
 import {
   collectSchemaLeaves,
   diffLeafPointers,
@@ -343,7 +349,7 @@ class CatalogueBuilder {
       return existing;
     }
 
-    const row: CatalogueRow = { pair, fieldUnits: new Map() };
+    const row = catalogueRowOf(pair);
     table.rows.set(pair.createdId, row);
     return row;
   }
@@ -429,18 +435,69 @@ class CatalogueBuilder {
     }
 
     for (const path of diffLeafPointers(table.leaves, head.data, draft.data)) {
-      const key = this.addTableUnit(
-        table,
-        {
-          key: `${rowKey(table, row)}/f:${path}`,
-          kind: 'field',
-          rowId: draft.id,
-          path,
-        },
-        [row.pair.createdId],
-      );
-      row.fieldUnits.set(path, key);
+      this.addFieldUnit(table, row, path);
     }
+
+    this.catalogueColumns(
+      table,
+      row,
+      differingColumns(table.pair, head, draft),
+    );
+  }
+
+  private addFieldUnit(
+    table: CatalogueTable,
+    row: CatalogueRow,
+    path: string,
+  ): string {
+    const key = this.addTableUnit(
+      table,
+      {
+        key: `${rowKey(table, row)}/f:${path}`,
+        kind: 'field',
+        rowId: row.pair.draft?.id,
+        path,
+      },
+      [row.pair.createdId],
+    );
+    row.fieldUnits.set(path, key);
+    return key;
+  }
+
+  private catalogueColumns(
+    table: CatalogueTable,
+    row: CatalogueRow,
+    columns: RowColumn[],
+  ): void {
+    const field = publishedAtFieldOf(table.pair);
+    const unowned = columns.filter(
+      (column) => column !== 'publishedAt' || !field,
+    );
+
+    if (columns.includes('publishedAt') && field) {
+      row.columnOwners.set(
+        'publishedAt',
+        field.boundToStructure && table.structureUnit
+          ? table.structureUnit
+          : this.addFieldUnit(table, row, field.pointer),
+      );
+    }
+
+    if (unowned.length === 0) {
+      return;
+    }
+    const key = this.addTableUnit(
+      table,
+      {
+        key: `${rowKey(table, row)}/columns`,
+        kind: 'rowColumns',
+        rowId: row.pair.draft?.id,
+        columns: unowned,
+      },
+      [row.pair.createdId],
+    );
+    row.columnsUnit = key;
+    unowned.forEach((column) => row.columnOwners.set(column, key));
   }
 
   private catalogueSystemTable(pair: TablePair): void {
@@ -491,7 +548,7 @@ class CatalogueBuilder {
     table: CatalogueTable,
     unit: Pick<
       CatalogueUnit,
-      'key' | 'kind' | 'rowId' | 'previousRowId' | 'path'
+      'key' | 'kind' | 'rowId' | 'previousRowId' | 'path' | 'columns'
     >,
     rowCreatedIds: string[],
   ): string {

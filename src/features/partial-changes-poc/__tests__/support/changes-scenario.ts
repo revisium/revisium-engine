@@ -16,6 +16,7 @@ import {
 } from 'src/__tests__/utils/file';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-revert-changes.command';
+import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import {
   ApplyChangesResult,
   ChangeOperation,
@@ -40,6 +41,25 @@ export type StoredRow = {
   data: Record<string, unknown>;
   hash: string;
   schemaHash: string;
+  publishedAt: string;
+  meta: unknown;
+};
+
+export type RowContent = {
+  id: string;
+  data: unknown;
+  hash: string;
+  schemaHash: string;
+  publishedAt: string;
+  meta: unknown;
+  blobs: string[];
+};
+
+export type RevisionContent = {
+  rows: Record<string, RowContent[]>;
+  schemas: Record<string, unknown>;
+  views: Record<string, unknown>;
+  sharedSchemas: Record<string, unknown>;
 };
 
 type RevisionRole = 'head' | 'draft';
@@ -215,6 +235,19 @@ export class ChangesScenario {
       | undefined;
   }
 
+  async systemRowVersionId(
+    role: RevisionRole,
+    tableId: SystemTables,
+    rowId: string,
+  ): Promise<string> {
+    const rows = await this.systemRows(role, tableId);
+    const row = rows.find((candidate) => candidate.id === rowId);
+    if (!row) {
+      throw new Error(`System row ${tableId}/${rowId} is absent in ${role}`);
+    }
+    return row.versionId;
+  }
+
   async ledger(role: RevisionRole): Promise<Migration[]> {
     return this.kit.queryBus.execute(
       new GetMigrationsQuery({ revisionId: await this.roleRevisionId(role) }),
@@ -270,6 +303,47 @@ export class ChangesScenario {
     );
   }
 
+  async rowContent(role: RevisionRole): Promise<Record<string, RowContent[]>> {
+    const revisionId = await this.roleRevisionId(role);
+    const tables = await this.kit.prisma.table.findMany({
+      where: { system: false, revisions: { some: { id: revisionId } } },
+      include: {
+        rows: {
+          orderBy: { id: 'asc' },
+          include: { fileBlobs: { select: { hash: true, deletedAt: true } } },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+    return Object.fromEntries(
+      tables.map((table) => [
+        table.id,
+        table.rows.map((row) => ({
+          id: row.id,
+          data: row.data,
+          hash: row.hash,
+          schemaHash: row.schemaHash,
+          publishedAt: row.publishedAt.toISOString(),
+          meta: row.meta,
+          blobs: row.fileBlobs
+            .filter((blob) => blob.deletedAt === null)
+            .map((blob) => blob.hash)
+            .sort(),
+        })),
+      ]),
+    );
+  }
+
+  async revisionContent(role: RevisionRole): Promise<RevisionContent> {
+    const views = await this.systemRows(role, SystemTables.Views);
+    return {
+      rows: await this.rowContent(role),
+      schemas: await this.schemas(role),
+      views: Object.fromEntries(views.map((row) => [row.id, row.data])),
+      sharedSchemas: await this.sharedSchemas(role),
+    };
+  }
+
   async createRow(
     tableId: string,
     rowId: string,
@@ -322,6 +396,27 @@ export class ChangesScenario {
       rowId,
       data,
     });
+  }
+
+  async writeRowMetaNatively(
+    tableId: string,
+    rowId: string,
+    meta: InputJsonValue,
+  ): Promise<void> {
+    const revisionId = await this.draftRevisionId();
+    const row = await this.draftRow(tableId, rowId);
+    await this.kit.module.get(TransactionPrismaService).run(() =>
+      this.kit.commandBus.execute(
+        new InternalUpdateRowCommand({
+          revisionId,
+          tableId,
+          rowId,
+          data: row.data as InputJsonValue,
+          schemaHash: row.schemaHash,
+          meta,
+        }),
+      ),
+    );
   }
 
   async renameRow(
@@ -406,7 +501,7 @@ export class ChangesScenario {
   }
 
   listChanges(
-    page: { cursor?: string; limit?: number } = {},
+    page: { cursor?: string; limit?: number; tableId?: string } = {},
   ): Promise<ListChangesResult> {
     return this.guarded(() =>
       this.kit.changes.listChanges({ branch: this.publicBranch, ...page }),
@@ -538,7 +633,7 @@ export class ChangesScenario {
     }
   }
 
-  private get publicBranch(): ChangesBranch {
+  get publicBranch(): ChangesBranch {
     return {
       projectId: this.branch.projectId,
       branchName: this.branch.branchName,
@@ -585,6 +680,8 @@ export class ChangesScenario {
       data: row.data as Record<string, unknown>,
       hash: row.hash,
       schemaHash: row.schemaHash,
+      publishedAt: row.publishedAt.toISOString(),
+      meta: row.meta,
     };
   }
 

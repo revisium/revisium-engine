@@ -4,6 +4,7 @@ import {
   RevertPartialChangesCommandReturnType,
 } from 'src/features/partial-changes-poc/commands/impl/revert-changes.command';
 import { ChangePlanner } from 'src/features/partial-changes-poc/planning/change-planner.service';
+import { OperationLimits } from 'src/features/partial-changes-poc/planning/operation-limits.service';
 import {
   appliedCounts,
   refusalOf,
@@ -22,6 +23,7 @@ export class RevertPartialChangesHandler implements ICommandHandler<
     private readonly transactionService: TransactionPrismaService,
     private readonly migrationLockService: MigrationLockService,
     private readonly planner: ChangePlanner,
+    private readonly limits: OperationLimits,
     private readonly revertWriter: RevertWriter,
   ) {}
 
@@ -29,7 +31,9 @@ export class RevertPartialChangesHandler implements ICommandHandler<
     data,
   }: RevertPartialChangesCommand): Promise<RevertPartialChangesCommandReturnType> {
     rejectUnreviewedRequired(data);
-    return this.transactionService.runSerializable(() => this.revert(data));
+    return this.transactionService.runSerializable(() => this.revert(data), {
+      timeout: this.limits.values().operationTimeoutMs,
+    });
   }
 
   private async revert(

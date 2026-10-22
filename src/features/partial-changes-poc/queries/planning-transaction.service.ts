@@ -1,15 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
+import { OperationLimits } from 'src/features/partial-changes-poc/planning/operation-limits.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-
-const DEFAULT_TRANSACTION_TIMEOUT_MS = 15_000;
 
 @Injectable()
 export class PlanningTransaction {
   constructor(
     private readonly transactionService: TransactionPrismaService,
-    private readonly configService: ConfigService,
+    private readonly limits: OperationLimits,
   ) {}
 
   run<T>(read: () => Promise<T>): Promise<T> {
@@ -22,13 +20,8 @@ export class PlanningTransaction {
       },
       {
         isolationLevel: TransactionIsolationLevel.RepeatableRead,
-        timeout: this.timeout(),
+        timeout: this.limits.values().operationTimeoutMs,
       },
     );
-  }
-
-  private timeout(): number {
-    const configured = Number(this.configService.get('TRANSACTION_TIMEOUT'));
-    return configured > 0 ? configured : DEFAULT_TRANSACTION_TIMEOUT_MS;
   }
 }

@@ -54,6 +54,7 @@ interface StoredRow {
   id: string;
   data: Record<string, unknown>;
   hash: string;
+  schemaHash: string;
   readonly: boolean;
 }
 
@@ -130,13 +131,19 @@ export async function checkFkFilesOutcome(
       const stored = await readStoredRows(kit.prisma, versionId);
       rowsVerified += stored.length;
       failures.push(
-        ...compareRows(`${role} ${tableId}`, stored, rows, role === 'head'),
+        ...compareRows(`${role} ${tableId}`, stored, rows, {
+          mustBeReadonly: role === 'head',
+          schemaHash: await schemaHashOf(kit.prisma, revisionId, tableId),
+        }),
       );
     }
     failures.push(
       ...(await sqlInvariants(kit.prisma, `${role}`, { products, orders })),
     );
   }
+  failures.push(
+    ...(await mutableHeadTables(kit.prisma, branch.headRevisionId)),
+  );
 
   const draft = await kit.prisma.revision.findUniqueOrThrow({
     where: { id: branch.draftRevisionId },
@@ -372,17 +379,45 @@ async function readStoredRows(
   tableVersion: string,
 ): Promise<StoredRow[]> {
   return prisma.$queryRaw<StoredRow[]>`
-    SELECT r."id", r."data", r."hash", r."readonly"
+    SELECT r."id", r."data", r."hash", r."schemaHash", r."readonly"
     FROM "_RowToTable" rt JOIN "Row" r ON r."versionId" = rt."A"
     WHERE rt."B" = ${tableVersion}
   `;
+}
+
+async function schemaHashOf(
+  prisma: PrismaService,
+  revisionId: string,
+  tableId: string,
+): Promise<string | undefined> {
+  const [row] = await prisma.$queryRaw<{ hash: string }[]>`
+    SELECT r."hash" FROM "_RevisionToTable" rvt
+    JOIN "Table" t ON t."versionId" = rvt."B" AND t."id" = 'revisium_schema_table'
+    JOIN "_RowToTable" rt ON rt."B" = t."versionId"
+    JOIN "Row" r ON r."versionId" = rt."A" AND r."id" = ${tableId}
+    WHERE rvt."A" = ${revisionId}
+  `;
+  return row?.hash;
+}
+
+async function mutableHeadTables(
+  prisma: PrismaService,
+  headRevisionId: string,
+): Promise<string[]> {
+  const tables = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT t."id" FROM "_RevisionToTable" rvt JOIN "Table" t ON t."versionId" = rvt."B"
+    WHERE rvt."A" = ${headRevisionId} AND NOT t."readonly"
+  `;
+  return tables.length > 0
+    ? [`head: mutable table versions ${tables.map(({ id }) => id).join(', ')}`]
+    : [];
 }
 
 function compareRows(
   label: string,
   stored: StoredRow[],
   expected: RowsById,
-  mustBeReadonly: boolean,
+  rules: { mustBeReadonly: boolean; schemaHash: string | undefined },
 ): string[] {
   const seen = new Set<string>();
   const problems: Record<string, string[]> = {
@@ -390,6 +425,7 @@ function compareRows(
     duplicate: [],
     data: [],
     hash: [],
+    schemaHash: [],
     mutable: [],
   };
 
@@ -409,7 +445,10 @@ function compareRows(
     if (row.hash !== objectHash(row.data)) {
       problems.hash?.push(row.id);
     }
-    if (mustBeReadonly && !row.readonly) {
+    if (row.schemaHash !== rules.schemaHash) {
+      problems.schemaHash?.push(row.id);
+    }
+    if (rules.mustBeReadonly && !row.readonly) {
       problems.mutable?.push(row.id);
     }
   }

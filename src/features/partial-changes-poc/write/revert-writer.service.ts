@@ -16,6 +16,7 @@ import {
   RowsWithFiles,
   rowsWithFiles,
 } from 'src/features/partial-changes-poc/write/file-references';
+import { SnapshotReader } from 'src/features/partial-changes-poc/snapshot/snapshot-reader.service';
 import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
@@ -33,6 +34,7 @@ export class RevertWriter {
     private readonly versionWriter: VersionWriter,
     private readonly diffService: DiffService,
     private readonly fileUsageIntegration: FileUsageIntegrationService,
+    private readonly snapshotReader: SnapshotReader,
   ) {}
 
   private get db() {
@@ -46,8 +48,11 @@ export class RevertWriter {
 
     for (const target of plan.target.tables) {
       const change = await this.revertTable(target, filesToRegister);
-      if (change) {
-        linkChanges.push(change);
+      const settled = target.draftFollowsHead
+        ? await this.followHeadWhenContentEqual(target, change)
+        : change;
+      if (settled) {
+        linkChanges.push(settled);
       }
     }
 
@@ -66,9 +71,6 @@ export class RevertWriter {
     filesToRegister: RowsWithFiles[],
   ): Promise<TableLinkChange | undefined> {
     const { head, draft } = target.table.pair;
-    if (target.draftFollowsHead) {
-      return this.replaceDraftVersion(draft, head);
-    }
 
     switch (target.outcome) {
       case 'unchanged':
@@ -92,6 +94,21 @@ export class RevertWriter {
       default:
         throw new Error(`Cannot revert table ${target.table.tableId}`);
     }
+  }
+
+  private async followHeadWhenContentEqual(
+    target: TargetTable,
+    change: TableLinkChange | undefined,
+  ): Promise<TableLinkChange | undefined> {
+    const { head, draft } = target.table.pair;
+    const result = change ? change.connect : draft?.versionId;
+    if (!head || !result) {
+      return change;
+    }
+    if (await this.snapshotReader.contentDiffers(result, head.versionId)) {
+      return change;
+    }
+    return this.replaceDraftVersion(draft, head);
   }
 
   private replaceDraftVersion(

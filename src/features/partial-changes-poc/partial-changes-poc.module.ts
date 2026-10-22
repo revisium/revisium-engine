@@ -12,6 +12,7 @@ import { PartialChangesApiService } from 'src/features/partial-changes-poc/parti
 import { ChangePlanner } from 'src/features/partial-changes-poc/planning/change-planner.service';
 import { OperationEstimator } from 'src/features/partial-changes-poc/planning/operation-estimator.service';
 import { OperationLimits } from 'src/features/partial-changes-poc/planning/operation-limits.service';
+import { ReadScope } from 'src/features/partial-changes-poc/planning/read-scope.service';
 import { TargetValidator } from 'src/features/partial-changes-poc/planning/target-validator.service';
 import { ListChangesHandler } from 'src/features/partial-changes-poc/queries/handlers/list-changes.handler';
 import { PreviewChangesHandler } from 'src/features/partial-changes-poc/queries/handlers/preview-changes.handler';
@@ -47,6 +48,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     ChangePlanner,
     OperationLimits,
     OperationEstimator,
+    ReadScope,
     TargetAssembler,
     RowMerger,
     DependencyClosure,

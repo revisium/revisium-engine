@@ -394,8 +394,9 @@ describe('table lifecycle as structure units', () => {
       expect(preview.counts).toEqual({
         selected: 1,
         required: 0,
-        remaining: 1,
+        remaining: 0,
       });
+      expect(preview.unreadTables).toBe(1);
       expect(result.status).toBe('applied');
       await expectReplicaMirrorsHead(replica, scenario);
     });

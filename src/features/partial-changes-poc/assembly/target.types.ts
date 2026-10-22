@@ -3,6 +3,7 @@ import type {
   CatalogueRow,
   CatalogueTable,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
+import type { RowColumns } from 'src/features/partial-changes-poc/catalogue/row-columns';
 import type {
   Blocker,
   ChangeOperation,
@@ -36,7 +37,7 @@ export type RowOutcome =
       data: Record<string, unknown>;
       hash: string;
       schemaHash: string;
-      metaSource: RowVersion;
+      columns: RowColumns;
     };
 
 export interface TargetRow {

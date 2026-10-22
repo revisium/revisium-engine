@@ -20,6 +20,7 @@ interface OutcomeCounts {
   draftRows: number;
   headNewVersions: number;
   headMutableRows: number;
+  headFormulaViolations: number;
   draftDiffersFromHead: number;
 }
 
@@ -75,6 +76,7 @@ function expectedCounts(
     draftRows: rows,
     headNewVersions,
     headMutableRows: 0,
+    headFormulaViolations: 0,
     draftDiffersFromHead,
   };
 }
@@ -95,8 +97,8 @@ async function readCounts(
   const [counts] = await kit.prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe('SET LOCAL max_parallel_workers_per_gather = 0');
     return tx.$queryRaw<OutcomeCounts[]>`
-    WITH h AS (
-      SELECT r."createdId", r."hash", r."readonly", r."versionId"
+    WITH h AS MATERIALIZED (
+      SELECT r."createdId", r."hash", r."readonly", r."versionId", r."data"
       FROM "_RowToTable" rt JOIN "Row" r ON r."versionId" = rt."A" WHERE rt."B" = ${head}
     ), d AS (
       SELECT r."createdId", r."hash"
@@ -109,6 +111,9 @@ async function readCounts(
         SELECT 1 FROM "_RowToTable" o WHERE o."B" = ${originalHead} AND o."A" = h."versionId"
       )) AS "headNewVersions",
       (SELECT count(*)::int FROM h WHERE NOT h."readonly") AS "headMutableRows",
+      (SELECT count(*)::int FROM h
+        WHERE (h."data"->>'total')::numeric IS DISTINCT FROM
+              (h."data"->>'price')::numeric * (h."data"->>'qty')::numeric) AS "headFormulaViolations",
       (SELECT count(*)::int FROM h JOIN d ON d."createdId" = h."createdId"
         WHERE d."hash" <> h."hash") AS "draftDiffersFromHead"
   `;

@@ -8,6 +8,7 @@ import {
 } from 'src/features/partial-changes-poc/assembly/target.types';
 import {
   CatalogueTable,
+  catalogueRowOf,
   structureUnitOfOwner,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
 import {
@@ -16,6 +17,7 @@ import {
   RowVersion,
   sideOf,
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import { columnsOf } from 'src/features/partial-changes-poc/catalogue/row-columns';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 
 export interface SystemAssemblyInput extends AssemblyInput {
@@ -235,10 +237,7 @@ function mixedRows(
   const dropped: TargetRow[] = linked
     .filter((row) => !desiredIds.has(row.versionId))
     .map((row) => ({
-      row: {
-        pair: { createdId: row.createdId, [linkSide]: row },
-        fieldUnits: new Map(),
-      },
+      row: catalogueRowOf({ createdId: row.createdId, [linkSide]: row }),
       outcome: { kind: 'absent' },
     }));
 
@@ -251,10 +250,7 @@ function mixedRows(
     }
     return [
       {
-        row: {
-          pair: { createdId: row.version.createdId },
-          fieldUnits: new Map(),
-        },
+        row: catalogueRowOf({ createdId: row.version.createdId }),
         outcome: { kind: 'other', version: row.version },
       },
     ];
@@ -265,7 +261,7 @@ function mixedRows(
 
 function newSystemRow(row: Extract<Desired, { kind: 'data' }>): TargetRow {
   return {
-    row: { pair: { createdId: row.createdId }, fieldUnits: new Map() },
+    row: catalogueRowOf({ createdId: row.createdId }),
     outcome: {
       kind: 'merged',
       createdId: row.createdId,
@@ -273,7 +269,7 @@ function newSystemRow(row: Extract<Desired, { kind: 'data' }>): TargetRow {
       data: row.data as Record<string, unknown>,
       hash: objectHash(row.data as object),
       schemaHash: row.metaSource.schemaHash,
-      metaSource: row.metaSource,
+      columns: columnsOf(row.metaSource),
     },
   };
 }

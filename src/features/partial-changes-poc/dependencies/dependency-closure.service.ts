@@ -19,14 +19,23 @@ export interface ClosureInput extends Omit<AssemblyInput, 'applied'> {
   selected: ReadonlySet<string>;
   required: ReadonlyMap<string, RequiredReason>;
   excluded: ReadonlySet<string>;
+  admit: (applied: ReadonlySet<string>) => Promise<Blocker[]>;
 }
 
-export interface ClosureResult {
-  applied: Set<string>;
-  required: Map<string, RequiredReason>;
-  blockers: Blocker[];
-  target: TargetState;
-}
+export type ClosureResult =
+  | {
+      kind: 'closed';
+      applied: Set<string>;
+      required: Map<string, RequiredReason>;
+      blockers: Blocker[];
+      target: TargetState;
+    }
+  | {
+      kind: 'refused';
+      applied: Set<string>;
+      required: Map<string, RequiredReason>;
+      blockers: Blocker[];
+    };
 
 @Injectable()
 export class DependencyClosure {
@@ -41,6 +50,11 @@ export class DependencyClosure {
     const required = new Map(input.required);
 
     for (;;) {
+      const refusals = await input.admit(applied);
+      if (refusals.length > 0) {
+        return { kind: 'refused', applied, required, blockers: refusals };
+      }
+
       const target = await this.assembler.assemble({ ...input, applied });
       const findings = [
         ...(await this.structureChecks.find({
@@ -60,6 +74,7 @@ export class DependencyClosure {
 
       if (added === 0) {
         return {
+          kind: 'closed',
           applied,
           required,
           blockers: uniqueBlockers([...target.blockers, ...blockers]),

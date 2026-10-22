@@ -14,6 +14,8 @@ export interface SelectionItems {
   views?: string[];
   sharedSchemas?: string[];
   rows?: RowSelector[];
+  renames?: RowSelector[];
+  rowColumns?: RowSelector[];
   fields?: FieldSelector[];
 }
 
@@ -31,6 +33,7 @@ export type UnitKind =
   | 'rowDelete'
   | 'rowReplace'
   | 'rowRename'
+  | 'rowColumns'
   | 'field'
   | 'structure'
   | 'views'
@@ -43,6 +46,7 @@ export interface PublicUnit {
   rowId?: string;
   previousRowId?: string;
   path?: string;
+  columns?: string[];
 }
 
 export type RequiredReasonCode =
@@ -108,7 +112,7 @@ export interface MixedTableEstimate {
 export interface OperationEstimate {
   changedRows: number;
   mergedRows: number;
-  mergedRowsWithFormulas: number;
+  perRowWorkRows: number;
   mixedTables: MixedTableEstimate[];
 }
 
@@ -137,12 +141,14 @@ export interface PreviewChangesResult {
   sample: PublicUnit[];
   unmatched: UnmatchedSelection;
   estimate: OperationEstimate;
+  unreadTables: number;
 }
 
 export interface ListChangesInput {
   branch: ChangesBranch;
   cursor?: string;
   limit?: number;
+  tableId?: string;
 }
 
 export interface ListedUnit extends PublicUnit {
@@ -154,7 +160,6 @@ export interface ListedUnit extends PublicUnit {
 export interface ListChangesResult {
   headRevisionId: string;
   draftRevisionId: string;
-  total: number;
   units: ListedUnit[];
   nextCursor?: string;
 }
@@ -187,7 +192,7 @@ export interface ApplyChangesResult {
   headRevisionId?: string;
   draftRevisionId?: string;
   applied?: { selected: number; required: number };
-  remaining?: { units: number };
+  remaining?: { units: number; unreadTables: number };
   renumbered?: RenumberedMigrationId[];
   required?: RequiredUnit[];
   blockers?: Blocker[];

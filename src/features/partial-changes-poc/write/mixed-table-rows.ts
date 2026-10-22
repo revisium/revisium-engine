@@ -20,7 +20,7 @@ export function editsDraftInPlace(
 }
 
 export function copiesLinks(
-  target: TargetTable,
+  target: Pick<TargetTable, 'table' | 'linkSide' | 'publicId'>,
   operation: ChangeOperation,
 ): boolean {
   const draft = target.table.pair.draft;
@@ -28,16 +28,6 @@ export function copiesLinks(
     return true;
   }
   return !editsDraftInPlace(draft, target.publicId);
-}
-
-export function writesMixedTable(
-  target: TargetTable,
-  operation: ChangeOperation,
-): boolean {
-  return (
-    target.outcome === 'mixed' &&
-    !(operation === 'revert' && target.draftFollowsHead)
-  );
 }
 
 export function splitMixedTableRows(target: TargetTable): MixedTableRows {
@@ -64,11 +54,11 @@ export function splitMixedTableRows(target: TargetTable): MixedTableRows {
         createdId: outcome.createdId,
         id: outcome.id,
         data: outcome.data,
-        meta: outcome.metaSource.meta,
+        meta: outcome.columns.meta,
         hash: outcome.hash,
         schemaHash: outcome.schemaHash,
-        createdAt: outcome.metaSource.createdAt,
-        publishedAt: outcome.metaSource.publishedAt,
+        createdAt: outcome.columns.createdAt,
+        publishedAt: outcome.columns.publishedAt,
       });
     }
   }

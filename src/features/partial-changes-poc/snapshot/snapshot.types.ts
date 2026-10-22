@@ -36,6 +36,8 @@ export interface TablePair {
   createdId: string;
   head?: TableVersion;
   draft?: TableVersion;
+  affected: boolean;
+  rowsRead: boolean;
   changedRows: RowPair[];
   headSchema?: JsonSchema;
   draftSchema?: JsonSchema;
@@ -63,6 +65,25 @@ export interface ChangesSnapshot {
   system: SystemRows;
   changedRowCount: number;
   oversized: boolean;
+}
+
+export function isSystemPair(pair: TablePair): boolean {
+  return Boolean((pair.head ?? pair.draft)?.system);
+}
+
+export function hasChangedUserRows(pair: TablePair): boolean {
+  return Boolean(
+    pair.head &&
+    pair.draft &&
+    !isSystemPair(pair) &&
+    pair.head.versionId !== pair.draft.versionId,
+  );
+}
+
+export function unreadTableCount(snapshot: ChangesSnapshot): number {
+  return snapshot.tables.filter(
+    (pair) => hasChangedUserRows(pair) && !pair.rowsRead,
+  ).length;
 }
 
 export function sideOf<T>(

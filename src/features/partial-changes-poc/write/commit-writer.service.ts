@@ -16,6 +16,7 @@ import {
   RowsWithFiles,
   rowsWithFiles,
 } from 'src/features/partial-changes-poc/write/file-references';
+import { SnapshotReader } from 'src/features/partial-changes-poc/snapshot/snapshot-reader.service';
 import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
@@ -37,6 +38,7 @@ export class CommitWriter {
     private readonly versionWriter: VersionWriter,
     private readonly diffService: DiffService,
     private readonly fileUsageIntegration: FileUsageIntegrationService,
+    private readonly snapshotReader: SnapshotReader,
   ) {}
 
   private get db() {
@@ -188,7 +190,14 @@ export class CommitWriter {
     if (!draft) {
       return undefined;
     }
-    if (target.draftFollowsHead && headVersionId) {
+    if (
+      target.draftFollowsHead &&
+      headVersionId &&
+      !(await this.snapshotReader.contentDiffers(
+        headVersionId,
+        draft.versionId,
+      ))
+    ) {
       return headVersionId;
     }
     if (

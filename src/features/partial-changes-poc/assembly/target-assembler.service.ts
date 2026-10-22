@@ -1,13 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
-import { keepsNoUnits } from 'src/features/partial-changes-poc/assembly/remaining-units';
+import {
+  OutcomeInput,
+  planRow,
+  tableOutcomeOf,
+  planTable,
+  RowFlips,
+  settledOutcome,
+  TablePlan,
+  takenFromDraft,
+} from 'src/features/partial-changes-poc/assembly/outcome-plan';
 import { RowMerger } from 'src/features/partial-changes-poc/assembly/row-merger.service';
 import { assembleSystemTables } from 'src/features/partial-changes-poc/assembly/system-target';
 import {
-  Direction,
   RowOutcome,
-  TableOutcome,
   TargetRow,
   TargetState,
   TargetTable,
@@ -16,18 +23,21 @@ import {
 import {
   CatalogueRow,
   CatalogueTable,
-  ChangeCatalogue,
   schemaOfSide,
   toPublicUnit,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
 import {
+  columnsOf,
+  RowColumn,
+  RowColumns,
+  sameColumns,
+} from 'src/features/partial-changes-poc/catalogue/row-columns';
+import {
   Blocker,
-  ChangeOperation,
   DeferredValues,
 } from 'src/features/partial-changes-poc/partial-changes.types';
 import {
   ChangesSnapshot,
-  oppositeOf,
   RevisionSide,
   RowVersion,
   sideOf,
@@ -39,23 +49,15 @@ const EMPTY_SCHEMA = {
   properties: {},
 } as unknown as JsonSchema;
 
-export interface AssemblyInput {
+export interface AssemblyInput extends OutcomeInput {
   snapshot: ChangesSnapshot;
-  catalogue: ChangeCatalogue;
-  operation: ChangeOperation;
-  direction: Direction;
-  applied: ReadonlySet<string>;
-  preferOtherForUnitlessTables: boolean;
 }
 
-interface TableContext {
+interface TableContext extends TablePlan {
   input: AssemblyInput;
   table: CatalogueTable;
-  linkSide: RevisionSide;
   schema: JsonSchema;
   schemaHash: string;
-  structureDiffers: boolean;
-  takesOtherSide: (key: string) => boolean;
   blockers: Blocker[];
   deferred: DeferredValues[];
 }
@@ -106,17 +108,14 @@ export class TargetAssembler {
       return this.assembleWholeTable(table, input);
     }
 
-    const linkSide = this.structureSide(table, input);
-    const schema = schemaOfSide(table.pair, linkSide) ?? EMPTY_SCHEMA;
+    const plan = planTable(table, input);
+    const schema = schemaOfSide(table.pair, plan.linkSide) ?? EMPTY_SCHEMA;
     const context: TableContext = {
+      ...plan,
       input,
       table,
-      linkSide,
       schema,
       schemaHash: objectHash(schema),
-      structureDiffers: table.pair.structure?.differs ?? false,
-      takesOtherSide: (key) =>
-        takenFromDraft(input, key) !== (linkSide === 'draft'),
       ...findings,
     };
 
@@ -127,11 +126,15 @@ export class TargetAssembler {
 
     return {
       table,
-      outcome: this.tableOutcome(context, rows),
-      linkSide,
-      publicId: sideOf(table.pair, linkSide)?.id,
+      outcome: tableOutcomeOf(
+        table,
+        plan,
+        rows.map(({ row, outcome }) => ({ row, kind: outcome.kind })),
+      ),
+      linkSide: plan.linkSide,
+      publicId: sideOf(table.pair, plan.linkSide)?.id,
       schema,
-      structureSide: linkSide,
+      structureSide: plan.linkSide,
       rows,
     };
   }
@@ -155,78 +158,32 @@ export class TargetAssembler {
     };
   }
 
-  private structureSide(
-    table: CatalogueTable,
-    input: AssemblyInput,
-  ): RevisionSide {
-    if (!table.structureUnit) {
-      return input.direction.base;
-    }
-    return takenFromDraft(input, table.structureUnit) ? 'draft' : 'head';
-  }
-
-  private tableOutcome(context: TableContext, rows: TargetRow[]): TableOutcome {
-    const { table } = context;
-    if (table.kind === 'unchanged') {
-      return 'unchanged';
-    }
-
-    if (rows.every((row) => keepsLinkedRow(row, context.linkSide))) {
-      return 'base';
-    }
-
-    if (
-      !table.structureUnit &&
-      table.unitKeys.every((key) => context.takesOtherSide(key)) &&
-      rows.every(
-        ({ outcome }) => outcome.kind === 'other' || outcome.kind === 'absent',
-      )
-    ) {
-      return 'other';
-    }
-
-    return 'mixed';
-  }
-
   private async assembleRow(
     row: CatalogueRow,
     context: TableContext,
   ): Promise<RowOutcome> {
-    const base = sideOf(row.pair, context.linkSide);
-    const other = sideOf(row.pair, oppositeOf(context.linkSide));
-
-    if (row.existenceUnit && context.takesOtherSide(row.existenceUnit)) {
-      return other
-        ? this.bringOtherRow(row, other, context)
-        : { kind: 'absent' };
+    const plan = planRow(row, context);
+    switch (plan.kind) {
+      case 'convert':
+        return this.convertOtherRow(row, plan.other, context);
+      case 'merge':
+        return this.mergeRow(row, plan, context);
+      default:
+        return plan;
     }
-
-    if (!base) {
-      return { kind: 'absent' };
-    }
-
-    if (!other) {
-      return { kind: 'base', version: base };
-    }
-
-    return this.mergeRow(row, base, other, context);
   }
 
-  private async bringOtherRow(
+  private async convertOtherRow(
     row: CatalogueRow,
     other: RowVersion,
     context: TableContext,
   ): Promise<RowOutcome> {
-    if (!context.structureDiffers) {
-      return { kind: 'other', version: other };
-    }
-
     const converted = await this.convert(other, context);
     if (!converted) {
       return { kind: 'absent' };
     }
     this.recordDeferredValues(row, context);
-    return this.merged(row, converted, context);
+    return this.merged(row, converted, context, columnsOf(other));
   }
 
   private recordDeferredValues(row: CatalogueRow, context: TableContext): void {
@@ -279,27 +236,9 @@ export class TargetAssembler {
 
   private mergeRow(
     row: CatalogueRow,
-    base: RowVersion,
-    other: RowVersion,
+    { base, other, renameFlips, paths, columns }: RowFlips,
     context: TableContext,
   ): RowOutcome {
-    const renameFlips = Boolean(
-      row.renameUnit && context.takesOtherSide(row.renameUnit),
-    );
-    const paths = [...row.fieldUnits]
-      .filter(([, key]) => context.takesOtherSide(key))
-      .map(([path]) => path);
-
-    if (!renameFlips && paths.length === 0) {
-      return { kind: 'base', version: base };
-    }
-
-    const wholeRowFlips =
-      (!row.renameUnit || renameFlips) && paths.length === row.fieldUnits.size;
-    if (!context.structureDiffers && wholeRowFlips) {
-      return { kind: 'other', version: other };
-    }
-
     const merged = this.rowMerger.merge({
       schema: context.schema,
       base,
@@ -307,34 +246,34 @@ export class TargetAssembler {
       paths,
       takeOtherId: renameFlips,
     });
+    const mergedColumns = takeColumns(base, other, columns);
 
     if (
       !context.structureDiffers &&
       merged.hash === other.hash &&
-      merged.id === other.id
+      merged.id === other.id &&
+      sameColumns(mergedColumns, other)
     ) {
       return { kind: 'other', version: other };
     }
 
-    if (merged.hash === base.hash && merged.id === base.id) {
+    if (
+      merged.hash === base.hash &&
+      merged.id === base.id &&
+      sameColumns(mergedColumns, base)
+    ) {
       return { kind: 'base', version: base };
     }
 
-    return this.merged(row, merged, context);
+    return this.merged(row, merged, context, mergedColumns);
   }
 
   private merged(
     row: CatalogueRow,
     merged: { id: string; data: Record<string, unknown>; hash: string },
     context: TableContext,
+    columns: RowColumns,
   ): RowOutcome {
-    const { direction } = context.input;
-    const metaSource =
-      sideOf(row.pair, direction.base) ?? sideOf(row.pair, direction.other);
-    if (!metaSource) {
-      return { kind: 'absent' };
-    }
-
     return {
       kind: 'merged',
       createdId: row.pair.createdId,
@@ -342,7 +281,7 @@ export class TargetAssembler {
       data: merged.data,
       hash: merged.hash,
       schemaHash: context.schemaHash,
-      metaSource,
+      columns,
     };
   }
 
@@ -374,50 +313,29 @@ export class TargetAssembler {
   }
 }
 
+function takeColumns(
+  base: RowVersion,
+  other: RowVersion,
+  flipped: readonly RowColumn[],
+): RowColumns {
+  const columns = columnsOf(base);
+  if (flipped.includes('publishedAt')) {
+    columns.publishedAt = other.publishedAt;
+  }
+  if (flipped.includes('meta')) {
+    columns.meta = other.meta;
+  }
+  return columns;
+}
+
 function settleRemainingUnits(
   target: TargetTable,
   input: AssemblyInput,
 ): TargetTable {
-  const draftFollowsHead = keepsNoUnits(target.table, input);
-  if (
-    !draftFollowsHead ||
-    !input.preferOtherForUnitlessTables ||
-    target.table.kind === 'whole'
-  ) {
-    return { ...target, draftFollowsHead };
-  }
   return {
     ...target,
-    draftFollowsHead,
-    outcome: outcomeTaking(target, input.direction.other),
+    ...settledOutcome(target.table, target.outcome, target.linkSide, input),
   };
-}
-
-function outcomeTaking(target: TargetTable, side: RevisionSide): TableOutcome {
-  const { pair } = target.table;
-  const wanted = sideOf(pair, side);
-  if (!wanted) {
-    return target.outcome;
-  }
-  if (sideOf(pair, oppositeOf(side))?.versionId === wanted.versionId) {
-    return target.outcome;
-  }
-  return target.linkSide === side ? 'base' : 'other';
-}
-
-export function takenFromDraft(
-  input: Pick<AssemblyInput, 'operation' | 'applied'>,
-  key: string,
-): boolean {
-  const applied = input.applied.has(key);
-  return input.operation === 'commit' ? applied : !applied;
-}
-
-function keepsLinkedRow(row: TargetRow, linkSide: RevisionSide): boolean {
-  return (
-    row.outcome.kind === 'base' ||
-    (row.outcome.kind === 'absent' && !sideOf(row.row.pair, linkSide))
-  );
 }
 
 function sideFor(input: AssemblyInput, key: string): RevisionSide {

@@ -2,10 +2,7 @@ import {
   CatalogueUnit,
   ChangeCatalogue,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
-import {
-  FieldSelector,
-  Selection,
-} from 'src/features/partial-changes-poc/partial-changes.types';
+import { Selection } from 'src/features/partial-changes-poc/partial-changes.types';
 import {
   hasUnmatched,
   resolveSelection,
@@ -46,7 +43,9 @@ function candidatesOf(
     case 'rowReplace':
       return rowCandidates(catalogue, unit);
     case 'rowRename':
-      return renameCandidates(catalogue, unit);
+      return rowItemCandidates(catalogue, unit, 'renames');
+    case 'rowColumns':
+      return rowItemCandidates(catalogue, unit, 'rowColumns');
     case 'structure':
       return structureCandidates(catalogue, unit);
     case 'views':
@@ -76,22 +75,23 @@ function rowCandidates(
   return candidates;
 }
 
-function renameCandidates(
+function rowItemCandidates(
   catalogue: ChangeCatalogue,
   unit: CatalogueUnit,
+  item: 'renames' | 'rowColumns',
 ): UnitSelector[] {
   const { tableId } = unit;
-  const rowId = unit.rowId ?? '';
-  const fields: FieldSelector[] = [
-    ...(rowOf(catalogue, unit)?.fieldUnits.keys() ?? []),
-  ].map((path) => ({ tableId, rowId, path }));
-  const rows = [{ tableId, rowId }];
-
-  return [
-    {
-      selector: fields.length > 0 ? { rows, exclude: { fields } } : { rows },
-    },
+  const headRowId = rowOf(catalogue, unit)?.pair.head?.id;
+  const candidates: UnitSelector[] = [
+    { selector: { [item]: [{ tableId, rowId: unit.rowId ?? '' }] } },
   ];
+  if (headRowId !== undefined) {
+    candidates.push({
+      selector: { [item]: [{ tableId, rowId: headRowId, side: 'head' }] },
+      side: 'head',
+    });
+  }
+  return candidates;
 }
 
 function structureCandidates(

@@ -34,6 +34,7 @@ import {
   tooLargeBlockers,
 } from 'src/features/partial-changes-poc/planning/operation-estimator.service';
 import { OperationLimits } from 'src/features/partial-changes-poc/planning/operation-limits.service';
+import { ReadScope } from 'src/features/partial-changes-poc/planning/read-scope.service';
 import { TargetValidator } from 'src/features/partial-changes-poc/planning/target-validator.service';
 import { resolveSelection } from 'src/features/partial-changes-poc/selection/resolve-selection';
 import { SnapshotReader } from 'src/features/partial-changes-poc/snapshot/snapshot-reader.service';
@@ -54,6 +55,7 @@ export interface ChangePlan {
   ledger: LedgerPlan;
   fingerprint: string;
   estimate: OperationEstimate;
+  refused: boolean;
 }
 
 @Injectable()
@@ -65,6 +67,7 @@ export class ChangePlanner {
     private readonly viewsProjection: ViewsProjection,
     private readonly limits: OperationLimits,
     private readonly estimator: OperationEstimator,
+    private readonly readScope: ReadScope,
   ) {}
 
   async plan(input: {
@@ -73,13 +76,17 @@ export class ChangePlanner {
     selection: Selection;
   }): Promise<ChangePlan> {
     const limits = this.limits.values();
-    const snapshot = await this.snapshotReader.read(input.branch, limits);
+    const snapshot = await this.snapshotReader.read(input.branch, {
+      scope: this.readScope.forSelection(input.selection),
+      readAll: limits.readScope === 'all',
+      maxChangedRows: limits.maxChangedRows,
+    });
     const direction =
       input.operation === 'commit' ? COMMIT_DIRECTION : REVERT_DIRECTION;
     if (snapshot.oversized) {
-      return refusedPlan(input.operation, direction, snapshot, [
-        changedRowsBlocker(snapshot.changedRowCount, limits),
-      ]);
+      return refusedPlan(input.operation, direction, snapshot, {
+        blockers: [changedRowsBlocker(snapshot.changedRowCount, limits)],
+      });
     }
 
     const catalogue = buildChangeCatalogue(
@@ -87,19 +94,44 @@ export class ChangePlanner {
       this.viewsProjection.migrator,
     );
     const resolution = resolveSelection(catalogue, input.selection);
-
-    const closure = await this.dependencyClosure.close({
-      snapshot,
+    const outcomeInput = {
       catalogue,
       operation: input.operation,
       direction,
-      selected: resolution.selected,
-      required: resolution.required,
-      excluded: resolution.excluded,
       preferOtherForUnitlessTables: Boolean(
         input.selection.all && !input.selection.exclude,
       ),
+    };
+    const linkCounts = new Map<string, number>();
+    let estimate = emptyEstimate(snapshot.changedRowCount);
+
+    const closure = await this.dependencyClosure.close({
+      ...outcomeInput,
+      snapshot,
+      selected: resolution.selected,
+      required: resolution.required,
+      excluded: resolution.excluded,
+      admit: async (applied) => {
+        estimate = await this.estimator.estimate({
+          ...outcomeInput,
+          applied,
+          changedRows: snapshot.changedRowCount,
+          linkCounts,
+        });
+        return tooLargeBlockers(estimate, limits);
+      },
     });
+    if (closure.kind === 'refused') {
+      return refusedPlan(input.operation, direction, snapshot, {
+        catalogue,
+        selected: resolution.selected,
+        required: closure.required,
+        applied: closure.applied,
+        unmatched: resolution.unmatched,
+        blockers: closure.blockers,
+        estimate,
+      });
+    }
 
     const ledger = planLedger({
       catalogue,
@@ -113,8 +145,6 @@ export class ChangePlanner {
       applied: closure.applied,
       ledger,
     });
-    const estimate = await this.estimator.estimate(snapshot, closure.target);
-
     return {
       operation: input.operation,
       snapshot,
@@ -127,7 +157,6 @@ export class ChangePlanner {
         ...resolution.blockers,
         ...closure.blockers,
         ...validationBlockers,
-        ...tooLargeBlockers(estimate, limits),
       ]),
       unmatched: resolution.unmatched,
       target: closure.target,
@@ -140,6 +169,7 @@ export class ChangePlanner {
         draftRowDigests: await this.draftRowDigests(catalogue, closure.applied),
       }),
       estimate,
+      refused: false,
     };
   }
 
@@ -162,18 +192,28 @@ function refusedPlan(
   operation: ChangeOperation,
   direction: Direction,
   snapshot: ChangesSnapshot,
-  blockers: Blocker[],
+  refusal: Partial<
+    Pick<
+      ChangePlan,
+      | 'catalogue'
+      | 'selected'
+      | 'required'
+      | 'applied'
+      | 'unmatched'
+      | 'estimate'
+    >
+  > & { blockers: Blocker[] },
 ): ChangePlan {
   return {
     operation,
     snapshot,
-    catalogue: emptyCatalogue(),
+    catalogue: refusal.catalogue ?? emptyCatalogue(),
     direction,
-    selected: new Set(),
-    required: new Map(),
-    applied: new Set(),
-    blockers,
-    unmatched: {},
+    selected: refusal.selected ?? new Set(),
+    required: refusal.required ?? new Map(),
+    applied: refusal.applied ?? new Set(),
+    blockers: refusal.blockers,
+    unmatched: refusal.unmatched ?? {},
     target: {
       operation,
       direction,
@@ -184,13 +224,13 @@ function refusedPlan(
     },
     ledger: { target: [], remaining: [], renumbered: [] },
     fingerprint: '',
-    estimate: {
-      changedRows: snapshot.changedRowCount,
-      mergedRows: 0,
-      mergedRowsWithFormulas: 0,
-      mixedTables: [],
-    },
+    estimate: refusal.estimate ?? emptyEstimate(snapshot.changedRowCount),
+    refused: true,
   };
+}
+
+function emptyEstimate(changedRows: number): OperationEstimate {
+  return { changedRows, mergedRows: 0, perRowWorkRows: 0, mixedTables: [] };
 }
 
 function uniqueBlockers(blockers: Blocker[]): Blocker[] {

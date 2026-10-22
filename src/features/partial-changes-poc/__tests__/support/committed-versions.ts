@@ -42,7 +42,7 @@ export async function readCommittedVersions(
   const rowVersionIds = [...new Set(Object.values(tableRows).flat())];
   const rows = await prisma.row.findMany({
     where: { versionId: { in: rowVersionIds } },
-    include: { fileBlobs: { select: { id: true } } },
+    include: { fileBlobs: { select: { id: true }, orderBy: { id: 'asc' } } },
   });
 
   return {

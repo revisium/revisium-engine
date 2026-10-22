@@ -15,6 +15,7 @@ import {
 } from 'src/features/partial-changes-poc/partial-changes.types';
 import { ChangePlan } from 'src/features/partial-changes-poc/planning/change-planner.service';
 import { hasUnmatched } from 'src/features/partial-changes-poc/selection/resolve-selection';
+import { unreadTableCount } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
 
 const SAMPLE_SIZE = 20;
 
@@ -88,6 +89,7 @@ export function toPreviewResult(
     sample: appliedSample(plan),
     unmatched: plan.unmatched,
     estimate: plan.estimate,
+    unreadTables: unreadTableCount(plan.snapshot),
   };
 }
 
@@ -106,17 +108,16 @@ export function refusalOf(
     };
   }
 
+  if (plan.refused) {
+    return blockedResult(plan);
+  }
+
   if (options.expected !== undefined && options.expected !== plan.fingerprint) {
     return { status: 'stale' };
   }
 
   if (status === 'blocked') {
-    return {
-      status: 'blocked',
-      blockers: planBlockers(plan),
-      required: requiredUnits(plan),
-      ...unmatchedOf(plan),
-    };
+    return blockedResult(plan);
   }
 
   if (status === 'required') {
@@ -124,6 +125,15 @@ export function refusalOf(
   }
 
   return undefined;
+}
+
+function blockedResult(plan: ChangePlan): ApplyChangesResult {
+  return {
+    status: 'blocked',
+    blockers: planBlockers(plan),
+    required: requiredUnits(plan),
+    ...unmatchedOf(plan),
+  };
 }
 
 function unmatchedOf(plan: ChangePlan): Pick<ApplyChangesResult, 'unmatched'> {
@@ -147,7 +157,10 @@ export function appliedCounts(
   const counts = planCounts(plan);
   return {
     applied: { selected: counts.selected, required: counts.required },
-    remaining: { units: counts.remaining },
+    remaining: {
+      units: counts.remaining,
+      unreadTables: unreadTableCount(plan.snapshot),
+    },
   };
 }
 

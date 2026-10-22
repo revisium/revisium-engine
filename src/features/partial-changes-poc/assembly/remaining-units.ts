@@ -18,6 +18,9 @@ export function keepsNoUnits(
   if (table.kind === 'system') {
     return !systemTableKeepsUnits(table.tableId, input);
   }
+  if (!table.pair.affected || !table.pair.rowsRead) {
+    return false;
+  }
   return ownUnitsOf(table).every((key) => input.applied.has(key));
 }
 

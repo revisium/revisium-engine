@@ -69,11 +69,14 @@ describe(`partial changes at scale: ${datasetName(spec)}`, () => {
       return;
     }
     if (scaleCase === 'verify') {
+      const verification = await verifyDataDataset(kit, dataset, spec);
       emitResult({
         kind: 'verify',
         dataset: datasetName(spec),
-        ...(await verifyDataDataset(kit, dataset, spec)),
+        ...verification,
       });
+      expect(verification.comparisons).toEqual([]);
+      expect(verification.matches).toBe(true);
       return;
     }
 
@@ -88,6 +91,9 @@ describe(`partial changes at scale: ${datasetName(spec)}`, () => {
       runCase(kit, run, scaleCase, selection),
     );
     const { value, ...metrics } = measurement;
+    const checks = measurement.error
+      ? undefined
+      : await checkOutcome(kit, run, scaleCase, spec);
 
     emitResult({
       kind: 'operation',
@@ -96,15 +102,22 @@ describe(`partial changes at scale: ${datasetName(spec)}`, () => {
       operation: scaleCase,
       transactionTimeoutMs: Number(process.env.TRANSACTION_TIMEOUT ?? 0),
       result: summarize(value),
-      checks: measurement.error
-        ? undefined
-        : await checkOutcome(kit, run, scaleCase, spec),
+      checks,
       ...metrics,
     });
 
     if (!keepRuns) {
       await dropProjects(kit.prisma, exactProject(run.projectId));
     }
+    expect({
+      error: measurement.error,
+      status: statusOf(value),
+      checks: checks?.ok ? 'ok' : checks,
+    }).toEqual({
+      error: undefined,
+      status: expectedStatusOf(scaleCase),
+      checks: 'ok',
+    });
   });
 });
 
@@ -160,6 +173,23 @@ function selectionFor(scaleCase: ScaleCase, dataset: DataDatasetSpec) {
       return { all: true };
     default:
       return { rows };
+  }
+}
+
+function statusOf(value: unknown): string | undefined {
+  return (value as { status?: string } | undefined)?.status;
+}
+
+function expectedStatusOf(scaleCase: ScaleCase): string | undefined {
+  switch (scaleCase) {
+    case 'preview':
+    case 'preview-all':
+      return 'ready';
+    case 'native-commit':
+    case 'native-revert':
+      return undefined;
+    default:
+      return 'applied';
   }
 }
 

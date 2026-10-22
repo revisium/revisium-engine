@@ -135,6 +135,10 @@ class ItemsResolver {
     items.sharedSchemas?.forEach((id) => this.resolveSharedSchema(id, result));
     items.tableData?.forEach((id) => this.resolveTableData(id, result));
     items.rows?.forEach((selector) => this.resolveRow(selector, result));
+    items.renames?.forEach((selector) => this.resolveRename(selector, result));
+    items.rowColumns?.forEach((selector) =>
+      this.resolveRowColumns(selector, result),
+    );
     items.fields?.forEach((selector) => this.resolveField(selector, result));
 
     return result;
@@ -217,6 +221,32 @@ class ItemsResolver {
     }
 
     rowUnitKeys(row).forEach((key) => result.keys.add(key));
+  }
+
+  private resolveRename(selector: RowSelector, result: ItemsResolution): void {
+    const unit = this.rowOf(selector)?.renameUnit;
+    if (!unit) {
+      addUnmatched(result, 'renames', selector);
+      return;
+    }
+    result.keys.add(unit);
+  }
+
+  private resolveRowColumns(
+    selector: RowSelector,
+    result: ItemsResolution,
+  ): void {
+    const unit = this.rowOf(selector)?.columnsUnit;
+    if (!unit) {
+      addUnmatched(result, 'rowColumns', selector);
+      return;
+    }
+    result.keys.add(unit);
+  }
+
+  private rowOf(selector: RowSelector): CatalogueRow | undefined {
+    const table = this.tableById(selector.tableId);
+    return table ? findRow(table, selector.rowId, selector.side) : undefined;
   }
 
   private resolveField(selector: FieldSelector, result: ItemsResolution): void {
@@ -357,9 +387,12 @@ export function findRow(
 }
 
 export function rowUnitKeys(row: CatalogueRow): string[] {
-  return [row.existenceUnit, row.renameUnit, ...row.fieldUnits.values()].filter(
-    (key): key is string => key !== undefined,
-  );
+  return [
+    row.existenceUnit,
+    row.renameUnit,
+    row.columnsUnit,
+    ...row.fieldUnits.values(),
+  ].filter((key): key is string => key !== undefined);
 }
 
 function addUnmatched<K extends keyof SelectionItems>(

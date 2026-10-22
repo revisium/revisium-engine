@@ -7,7 +7,7 @@ import {
   toPointer,
 } from 'src/features/partial-changes-poc/catalogue/json-pointer';
 
-export type LeafKind = 'value' | 'atomic' | 'computed';
+export type LeafKind = 'value' | 'atomic' | 'computed' | 'publishedAt';
 
 export type SchemaNode = Record<string, unknown>;
 
@@ -30,7 +30,7 @@ export function diffLeafPointers(
   after: unknown,
 ): string[] {
   return leaves
-    .filter((leaf) => leaf.kind !== 'computed')
+    .filter((leaf) => storesValueInData(leaf))
     .filter(
       (leaf) =>
         !isDeepStrictEqual(
@@ -39,6 +39,10 @@ export function diffLeafPointers(
         ),
     )
     .map((leaf) => leaf.pointer);
+}
+
+export function storesValueInData(leaf: SchemaLeaf): boolean {
+  return leaf.kind === 'value' || leaf.kind === 'atomic';
 }
 
 export function findComputedLeaf(
@@ -74,7 +78,7 @@ function collect(
 
 function leafKind(node: SchemaNode): LeafKind {
   if ('$ref' in node) {
-    return node.$ref === SystemSchemaIds.File ? 'atomic' : 'computed';
+    return refLeafKind(node.$ref);
   }
 
   if ('x-formula' in node) {
@@ -82,4 +86,11 @@ function leafKind(node: SchemaNode): LeafKind {
   }
 
   return node.type === 'array' ? 'atomic' : 'value';
+}
+
+function refLeafKind(ref: unknown): LeafKind {
+  if (ref === SystemSchemaIds.File) {
+    return 'atomic';
+  }
+  return ref === SystemSchemaIds.RowPublishedAt ? 'publishedAt' : 'computed';
 }

@@ -90,7 +90,15 @@ function rowPart(version: RowVersion | undefined): string {
   }
   let part = rowParts.get(version);
   if (part === undefined) {
-    part = `${version.versionId}:${version.id}:${version.hash}:${new Date(version.updatedAt).getTime()}`;
+    part = [
+      version.versionId,
+      version.id,
+      version.hash,
+      version.schemaHash,
+      new Date(version.publishedAt).getTime(),
+      JSON.stringify(version.meta ?? null),
+      new Date(version.updatedAt).getTime(),
+    ].join(':');
     rowParts.set(version, part);
   }
   return part;

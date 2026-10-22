@@ -1,4 +1,5 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
+import type { RowColumn } from 'src/features/partial-changes-poc/catalogue/row-columns';
 import type { SchemaLeaf } from 'src/features/partial-changes-poc/catalogue/schema-leaves';
 import type {
   PublicUnit,
@@ -25,13 +26,20 @@ export interface CatalogueUnit {
   rowId?: string;
   previousRowId?: string;
   path?: string;
+  columns?: RowColumn[];
 }
 
 export interface CatalogueRow {
   pair: RowPair;
   existenceUnit?: string;
   renameUnit?: string;
+  columnsUnit?: string;
   fieldUnits: Map<string, string>;
+  columnOwners: Map<RowColumn, string>;
+}
+
+export function catalogueRowOf(pair: RowPair): CatalogueRow {
+  return { pair, fieldUnits: new Map(), columnOwners: new Map() };
 }
 
 export type CatalogueTableKind = 'data' | 'whole' | 'system' | 'unchanged';
@@ -131,6 +139,10 @@ export function toPublicUnit(unit: CatalogueUnit): PublicUnit {
 
   if (unit.path !== undefined) {
     result.path = unit.path;
+  }
+
+  if (unit.columns !== undefined) {
+    result.columns = [...unit.columns];
   }
 
   return result;

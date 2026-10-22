@@ -9,13 +9,14 @@ import {
 
 export type LeafKind = 'value' | 'atomic' | 'computed';
 
+export type SchemaNode = Record<string, unknown>;
+
 export interface SchemaLeaf {
   pointer: string;
   segments: string[];
   kind: LeafKind;
+  node: SchemaNode;
 }
-
-type SchemaNode = Record<string, unknown>;
 
 export function collectSchemaLeaves(schema: JsonSchema): SchemaLeaf[] {
   const leaves: SchemaLeaf[] = [];
@@ -63,7 +64,12 @@ function collect(
     return;
   }
 
-  leaves.push({ pointer: toPointer(segments), segments, kind: leafKind(node) });
+  leaves.push({
+    pointer: toPointer(segments),
+    segments,
+    kind: leafKind(node),
+    node,
+  });
 }
 
 function leafKind(node: SchemaNode): LeafKind {

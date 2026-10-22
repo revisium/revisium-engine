@@ -42,19 +42,16 @@ export class TargetIndex {
   }
 
   private indexTable(target: TargetTable): IndexedTable | undefined {
-    const { direction } = this.state;
-    const version = targetTableVersion(target, direction);
-    if (!version || version.system) {
+    const version = targetTableVersion(target);
+    if (!version || version.system || !target.publicId) {
       return undefined;
     }
 
-    const side = target.outcome === 'other' ? direction.other : direction.base;
-    const pair = target.table.pair;
     const indexed: IndexedTable = {
       target,
-      publicId: version.id,
+      publicId: target.publicId,
       version,
-      schema: side === 'head' ? pair.headSchema : pair.draftSchema,
+      schema: target.schema,
       resultIds: new Map(),
       touchedIds: new Set(),
       otherIds: new Map(),

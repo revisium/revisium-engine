@@ -1,12 +1,20 @@
+import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type {
   CatalogueRow,
   CatalogueTable,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
 import type {
+  Blocker,
+  ChangeOperation,
+} from 'src/features/partial-changes-poc/partial-changes.types';
+import {
+  oppositeOf,
   RevisionSide,
   RowVersion,
+  sideOf,
   TableVersion,
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import type { TableViewsData } from 'src/features/views/types';
 
 export interface Direction {
   base: RevisionSide;
@@ -22,11 +30,12 @@ export type RowOutcome =
   | { kind: 'other'; version: RowVersion }
   | {
       kind: 'merged';
+      createdId: string;
       id: string;
       data: Record<string, unknown>;
       hash: string;
-      base: RowVersion;
-      idFromOther: boolean;
+      schemaHash: string;
+      metaSource: RowVersion;
     };
 
 export interface TargetRow {
@@ -34,22 +43,32 @@ export interface TargetRow {
   outcome: RowOutcome;
 }
 
-export type TableOutcome =
-  | 'unchanged'
-  | 'base'
-  | 'other'
-  | 'mixed'
-  | 'mixedSystemUnsupported';
+export type TableOutcome = 'unchanged' | 'absent' | 'base' | 'other' | 'mixed';
 
 export interface TargetTable {
   table: CatalogueTable;
   outcome: TableOutcome;
+  linkSide: RevisionSide;
+  publicId?: string;
+  schema?: JsonSchema;
+  structureSide?: RevisionSide;
   rows: TargetRow[];
 }
 
+export interface ViewsTarget {
+  table: CatalogueTable;
+  publicId: string;
+  viewsSide: RevisionSide;
+  structureSide: RevisionSide;
+  doc?: TableViewsData;
+}
+
 export interface TargetState {
+  operation: ChangeOperation;
   direction: Direction;
   tables: TargetTable[];
+  views: ViewsTarget[];
+  blockers: Blocker[];
 }
 
 export function outcomeId(outcome: RowOutcome): string | undefined {
@@ -76,11 +95,13 @@ export function outcomeData(outcome: RowOutcome): unknown {
 
 export function targetTableVersion(
   target: TargetTable,
-  direction: Direction,
 ): TableVersion | undefined {
   const { pair } = target.table;
-  if (target.outcome === 'other') {
-    return direction.other === 'head' ? pair.head : pair.draft;
+  if (target.outcome === 'absent') {
+    return undefined;
   }
-  return direction.base === 'head' ? pair.head : pair.draft;
+  if (target.outcome === 'other') {
+    return sideOf(pair, oppositeOf(target.linkSide));
+  }
+  return sideOf(pair, target.linkSide);
 }

@@ -3,7 +3,6 @@ import type { JsonSchemaStore } from '@revisium/schema-toolkit/model';
 import type { JsonSchema, JsonValue } from '@revisium/schema-toolkit/types';
 import {
   outcomeData,
-  RowOutcome,
   TargetRow,
   TargetState,
 } from 'src/features/partial-changes-poc/assembly/target.types';
@@ -18,7 +17,10 @@ import {
   Blocker,
   RequiredReason,
 } from 'src/features/partial-changes-poc/partial-changes.types';
-import { sideOf } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import {
+  RevisionSide,
+  sideOf,
+} from 'src/features/partial-changes-poc/snapshot/snapshot.types';
 import { getForeignKeyReferences } from 'src/features/share/foreign-key-references';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { getForeignKeyJsonPaths } from 'src/features/share/utils/get-foreign-key-json-paths';
@@ -52,19 +54,23 @@ export class TargetConsistencyChecks {
     const sideNames = sideNamesOf(state);
 
     return [
-      ...this.idCollisions(index),
+      ...this.idCollisions(index, applied),
       ...(await this.danglingReferences(index, applied, sideNames)),
       ...(await this.referencesToRemovedRows(index, sideNames)),
     ];
   }
 
-  private idCollisions(index: TargetIndex): Finding[] {
+  private idCollisions(
+    index: TargetIndex,
+    applied: ReadonlySet<string>,
+  ): Finding[] {
+    const { base } = index.state.direction;
     return index.tables.flatMap((table) =>
       [...table.resultIds]
         .filter(([, rows]) => rows.length > 1)
         .flatMap(([id, rows]) =>
           rows
-            .filter(({ outcome }) => keepsBaseId(outcome))
+            .filter(({ row }) => keepsBaseId(row, id, base, applied))
             .map(({ row }) => this.moveAwayFromId(index, table, row, id)),
         ),
     );
@@ -127,8 +133,11 @@ export class TargetConsistencyChecks {
 
     for (const reference of references) {
       const target = index.table(reference.tableId);
-      if (!target || target.touchedIds.has(reference.rowId)) {
-        if (!target?.resultIds.has(reference.rowId)) {
+      if (!target) {
+        continue;
+      }
+      if (target.touchedIds.has(reference.rowId)) {
+        if (!target.resultIds.has(reference.rowId)) {
           missing.push(reference);
         }
         continue;
@@ -262,20 +271,13 @@ export class TargetConsistencyChecks {
       because: `${referrer.publicId}/${row.id} references ${removedFrom.publicId}/${row.value}, which the selection removes from the ${sideNames.target}`,
     };
 
-    if (
-      referrer.target.table.kind === 'structure' &&
-      referrer.target.outcome === 'base'
-    ) {
-      return unitOrBlocker(referrer.target.table.unitKeys[0], reason);
-    }
-
     return unitOrBlocker(
       this.providerUnit(index, removedFrom.publicId, row.value),
       { ...reason, code: 'referencedRowMissing' },
     );
   }
 
-  private providerUnit(
+  providerUnit(
     index: TargetIndex,
     tableId: string,
     rowId: string,
@@ -283,10 +285,6 @@ export class TargetConsistencyChecks {
     const table = index.table(tableId);
     if (!table) {
       return undefined;
-    }
-
-    if (table.target.table.kind === 'structure') {
-      return table.target.table.unitKeys[0];
     }
 
     const row = table.otherIds.get(rowId);
@@ -325,12 +323,12 @@ export class TargetConsistencyChecks {
   }
 }
 
-interface SideNames {
+export interface SideNames {
   target: string;
   other: string;
 }
 
-function sideNamesOf(state: TargetState): SideNames {
+export function sideNamesOf(state: TargetState): SideNames {
   return state.direction.other === 'draft'
     ? { target: 'new Head', other: 'Draft' }
     : { target: 'reverted Draft', other: 'Head' };
@@ -347,10 +345,16 @@ function rowIdOf(row: TargetRow): string {
   return outcome.version.id;
 }
 
-function keepsBaseId(outcome: RowOutcome): boolean {
+function keepsBaseId(
+  row: CatalogueRow,
+  id: string,
+  base: RevisionSide,
+  applied: ReadonlySet<string>,
+): boolean {
+  const unit = row.renameUnit ?? row.existenceUnit;
   return (
-    outcome.kind === 'base' ||
-    (outcome.kind === 'merged' && !outcome.idFromOther)
+    sideOf(row.pair, base)?.id === id &&
+    !(unit !== undefined && applied.has(unit))
   );
 }
 
@@ -368,7 +372,7 @@ function coveringUnit(row: CatalogueRow, path: string): string | undefined {
   return undefined;
 }
 
-function unitOrBlocker(
+export function unitOrBlocker(
   unit: string | undefined,
   reason: RequiredReason,
 ): Finding {

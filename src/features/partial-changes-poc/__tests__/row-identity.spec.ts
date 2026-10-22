@@ -234,5 +234,25 @@ describe('row identity units', () => {
         'first',
       );
     });
+
+    it('addresses the deletion of an id taken over by a rename with side head', async () => {
+      const scenario = await ChangesScenario.committed(kit, {
+        products: {
+          schema: productSchema,
+          rows: { a: product('first', 1), b: product('second', 2) },
+        },
+      });
+      await scenario.removeRow('products', 'b');
+      await scenario.renameRow('products', 'a', 'b');
+
+      await scenario.commit({
+        rows: [{ tableId: 'products', rowId: 'b', side: 'head' }],
+      });
+
+      expect(await scenario.headRowIds('products')).toEqual(['a']);
+      expect((await scenario.headRow('products', 'a')).data.title).toBe(
+        'first',
+      );
+    });
   });
 });

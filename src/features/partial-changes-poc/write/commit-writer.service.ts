@@ -1,10 +1,17 @@
 import { Injectable } from '@nestjs/common';
+import objectHash from 'object-hash';
 import { TargetTable } from 'src/features/partial-changes-poc/assembly/target.types';
 import { ChangePlan } from 'src/features/partial-changes-poc/planning/change-planner.service';
+import {
+  oppositeOf,
+  sideOf,
+  TableVersion,
+} from 'src/features/partial-changes-poc/snapshot/snapshot.types';
 import { splitMixedTableRows } from 'src/features/partial-changes-poc/write/mixed-table-rows';
 import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
+import { SystemTables } from 'src/features/share/system-tables.consts';
 import { IdService } from 'src/infrastructure/database/id.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -35,27 +42,24 @@ export class CommitWriter {
 
   async write(plan: ChangePlan, comment?: string): Promise<CommitWriteResult> {
     const { snapshot } = plan;
-    const draftTableVersionIds = this.currentDraftTableVersionIds(plan);
     const headTables: string[] = [];
     const mergedRows: MergedRowsOfTable[] = [];
 
     for (const target of plan.target.tables) {
-      const versionId = await this.headTableVersion(plan, target, mergedRows);
+      const versionId = await this.headTableVersion(target, mergedRows);
       if (versionId) {
         headTables.push(versionId);
       }
     }
 
+    const draftTables = await this.nextDraftTableVersionIds(plan);
     await this.retirePreviousHead(snapshot.headRevisionId);
     await this.promoteDraftToHead(
       snapshot.draftRevisionId,
       headTables,
       comment,
     );
-    const nextDraftRevisionId = await this.createNextDraft(
-      plan,
-      draftTableVersionIds,
-    );
+    const nextDraftRevisionId = await this.createNextDraft(plan, draftTables);
     await this.registerFileReferences(snapshot.draftRevisionId, mergedRows);
     await this.recomputeNextDraftHasChanges(
       snapshot.draftRevisionId,
@@ -69,54 +73,56 @@ export class CommitWriter {
     };
   }
 
-  private currentDraftTableVersionIds(plan: ChangePlan): string[] {
-    return plan.snapshot.tables
-      .map((pair) => pair.draft?.versionId)
-      .filter((versionId): versionId is string => versionId !== undefined);
-  }
-
   private async headTableVersion(
-    plan: ChangePlan,
     target: TargetTable,
     mergedRows: MergedRowsOfTable[],
   ): Promise<string | undefined> {
-    const { head, draft } = target.table.pair;
+    const { pair } = target.table;
 
     switch (target.outcome) {
+      case 'absent':
+        return undefined;
       case 'unchanged':
       case 'base':
-        return head?.versionId;
+        return this.linkWhole(target, target.linkSide);
       case 'other':
-        if (draft) {
-          await this.versionWriter.lockTableWithRows(draft.versionId);
-        }
-        return draft?.versionId;
+        return this.linkWhole(target, oppositeOf(target.linkSide));
       case 'mixed':
-        return this.assembleMixedHeadTable(plan, target, mergedRows);
+        return this.assembleMixedHeadTable(target, mergedRows);
       default:
-        throw new Error(`Cannot commit table ${target.table.tableId}`);
+        throw new Error(`Cannot commit table ${pair.createdId}`);
     }
   }
 
+  private async linkWhole(
+    target: TargetTable,
+    side: 'head' | 'draft',
+  ): Promise<string | undefined> {
+    const version = sideOf(target.table.pair, side);
+    if (version && side === 'draft') {
+      await this.versionWriter.lockTableWithRows(version.versionId);
+    }
+    return version?.versionId;
+  }
+
   private async assembleMixedHeadTable(
-    plan: ChangePlan,
     target: TargetTable,
     mergedRows: MergedRowsOfTable[],
   ): Promise<string> {
-    const head = target.table.pair.head;
-    if (!head) {
-      throw new Error(`Table ${target.table.tableId} has no Head version`);
+    const source = sideOf(target.table.pair, target.linkSide);
+    if (!source) {
+      throw new Error(`Table ${target.table.tableId} has no source version`);
     }
 
-    const rows = splitMixedTableRows(target, plan.direction);
+    const rows = splitMixedTableRows(target);
     const tableVersionId = await this.versionWriter.createTableVersion({
-      source: head,
-      copyLinksFrom: head.versionId,
+      source,
+      id: target.publicId,
+      copyLinksFrom: source.versionId,
       withoutRowVersionIds: rows.dropBaseVersionIds,
       readonly: true,
     });
 
-    await this.versionWriter.markRowsReadonly(rows.linkOtherVersionIds);
     const mergedVersionIds = await this.versionWriter.createRowVersions(
       rows.merged,
       true,
@@ -125,8 +131,63 @@ export class CommitWriter {
       ...rows.linkOtherVersionIds,
       ...mergedVersionIds,
     ]);
+    await this.versionWriter.lockRowsOfTable(tableVersionId);
 
-    mergedRows.push({ tableId: head.id, rowVersionIds: mergedVersionIds });
+    if (!source.system) {
+      mergedRows.push({
+        tableId: target.publicId ?? source.id,
+        rowVersionIds: mergedVersionIds,
+      });
+    }
+    return tableVersionId;
+  }
+
+  private async nextDraftTableVersionIds(plan: ChangePlan): Promise<string[]> {
+    const versions = plan.snapshot.tables
+      .map((pair) => pair.draft)
+      .filter((version) => version !== undefined);
+
+    if (plan.ledger.renumbered.length === 0) {
+      return versions.map((version) => version.versionId);
+    }
+
+    const versionIds: string[] = [];
+    for (const version of versions) {
+      versionIds.push(
+        version.system && version.id === SystemTables.Migration
+          ? await this.renumberedMigrationTable(plan, version)
+          : version.versionId,
+      );
+    }
+    return versionIds;
+  }
+
+  private async renumberedMigrationTable(
+    plan: ChangePlan,
+    draftMigrationTable: TableVersion,
+  ): Promise<string> {
+    const { renumbered } = plan.ledger;
+    const tableVersionId = await this.versionWriter.createTableVersion({
+      source: draftMigrationTable,
+      copyLinksFrom: draftMigrationTable.versionId,
+      withoutRowVersionIds: renumbered.map((item) => item.source.versionId),
+      readonly: false,
+    });
+
+    const versionIds = await this.versionWriter.createRowVersions(
+      renumbered.map(({ source, migration }) => ({
+        createdId: source.createdId,
+        id: migration.id,
+        data: migration,
+        meta: source.meta,
+        hash: objectHash(migration),
+        schemaHash: source.schemaHash,
+        createdAt: source.createdAt,
+        publishedAt: new Date(migration.id),
+      })),
+      false,
+    );
+    await this.versionWriter.linkRows(tableVersionId, versionIds);
     return tableVersionId;
   }
 

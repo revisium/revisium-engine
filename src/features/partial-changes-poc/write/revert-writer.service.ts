@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { TargetTable } from 'src/features/partial-changes-poc/assembly/target.types';
 import { ChangePlan } from 'src/features/partial-changes-poc/planning/change-planner.service';
-import { TableVersion } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
-import { splitMixedTableRows } from 'src/features/partial-changes-poc/write/mixed-table-rows';
+import {
+  TableVersion,
+  oppositeOf,
+  sideOf,
+} from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import {
+  MixedTableRows,
+  splitMixedTableRows,
+} from 'src/features/partial-changes-poc/write/mixed-table-rows';
 import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
@@ -50,18 +57,39 @@ export class RevertWriter {
 
     switch (target.outcome) {
       case 'unchanged':
-      case 'base':
         return undefined;
+      case 'absent':
+        return draft ? { disconnect: draft.versionId } : undefined;
+      case 'base':
+        return this.replaceDraftVersion(
+          draft,
+          sideOf(target.table.pair, target.linkSide),
+        );
       case 'other':
-        return { disconnect: draft?.versionId, connect: head?.versionId };
+        return this.replaceDraftVersion(
+          draft,
+          sideOf(target.table.pair, oppositeOf(target.linkSide)),
+        );
       case 'mixed':
-        return this.revertMixedTable(plan, target);
+        return target.linkSide === 'draft'
+          ? this.revertMixedDraftTable(plan, target)
+          : this.assembleMixedDraftTable(plan, target, head);
       default:
         throw new Error(`Cannot revert table ${target.table.tableId}`);
     }
   }
 
-  private async revertMixedTable(
+  private replaceDraftVersion(
+    draft: TableVersion | undefined,
+    next: TableVersion | undefined,
+  ): TableLinkChange | undefined {
+    if (draft?.versionId === next?.versionId) {
+      return undefined;
+    }
+    return { disconnect: draft?.versionId, connect: next?.versionId };
+  }
+
+  private async revertMixedDraftTable(
     plan: ChangePlan,
     target: TargetTable,
   ): Promise<TableLinkChange | undefined> {
@@ -70,12 +98,46 @@ export class RevertWriter {
       throw new Error(`Table ${target.table.tableId} has no Draft version`);
     }
 
-    const rows = splitMixedTableRows(target, plan.direction);
+    const rows = splitMixedTableRows(target);
     const { tableVersionId, change } = await this.writableDraftTable(
       draft,
+      target.publicId,
       rows.dropBaseVersionIds,
     );
+    await this.addRows(plan, target, tableVersionId, rows);
+    return change;
+  }
 
+  private async assembleMixedDraftTable(
+    plan: ChangePlan,
+    target: TargetTable,
+    head: TableVersion | undefined,
+  ): Promise<TableLinkChange> {
+    if (!head) {
+      throw new Error(`Table ${target.table.tableId} has no Head version`);
+    }
+
+    const rows = splitMixedTableRows(target);
+    const tableVersionId = await this.versionWriter.createTableVersion({
+      source: head,
+      id: target.publicId,
+      copyLinksFrom: head.versionId,
+      withoutRowVersionIds: rows.dropBaseVersionIds,
+      readonly: false,
+    });
+    await this.addRows(plan, target, tableVersionId, rows);
+    return {
+      disconnect: target.table.pair.draft?.versionId,
+      connect: tableVersionId,
+    };
+  }
+
+  private async addRows(
+    plan: ChangePlan,
+    target: TargetTable,
+    tableVersionId: string,
+    rows: MixedTableRows,
+  ): Promise<void> {
     const mergedVersionIds = await this.versionWriter.createRowVersions(
       rows.merged,
       false,
@@ -85,26 +147,28 @@ export class RevertWriter {
       ...mergedVersionIds,
     ]);
 
-    await this.fileUsageIntegration.registerReferencesForRowVersions({
-      revisionId: plan.snapshot.draftRevisionId,
-      tableId: draft.id,
-      rowVersionIds: mergedVersionIds,
-    });
-
-    return change;
+    if (target.table.kind !== 'system') {
+      await this.fileUsageIntegration.registerReferencesForRowVersions({
+        revisionId: plan.snapshot.draftRevisionId,
+        tableId: target.publicId ?? target.table.tableId,
+        rowVersionIds: mergedVersionIds,
+      });
+    }
   }
 
   private async writableDraftTable(
     draft: TableVersion,
+    id: string | undefined,
     dropRowVersionIds: string[],
   ): Promise<{ tableVersionId: string; change?: TableLinkChange }> {
-    if (!draft.readonly) {
+    if (!draft.readonly && (id === undefined || id === draft.id)) {
       await this.versionWriter.unlinkRows(draft.versionId, dropRowVersionIds);
       return { tableVersionId: draft.versionId };
     }
 
     const tableVersionId = await this.versionWriter.createTableVersion({
       source: draft,
+      id,
       copyLinksFrom: draft.versionId,
       withoutRowVersionIds: dropRowVersionIds,
       readonly: false,

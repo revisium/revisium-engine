@@ -1,9 +1,11 @@
-import objectHash from 'object-hash';
 import {
+  CatalogueLedger,
   CatalogueRow,
   CatalogueTable,
   CatalogueUnit,
   ChangeCatalogue,
+  ViewsMigrator,
+  ViewsPair,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
 import {
   collectSchemaLeaves,
@@ -12,39 +14,72 @@ import {
 import {
   ChangesSnapshot,
   RowPair,
+  RowVersion,
   TablePair,
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import {
+  attributePending,
+  ledgerOf,
+} from 'src/features/partial-changes-poc/structure/ledger';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import type { TableViewsData } from 'src/features/views/types';
+import { sameJson } from 'src/features/partial-changes-poc/structure/same-json';
 
 export function buildChangeCatalogue(
   snapshot: ChangesSnapshot,
+  migrateViews: ViewsMigrator,
 ): ChangeCatalogue {
-  return new CatalogueBuilder(snapshot).build();
+  return new CatalogueBuilder(snapshot, migrateViews).build();
 }
 
-type MigrationData = { tableId?: string; nextTableId?: string };
+type SideRowsById = {
+  head: Map<string, RowVersion>;
+  draft: Map<string, RowVersion>;
+};
 
 class CatalogueBuilder {
   private readonly units = new Map<string, CatalogueUnit>();
   private readonly tables = new Map<string, CatalogueTable>();
+  private readonly ownedRows = new Map<string, RowVersion[]>();
   private readonly userTables: TablePair[];
   private readonly systemTables: TablePair[];
   private readonly headIds = new Map<string, TablePair>();
   private readonly draftIds = new Map<string, TablePair>();
-  private readonly structureTables = new Set<string>();
-  private readonly systemUnits = new Map<string, string[]>();
+  private readonly schemaRows = new Map<
+    string,
+    { head?: RowVersion; draft?: RowVersion }
+  >();
+  private readonly views = new Map<string, ViewsPair>();
+  private readonly sharedRows = new Map<string, RowPair>();
+  private readonly pendingByOwner = new Map<string, RowVersion[]>();
+  private ledger?: CatalogueLedger;
 
-  constructor(private readonly snapshot: ChangesSnapshot) {
+  constructor(
+    private readonly snapshot: ChangesSnapshot,
+    private readonly migrateViews: ViewsMigrator,
+  ) {
     this.systemTables = snapshot.tables.filter((pair) => isSystem(pair));
     this.userTables = snapshot.tables.filter((pair) => !isSystem(pair));
   }
 
   build(): ChangeCatalogue {
     this.indexUserTables();
-    this.systemTables.forEach((pair) => this.attributeSystemChanges(pair));
+    const ledger = this.buildLedger();
+    this.pairSchemaRows();
+    this.pairViews();
     this.userTables.forEach((pair) => this.catalogueUserTable(pair));
+    this.addTransientUnits(ledger);
     this.systemTables.forEach((pair) => this.catalogueSystemTable(pair));
-    return { units: this.units, tables: this.tables };
+
+    return {
+      units: this.units,
+      tables: this.tables,
+      ledger,
+      schemaRows: this.schemaRows,
+      views: this.views,
+      sharedRows: this.sharedRows,
+      ownedRows: this.ownedRows,
+    };
   }
 
   private indexUserTables(): void {
@@ -58,97 +93,122 @@ class CatalogueBuilder {
     }
   }
 
-  private attributeSystemChanges(pair: TablePair): void {
-    const systemTableId = publicTableId(pair);
-    const keys = pair.changedRows.flatMap((row) =>
-      this.unitsForSystemRow(systemTableId, row),
+  private buildLedger(): CatalogueLedger {
+    const { migrations } = this.snapshot.system;
+    const published = ledgerOf(migrations.head);
+    const draftEntries = ledgerOf(migrations.draft);
+    const publishedVersions = new Set(
+      published.map((entry) => entry.version.versionId),
     );
-    this.systemUnits.set(pair.createdId, [...new Set(keys)]);
+    const draftVersions = new Set(
+      draftEntries.map((entry) => entry.version.versionId),
+    );
+    const pending = draftEntries.filter(
+      (entry) => !publishedVersions.has(entry.version.versionId),
+    );
+    const attribution = attributePending(
+      pending,
+      idToCreatedId(this.headIds, 'head'),
+      idToCreatedId(this.draftIds, 'draft'),
+    );
+
+    for (const entry of pending) {
+      const owner = attribution.ownerOf.get(entry.version.versionId) ?? '';
+      const rows = this.pendingByOwner.get(owner) ?? [];
+      rows.push(entry.version);
+      this.pendingByOwner.set(owner, rows);
+    }
+
+    this.ledger = {
+      published,
+      pending,
+      attribution,
+      rewritten: published
+        .filter((entry) => !draftVersions.has(entry.version.versionId))
+        .map((entry) => entry.migration.id),
+    };
+    return this.ledger;
   }
 
-  private unitsForSystemRow(systemTableId: string, row: RowPair): string[] {
-    const ids = [row.draft?.id, row.head?.id].filter(isDefined);
-
-    switch (systemTableId) {
-      case SystemTables.Schema:
-        return [this.structureUnitFor(ids)];
-      case SystemTables.Migration:
-        return [this.structureUnitFor(migrationTableIds(row))];
-      case SystemTables.Views:
-        return [this.viewsUnitFor(ids)];
-      default:
-        return [this.sharedSchemaUnitFor(row)];
+  private pairSchemaRows(): void {
+    const rows = byId(this.snapshot.system.schemas);
+    for (const pair of this.userTables) {
+      this.schemaRows.set(pair.createdId, {
+        head: pair.head ? rows.head.get(pair.head.id) : undefined,
+        draft: pair.draft ? rows.draft.get(pair.draft.id) : undefined,
+      });
     }
   }
 
-  private structureUnitFor(tableIds: string[]): string {
-    const pair = this.resolveUserTable(tableIds);
-    const tableCreatedId = pair?.createdId ?? `orphan:${tableIds[0] ?? ''}`;
-    if (pair) {
-      this.structureTables.add(pair.createdId);
-    }
-    return this.addUnit({
-      key: `t:${tableCreatedId}/structure`,
-      kind: 'structure',
-      tableCreatedId,
-      tableId: pair ? publicTableId(pair) : (tableIds[0] ?? ''),
-      rowCreatedIds: [],
-    });
-  }
-
-  private viewsUnitFor(tableIds: string[]): string {
-    const pair = this.resolveUserTable(tableIds);
-    const tableCreatedId = pair?.createdId ?? `orphan:${tableIds[0] ?? ''}`;
-    return this.addUnit({
-      key: `t:${tableCreatedId}/views`,
-      kind: 'views',
-      tableCreatedId,
-      tableId: pair ? publicTableId(pair) : (tableIds[0] ?? ''),
-      rowCreatedIds: [],
-    });
-  }
-
-  private sharedSchemaUnitFor(row: RowPair): string {
-    return this.addUnit({
-      key: `s:${row.createdId}/sharedSchema`,
-      kind: 'sharedSchema',
-      tableCreatedId: `shared:${row.createdId}`,
-      tableId: (row.draft ?? row.head)?.id ?? '',
-      rowCreatedIds: [row.createdId],
-    });
-  }
-
-  private resolveUserTable(tableIds: string[]): TablePair | undefined {
-    for (const id of tableIds) {
-      const pair = this.draftIds.get(id) ?? this.headIds.get(id);
-      if (pair) {
-        return pair;
+  private pairViews(): void {
+    const rows = byId(this.snapshot.system.views);
+    for (const pair of this.userTables) {
+      const head = pair.head ? rows.head.get(pair.head.id) : undefined;
+      const draft = pair.draft ? rows.draft.get(pair.draft.id) : undefined;
+      if (!head && !draft) {
+        continue;
       }
+      this.views.set(pair.createdId, {
+        head,
+        draft,
+        migratedHead: this.migratedHeadViews(pair, head),
+      });
     }
-    return undefined;
+  }
+
+  private migratedHeadViews(
+    pair: TablePair,
+    head: RowVersion | undefined,
+  ): TableViewsData | undefined {
+    if (!head || !pair.draft) {
+      return undefined;
+    }
+    const views = head.data as TableViewsData;
+    return pair.structure?.differs ? this.migrateViews(views, pair) : views;
   }
 
   private catalogueUserTable(pair: TablePair): void {
-    if (this.hasStructureChange(pair)) {
-      const key = `t:${pair.createdId}/structure`;
-      this.structureTables.add(pair.createdId);
-      this.addUnit({
-        key,
-        kind: 'structure',
-        tableCreatedId: pair.createdId,
-        tableId: publicTableId(pair),
-        rowCreatedIds: [],
-      });
-      this.addTable(pair, 'structure', [key]);
+    const structureUnit = this.structureUnitFor(pair);
+    const viewsUnit = this.viewsUnitFor(pair);
+
+    if (!pair.head || !pair.draft) {
+      this.addTable(pair, 'whole', { structureUnit, viewsUnit });
       return;
     }
 
-    if (pair.head?.versionId === pair.draft?.versionId) {
-      this.addTable(pair, 'unchanged', []);
-      return;
+    const table = this.addTable(pair, 'data', { structureUnit, viewsUnit });
+    if (pair.head.versionId !== pair.draft.versionId) {
+      this.catalogueRows(table);
     }
 
-    this.catalogueDataTable(pair);
+    if (!structureUnit && !viewsUnit && table.unitKeys.length === 0) {
+      table.kind = 'unchanged';
+    }
+  }
+
+  private structureUnitFor(pair: TablePair): string | undefined {
+    if (!this.hasStructureChange(pair)) {
+      return undefined;
+    }
+
+    const replaced = this.replacedPartner(pair);
+    const key = replaced
+      ? `t:${[pair.createdId, replaced.createdId].sort().join('+')}/structure`
+      : `t:${pair.createdId}/structure`;
+    const renamed = Boolean(
+      pair.head && pair.draft && pair.head.id !== pair.draft.id,
+    );
+
+    this.addUnit({
+      key,
+      kind: 'structure',
+      tableCreatedId: pair.createdId,
+      tableId: publicTableId(pair),
+      previousTableId: renamed ? pair.head?.id : undefined,
+      rowCreatedIds: [],
+    });
+    this.own(key, this.structureRows(pair));
+    return key;
   }
 
   private hasStructureChange(pair: TablePair): boolean {
@@ -156,17 +216,88 @@ class CatalogueBuilder {
       return true;
     }
 
-    if (this.structureTables.has(pair.createdId)) {
+    if ((this.pendingByOwner.get(pair.createdId) ?? []).length > 0) {
       return true;
     }
 
+    const rows = this.schemaRows.get(pair.createdId);
     return (
-      objectHash(pair.headSchema ?? {}) !== objectHash(pair.draftSchema ?? {})
+      rows?.head?.versionId !== rows?.draft?.versionId &&
+      (rows?.head?.hash !== rows?.draft?.hash ||
+        !sameJson(rows?.head?.meta, rows?.draft?.meta))
     );
   }
 
-  private catalogueDataTable(pair: TablePair): void {
-    const table = this.addTable(pair, 'data', []);
+  private replacedPartner(pair: TablePair): TablePair | undefined {
+    if (pair.head && !pair.draft) {
+      const partner = this.draftIds.get(pair.head.id);
+      return partner && !partner.head ? partner : undefined;
+    }
+    if (pair.draft && !pair.head) {
+      const partner = this.headIds.get(pair.draft.id);
+      return partner && !partner.draft ? partner : undefined;
+    }
+    return undefined;
+  }
+
+  private structureRows(pair: TablePair): RowVersion[] {
+    const schema = this.schemaRows.get(pair.createdId);
+    const views = this.views.get(pair.createdId);
+    return [
+      schema?.head,
+      schema?.draft,
+      views?.head,
+      views?.draft,
+      ...(this.pendingByOwner.get(pair.createdId) ?? []),
+    ].filter(isDefined);
+  }
+
+  private viewsUnitFor(pair: TablePair): string | undefined {
+    const views = this.views.get(pair.createdId);
+    if (!views?.draft || !pair.draft) {
+      return undefined;
+    }
+
+    const expected = views.migratedHead ?? views.head?.data;
+    if (pair.head && sameJson(views.draft.data, expected)) {
+      return undefined;
+    }
+
+    const key = `t:${pair.createdId}/views`;
+    this.addUnit({
+      key,
+      kind: 'views',
+      tableCreatedId: pair.createdId,
+      tableId: pair.draft.id,
+      rowCreatedIds: [],
+    });
+    const schema = this.schemaRows.get(pair.createdId);
+    this.own(
+      key,
+      [views.head, views.draft, schema?.head, schema?.draft].filter(isDefined),
+    );
+    return key;
+  }
+
+  private addTransientUnits(ledger: CatalogueLedger): void {
+    for (const slot of ledger.attribution.transient) {
+      const key = `t:${slot.key}/structure`;
+      this.addUnit({
+        key,
+        kind: 'structure',
+        tableCreatedId: slot.key,
+        tableId: slot.tableId,
+        rowCreatedIds: [],
+      });
+      this.own(
+        key,
+        slot.entries.map((entry) => entry.version),
+      );
+    }
+  }
+
+  private catalogueRows(table: CatalogueTable): void {
+    const { pair } = table;
     const headOnly = indexById(pair.changedRows, 'head');
     const draftOnly = indexById(pair.changedRows, 'draft');
 
@@ -285,25 +416,44 @@ class CatalogueBuilder {
   }
 
   private catalogueSystemTable(pair: TablePair): void {
-    const kind =
-      pair.head?.versionId === pair.draft?.versionId ? 'unchanged' : 'system';
-    this.addTable(pair, kind, this.systemUnits.get(pair.createdId) ?? []);
+    const isShared =
+      (pair.head ?? pair.draft)?.id === SystemTables.SharedSchemas;
+    const table = this.addTable(pair, 'system', {});
+    if (isShared) {
+      table.unitKeys = pair.changedRows.map((row) =>
+        this.sharedSchemaUnit(row),
+      );
+    }
+  }
+
+  private sharedSchemaUnit(row: RowPair): string {
+    const key = `s:${row.createdId}/sharedSchema`;
+    this.addUnit({
+      key,
+      kind: 'sharedSchema',
+      tableCreatedId: `shared:${row.createdId}`,
+      tableId: (row.draft ?? row.head)?.id ?? '',
+      rowCreatedIds: [row.createdId],
+    });
+    this.sharedRows.set(key, row);
+    this.own(key, [row.head, row.draft].filter(isDefined));
+    return key;
   }
 
   private addTable(
     pair: TablePair,
     kind: CatalogueTable['kind'],
-    unitKeys: string[],
+    units: { structureUnit?: string; viewsUnit?: string },
   ): CatalogueTable {
-    const schema = pair.draftSchema ?? pair.headSchema;
     const table: CatalogueTable = {
       pair,
       kind,
       tableId: publicTableId(pair),
-      schema,
-      leaves: schema && kind === 'data' ? collectSchemaLeaves(schema) : [],
+      leaves: kind === 'data' ? leavesOf(pair) : [],
+      changedPointers: pair.structure?.changedPointers ?? [],
       rows: new Map(),
-      unitKeys,
+      unitKeys: [],
+      ...units,
     };
     this.tables.set(pair.createdId, table);
     return table;
@@ -333,6 +483,17 @@ class CatalogueBuilder {
     }
     return unit.key;
   }
+
+  private own(key: string, rows: RowVersion[]): void {
+    this.ownedRows.set(key, [...(this.ownedRows.get(key) ?? []), ...rows]);
+  }
+}
+
+function leavesOf(pair: TablePair) {
+  if (pair.structure) {
+    return pair.structure.unchangedLeaves;
+  }
+  return pair.draftSchema ? collectSchemaLeaves(pair.draftSchema) : [];
 }
 
 function isSystem(pair: TablePair): boolean {
@@ -362,14 +523,23 @@ function indexById(
   return index;
 }
 
-function migrationTableIds(row: RowPair): string[] {
-  return [row.draft, row.head]
-    .filter(isDefined)
-    .flatMap((version) => {
-      const data = version.data as MigrationData;
-      return [data.nextTableId, data.tableId];
-    })
-    .filter(isDefined);
+function byId(rows: { head: RowVersion[]; draft: RowVersion[] }): SideRowsById {
+  return {
+    head: new Map(rows.head.map((row) => [row.id, row])),
+    draft: new Map(rows.draft.map((row) => [row.id, row])),
+  };
+}
+
+function idToCreatedId(
+  index: Map<string, TablePair>,
+  side: 'head' | 'draft',
+): Map<string, string> {
+  return new Map(
+    [...index].map(([id, pair]) => [
+      id,
+      pair[side]?.createdId ?? pair.createdId,
+    ]),
+  );
 }
 
 function isDefined<T>(value: T | undefined | null): value is T {

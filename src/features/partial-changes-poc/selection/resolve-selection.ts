@@ -80,17 +80,22 @@ export function requiredExcludedBlocker(reason: RequiredReason): Blocker {
 }
 
 class ItemsResolver {
-  private readonly tablesById = new Map<string, CatalogueTable>();
+  private readonly draftTables = new Map<string, CatalogueTable>();
+  private readonly headTables = new Map<string, CatalogueTable>();
 
   constructor(private readonly catalogue: ChangeCatalogue) {
     for (const table of catalogue.tables.values()) {
-      for (const id of [table.pair.head?.id, table.pair.draft?.id]) {
-        if (id && !this.tablesById.has(id)) {
-          this.tablesById.set(id, table);
-        }
+      if (table.pair.draft) {
+        this.draftTables.set(table.pair.draft.id, table);
       }
-      this.tablesById.set(table.tableId, table);
+      if (table.pair.head) {
+        this.headTables.set(table.pair.head.id, table);
+      }
     }
+  }
+
+  private tableById(tableId: string): CatalogueTable | undefined {
+    return this.draftTables.get(tableId) ?? this.headTables.get(tableId);
   }
 
   resolve(items: SelectionItems): ItemsResolution {
@@ -121,14 +126,25 @@ class ItemsResolver {
     item: 'tables' | 'views',
     result: ItemsResolution,
   ): void {
-    const unit = [...this.catalogue.units.values()].find(
-      (candidate) => candidate.kind === kind && candidate.tableId === tableId,
-    );
+    const table = this.tableById(tableId);
+    const unit =
+      kind === 'structure'
+        ? (table?.structureUnit ?? this.transientStructureUnit(tableId))
+        : table?.viewsUnit;
     if (unit) {
-      result.keys.add(unit.key);
+      result.keys.add(unit);
       return;
     }
     addUnmatched(result, item, tableId);
+  }
+
+  private transientStructureUnit(tableId: string): string | undefined {
+    return [...this.catalogue.units.values()].find(
+      (unit) =>
+        unit.kind === 'structure' &&
+        unit.tableId === tableId &&
+        !this.catalogue.tables.has(unit.tableCreatedId),
+    )?.key;
   }
 
   private resolveSharedSchema(id: string, result: ItemsResolution): void {
@@ -144,14 +160,14 @@ class ItemsResolver {
   }
 
   private resolveTableData(tableId: string, result: ItemsResolution): void {
-    const table = this.tablesById.get(tableId);
-    if (!table || table.kind === 'unchanged' || table.kind === 'system') {
-      addUnmatched(result, 'tableData', tableId);
+    const table = this.tableById(tableId);
+    if (table?.kind === 'whole') {
+      this.requireStructure(table, result, undefined, undefined);
       return;
     }
 
-    if (table.kind === 'structure') {
-      this.requireStructure(table, result, undefined, undefined);
+    if (!table || table.unitKeys.length === 0 || table.kind === 'system') {
+      addUnmatched(result, 'tableData', tableId);
       return;
     }
 
@@ -159,13 +175,15 @@ class ItemsResolver {
   }
 
   private resolveRow(selector: RowSelector, result: ItemsResolution): void {
-    const table = this.tablesById.get(selector.tableId);
-    if (table?.kind === 'structure') {
+    const table = this.tableById(selector.tableId);
+    if (table?.kind === 'whole') {
       this.requireStructure(table, result, selector.rowId, undefined);
       return;
     }
 
-    const row = table ? findRow(table, selector.rowId) : undefined;
+    const row = table
+      ? findRow(table, selector.rowId, selector.side)
+      : undefined;
     if (!row) {
       addUnmatched(result, 'rows', selector);
       return;
@@ -175,8 +193,8 @@ class ItemsResolver {
   }
 
   private resolveField(selector: FieldSelector, result: ItemsResolution): void {
-    const table = this.tablesById.get(selector.tableId);
-    if (table?.kind === 'structure') {
+    const table = this.tableById(selector.tableId);
+    if (table?.kind === 'whole') {
       this.requireStructure(table, result, selector.rowId, selector.path);
       return;
     }
@@ -196,9 +214,33 @@ class ItemsResolver {
     }
 
     const row = table ? findRow(table, selector.rowId) : undefined;
-    if (!row || !this.resolveFieldUnits(row, selector, result)) {
+    const matchedUnits = row
+      ? this.resolveFieldUnits(row, selector, result)
+      : false;
+    const matchedStructure = table
+      ? this.requireStructureForChangedFields(table, selector, result)
+      : false;
+    if (!matchedUnits && !matchedStructure) {
       addUnmatched(result, 'fields', selector);
     }
+  }
+
+  private requireStructureForChangedFields(
+    table: CatalogueTable,
+    selector: FieldSelector,
+    result: ItemsResolution,
+  ): boolean {
+    const changed = table.changedPointers.find(
+      (pointer) =>
+        isSameOrInside(pointer, selector.path) ||
+        isSameOrInside(selector.path, pointer),
+    );
+    if (!changed || !table.structureUnit) {
+      return false;
+    }
+
+    this.requireStructure(table, result, selector.rowId, changed);
+    return true;
   }
 
   private resolveFieldUnits(
@@ -242,7 +284,7 @@ class ItemsResolver {
     rowId: string | undefined,
     path: string | undefined,
   ): void {
-    const [key] = table.unitKeys;
+    const key = table.structureUnit;
     if (!key) {
       return;
     }
@@ -251,7 +293,9 @@ class ItemsResolver {
       tableId: table.tableId,
       rowId,
       path,
-      because: `${table.tableId} has a structure change; in M1 its data is committed only together with the structure`,
+      because: path
+        ? `${table.tableId}${path} is a new or changed field; its values are committed and reverted with the structure of ${table.tableId}`
+        : `the rows of ${table.tableId} exist only with its structure (created or removed table)`,
     });
   }
 }
@@ -264,6 +308,7 @@ const rowIndexes = new WeakMap<
 export function findRow(
   table: CatalogueTable,
   rowId: string,
+  side?: 'head',
 ): CatalogueRow | undefined {
   let index = rowIndexes.get(table);
   if (!index) {
@@ -277,6 +322,9 @@ export function findRow(
       }
     }
     rowIndexes.set(table, index);
+  }
+  if (side === 'head') {
+    return index.head.get(rowId);
   }
   return index.draft.get(rowId) ?? index.head.get(rowId);
 }

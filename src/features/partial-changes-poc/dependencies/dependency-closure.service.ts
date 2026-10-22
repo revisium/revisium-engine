@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { TargetAssembler } from 'src/features/partial-changes-poc/assembly/target-assembler.service';
 import {
-  Direction,
-  TargetState,
-} from 'src/features/partial-changes-poc/assembly/target.types';
-import { ChangeCatalogue } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
+  AssemblyInput,
+  TargetAssembler,
+} from 'src/features/partial-changes-poc/assembly/target-assembler.service';
+import { TargetState } from 'src/features/partial-changes-poc/assembly/target.types';
+import { StructureConsistencyChecks } from 'src/features/partial-changes-poc/dependencies/structure-consistency-checks.service';
 import {
   Finding,
   TargetConsistencyChecks,
@@ -15,13 +15,10 @@ import {
 } from 'src/features/partial-changes-poc/partial-changes.types';
 import { requiredExcludedBlocker } from 'src/features/partial-changes-poc/selection/resolve-selection';
 
-export interface ClosureInput {
-  catalogue: ChangeCatalogue;
-  direction: Direction;
+export interface ClosureInput extends Omit<AssemblyInput, 'applied'> {
   selected: ReadonlySet<string>;
   required: ReadonlyMap<string, RequiredReason>;
   excluded: ReadonlySet<string>;
-  preferOtherForUnitlessTables: boolean;
 }
 
 export interface ClosureResult {
@@ -35,7 +32,8 @@ export interface ClosureResult {
 export class DependencyClosure {
   constructor(
     private readonly assembler: TargetAssembler,
-    private readonly checks: TargetConsistencyChecks,
+    private readonly rowChecks: TargetConsistencyChecks,
+    private readonly structureChecks: StructureConsistencyChecks,
   ) {}
 
   async close(input: ClosureInput): Promise<ClosureResult> {
@@ -43,13 +41,16 @@ export class DependencyClosure {
     const required = new Map(input.required);
 
     for (;;) {
-      const target = this.assembler.assemble({
-        catalogue: input.catalogue,
-        direction: input.direction,
-        applied,
-        preferOtherForUnitlessTables: input.preferOtherForUnitlessTables,
-      });
-      const findings = await this.checks.find(target, applied);
+      const target = await this.assembler.assemble({ ...input, applied });
+      const findings = [
+        ...(await this.structureChecks.find({
+          snapshot: input.snapshot,
+          catalogue: input.catalogue,
+          state: target,
+          applied,
+        })),
+        ...(await this.rowChecks.find(target, applied)),
+      ];
       const { added, blockers } = this.absorb(
         findings,
         input,
@@ -61,7 +62,7 @@ export class DependencyClosure {
         return {
           applied,
           required,
-          blockers: uniqueBlockers(blockers),
+          blockers: uniqueBlockers([...target.blockers, ...blockers]),
           target,
         };
       }

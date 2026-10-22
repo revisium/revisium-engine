@@ -31,6 +31,7 @@ export class VersionWriter {
 
   async createTableVersion(args: {
     source: TableVersion;
+    id?: string;
     copyLinksFrom: string;
     withoutRowVersionIds: readonly string[];
     readonly: boolean;
@@ -41,7 +42,7 @@ export class VersionWriter {
       data: {
         versionId,
         createdId: args.source.createdId,
-        id: args.source.id,
+        id: args.id ?? args.source.id,
         readonly: args.readonly,
         system: args.source.system,
         createdAt: args.source.createdAt,
@@ -132,6 +133,10 @@ export class VersionWriter {
       WHERE "versionId" = ${tableVersionId} AND "readonly" = false
     `);
 
+    await this.lockRowsOfTable(tableVersionId);
+  }
+
+  async lockRowsOfTable(tableVersionId: string): Promise<void> {
     await this.db.$executeRaw(sql`
       UPDATE "Row" SET "readonly" = true
       WHERE "readonly" = false

@@ -2,7 +2,7 @@ export type ChangesBranch = { projectId: string; branchName: string };
 
 export type ChangeOperation = 'commit' | 'revert';
 
-export type RowSelector = { tableId: string; rowId: string };
+export type RowSelector = { tableId: string; rowId: string; side?: 'head' };
 
 export type FieldSelector = { tableId: string; rowId: string; path: string };
 
@@ -33,6 +33,7 @@ export type UnitKind =
 export interface PublicUnit {
   kind: UnitKind;
   tableId: string;
+  previousTableId?: string;
   rowId?: string;
   previousRowId?: string;
   path?: string;
@@ -44,7 +45,9 @@ export type RequiredReasonCode =
   | 'idOccupied'
   | 'wholeRowUnit'
   | 'atomicValue'
-  | 'structureBoundData';
+  | 'structureBoundData'
+  | 'referencedTableMissing'
+  | 'viewsDoNotFitStructure';
 
 export interface RequiredReason {
   code: RequiredReasonCode;
@@ -64,7 +67,10 @@ export type BlockerCode =
   | 'notSelectable'
   | 'danglingInSource'
   | 'invalidRow'
-  | 'structureNotSupportedInM1';
+  | 'invalidViews'
+  | 'ledgerInconsistent'
+  | 'unrecordedStructureChange'
+  | 'migrationInProgress';
 
 export interface Blocker {
   code: BlockerCode;

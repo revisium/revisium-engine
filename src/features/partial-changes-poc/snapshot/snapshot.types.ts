@@ -1,4 +1,5 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
+import type { TableStructure } from 'src/features/partial-changes-poc/structure/table-structure';
 
 export type RevisionSide = 'head' | 'draft';
 
@@ -38,6 +39,20 @@ export interface TablePair {
   changedRows: RowPair[];
   headSchema?: JsonSchema;
   draftSchema?: JsonSchema;
+  structure?: TableStructure;
+  rowsDigest?: string;
+}
+
+export interface SideRows {
+  head: RowVersion[];
+  draft: RowVersion[];
+}
+
+export interface SystemRows {
+  schemas: SideRows;
+  migrations: SideRows;
+  views: SideRows;
+  shared: SideRows;
 }
 
 export interface ChangesSnapshot {
@@ -46,6 +61,7 @@ export interface ChangesSnapshot {
   headRevisionId: string;
   draftRevisionId: string;
   tables: TablePair[];
+  system: SystemRows;
 }
 
 export function sideOf<T>(
@@ -53,4 +69,8 @@ export function sideOf<T>(
   side: RevisionSide,
 ): T | undefined {
   return side === 'head' ? pair.head : pair.draft;
+}
+
+export function oppositeOf(side: RevisionSide): RevisionSide {
+  return side === 'head' ? 'draft' : 'head';
 }

@@ -26,13 +26,23 @@ export function computeFingerprint(
 
 function versionParts(catalogue: ChangeCatalogue, key: string): string[] {
   const unit = catalogue.units.get(key);
-  const table = unit ? catalogue.tables.get(unit.tableCreatedId) : undefined;
-  if (!unit || !table) {
+  if (!unit) {
     return [];
   }
 
+  const owned = (catalogue.ownedRows.get(key) ?? []).map(rowPart).sort();
+  const table = catalogue.tables.get(unit.tableCreatedId);
+  if (!table) {
+    return owned;
+  }
+
   if (unit.rowCreatedIds.length === 0) {
-    return [tablePart(table.pair.head), tablePart(table.pair.draft)];
+    return [
+      tablePart(table.pair.head),
+      tablePart(table.pair.draft),
+      table.pair.rowsDigest ?? '',
+      ...owned,
+    ];
   }
 
   return unit.rowCreatedIds.flatMap((rowCreatedId) => {
@@ -49,5 +59,5 @@ function rowPart(version: RowVersion | undefined): string {
   if (!version) {
     return '-';
   }
-  return `${version.versionId}:${version.id}:${version.hash}:${version.updatedAt.toISOString()}`;
+  return `${version.versionId}:${version.id}:${version.hash}:${new Date(version.updatedAt).toISOString()}`;
 }

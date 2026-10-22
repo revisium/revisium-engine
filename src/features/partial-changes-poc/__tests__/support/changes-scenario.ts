@@ -1,5 +1,15 @@
-import type { JsonSchema } from '@revisium/schema-toolkit/types';
+import type {
+  JsonPatch,
+  JsonSchema,
+  Migration,
+} from '@revisium/schema-toolkit/types';
 import type { InputJsonValue } from 'src/engine-prisma-types';
+import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
+import { GetMigrationsQuery } from 'src/features/revision/queries/impl/get-migrations.query';
+import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { SystemTables } from 'src/features/share/system-tables.consts';
+import type { TableViewsData } from 'src/features/views/types';
+import { ViewsApiService } from 'src/features/views/views-api.service';
 import {
   createExpressFile,
   createExpressImageFile,
@@ -98,6 +108,127 @@ export class ChangesScenario {
       tableId,
       patches: [{ op: 'add', path: `/properties/${field}`, value: schema }],
     });
+  }
+
+  async updateTable(tableId: string, patches: JsonPatch[]): Promise<void> {
+    await this.kit.draftApi.apiUpdateTable({
+      revisionId: await this.draftRevisionId(),
+      tableId,
+      patches,
+    });
+  }
+
+  async startBackgroundUpdate(
+    tableId: string,
+    patches: JsonPatch[],
+  ): Promise<string> {
+    const result = await this.kit.draftApi.apiUpdateTable({
+      revisionId: await this.draftRevisionId(),
+      tableId,
+      patches,
+    });
+    if (!result.migrationId) {
+      throw new Error(`The update of ${tableId} did not start a migration`);
+    }
+    return result.migrationId;
+  }
+
+  async removeField(tableId: string, field: string): Promise<void> {
+    await this.updateTable(tableId, [
+      { op: 'remove', path: `/properties/${field}` },
+    ]);
+  }
+
+  async renameTable(tableId: string, nextTableId: string): Promise<void> {
+    await this.kit.draftApi.apiRenameTable({
+      revisionId: await this.draftRevisionId(),
+      tableId,
+      nextTableId,
+    });
+  }
+
+  async removeTable(tableId: string): Promise<void> {
+    await this.kit.draftApi.apiRemoveTable({
+      revisionId: await this.draftRevisionId(),
+      tableId,
+    });
+  }
+
+  async updateViews(tableId: string, viewsData: TableViewsData): Promise<void> {
+    await this.kit.module.get(ViewsApiService).updateTableViews({
+      revisionId: await this.draftRevisionId(),
+      tableId,
+      viewsData,
+    });
+  }
+
+  async putSharedSchema(id: string, schema: JsonSchema): Promise<void> {
+    const revisionId = await this.draftRevisionId();
+    const existing = await this.systemRows('draft', SystemTables.SharedSchemas);
+    const transactions = this.kit.module.get(TransactionPrismaService);
+    const draftRevisions = this.kit.module.get(DraftRevisionApiService);
+    const rows = [{ rowId: id, data: schema as InputJsonValue }];
+
+    await transactions.run(async () => {
+      if (!(await this.hasTable('draft', SystemTables.SharedSchemas))) {
+        await draftRevisions.createTable({
+          revisionId,
+          tableId: SystemTables.SharedSchemas,
+          system: true,
+        });
+      }
+      if (existing.some((row) => row.id === id)) {
+        await draftRevisions.updateRows({
+          revisionId,
+          tableId: SystemTables.SharedSchemas,
+          rows,
+        });
+      } else {
+        await draftRevisions.createRows({
+          revisionId,
+          tableId: SystemTables.SharedSchemas,
+          rows,
+        });
+      }
+    });
+  }
+
+  async sharedSchemas(role: RevisionRole): Promise<Record<string, unknown>> {
+    const rows = await this.systemRows(role, SystemTables.SharedSchemas);
+    return Object.fromEntries(rows.map((row) => [row.id, row.data]));
+  }
+
+  async views(
+    role: RevisionRole,
+    tableId: string,
+  ): Promise<TableViewsData | undefined> {
+    const rows = await this.systemRows(role, SystemTables.Views);
+    return rows.find((row) => row.id === tableId)?.data as
+      | TableViewsData
+      | undefined;
+  }
+
+  async ledger(role: RevisionRole): Promise<Migration[]> {
+    return this.kit.queryBus.execute(
+      new GetMigrationsQuery({ revisionId: await this.roleRevisionId(role) }),
+    );
+  }
+
+  async schemas(role: RevisionRole): Promise<Record<string, JsonSchema>> {
+    const rows = await this.systemRows(role, SystemTables.Schema);
+    return Object.fromEntries(
+      rows.map((row) => [row.id, row.data as JsonSchema]),
+    );
+  }
+
+  async tableIds(role: RevisionRole): Promise<string[]> {
+    const revisionId = await this.roleRevisionId(role);
+    const tables = await this.kit.prisma.table.findMany({
+      where: { system: false, revisions: { some: { id: revisionId } } },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    return tables.map((table) => table.id);
   }
 
   async tableVersions(role: RevisionRole): Promise<string[]> {
@@ -390,6 +521,26 @@ export class ChangesScenario {
       hash: row.hash,
       schemaHash: row.schemaHash,
     };
+  }
+
+  private async hasTable(role: RevisionRole, tableId: string) {
+    const revisionId = await this.roleRevisionId(role);
+    const count = await this.kit.prisma.table.count({
+      where: { id: tableId, revisions: { some: { id: revisionId } } },
+    });
+    return count > 0;
+  }
+
+  private async systemRows(role: RevisionRole, tableId: SystemTables) {
+    const revisionId = await this.roleRevisionId(role);
+    return this.kit.prisma.row.findMany({
+      where: {
+        tables: {
+          some: { id: tableId, revisions: { some: { id: revisionId } } },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
   }
 
   private async rowIds(revisionId: string, tableId: string): Promise<string[]> {

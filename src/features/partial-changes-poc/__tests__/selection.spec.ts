@@ -139,40 +139,36 @@ describe('selection', () => {
     expect(await scenario.draftHasChanges()).toBe(true);
   });
 
-  describe('tables with a structure change (M1 boundary)', () => {
+  describe('tables with a structure change (M2: BR-007 split, adapted from the M1 boundary)', () => {
     async function givenStructureAndDataChanges() {
       const scenario = await givenEditsInTwoTables();
       await scenario.addField('products', 'weight', num());
       return scenario;
     }
 
-    it('requires the structure unit for data of a table whose structure changed', async () => {
+    it('selects an unchanged-field edit of a table whose structure changed without its structure', async () => {
       const scenario = await givenStructureAndDataChanges();
 
       const preview = await scenario.preview('commit', {
         fields: [{ tableId: 'products', rowId: 'p1', path: '/price' }],
       });
 
-      expect(preview.required).toEqual([
-        {
-          unit: { kind: 'structure', tableId: 'products' },
-          reason: expect.objectContaining({ code: 'structureBoundData' }),
-        },
-      ]);
+      expect(preview.status).toBe('ready');
+      expect(preview.required).toEqual([]);
     });
 
-    it('blocks a partial selection of structure changes', async () => {
+    it('commits the structure of one of two changed tables', async () => {
       const scenario = await givenStructureAndDataChanges();
       await scenario.addField('orders', 'weight', num());
 
       const result = await scenario.commit({ tables: ['products'] });
 
-      expect(result.status).toBe('blocked');
-      expect(result.blockers).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ code: 'structureNotSupportedInM1' }),
-        ]),
-      );
+      expect(result.status).toBe('applied');
+      expect((await scenario.headRow('products', 'p1')).data.weight).toBe(0);
+      expect((await scenario.headRow('orders', 'o1')).data).toEqual({
+        product: 'p1',
+        note: '',
+      });
     });
 
     it('commits data of other tables while the structure change stays in the Draft', async () => {

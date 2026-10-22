@@ -6,14 +6,21 @@ import type {
 } from 'src/features/partial-changes-poc/partial-changes.types';
 import type {
   RowPair,
+  RowVersion,
   TablePair,
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import type {
+  LedgerAttribution,
+  LedgerEntry,
+} from 'src/features/partial-changes-poc/structure/ledger';
+import type { TableViewsData } from 'src/features/views/types';
 
 export interface CatalogueUnit {
   key: string;
   kind: UnitKind;
   tableCreatedId: string;
   tableId: string;
+  previousTableId?: string;
   rowCreatedIds: string[];
   rowId?: string;
   previousRowId?: string;
@@ -27,25 +34,69 @@ export interface CatalogueRow {
   fieldUnits: Map<string, string>;
 }
 
-export type CatalogueTableKind = 'data' | 'structure' | 'system' | 'unchanged';
+export type CatalogueTableKind = 'data' | 'whole' | 'system' | 'unchanged';
 
 export interface CatalogueTable {
   pair: TablePair;
   kind: CatalogueTableKind;
   tableId: string;
-  schema?: JsonSchema;
   leaves: SchemaLeaf[];
+  changedPointers: string[];
   rows: Map<string, CatalogueRow>;
   unitKeys: string[];
+  structureUnit?: string;
+  viewsUnit?: string;
+}
+
+export interface ViewsPair {
+  head?: RowVersion;
+  draft?: RowVersion;
+  migratedHead?: TableViewsData;
+}
+
+export interface CatalogueLedger {
+  published: LedgerEntry[];
+  pending: LedgerEntry[];
+  attribution: LedgerAttribution;
+  rewritten: string[];
 }
 
 export interface ChangeCatalogue {
   units: Map<string, CatalogueUnit>;
   tables: Map<string, CatalogueTable>;
+  ledger: CatalogueLedger;
+  schemaRows: Map<string, { head?: RowVersion; draft?: RowVersion }>;
+  views: Map<string, ViewsPair>;
+  sharedRows: Map<string, RowPair>;
+  ownedRows: Map<string, RowVersion[]>;
+}
+
+export type ViewsMigrator = (
+  views: TableViewsData,
+  pair: TablePair,
+) => TableViewsData | undefined;
+
+export function structureUnitOfOwner(
+  catalogue: ChangeCatalogue,
+  owner: string | undefined,
+): string {
+  const table = owner ? catalogue.tables.get(owner) : undefined;
+  return table?.structureUnit ?? `t:${owner ?? ''}/structure`;
+}
+
+export function schemaOfSide(
+  pair: TablePair,
+  side: 'head' | 'draft',
+): JsonSchema | undefined {
+  return side === 'head' ? pair.headSchema : pair.draftSchema;
 }
 
 export function toPublicUnit(unit: CatalogueUnit): PublicUnit {
   const result: PublicUnit = { kind: unit.kind, tableId: unit.tableId };
+
+  if (unit.previousTableId !== undefined) {
+    result.previousTableId = unit.previousTableId;
+  }
 
   if (unit.rowId !== undefined) {
     result.rowId = unit.rowId;

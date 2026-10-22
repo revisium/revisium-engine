@@ -1,14 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
-import { sql } from 'src/engine-prisma-types';
+import { join, sql, type Sql } from 'src/engine-prisma-types';
+import type { SchemaLeaf } from 'src/features/partial-changes-poc/catalogue/schema-leaves';
 import { ChangesBranch } from 'src/features/partial-changes-poc/partial-changes.types';
 import {
   ChangesSnapshot,
   RowPair,
   RowVersion,
+  SideRows,
+  SystemRows,
   TablePair,
   TableVersion,
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import { analyzeTableStructure } from 'src/features/partial-changes-poc/structure/table-structure';
+import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -18,8 +24,6 @@ type TableLinkRow = TableVersion & { revisionId: string };
 type RowPairRow = {
   [K in keyof RowVersion as `h_${K}` | `d_${K}`]: RowVersion[K] | null;
 };
-
-type SchemaRow = { id: string; data: JsonSchema };
 
 const ROW_COLUMNS = [
   'versionId',
@@ -40,6 +44,7 @@ export class SnapshotReader {
   constructor(
     private readonly transactionService: TransactionPrismaService,
     private readonly shareQueries: ShareTransactionalQueries,
+    private readonly jsonSchemaStore: JsonSchemaStoreService,
   ) {}
 
   private get db() {
@@ -57,7 +62,9 @@ export class SnapshotReader {
       await this.shareQueries.findDraftRevisionInBranchOrThrow(branchId);
 
     const tables = await this.readTablePairs(head.id, draft.id);
-    await this.attachSchemas(tables);
+    const system = await this.readSystemRows(tables);
+    this.attachSchemas(tables, system.schemas);
+    this.attachStructures(tables, system.schemas);
     await this.attachChangedRows(tables);
 
     return {
@@ -66,6 +73,7 @@ export class SnapshotReader {
       headRevisionId: head.id,
       draftRevisionId: draft.id,
       tables,
+      system,
     };
   }
 
@@ -98,38 +106,79 @@ export class SnapshotReader {
     return [...pairs.values()];
   }
 
-  private async attachSchemas(tables: TablePair[]): Promise<void> {
-    const schemaTable = tables.find(
-      (pair) => (pair.head ?? pair.draft)?.id === SystemTables.Schema,
-    );
-    const headSchemas = await this.readSchemas(schemaTable?.head?.versionId);
-    const draftSchemas = await this.readSchemas(schemaTable?.draft?.versionId);
+  private async readSystemRows(tables: TablePair[]): Promise<SystemRows> {
+    return {
+      schemas: await this.readSideRows(tables, SystemTables.Schema),
+      migrations: await this.readSideRows(tables, SystemTables.Migration),
+      views: await this.readSideRows(tables, SystemTables.Views),
+      shared: await this.readSideRows(tables, SystemTables.SharedSchemas),
+    };
+  }
+
+  private async readSideRows(
+    tables: TablePair[],
+    systemTableId: SystemTables,
+  ): Promise<SideRows> {
+    const head = tables.find(
+      (pair) => pair.head?.system && pair.head.id === systemTableId,
+    )?.head;
+    const draft = tables.find(
+      (pair) => pair.draft?.system && pair.draft.id === systemTableId,
+    )?.draft;
+
+    return {
+      head: head ? await this.readRows(head.versionId) : [],
+      draft: draft ? await this.readRows(draft.versionId) : [],
+    };
+  }
+
+  private readRows(tableVersionId: string): Promise<RowVersion[]> {
+    return this.db.$queryRaw<RowVersion[]>(sql`
+      SELECT r."versionId", r."createdId", r."id", r."readonly", r."data", r."meta",
+             r."hash", r."schemaHash", r."createdAt", r."updatedAt", r."publishedAt"
+      FROM "_RowToTable" rt
+      JOIN "Row" r ON r."versionId" = rt."A"
+      WHERE rt."B" = ${tableVersionId}
+    `);
+  }
+
+  private attachSchemas(tables: TablePair[], schemas: SideRows): void {
+    const headSchemas = new Map(schemas.head.map((row) => [row.id, row]));
+    const draftSchemas = new Map(schemas.draft.map((row) => [row.id, row]));
 
     for (const pair of tables) {
-      if (pair.head) {
-        pair.headSchema = headSchemas.get(pair.head.id);
+      if (pair.head && !pair.head.system) {
+        pair.headSchema = headSchemas.get(pair.head.id)?.data as JsonSchema;
       }
-      if (pair.draft) {
-        pair.draftSchema = draftSchemas.get(pair.draft.id);
+      if (pair.draft && !pair.draft.system) {
+        pair.draftSchema = draftSchemas.get(pair.draft.id)?.data as JsonSchema;
       }
     }
   }
 
-  private async readSchemas(
-    schemaTableVersionId: string | undefined,
-  ): Promise<Map<string, JsonSchema>> {
-    if (!schemaTableVersionId) {
-      return new Map();
+  private attachStructures(tables: TablePair[], schemas: SideRows): void {
+    const headIdentities = identities(tables, 'head');
+    const draftIdentities = identities(tables, 'draft');
+    const headHistory = historyById(schemas.head);
+    const draftHistory = historyById(schemas.draft);
+
+    for (const pair of tables) {
+      if (!pair.head || !pair.draft || pair.head.system) {
+        continue;
+      }
+      if (!pair.headSchema || !pair.draftSchema) {
+        continue;
+      }
+      pair.structure = analyzeTableStructure({
+        headSchema: pair.headSchema,
+        draftSchema: pair.draftSchema,
+        headHistory: headHistory.get(pair.head.id) ?? [],
+        draftHistory: draftHistory.get(pair.draft.id) ?? [],
+        headIdentities,
+        draftIdentities,
+        refs: this.jsonSchemaStore.refs,
+      });
     }
-
-    const rows = await this.db.$queryRaw<SchemaRow[]>(sql`
-      SELECT r."id", r."data"
-      FROM "_RowToTable" rt
-      JOIN "Row" r ON r."versionId" = rt."A"
-      WHERE rt."B" = ${schemaTableVersionId}
-    `);
-
-    return new Map(rows.map((row) => [row.id, row.data]));
   }
 
   private async attachChangedRows(tables: TablePair[]): Promise<void> {
@@ -142,14 +191,59 @@ export class SnapshotReader {
         pair.changedRows = await this.readChangedRows(
           pair.head.versionId,
           pair.draft.versionId,
+          this.dataDifference(pair),
+        );
+      } else if ((pair.head ?? pair.draft)?.system) {
+        pair.changedRows = await this.oneSidedSystemRows(pair);
+      } else if (!pair.head || !pair.draft) {
+        pair.rowsDigest = await this.rowsDigest(
+          (pair.head ?? pair.draft)?.versionId ?? '',
         );
       }
     }
   }
 
+  private async rowsDigest(tableVersionId: string): Promise<string> {
+    const [digest] = await this.db.$queryRaw<{ digest: string }[]>(sql`
+      SELECT count(*)::text || ':' || coalesce(max(r."updatedAt")::text, '-') AS "digest"
+      FROM "_RowToTable" rt
+      JOIN "Row" r ON r."versionId" = rt."A"
+      WHERE rt."B" = ${tableVersionId}
+    `);
+    return digest?.digest ?? '';
+  }
+
+  private async oneSidedSystemRows(pair: TablePair): Promise<RowPair[]> {
+    if (pair.head && pair.draft) {
+      return [];
+    }
+    const side = pair.head ? 'head' : 'draft';
+    const rows = await this.readRows(pair[side]?.versionId ?? '');
+    return rows.map((row) => ({ createdId: row.createdId, [side]: row }));
+  }
+
+  private dataDifference(pair: TablePair): Sql {
+    if (!pair.structure?.differs) {
+      return sql`h."hash" <> d."hash"`;
+    }
+
+    const leaves = pair.structure.unchangedLeaves.filter(
+      (leaf) => leaf.kind !== 'computed',
+    );
+    if (leaves.length === 0) {
+      return sql`FALSE`;
+    }
+
+    return join(
+      leaves.map((leaf) => leafDiffers(leaf)),
+      ' OR ',
+    );
+  }
+
   private async readChangedRows(
     headTableVersionId: string,
     draftTableVersionId: string,
+    dataDifference: Sql,
   ): Promise<RowPair[]> {
     const rows = await this.db.$queryRaw<RowPairRow[]>(sql`
       WITH h AS (
@@ -172,7 +266,7 @@ export class SnapshotReader {
       FROM h FULL OUTER JOIN d ON h."createdId" = d."createdId"
       WHERE h."versionId" IS DISTINCT FROM d."versionId"
         AND (h."createdId" IS NULL OR d."createdId" IS NULL
-             OR h."id" <> d."id" OR h."hash" <> d."hash")
+             OR h."id" <> d."id" OR (${dataDifference}))
     `);
 
     return rows.map((row) => {
@@ -199,4 +293,26 @@ export class SnapshotReader {
       ROW_COLUMNS.map((column) => [column, values[`${prefix}${column}`]]),
     ) as unknown as RowVersion;
   }
+}
+
+function leafDiffers(leaf: SchemaLeaf): Sql {
+  return sql`(h."data" #> ${leaf.segments}::text[]) IS DISTINCT FROM (d."data" #> ${leaf.segments}::text[])`;
+}
+
+function identities(
+  tables: TablePair[],
+  side: 'head' | 'draft',
+): Map<string, string> {
+  return new Map(
+    tables
+      .map((pair) => pair[side])
+      .filter((table): table is TableVersion => Boolean(table && !table.system))
+      .map((table) => [table.id, table.createdId]),
+  );
+}
+
+function historyById(rows: RowVersion[]): Map<string, HistoryPatches[]> {
+  return new Map(
+    rows.map((row) => [row.id, (row.meta ?? []) as HistoryPatches[]]),
+  );
 }

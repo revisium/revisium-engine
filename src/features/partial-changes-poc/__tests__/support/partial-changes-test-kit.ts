@@ -10,6 +10,8 @@ import { DraftModule } from 'src/features/draft/draft.module';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { MigrationModule } from 'src/features/migration/migration.module';
+import { MigrationService } from 'src/features/migration/services/migration.service';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { PartialChangesApiService } from 'src/features/partial-changes-poc/partial-changes-api.service';
 import { PartialChangesPocModule } from 'src/features/partial-changes-poc/partial-changes-poc.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
@@ -38,11 +40,14 @@ export interface PartialChangesTestKit {
   changes: PartialChangesApiService;
   diffService: DiffService;
   fileUsageIntegration: FileUsageIntegrationService;
+  migrations: MigrationService;
   storage: ReturnType<typeof createStorageMock>;
   close(): Promise<void>;
 }
 
-export async function createPartialChangesTestKit(): Promise<PartialChangesTestKit> {
+export async function createPartialChangesTestKit(
+  options: { migrationOptions?: MigrationOptions } = {},
+): Promise<PartialChangesTestKit> {
   const storage = createStorageMock();
   const module = await Test.createTestingModule({
     imports: [
@@ -52,7 +57,7 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
       StorageModule.forRoot(),
       ShareModule,
       PluginModule,
-      MigrationModule.forRoot(),
+      MigrationModule.forRoot(options.migrationOptions),
       RevisionModule,
       BranchModule,
       TableModule,
@@ -83,6 +88,7 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
     changes: module.get(PartialChangesApiService),
     diffService: module.get(DiffService),
     fileUsageIntegration: module.get(FileUsageIntegrationService),
+    migrations: module.get(MigrationService),
     storage,
     async close() {
       await module.close();

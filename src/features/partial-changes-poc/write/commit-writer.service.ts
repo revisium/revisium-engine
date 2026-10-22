@@ -1,0 +1,204 @@
+import { Injectable } from '@nestjs/common';
+import { TargetTable } from 'src/features/partial-changes-poc/assembly/target.types';
+import { ChangePlan } from 'src/features/partial-changes-poc/planning/change-planner.service';
+import { splitMixedTableRows } from 'src/features/partial-changes-poc/write/mixed-table-rows';
+import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
+import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
+import { DiffService } from 'src/features/share/diff.service';
+import { IdService } from 'src/infrastructure/database/id.service';
+import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+
+export interface CommitWriteResult {
+  previousHeadRevisionId: string;
+  headRevisionId: string;
+  draftRevisionId: string;
+}
+
+interface MergedRowsOfTable {
+  tableId: string;
+  rowVersionIds: string[];
+}
+
+@Injectable()
+export class CommitWriter {
+  constructor(
+    private readonly transactionService: TransactionPrismaService,
+    private readonly idService: IdService,
+    private readonly versionWriter: VersionWriter,
+    private readonly diffService: DiffService,
+    private readonly fileUsageIntegration: FileUsageIntegrationService,
+  ) {}
+
+  private get db() {
+    return this.transactionService.getTransaction();
+  }
+
+  async write(plan: ChangePlan, comment?: string): Promise<CommitWriteResult> {
+    const { snapshot } = plan;
+    const draftTableVersionIds = this.currentDraftTableVersionIds(plan);
+    const headTables: string[] = [];
+    const mergedRows: MergedRowsOfTable[] = [];
+
+    for (const target of plan.target.tables) {
+      const versionId = await this.headTableVersion(plan, target, mergedRows);
+      if (versionId) {
+        headTables.push(versionId);
+      }
+    }
+
+    await this.retirePreviousHead(snapshot.headRevisionId);
+    await this.promoteDraftToHead(
+      snapshot.draftRevisionId,
+      headTables,
+      comment,
+    );
+    const nextDraftRevisionId = await this.createNextDraft(
+      plan,
+      draftTableVersionIds,
+    );
+    await this.registerFileReferences(snapshot.draftRevisionId, mergedRows);
+    await this.recomputeNextDraftHasChanges(
+      snapshot.draftRevisionId,
+      nextDraftRevisionId,
+    );
+
+    return {
+      previousHeadRevisionId: snapshot.headRevisionId,
+      headRevisionId: snapshot.draftRevisionId,
+      draftRevisionId: nextDraftRevisionId,
+    };
+  }
+
+  private currentDraftTableVersionIds(plan: ChangePlan): string[] {
+    return plan.snapshot.tables
+      .map((pair) => pair.draft?.versionId)
+      .filter((versionId): versionId is string => versionId !== undefined);
+  }
+
+  private async headTableVersion(
+    plan: ChangePlan,
+    target: TargetTable,
+    mergedRows: MergedRowsOfTable[],
+  ): Promise<string | undefined> {
+    const { head, draft } = target.table.pair;
+
+    switch (target.outcome) {
+      case 'unchanged':
+      case 'base':
+        return head?.versionId;
+      case 'other':
+        if (draft) {
+          await this.versionWriter.lockTableWithRows(draft.versionId);
+        }
+        return draft?.versionId;
+      case 'mixed':
+        return this.assembleMixedHeadTable(plan, target, mergedRows);
+      default:
+        throw new Error(`Cannot commit table ${target.table.tableId}`);
+    }
+  }
+
+  private async assembleMixedHeadTable(
+    plan: ChangePlan,
+    target: TargetTable,
+    mergedRows: MergedRowsOfTable[],
+  ): Promise<string> {
+    const head = target.table.pair.head;
+    if (!head) {
+      throw new Error(`Table ${target.table.tableId} has no Head version`);
+    }
+
+    const rows = splitMixedTableRows(target, plan.direction);
+    const tableVersionId = await this.versionWriter.createTableVersion({
+      source: head,
+      copyLinksFrom: head.versionId,
+      withoutRowVersionIds: rows.dropBaseVersionIds,
+      readonly: true,
+    });
+
+    await this.versionWriter.markRowsReadonly(rows.linkOtherVersionIds);
+    const mergedVersionIds = await this.versionWriter.createRowVersions(
+      rows.merged,
+      true,
+    );
+    await this.versionWriter.linkRows(tableVersionId, [
+      ...rows.linkOtherVersionIds,
+      ...mergedVersionIds,
+    ]);
+
+    mergedRows.push({ tableId: head.id, rowVersionIds: mergedVersionIds });
+    return tableVersionId;
+  }
+
+  private async retirePreviousHead(revisionId: string): Promise<void> {
+    await this.db.revision.update({
+      where: { id: revisionId },
+      data: { isHead: false, isDraft: false, hasChanges: false },
+    });
+  }
+
+  private async promoteDraftToHead(
+    revisionId: string,
+    tableVersionIds: string[],
+    comment?: string,
+  ): Promise<void> {
+    await this.db.revision.update({
+      where: { id: revisionId },
+      data: {
+        isHead: true,
+        isDraft: false,
+        hasChanges: false,
+        comment,
+        tables: { set: tableVersionIds.map((versionId) => ({ versionId })) },
+      },
+    });
+  }
+
+  private async createNextDraft(
+    plan: ChangePlan,
+    tableVersionIds: string[],
+  ): Promise<string> {
+    const revision = await this.db.revision.create({
+      data: {
+        id: this.idService.generate(),
+        isDraft: true,
+        hasChanges: false,
+        parent: { connect: { id: plan.snapshot.draftRevisionId } },
+        branch: { connect: { id: plan.snapshot.branchId } },
+        tables: {
+          connect: tableVersionIds.map((versionId) => ({ versionId })),
+        },
+      },
+      select: { id: true },
+    });
+    return revision.id;
+  }
+
+  private async registerFileReferences(
+    revisionId: string,
+    mergedRows: MergedRowsOfTable[],
+  ): Promise<void> {
+    for (const { tableId, rowVersionIds } of mergedRows) {
+      await this.fileUsageIntegration.registerReferencesForRowVersions({
+        revisionId,
+        tableId,
+        rowVersionIds,
+      });
+    }
+  }
+
+  private async recomputeNextDraftHasChanges(
+    headRevisionId: string,
+    draftRevisionId: string,
+  ): Promise<void> {
+    const hasChanges = await this.diffService.hasTableDiffs({
+      fromRevisionId: headRevisionId,
+      toRevisionId: draftRevisionId,
+    });
+
+    await this.db.revision.update({
+      where: { id: draftRevisionId },
+      data: { hasChanges },
+    });
+  }
+}

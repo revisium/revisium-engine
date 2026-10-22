@@ -7,7 +7,11 @@ import {
   sideOf,
   TableVersion,
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
-import { splitMixedTableRows } from 'src/features/partial-changes-poc/write/mixed-table-rows';
+import {
+  MixedTableRows,
+  splitMixedTableRows,
+} from 'src/features/partial-changes-poc/write/mixed-table-rows';
+import { schemaUsesFiles } from 'src/features/partial-changes-poc/write/schema-files';
 import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
@@ -100,7 +104,10 @@ export class CommitWriter {
   ): Promise<string | undefined> {
     const version = sideOf(target.table.pair, side);
     if (version && side === 'draft') {
-      await this.versionWriter.lockTableWithRows(version.versionId);
+      await this.versionWriter.lockTableWithRows(
+        version.versionId,
+        target.table.pair.head?.versionId,
+      );
     }
     return version?.versionId;
   }
@@ -131,15 +138,30 @@ export class CommitWriter {
       ...rows.linkOtherVersionIds,
       ...mergedVersionIds,
     ]);
-    await this.versionWriter.lockRowsOfTable(tableVersionId);
+    await this.lockPublishedRows(target, tableVersionId, rows);
 
-    if (!source.system) {
+    if (!source.system && schemaUsesFiles(target.schema)) {
       mergedRows.push({
         tableId: target.publicId ?? source.id,
         rowVersionIds: mergedVersionIds,
       });
     }
     return tableVersionId;
+  }
+
+  private async lockPublishedRows(
+    target: TargetTable,
+    tableVersionId: string,
+    rows: MixedTableRows,
+  ): Promise<void> {
+    if (target.linkSide === 'head') {
+      await this.versionWriter.markRowsReadonly(rows.linkOtherVersionIds);
+      return;
+    }
+    await this.versionWriter.lockRowsOfTable(
+      tableVersionId,
+      target.table.pair.head?.versionId,
+    );
   }
 
   private async nextDraftTableVersionIds(plan: ChangePlan): Promise<string[]> {

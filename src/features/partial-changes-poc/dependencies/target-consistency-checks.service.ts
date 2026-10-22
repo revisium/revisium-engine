@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { getForeignKeysFromSchema } from '@revisium/schema-toolkit/lib';
 import type { JsonSchemaStore } from '@revisium/schema-toolkit/model';
 import type { JsonSchema, JsonValue } from '@revisium/schema-toolkit/types';
 import {
@@ -40,6 +41,7 @@ interface Reference {
 @Injectable()
 export class TargetConsistencyChecks {
   private readonly schemaStores = new WeakMap<object, JsonSchemaStore>();
+  private readonly foreignKeyTables = new WeakMap<object, boolean>();
 
   constructor(
     private readonly rowLookup: RowLookup,
@@ -96,9 +98,11 @@ export class TargetConsistencyChecks {
     applied: ReadonlySet<string>,
     sideNames: SideNames,
   ): Promise<Finding[]> {
-    const references = index.tables.flatMap((table) =>
-      table.target.rows.flatMap((row) => this.referencesOf(table, row)),
-    );
+    const references = index.tables
+      .filter((table) => this.hasForeignKeys(table.schema))
+      .flatMap((table) =>
+        table.target.rows.flatMap((row) => this.referencesOf(table, row)),
+      );
     const missing = await this.missingReferences(index, references);
 
     return missing.map((reference) =>
@@ -310,6 +314,20 @@ export class TargetConsistencyChecks {
       return [];
     }
     return getForeignKeyJsonPaths(this.schemaStore(schema), tableId);
+  }
+
+  private hasForeignKeys(schema: JsonSchema | undefined): boolean {
+    if (!schema) {
+      return false;
+    }
+    const cached = this.foreignKeyTables.get(schema);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const result =
+      getForeignKeysFromSchema(this.schemaStore(schema)).length > 0;
+    this.foreignKeyTables.set(schema, result);
+    return result;
   }
 
   private schemaStore(schema: JsonSchema): JsonSchemaStore {

@@ -1,0 +1,23 @@
+{
+  "rootDir": "../../../..",
+  "modulePaths": ["<rootDir>"],
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "testRegex": "src/features/partial-changes-poc/__bench__/.*\\.bench\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)sx?$": [
+      "@swc/jest",
+      {
+        "jsc": {
+          "parser": { "syntax": "typescript", "decorators": true },
+          "transform": { "legacyDecorator": true, "decoratorMetadata": true },
+          "target": "es2021"
+        },
+        "module": { "type": "commonjs" }
+      }
+    ]
+  },
+  "testEnvironment": "node",
+  "cacheDirectory": "<rootDir>/.jest-cache",
+  "setupFiles": ["<rootDir>/jest.setup.ts"],
+  "testTimeout": 14400000
+}

@@ -7,6 +7,7 @@ import { ChangePlanner } from 'src/features/partial-changes-poc/planning/change-
 import {
   appliedCounts,
   refusalOf,
+  renumberedIds,
 } from 'src/features/partial-changes-poc/planning/plan-outcome';
 import { CommitWriter } from 'src/features/partial-changes-poc/write/commit-writer.service';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
@@ -45,6 +46,11 @@ export class CommitChangesHandler implements ICommandHandler<
     }
 
     const written = await this.commitWriter.write(plan, data.comment);
-    return { status: 'applied', ...written, ...appliedCounts(plan) };
+    return {
+      status: 'applied',
+      ...written,
+      ...appliedCounts(plan),
+      renumbered: renumberedIds(plan),
+    };
   }
 }

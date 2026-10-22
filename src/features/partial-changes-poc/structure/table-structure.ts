@@ -20,6 +20,7 @@ export interface TableStructure {
   recorded: boolean;
   unchangedLeaves: SchemaLeaf[];
   changedPointers: string[];
+  draftChangedValuePointers: string[];
 }
 
 export interface TableStructureInput {
@@ -59,6 +60,7 @@ export function analyzeTableStructure(
       recorded,
       unchangedLeaves: draftLeaves,
       changedPointers: [],
+      draftChangedValuePointers: [],
     };
   }
 
@@ -76,6 +78,9 @@ export function analyzeTableStructure(
       ...headLeaves.keys(),
     ]),
   ].filter((pointer) => !unchanged.has(pointer));
+  const draftChangedValuePointers = draftLeaves
+    .filter((leaf) => leaf.kind !== 'computed' && !unchanged.has(leaf.pointer))
+    .map((leaf) => leaf.pointer);
 
   return {
     differs: true,
@@ -83,6 +88,7 @@ export function analyzeTableStructure(
     recorded,
     unchangedLeaves,
     changedPointers,
+    draftChangedValuePointers,
   };
 }
 

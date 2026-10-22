@@ -17,10 +17,12 @@ import {
   CatalogueTable,
   ChangeCatalogue,
   schemaOfSide,
+  toPublicUnit,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
 import {
   Blocker,
   ChangeOperation,
+  DeferredValues,
 } from 'src/features/partial-changes-poc/partial-changes.types';
 import {
   ChangesSnapshot,
@@ -50,9 +52,11 @@ interface TableContext {
   table: CatalogueTable;
   linkSide: RevisionSide;
   schema: JsonSchema;
+  schemaHash: string;
   structureDiffers: boolean;
   takesOtherSide: (key: string) => boolean;
   blockers: Blocker[];
+  deferred: DeferredValues[];
 }
 
 @Injectable()
@@ -61,11 +65,14 @@ export class TargetAssembler {
 
   async assemble(input: AssemblyInput): Promise<TargetState> {
     const blockers: Blocker[] = [];
+    const deferred: DeferredValues[] = [];
     const userTables: TargetTable[] = [];
 
     for (const table of input.catalogue.tables.values()) {
       if (table.kind !== 'system') {
-        userTables.push(await this.assembleUserTable(table, input, blockers));
+        userTables.push(
+          await this.assembleUserTable(table, input, { blockers, deferred }),
+        );
       }
     }
 
@@ -83,13 +90,14 @@ export class TargetAssembler {
       tables: [...userTables, ...systemTables],
       views,
       blockers,
+      deferred,
     };
   }
 
   private async assembleUserTable(
     table: CatalogueTable,
     input: AssemblyInput,
-    blockers: Blocker[],
+    findings: { blockers: Blocker[]; deferred: DeferredValues[] },
   ): Promise<TargetTable> {
     if (table.kind === 'whole') {
       return this.assembleWholeTable(table, input);
@@ -102,10 +110,11 @@ export class TargetAssembler {
       table,
       linkSide,
       schema,
+      schemaHash: objectHash(schema),
       structureDiffers: table.pair.structure?.differs ?? false,
       takesOtherSide: (key) =>
         takenFromDraft(input, key) !== (linkSide === 'draft'),
-      blockers,
+      ...findings,
     };
 
     const rows: TargetRow[] = [];
@@ -221,7 +230,30 @@ export class TargetAssembler {
     if (!converted) {
       return { kind: 'absent' };
     }
+    this.recordDeferredValues(row, context);
     return this.merged(row, converted, context);
+  }
+
+  private recordDeferredValues(row: CatalogueRow, context: TableContext): void {
+    const { table, input, linkSide } = context;
+    const paths = table.pair.structure?.draftChangedValuePointers ?? [];
+    const unit = input.catalogue.units.get(row.existenceUnit ?? '');
+    const structure = input.catalogue.units.get(table.structureUnit ?? '');
+    if (
+      input.operation !== 'commit' ||
+      linkSide !== 'head' ||
+      paths.length === 0 ||
+      !unit ||
+      !structure
+    ) {
+      return;
+    }
+
+    context.deferred.push({
+      unit: toPublicUnit(unit),
+      paths,
+      structure: toPublicUnit(structure),
+    });
   }
 
   private async convert(other: RowVersion, context: TableContext) {
@@ -314,7 +346,7 @@ export class TargetAssembler {
       id: merged.id,
       data: merged.data,
       hash: merged.hash,
-      schemaHash: objectHash(context.schema),
+      schemaHash: context.schemaHash,
       metaSource,
     };
   }

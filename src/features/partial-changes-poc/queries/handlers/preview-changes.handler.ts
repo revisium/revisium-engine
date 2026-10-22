@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
@@ -12,6 +13,8 @@ import {
 } from 'src/features/partial-changes-poc/queries/impl/preview-changes.query';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
+const DEFAULT_TRANSACTION_TIMEOUT_MS = 15_000;
+
 @QueryHandler(PreviewChangesQuery)
 export class PreviewChangesHandler implements IQueryHandler<
   PreviewChangesQuery,
@@ -21,6 +24,7 @@ export class PreviewChangesHandler implements IQueryHandler<
     private readonly transactionService: TransactionPrismaService,
     private readonly migrationLockService: MigrationLockService,
     private readonly planner: ChangePlanner,
+    private readonly configService: ConfigService,
   ) {}
 
   execute({
@@ -28,6 +32,7 @@ export class PreviewChangesHandler implements IQueryHandler<
   }: PreviewChangesQuery): Promise<PreviewChangesQueryReturnType> {
     return this.transactionService.run(() => this.preview(data), {
       isolationLevel: TransactionIsolationLevel.RepeatableRead,
+      timeout: this.transactionTimeout(),
     });
   }
 
@@ -40,6 +45,11 @@ export class PreviewChangesHandler implements IQueryHandler<
       plan.blockers.unshift(lock);
     }
     return toPreviewResult(plan, Boolean(data.includeRequired));
+  }
+
+  private transactionTimeout(): number {
+    const configured = Number(this.configService.get('TRANSACTION_TIMEOUT'));
+    return configured > 0 ? configured : DEFAULT_TRANSACTION_TIMEOUT_MS;
   }
 
   private async activeMigrationBlocker(

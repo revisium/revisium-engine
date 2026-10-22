@@ -6,6 +6,7 @@ import type {
 import type {
   Blocker,
   ChangeOperation,
+  DeferredValues,
 } from 'src/features/partial-changes-poc/partial-changes.types';
 import {
   oppositeOf,
@@ -69,6 +70,7 @@ export interface TargetState {
   tables: TargetTable[];
   views: ViewsTarget[];
   blockers: Blocker[];
+  deferred: DeferredValues[];
 }
 
 export function outcomeId(outcome: RowOutcome): string | undefined {

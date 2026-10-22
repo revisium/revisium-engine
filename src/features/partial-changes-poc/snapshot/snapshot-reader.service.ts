@@ -12,6 +12,7 @@ import {
   TablePair,
   TableVersion,
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import { linksMissingIn } from 'src/features/partial-changes-poc/snapshot/row-links';
 import { analyzeTableStructure } from 'src/features/partial-changes-poc/structure/table-structure';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
@@ -246,13 +247,17 @@ export class SnapshotReader {
     dataDifference: Sql,
   ): Promise<RowPair[]> {
     const rows = await this.db.$queryRaw<RowPairRow[]>(sql`
-      WITH h AS (
-        SELECT r.* FROM "_RowToTable" rt JOIN "Row" r ON r."versionId" = rt."A"
-        WHERE rt."B" = ${headTableVersionId}
+      WITH head_only AS MATERIALIZED (
+        ${linksMissingIn(headTableVersionId, draftTableVersionId)}
+      ),
+      draft_only AS MATERIALIZED (
+        ${linksMissingIn(draftTableVersionId, headTableVersionId)}
+      ),
+      h AS (
+        SELECT r.* FROM "Row" r WHERE r."versionId" = ANY(ARRAY(SELECT "A" FROM head_only))
       ),
       d AS (
-        SELECT r.* FROM "_RowToTable" rt JOIN "Row" r ON r."versionId" = rt."A"
-        WHERE rt."B" = ${draftTableVersionId}
+        SELECT r.* FROM "Row" r WHERE r."versionId" = ANY(ARRAY(SELECT "A" FROM draft_only))
       )
       SELECT
         h."versionId" AS "h_versionId", h."createdId" AS "h_createdId", h."id" AS "h_id",
@@ -264,9 +269,8 @@ export class SnapshotReader {
         d."hash" AS "d_hash", d."schemaHash" AS "d_schemaHash", d."createdAt" AS "d_createdAt",
         d."updatedAt" AS "d_updatedAt", d."publishedAt" AS "d_publishedAt"
       FROM h FULL OUTER JOIN d ON h."createdId" = d."createdId"
-      WHERE h."versionId" IS DISTINCT FROM d."versionId"
-        AND (h."createdId" IS NULL OR d."createdId" IS NULL
-             OR h."id" <> d."id" OR (${dataDifference}))
+      WHERE h."createdId" IS NULL OR d."createdId" IS NULL
+         OR h."id" <> d."id" OR (${dataDifference})
     `);
 
     return rows.map((row) => {

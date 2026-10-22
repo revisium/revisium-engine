@@ -15,10 +15,7 @@ export function computeFingerprint(
   hash.update(`${snapshot.headRevisionId}|${snapshot.draftRevisionId}`);
 
   for (const key of [...applied].sort()) {
-    hash.update(`\n${key}`);
-    for (const part of versionParts(catalogue, key)) {
-      hash.update(`|${part}`);
-    }
+    hash.update(`\n${key}|${versionParts(catalogue, key).join('|')}`);
   }
 
   return hash.digest('hex');
@@ -55,9 +52,16 @@ function tablePart(version: TableVersion | undefined): string {
   return version ? version.versionId : '-';
 }
 
+const rowParts = new WeakMap<RowVersion, string>();
+
 function rowPart(version: RowVersion | undefined): string {
   if (!version) {
     return '-';
   }
-  return `${version.versionId}:${version.id}:${version.hash}:${new Date(version.updatedAt).toISOString()}`;
+  let part = rowParts.get(version);
+  if (part === undefined) {
+    part = `${version.versionId}:${version.id}:${version.hash}:${new Date(version.updatedAt).getTime()}`;
+    rowParts.set(version, part);
+  }
+  return part;
 }

@@ -4,10 +4,12 @@ export type ChangeOperation = 'commit' | 'revert';
 
 export type RowSelector = { tableId: string; rowId: string; side?: 'head' };
 
+export type TableSelector = string | { tableId: string; side?: 'head' };
+
 export type FieldSelector = { tableId: string; rowId: string; path: string };
 
 export interface SelectionItems {
-  tables?: string[];
+  tables?: TableSelector[];
   tableData?: string[];
   views?: string[];
   sharedSchemas?: string[];
@@ -80,6 +82,17 @@ export interface Blocker {
   message: string;
 }
 
+export interface DeferredValues {
+  unit: PublicUnit;
+  paths: string[];
+  structure: PublicUnit;
+}
+
+export interface RenumberedMigrationId {
+  from: string;
+  to: string;
+}
+
 export interface UnitCounts {
   selected: number;
   required: number;
@@ -101,6 +114,7 @@ export interface PreviewChangesResult {
   counts: UnitCounts;
   required: RequiredUnit[];
   blockers: Blocker[];
+  deferred: DeferredValues[];
   sample: PublicUnit[];
   unmatched: SelectionItems;
 }
@@ -134,6 +148,7 @@ export interface ApplyChangesResult {
   draftRevisionId?: string;
   applied?: { selected: number; required: number };
   remaining?: { units: number };
+  renumbered?: RenumberedMigrationId[];
   required?: RequiredUnit[];
   blockers?: Blocker[];
 }

@@ -152,6 +152,43 @@ describe('structure units (BR-007)', () => {
     );
   });
 
+  it('lists new-field values of a created row as deferred with the structure', async () => {
+    const scenario = await givenColorAddedWhilePricesChange();
+    await scenario.createRow('products', 'p3', {
+      ...product('three', 30),
+      color: 'green',
+    });
+
+    const preview = await scenario.preview('commit', {
+      rows: [{ tableId: 'products', rowId: 'p3' }],
+    });
+
+    expect(preview.status).toBe('ready');
+    expect(preview.deferred).toEqual([
+      {
+        unit: { kind: 'rowCreate', tableId: 'products', rowId: 'p3' },
+        paths: ['/color'],
+        structure: { kind: 'structure', tableId: 'products' },
+      },
+    ]);
+  });
+
+  it('defers nothing when the created row is committed with the structure', async () => {
+    const scenario = await givenColorAddedWhilePricesChange();
+    await scenario.createRow('products', 'p3', {
+      ...product('three', 30),
+      color: 'green',
+    });
+
+    const preview = await scenario.preview('commit', {
+      tables: ['products'],
+      rows: [{ tableId: 'products', rowId: 'p3' }],
+    });
+
+    expect(preview.status).toBe('ready');
+    expect(preview.deferred).toEqual([]);
+  });
+
   it('migrates a Head row whose deletion stays in the Draft into the committed structure', async () => {
     const scenario = await givenColorAddedWhilePricesChange();
     await scenario.removeRow('products', 'p2');

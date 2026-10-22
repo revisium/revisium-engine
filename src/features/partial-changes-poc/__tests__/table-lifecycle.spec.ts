@@ -250,6 +250,23 @@ describe('table lifecycle as structure units', () => {
     ]);
   });
 
+  it('addresses the removal of a table id taken over by a rename with side head', async () => {
+    const scenario = await ChangesScenario.committed(kit, {
+      first: { schema: tagSchema, rows: { a1: { label: 'a' } } },
+      second: { schema: tagSchema, rows: { b1: { label: 'b' } } },
+    });
+    await scenario.removeTable('second');
+    await scenario.renameTable('first', 'second');
+
+    const result = await scenario.commit({
+      tables: [{ tableId: 'second', side: 'head' }],
+    });
+
+    expect(result.status).toBe('applied');
+    expect(await scenario.tableIds('head')).toEqual(['first']);
+    expect(await scenario.tableIds('draft')).toEqual(['second']);
+  });
+
   it('requires the other half of a table id swap', async () => {
     const scenario = await ChangesScenario.committed(kit, {
       first: { schema: tagSchema, rows: { a1: { label: 'a' } } },

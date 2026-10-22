@@ -10,6 +10,7 @@ import {
   MixedTableRows,
   splitMixedTableRows,
 } from 'src/features/partial-changes-poc/write/mixed-table-rows';
+import { schemaUsesFiles } from 'src/features/partial-changes-poc/write/schema-files';
 import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
@@ -147,7 +148,7 @@ export class RevertWriter {
       ...mergedVersionIds,
     ]);
 
-    if (target.table.kind !== 'system') {
+    if (target.table.kind !== 'system' && schemaUsesFiles(target.schema)) {
       await this.fileUsageIntegration.registerReferencesForRowVersions({
         revisionId: plan.snapshot.draftRevisionId,
         tableId: target.publicId ?? target.table.tableId,

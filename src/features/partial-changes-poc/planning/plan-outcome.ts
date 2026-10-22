@@ -7,6 +7,7 @@ import {
   PreviewChangesResult,
   PreviewStatus,
   PublicUnit,
+  RenumberedMigrationId,
   RequiredUnit,
   UnitCounts,
 } from 'src/features/partial-changes-poc/partial-changes.types';
@@ -67,6 +68,7 @@ export function toPreviewResult(
     counts: planCounts(plan),
     required: requiredUnits(plan),
     blockers: plan.blockers,
+    deferred: plan.target.deferred,
     sample: appliedSample(plan),
     unmatched: plan.unmatched,
   };
@@ -109,4 +111,11 @@ export function appliedCounts(
     applied: { selected: counts.selected, required: counts.required },
     remaining: { units: counts.remaining },
   };
+}
+
+export function renumberedIds(plan: ChangePlan): RenumberedMigrationId[] {
+  return plan.ledger.renumbered.map(({ source, migration }) => ({
+    from: source.id,
+    to: migration.id,
+  }));
 }

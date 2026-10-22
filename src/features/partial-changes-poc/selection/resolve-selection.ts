@@ -12,6 +12,7 @@ import {
   RowSelector,
   Selection,
   SelectionItems,
+  TableSelector,
 } from 'src/features/partial-changes-poc/partial-changes.types';
 
 export interface SelectionResolution {
@@ -94,7 +95,13 @@ class ItemsResolver {
     }
   }
 
-  private tableById(tableId: string): CatalogueTable | undefined {
+  private tableById(
+    tableId: string,
+    side?: 'head',
+  ): CatalogueTable | undefined {
+    if (side === 'head') {
+      return this.headTables.get(tableId);
+    }
     return this.draftTables.get(tableId) ?? this.headTables.get(tableId);
   }
 
@@ -106,12 +113,10 @@ class ItemsResolver {
       unmatched: {},
     };
 
-    items.tables?.forEach((id) =>
-      this.resolveTableUnit(id, 'structure', 'tables', result),
+    items.tables?.forEach((selector) =>
+      this.resolveStructureUnit(selector, result),
     );
-    items.views?.forEach((id) =>
-      this.resolveTableUnit(id, 'views', 'views', result),
-    );
+    items.views?.forEach((id) => this.resolveViewsUnit(id, result));
     items.sharedSchemas?.forEach((id) => this.resolveSharedSchema(id, result));
     items.tableData?.forEach((id) => this.resolveTableData(id, result));
     items.rows?.forEach((selector) => this.resolveRow(selector, result));
@@ -120,22 +125,29 @@ class ItemsResolver {
     return result;
   }
 
-  private resolveTableUnit(
-    tableId: string,
-    kind: 'structure' | 'views',
-    item: 'tables' | 'views',
+  private resolveStructureUnit(
+    selector: TableSelector,
     result: ItemsResolution,
   ): void {
-    const table = this.tableById(tableId);
+    const { tableId, side } =
+      typeof selector === 'string' ? { tableId: selector } : selector;
     const unit =
-      kind === 'structure'
-        ? (table?.structureUnit ?? this.transientStructureUnit(tableId))
-        : table?.viewsUnit;
+      this.tableById(tableId, side)?.structureUnit ??
+      (side ? undefined : this.transientStructureUnit(tableId));
     if (unit) {
       result.keys.add(unit);
       return;
     }
-    addUnmatched(result, item, tableId);
+    addUnmatched(result, 'tables', selector);
+  }
+
+  private resolveViewsUnit(tableId: string, result: ItemsResolution): void {
+    const unit = this.tableById(tableId)?.viewsUnit;
+    if (unit) {
+      result.keys.add(unit);
+      return;
+    }
+    addUnmatched(result, 'views', tableId);
   }
 
   private transientStructureUnit(tableId: string): string | undefined {

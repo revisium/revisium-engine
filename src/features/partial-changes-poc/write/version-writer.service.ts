@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'src/engine-prisma-types';
-import type { InputJsonValue } from 'src/engine-prisma-types';
+import { linksMissingIn } from 'src/features/partial-changes-poc/snapshot/row-links';
 import { TableVersion } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
 import { IdService } from 'src/infrastructure/database/id.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -16,7 +16,7 @@ export interface NewRowVersion {
   publishedAt: Date;
 }
 
-const CREATE_BATCH_SIZE = 1000;
+const CREATE_BATCH_SIZE = 5000;
 
 @Injectable()
 export class VersionWriter {
@@ -53,8 +53,9 @@ export class VersionWriter {
       INSERT INTO "_RowToTable" ("A", "B")
       SELECT rt."A", ${versionId}
       FROM "_RowToTable" rt
-      WHERE rt."B" = ${args.copyLinksFrom}
-        AND NOT (rt."A" = ANY(${[...args.withoutRowVersionIds]}::text[]))
+      LEFT JOIN unnest(${[...args.withoutRowVersionIds]}::text[]) AS dropped("A")
+        ON dropped."A" = rt."A"
+      WHERE rt."B" = ${args.copyLinksFrom} AND dropped."A" IS NULL
     `);
 
     return versionId;
@@ -93,24 +94,31 @@ export class VersionWriter {
     readonly: boolean,
   ): Promise<string[]> {
     const versionIds: string[] = [];
-    const now = new Date();
+    const now = new Date().toISOString();
 
     for (let start = 0; start < rows.length; start += CREATE_BATCH_SIZE) {
-      const batch = rows.slice(start, start + CREATE_BATCH_SIZE).map((row) => ({
-        versionId: this.idService.generate(),
-        createdId: row.createdId,
-        id: row.id,
-        readonly,
-        data: row.data as InputJsonValue,
-        meta: row.meta as InputJsonValue,
-        hash: row.hash,
-        schemaHash: row.schemaHash,
-        createdAt: row.createdAt,
-        updatedAt: now,
-        publishedAt: row.publishedAt,
-      }));
-      await this.db.row.createMany({ data: batch });
-      versionIds.push(...batch.map((row) => row.versionId));
+      const batch = rows.slice(start, start + CREATE_BATCH_SIZE);
+      const batchIds = batch.map(() => this.idService.generate());
+      await this.db.$executeRaw(sql`
+        INSERT INTO "Row" ("versionId", "createdId", "id", "readonly", "data", "meta", "hash",
+                           "schemaHash", "createdAt", "updatedAt", "publishedAt")
+        SELECT v."versionId", v."createdId", v."id", ${readonly}, v."data"::jsonb, v."meta"::jsonb,
+               v."hash", v."schemaHash", v."createdAt"::timestamp(3), ${now}::timestamp(3),
+               v."publishedAt"::timestamp(3)
+        FROM unnest(
+          ${batchIds}::text[],
+          ${batch.map((row) => row.createdId)}::text[],
+          ${batch.map((row) => row.id)}::text[],
+          ${batch.map((row) => JSON.stringify(row.data))}::text[],
+          ${batch.map((row) => JSON.stringify(row.meta ?? {}))}::text[],
+          ${batch.map((row) => row.hash)}::text[],
+          ${batch.map((row) => row.schemaHash)}::text[],
+          ${batch.map((row) => isoOf(row.createdAt))}::text[],
+          ${batch.map((row) => isoOf(row.publishedAt))}::text[]
+        ) AS v("versionId", "createdId", "id", "data", "meta", "hash", "schemaHash",
+               "createdAt", "publishedAt")
+      `);
+      versionIds.push(...batchIds);
     }
 
     return versionIds;
@@ -127,20 +135,33 @@ export class VersionWriter {
     `);
   }
 
-  async lockTableWithRows(tableVersionId: string): Promise<void> {
+  async lockTableWithRows(
+    tableVersionId: string,
+    lockedTableVersionId: string | undefined,
+  ): Promise<void> {
     await this.db.$executeRaw(sql`
       UPDATE "Table" SET "readonly" = true
       WHERE "versionId" = ${tableVersionId} AND "readonly" = false
     `);
 
-    await this.lockRowsOfTable(tableVersionId);
+    await this.lockRowsOfTable(tableVersionId, lockedTableVersionId);
   }
 
-  async lockRowsOfTable(tableVersionId: string): Promise<void> {
+  async lockRowsOfTable(
+    tableVersionId: string,
+    lockedTableVersionId: string | undefined,
+  ): Promise<void> {
+    const candidates = lockedTableVersionId
+      ? linksMissingIn(tableVersionId, lockedTableVersionId)
+      : sql`SELECT "A" FROM "_RowToTable" WHERE "B" = ${tableVersionId}`;
+
     await this.db.$executeRaw(sql`
       UPDATE "Row" SET "readonly" = true
-      WHERE "readonly" = false
-        AND "versionId" IN (SELECT "A" FROM "_RowToTable" WHERE "B" = ${tableVersionId})
+      WHERE "readonly" = false AND "versionId" = ANY(ARRAY(${candidates}))
     `);
   }
+}
+
+function isoOf(value: Date | string): string {
+  return new Date(value).toISOString();
 }

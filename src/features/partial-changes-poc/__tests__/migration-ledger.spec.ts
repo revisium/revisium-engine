@@ -66,6 +66,28 @@ describe('migration ledger of partial structure commits', () => {
     expect((remaining?.id ?? '') > orders.id).toBe(true);
   });
 
+  it('reports the renumbered migration in the commit result', async () => {
+    const { scenario, products } = await givenProductsThenOrdersChanged();
+
+    const result = await scenario.commit({ tables: ['orders'] });
+
+    const [remaining] = pending(
+      await scenario.ledger('head'),
+      await scenario.ledger('draft'),
+    );
+    expect(result.renumbered).toEqual([
+      { from: products.id, to: remaining?.id },
+    ]);
+  });
+
+  it('reports no renumbering when the remaining migrations already follow the published ones', async () => {
+    const { scenario } = await givenProductsThenOrdersChanged();
+
+    const result = await scenario.commit({ tables: ['products'] });
+
+    expect(result).toMatchObject({ status: 'applied', renumbered: [] });
+  });
+
   it('keeps ids when the remaining migrations already follow the published ones', async () => {
     const { scenario, orders } = await givenProductsThenOrdersChanged();
 

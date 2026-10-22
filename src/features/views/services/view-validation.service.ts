@@ -20,7 +20,7 @@ const DB_PATH_PREFIX = '$.';
 const VIEW_ID_PATTERN = /^(?!__)[a-zA-Z_][a-zA-Z0-9-_]*$/;
 const VIEW_ID_MAX_LENGTH = 64;
 
-export interface ViewValidationFailure {
+interface ViewValidationFailure {
   category: 'data' | 'identity';
   message: string;
   viewId?: string;
@@ -77,52 +77,13 @@ export class ViewValidationService {
     this.validateSuppliedSchemaFields(tableId, viewsData, schema);
   }
 
-  public validateSuppliedSchemaFields(
+  private validateSuppliedSchemaFields(
     tableId: string,
     viewsData: TableViewsData,
     schema: JsonSchema,
   ): void {
     const invalidFields = this.findInvalidViewFields(viewsData, schema);
     this.rejectInvalidViewFields(tableId, invalidFields);
-  }
-
-  public describeValidationFailure(
-    error: unknown,
-  ): ViewValidationFailure | undefined {
-    if (!(error instanceof BadRequestException)) {
-      return undefined;
-    }
-    const cause = error.cause;
-    if (
-      cause &&
-      typeof cause === 'object' &&
-      'kind' in cause &&
-      cause.kind === 'viewValidation' &&
-      'category' in cause &&
-      (cause.category === 'data' || cause.category === 'identity') &&
-      'message' in cause &&
-      typeof cause.message === 'string'
-    ) {
-      const failure = cause as ViewValidationFailure;
-      return {
-        category: failure.category,
-        message: failure.message,
-        viewId: failure.viewId,
-        component: failure.component,
-        path: failure.path,
-      };
-    }
-    const firstError: unknown = Array.isArray(cause) ? cause[0] : undefined;
-    let path: string | undefined;
-    if (
-      firstError &&
-      typeof firstError === 'object' &&
-      'instancePath' in firstError &&
-      typeof firstError.instancePath === 'string'
-    ) {
-      path = firstError.instancePath || '/';
-    }
-    return { category: 'data', message: error.message, path };
   }
 
   private findInvalidViewFields(

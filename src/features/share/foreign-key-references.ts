@@ -1,4 +1,3 @@
-import { getPathByStore, traverseStore } from '@revisium/schema-toolkit/lib';
 import type {
   JsonArrayStore,
   JsonObjectStore,
@@ -9,14 +8,10 @@ import {
   JsonSchemaTypeName,
   type JsonValue,
 } from '@revisium/schema-toolkit/types';
-import { escapePointer } from 'src/features/share/json-pointer';
 
 export interface ForeignKeyReference {
   tableId: string;
   rowId: string;
-  segments: string[];
-  jsonPointer: string;
-  schemaPath: string;
   legacyPath: string;
 }
 
@@ -25,23 +20,7 @@ export function getForeignKeyReferences(
   value: JsonValue,
 ): ForeignKeyReference[] {
   const references: ForeignKeyReference[] = [];
-  readValueReferences(schema, value, [], [], references);
-  return references;
-}
-
-export function getForeignKeySchemaReferences(
-  schema: JsonSchemaStore,
-): Array<{ tableId: string; schemaPath: string }> {
-  const references: Array<{ tableId: string; schemaPath: string }> = [];
-  traverseStore(schema, (node) => {
-    if (node.type !== JsonSchemaTypeName.String || !node.foreignKey) {
-      return;
-    }
-    references.push({
-      tableId: node.foreignKey,
-      schemaPath: getPathByStore(node),
-    });
-  });
+  readValueReferences(schema, value, [], references);
   return references;
 }
 
@@ -49,17 +28,10 @@ function readValueReferences(
   schema: JsonSchemaStore,
   value: JsonValue,
   dataSegments: string[],
-  schemaSegments: string[],
   references: ForeignKeyReference[],
 ): void {
   if (schema.type === JsonSchemaTypeName.String) {
-    appendStringReference(
-      schema,
-      value,
-      dataSegments,
-      schemaSegments,
-      references,
-    );
+    appendStringReference(schema, value, dataSegments, references);
     return;
   }
   if (schema.type === JsonSchemaTypeName.Object && isObject(value)) {
@@ -70,7 +42,6 @@ function readValueReferences(
           childSchema,
           childValue,
           [...dataSegments, key],
-          [...schemaSegments, 'properties', key],
           references,
         );
       }
@@ -84,7 +55,6 @@ function readValueReferences(
         itemSchema,
         item,
         [...dataSegments, String(index)],
-        [...schemaSegments, 'items'],
         references,
       );
     });
@@ -95,7 +65,6 @@ function appendStringReference(
   schema: JsonStringStore,
   value: JsonValue,
   dataSegments: string[],
-  schemaSegments: string[],
   references: ForeignKeyReference[],
 ): void {
   if (!schema.foreignKey || typeof value !== 'string') {
@@ -104,19 +73,10 @@ function appendStringReference(
   references.push({
     tableId: schema.foreignKey,
     rowId: value,
-    segments: dataSegments,
-    jsonPointer: pointerFromSegments(dataSegments),
-    schemaPath: pointerFromSegments(schemaSegments),
     legacyPath: dataSegments.length > 0 ? `/${dataSegments.join('/')}` : '/',
   });
 }
 
 function isObject(value: JsonValue): value is Record<string, JsonValue> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
-
-function pointerFromSegments(segments: string[]): string {
-  return segments.length === 0
-    ? ''
-    : `/${segments.map(escapePointer).join('/')}`;
 }

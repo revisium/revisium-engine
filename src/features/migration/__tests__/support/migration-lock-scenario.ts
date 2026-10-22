@@ -26,9 +26,7 @@ export async function createMigrationLockTestKit() {
             options,
           ),
         checkRevisionLock: () =>
-          kit.migrationApi.checkRevisionLock({
-            revisionId: branch.draftRevisionId,
-          }),
+          kit.migrationLockService.checkRevisionLock(branch.draftRevisionId),
         insertMigrationAndCheckInCurrentTransaction: (
           status: MigrationStatus,
         ) =>
@@ -39,9 +37,9 @@ export async function createMigrationLockTestKit() {
               status,
               { tableId: 'transaction-lock' },
             );
-            return kit.migrationApi.checkRevisionLock({
-              revisionId: branch.draftRevisionId,
-            });
+            return kit.migrationLockService.checkRevisionLock(
+              branch.draftRevisionId,
+            );
           }),
         renameBranchAndCheckUncommittedLock: () =>
           kit.transactionService.run(async () => {

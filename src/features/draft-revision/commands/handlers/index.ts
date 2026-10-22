@@ -10,8 +10,6 @@ import { DraftRevisionRenameRowsHandler } from 'src/features/draft-revision/comm
 import { DraftRevisionRenameTableHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-rename-table.handler';
 import { DraftRevisionRevertHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-revert.handler';
 import { DraftRevisionUpdateRowsHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-update-rows.handler';
-import { DraftRevisionWriteStateHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-write-state.handler';
-import { DraftRevisionCleanupDetachedStateHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-cleanup-detached-state.handler';
 
 export const DRAFT_REVISION_COMMANDS_HANDLERS = [
   DraftRevisionCreateTableHandler,
@@ -26,8 +24,6 @@ export const DRAFT_REVISION_COMMANDS_HANDLERS = [
   DraftRevisionCommitHandler,
   DraftRevisionRevertHandler,
   DraftRevisionRecomputeHasChangesHandler,
-  DraftRevisionWriteStateHandler,
-  DraftRevisionCleanupDetachedStateHandler,
 ];
 
 export { DraftRevisionCreateTableHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-create-table.handler';
@@ -42,5 +38,3 @@ export { DraftRevisionGetOrCreateDraftRowHandler } from 'src/features/draft-revi
 export { DraftRevisionCommitHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-commit.handler';
 export { DraftRevisionRevertHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-revert.handler';
 export { DraftRevisionRecomputeHasChangesHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-recompute-has-changes.handler';
-export { DraftRevisionWriteStateHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-write-state.handler';
-export { DraftRevisionCleanupDetachedStateHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-cleanup-detached-state.handler';

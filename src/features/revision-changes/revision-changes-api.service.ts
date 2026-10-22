@@ -10,9 +10,6 @@ import {
   GetRowChangesQueryData,
   GetTableChangesQueryData,
   GetRevisionChangesQueryData,
-  CompareSuppliedRowsQuery,
-  CompareSuppliedRowsQueryData,
-  CompareSuppliedRowsQueryResult,
 } from './queries/impl';
 
 @Injectable()
@@ -44,14 +41,5 @@ export class RevisionChangesApiService {
       GetRowChangesQuery,
       GetRowChangesQueryReturnType
     >(new GetRowChangesQuery(data));
-  }
-
-  public compareSuppliedRows(
-    data: CompareSuppliedRowsQueryData,
-  ): Promise<CompareSuppliedRowsQueryResult> {
-    return this.queryBus.execute<
-      CompareSuppliedRowsQuery,
-      CompareSuppliedRowsQueryResult
-    >(new CompareSuppliedRowsQuery(data));
   }
 }

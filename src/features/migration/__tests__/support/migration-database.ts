@@ -8,17 +8,6 @@ export interface MigrationFixtureOptions {
   copiedRows?: number;
 }
 
-export async function setMigrationStatus(
-  database: Pick<PrismaService, 'tableMigration'>,
-  migrationId: string,
-  status: MigrationStatus,
-): Promise<void> {
-  await database.tableMigration.update({
-    where: { id: migrationId },
-    data: { status, phase: status },
-  });
-}
-
 export async function renameMigrationBranch(
   database: Pick<PrismaService, 'branch'>,
   branchId: string,

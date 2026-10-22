@@ -1,5 +1,4 @@
 import { CacheModule } from '@nestjs/cache-manager';
-import type { ModuleMetadata } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CommandBus, CqrsModule, QueryBus } from '@nestjs/cqrs';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -56,10 +55,7 @@ export interface DraftTestKit {
 }
 
 export async function createDraftTestKit(
-  options: {
-    imports?: ModuleMetadata['imports'];
-    migrationOptions?: MigrationOptions;
-  } = {},
+  options: { migrationOptions?: MigrationOptions } = {},
 ): Promise<DraftTestKit> {
   const module = await Test.createTestingModule({
     imports: [
@@ -79,7 +75,6 @@ export async function createDraftTestKit(
       ViewsModule,
       FileUsageModule,
       CacheModule.register(),
-      ...(options.imports ?? []),
     ],
   })
     .overrideProvider(STORAGE_SERVICE)

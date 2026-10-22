@@ -1,6 +1,4 @@
-import { ConfigService } from '@nestjs/config';
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import type { MigrationLockedDetails } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
@@ -11,9 +9,7 @@ import {
   PreviewChangesQuery,
   PreviewChangesQueryReturnType,
 } from 'src/features/partial-changes-poc/queries/impl/preview-changes.query';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-
-const DEFAULT_TRANSACTION_TIMEOUT_MS = 15_000;
+import { PlanningTransaction } from 'src/features/partial-changes-poc/queries/planning-transaction.service';
 
 @QueryHandler(PreviewChangesQuery)
 export class PreviewChangesHandler implements IQueryHandler<
@@ -21,19 +17,15 @@ export class PreviewChangesHandler implements IQueryHandler<
   PreviewChangesQueryReturnType
 > {
   constructor(
-    private readonly transactionService: TransactionPrismaService,
+    private readonly planningTransaction: PlanningTransaction,
     private readonly migrationLockService: MigrationLockService,
     private readonly planner: ChangePlanner,
-    private readonly configService: ConfigService,
   ) {}
 
   execute({
     data,
   }: PreviewChangesQuery): Promise<PreviewChangesQueryReturnType> {
-    return this.transactionService.run(() => this.preview(data), {
-      isolationLevel: TransactionIsolationLevel.RepeatableRead,
-      timeout: this.transactionTimeout(),
-    });
+    return this.planningTransaction.run(() => this.preview(data));
   }
 
   private async preview(
@@ -45,11 +37,6 @@ export class PreviewChangesHandler implements IQueryHandler<
       plan.blockers.unshift(lock);
     }
     return toPreviewResult(plan, Boolean(data.includeRequired));
-  }
-
-  private transactionTimeout(): number {
-    const configured = Number(this.configService.get('TRANSACTION_TIMEOUT'));
-    return configured > 0 ? configured : DEFAULT_TRANSACTION_TIMEOUT_MS;
   }
 
   private async activeMigrationBlocker(

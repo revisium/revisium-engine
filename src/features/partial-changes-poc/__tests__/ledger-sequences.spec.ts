@@ -1,4 +1,6 @@
 import { obj, str } from '@revisium/schema-toolkit/mocks';
+import type { ApplyStatus } from 'src/features/partial-changes-poc/partial-changes.types';
+import { Picker } from 'src/features/partial-changes-poc/__tests__/support/picker';
 import { ChangesScenario } from 'src/features/partial-changes-poc/__tests__/support/changes-scenario';
 import {
   createPartialChangesTestKit,
@@ -14,44 +16,22 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
+
+type StepOutcome = {
+  summary: string;
+  status?: ApplyStatus;
+  allowed?: ApplyStatus[];
+};
 
 type Step = {
   name: string;
   weight: number;
-  run: (scenario: ChangesScenario, pick: Picker) => Promise<string>;
+  run: (scenario: ChangesScenario, pick: Picker) => Promise<StepOutcome>;
 };
 
-class Picker {
-  private state: number;
-  private counter = 0;
-
-  constructor(seed: number) {
-    this.state = seed;
-  }
-
-  next(): number {
-    this.state = (this.state * 1103515245 + 12345) % 2147483648;
-    return this.state / 2147483648;
-  }
-
-  one<T>(items: readonly T[]): T | undefined {
-    return items[Math.floor(this.next() * items.length)];
-  }
-
-  weighted(items: readonly Step[]): Step | undefined {
-    const total = items.reduce((sum, item) => sum + item.weight, 0);
-    let point = this.next() * total;
-    return items.find((item) => {
-      point -= item.weight;
-      return point < 0;
-    });
-  }
-
-  name(prefix: string): string {
-    this.counter += 1;
-    return `${prefix}${this.counter}`;
-  }
-}
+const APPLIED: ApplyStatus[] = ['applied'];
+const APPLIED_OR_EMPTY: ApplyStatus[] = ['applied', 'empty'];
 
 async function tablesWithPendingStructure(
   scenario: ChangesScenario,
@@ -74,24 +54,37 @@ async function tablesWithPendingStructure(
 
 async function partialStructure(
   scenario: ChangesScenario,
-  pick: Picker,
+  tableId: string,
   operation: 'commit' | 'revert',
-): Promise<string> {
-  const tableId = pick.one(await tablesWithPendingStructure(scenario));
-  if (!tableId) {
-    return 'skipped';
-  }
+): Promise<StepOutcome> {
   const selection = { tables: [tableId] };
-  const before = new Set((await scenario.ledger('draft')).map(({ id }) => id));
   const result =
     operation === 'commit'
-      ? await scenario.commit(selection, { includeRequired: true })
-      : await scenario.revert(selection, { includeRequired: true });
-  const renumbered = (await scenario.ledger('draft')).filter(
-    ({ id }) => !before.has(id),
-  ).length;
+      ? await scenario.commitWithRequired(selection)
+      : await scenario.revertWithRequired(selection);
+  const renumbered = result.renumbered?.length ?? 0;
   const blockers = result.blockers ? ` ${JSON.stringify(result.blockers)}` : '';
-  return `${tableId}: ${result.status}, renumbered ${renumbered}${blockers}`;
+  return {
+    summary: `${tableId}: ${result.status}, renumbered ${renumbered}${blockers}`,
+    status: result.status,
+    allowed: APPLIED,
+  };
+}
+
+async function randomPartialStructure(
+  scenario: ChangesScenario,
+  pick: Picker,
+  operation: 'commit' | 'revert',
+): Promise<StepOutcome> {
+  const tableId = pick.one(await tablesWithPendingStructure(scenario));
+  if (!tableId) {
+    return { summary: 'skipped' };
+  }
+  return partialStructure(scenario, tableId, operation);
+}
+
+function done(summary: string): StepOutcome {
+  return { summary };
 }
 
 const steps: Step[] = [
@@ -101,10 +94,10 @@ const steps: Step[] = [
     run: async (scenario, pick) => {
       const tableId = pick.one(await scenario.tableIds('draft'));
       if (!tableId) {
-        return 'skipped';
+        return done('skipped');
       }
       await scenario.addField(tableId, pick.name('f'), str());
-      return tableId;
+      return done(tableId);
     },
   },
   {
@@ -114,7 +107,7 @@ const steps: Step[] = [
       const tableId = pick.name('t');
       await scenario.createTable(tableId, obj({ label: str() }));
       await scenario.createRow(tableId, 'r1', { label: tableId });
-      return tableId;
+      return done(tableId);
     },
   },
   {
@@ -123,11 +116,11 @@ const steps: Step[] = [
     run: async (scenario, pick) => {
       const tableId = pick.one(await scenario.tableIds('draft'));
       if (!tableId) {
-        return 'skipped';
+        return done('skipped');
       }
       const nextTableId = pick.name('n');
       await scenario.renameTable(tableId, nextTableId);
-      return `${tableId}->${nextTableId}`;
+      return done(`${tableId}->${nextTableId}`);
     },
   },
   {
@@ -135,33 +128,36 @@ const steps: Step[] = [
     weight: 2,
     run: async (scenario, pick) => {
       if (!(await scenario.tableIds('draft')).includes('products')) {
-        return 'skipped';
+        return done('skipped');
       }
       await scenario.patchRow('products', 'p1', {
         price: Math.round(pick.next() * 100),
       });
-      return 'products/p1';
+      return done('products/p1');
     },
   },
   {
     name: 'partial commit of one table structure',
     weight: 6,
-    run: (scenario, pick) => partialStructure(scenario, pick, 'commit'),
+    run: (scenario, pick) => randomPartialStructure(scenario, pick, 'commit'),
   },
   {
     name: 'partial revert of one table structure',
     weight: 3,
-    run: (scenario, pick) => partialStructure(scenario, pick, 'revert'),
+    run: (scenario, pick) => randomPartialStructure(scenario, pick, 'revert'),
   },
   {
     name: 'partial commit of table data',
     weight: 1,
     run: async (scenario) => {
-      const result = await scenario.commit(
-        { tableData: ['products'] },
-        { includeRequired: true },
-      );
-      return result.status;
+      const result = await scenario.commitWithRequired({
+        tableData: ['products'],
+      });
+      return {
+        summary: result.status,
+        status: result.status,
+        allowed: APPLIED_OR_EMPTY,
+      };
     },
   },
   {
@@ -169,16 +165,19 @@ const steps: Step[] = [
     weight: 1,
     run: async (scenario) => {
       if (!(await scenario.draftHasChanges())) {
-        return 'skipped';
+        return done('skipped');
       }
       await scenario.commitNatively();
-      return 'committed';
+      return done('committed');
     },
   },
   {
     name: 'all: true commit',
     weight: 1,
-    run: async (scenario) => (await scenario.commit({ all: true })).status,
+    run: async (scenario) => {
+      const { status } = await scenario.commit({ all: true });
+      return { summary: status, status, allowed: APPLIED_OR_EMPTY };
+    },
   },
 ];
 
@@ -191,6 +190,8 @@ describe('ledger stays replayable across operation sequences (property-style)', 
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -211,25 +212,38 @@ describe('ledger stays replayable across operation sequences (property-style)', 
       const history: string[] = [];
       await givenInterleavedPendingStructure(scenario);
 
+      const opening = await partialStructure(scenario, 'orders', 'commit');
+      await expectStep(history, 'opening partial commit of orders', opening, {
+        scenario,
+        replica,
+      });
       for (let index = 0; index < STEPS_PER_SEQUENCE; index++) {
         const step = pick.weighted(steps);
-        if (!step) {
-          continue;
+        if (step) {
+          await expectStep(history, step.name, await step.run(scenario, pick), {
+            scenario,
+            replica,
+          });
         }
-        history.push(`${step.name}: ${await step.run(scenario, pick)}`);
-        await expectWithHistory(history, () =>
-          expectReplicaMirrorsHead(replica, scenario),
-        );
       }
 
       await expectWithHistory(history, () =>
         expectLedgerReplaysTo(kit, scenario, 'draft'),
       );
-      await scenario.commit({ all: true });
-      await expectWithHistory(history, () =>
-        expectReplicaMirrorsHead(replica, scenario),
+      const final = await scenario.commit({ all: true });
+      await expectWithHistory(history, async () => {
+        expect(APPLIED_OR_EMPTY).toContain(final.status);
+        expect((await scenario.preview('commit', { all: true })).status).toBe(
+          'empty',
+        );
+        expect(await scenario.ledger('draft')).toEqual(
+          await scenario.ledger('head'),
+        );
+        await expectReplicaMirrorsHead(replica, scenario);
+      });
+      process.stdout.write(
+        `seed ${seed}:\n  ${history.join('\n  ')}\n  final all: true: ${final.status}\n`,
       );
-      process.stdout.write(`seed ${seed}:\n  ${history.join('\n  ')}\n`);
     },
   );
 });
@@ -240,6 +254,33 @@ async function givenInterleavedPendingStructure(
   await scenario.addField('products', 'first', str());
   await scenario.addField('orders', 'second', str());
   await scenario.addField('products', 'third', str());
+}
+
+async function expectStep(
+  history: string[],
+  name: string,
+  outcome: StepOutcome,
+  sides: { scenario: ChangesScenario; replica: Replica },
+): Promise<void> {
+  history.push(`${name}: ${outcome.summary}`);
+  await expectWithHistory(history, async () => {
+    if (outcome.allowed) {
+      expect(outcome.allowed).toContain(outcome.status);
+    }
+    await expectPendingAfterPublished(sides.scenario);
+    await expectReplicaMirrorsHead(sides.replica, sides.scenario);
+  });
+}
+
+async function expectPendingAfterPublished(
+  scenario: ChangesScenario,
+): Promise<void> {
+  const head = (await scenario.ledger('head')).map(({ id }) => id);
+  const lastPublished = head.at(-1) ?? '';
+  const pendingBeforeIt = (await scenario.ledger('draft'))
+    .map(({ id }) => id)
+    .filter((id) => !head.includes(id) && id <= lastPublished);
+  expect(pendingBeforeIt).toEqual([]);
 }
 
 async function expectWithHistory(

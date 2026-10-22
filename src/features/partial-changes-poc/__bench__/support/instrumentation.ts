@@ -3,9 +3,11 @@ import { TargetAssembler } from 'src/features/partial-changes-poc/assembly/targe
 import { CommitChangesHandler } from 'src/features/partial-changes-poc/commands/handlers/commit-changes.handler';
 import { RevertPartialChangesHandler } from 'src/features/partial-changes-poc/commands/handlers/revert-changes.handler';
 import { DependencyClosure } from 'src/features/partial-changes-poc/dependencies/dependency-closure.service';
+import { RowLookup } from 'src/features/partial-changes-poc/dependencies/row-lookup.service';
 import { StructureConsistencyChecks } from 'src/features/partial-changes-poc/dependencies/structure-consistency-checks.service';
 import { TargetConsistencyChecks } from 'src/features/partial-changes-poc/dependencies/target-consistency-checks.service';
 import { ChangePlanner } from 'src/features/partial-changes-poc/planning/change-planner.service';
+import { OperationEstimator } from 'src/features/partial-changes-poc/planning/operation-estimator.service';
 import { TargetValidator } from 'src/features/partial-changes-poc/planning/target-validator.service';
 import { PreviewChangesHandler } from 'src/features/partial-changes-poc/queries/handlers/preview-changes.handler';
 import { SnapshotReader } from 'src/features/partial-changes-poc/snapshot/snapshot-reader.service';
@@ -63,10 +65,17 @@ export function instrumentOperations(
       'readTablePairs',
       'readSystemRows',
       'attachStructures',
+      'countChangedRows',
       'readChangedRows',
     ],
     'reader',
   );
+  probe.instrument(
+    get(RowLookup),
+    ['findExistingIds', 'findReferrers', 'referencedValues'],
+    'lookup',
+  );
+  probe.instrument(get(OperationEstimator), ['estimate'], 'estimate');
   probe.instrument(get(DependencyClosure), ['close'], 'closure');
   probe.instrument(get(TargetAssembler), ['assemble'], 'assembly');
   probe.instrument(
@@ -95,7 +104,6 @@ export function instrumentOperations(
       'retirePreviousHead',
       'promoteDraftToHead',
       'createNextDraft',
-      'registerFileReferences',
       'recomputeNextDraftHasChanges',
     ],
     'write.commit',

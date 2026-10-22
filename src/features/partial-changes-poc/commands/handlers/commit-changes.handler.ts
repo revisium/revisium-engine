@@ -7,6 +7,7 @@ import { ChangePlanner } from 'src/features/partial-changes-poc/planning/change-
 import {
   appliedCounts,
   refusalOf,
+  rejectUnreviewedRequired,
   renumberedIds,
 } from 'src/features/partial-changes-poc/planning/plan-outcome';
 import { CommitWriter } from 'src/features/partial-changes-poc/write/commit-writer.service';
@@ -28,6 +29,7 @@ export class CommitChangesHandler implements ICommandHandler<
   execute({
     data,
   }: CommitChangesCommand): Promise<CommitChangesCommandReturnType> {
+    rejectUnreviewedRequired(data);
     return this.transactionService.runSerializable(() => this.commit(data));
   }
 

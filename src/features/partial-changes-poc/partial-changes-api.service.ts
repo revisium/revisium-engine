@@ -10,9 +10,14 @@ import {
 } from 'src/features/partial-changes-poc/commands/impl/revert-changes.command';
 import {
   CommitChangesInput,
+  ListChangesInput,
   PreviewChangesInput,
   RevertChangesInput,
 } from 'src/features/partial-changes-poc/partial-changes.types';
+import {
+  ListChangesQuery,
+  ListChangesQueryReturnType,
+} from 'src/features/partial-changes-poc/queries/impl/list-changes.query';
 import {
   PreviewChangesQuery,
   PreviewChangesQueryReturnType,
@@ -24,6 +29,12 @@ export class PartialChangesApiService {
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
   ) {}
+
+  public listChanges(data: ListChangesInput) {
+    return this.queryBus.execute<ListChangesQuery, ListChangesQueryReturnType>(
+      new ListChangesQuery(data),
+    );
+  }
 
   public previewChanges(data: PreviewChangesInput) {
     return this.queryBus.execute<

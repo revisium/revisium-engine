@@ -54,6 +54,7 @@ export interface TargetTable {
   schema?: JsonSchema;
   structureSide?: RevisionSide;
   rows: TargetRow[];
+  draftFollowsHead?: boolean;
 }
 
 export interface ViewsTarget {

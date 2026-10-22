@@ -22,6 +22,10 @@ export interface Selection extends SelectionItems {
   exclude?: SelectionItems;
 }
 
+export interface UnmatchedSelection extends SelectionItems {
+  exclude?: SelectionItems;
+}
+
 export type UnitKind =
   | 'rowCreate'
   | 'rowDelete'
@@ -72,7 +76,9 @@ export type BlockerCode =
   | 'invalidViews'
   | 'ledgerInconsistent'
   | 'unrecordedStructureChange'
-  | 'migrationInProgress';
+  | 'migrationInProgress'
+  | 'unmatchedSelector'
+  | 'tooLarge';
 
 export interface Blocker {
   code: BlockerCode;
@@ -91,6 +97,19 @@ export interface DeferredValues {
 export interface RenumberedMigrationId {
   from: string;
   to: string;
+}
+
+export interface MixedTableEstimate {
+  tableId: string;
+  linksCopied: number;
+  linksAdded: number;
+}
+
+export interface OperationEstimate {
+  changedRows: number;
+  mergedRows: number;
+  mergedRowsWithFormulas: number;
+  mixedTables: MixedTableEstimate[];
 }
 
 export interface UnitCounts {
@@ -116,7 +135,28 @@ export interface PreviewChangesResult {
   blockers: Blocker[];
   deferred: DeferredValues[];
   sample: PublicUnit[];
-  unmatched: SelectionItems;
+  unmatched: UnmatchedSelection;
+  estimate: OperationEstimate;
+}
+
+export interface ListChangesInput {
+  branch: ChangesBranch;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ListedUnit extends PublicUnit {
+  side?: 'head';
+  structure?: PublicUnit;
+  selector?: Selection;
+}
+
+export interface ListChangesResult {
+  headRevisionId: string;
+  draftRevisionId: string;
+  total: number;
+  units: ListedUnit[];
+  nextCursor?: string;
 }
 
 export type ApplyStatus =
@@ -151,4 +191,5 @@ export interface ApplyChangesResult {
   renumbered?: RenumberedMigrationId[];
   required?: RequiredUnit[];
   blockers?: Blocker[];
+  unmatched?: UnmatchedSelection;
 }

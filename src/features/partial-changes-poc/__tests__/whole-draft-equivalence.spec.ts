@@ -9,6 +9,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('whole-Draft equivalence with native commit and revert (BR-005 oracle)', () => {
   let kit: PartialChangesTestKit;
@@ -16,6 +17,8 @@ describe('whole-Draft equivalence with native commit and revert (BR-005 oracle)'
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();

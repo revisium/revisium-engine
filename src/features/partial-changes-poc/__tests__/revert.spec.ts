@@ -9,6 +9,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('partial revert', () => {
   let kit: PartialChangesTestKit;
@@ -16,6 +17,8 @@ describe('partial revert', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -145,10 +148,9 @@ describe('partial revert', () => {
       await scenario.createRow('products', 'p2', product('p2', 2));
       await scenario.patchRow('orders', 'o1', { product: 'p2' });
 
-      const result = await scenario.revert(
-        { rows: [{ tableId: 'products', rowId: 'p2' }] },
-        { includeRequired: true },
-      );
+      const result = await scenario.revertWithRequired({
+        rows: [{ tableId: 'products', rowId: 'p2' }],
+      });
 
       expect(result.status).toBe('applied');
       expect(await scenario.draftRowIds('products')).toEqual(['p1']);

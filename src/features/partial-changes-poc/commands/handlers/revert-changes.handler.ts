@@ -7,6 +7,7 @@ import { ChangePlanner } from 'src/features/partial-changes-poc/planning/change-
 import {
   appliedCounts,
   refusalOf,
+  rejectUnreviewedRequired,
 } from 'src/features/partial-changes-poc/planning/plan-outcome';
 import { RevertWriter } from 'src/features/partial-changes-poc/write/revert-writer.service';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
@@ -27,6 +28,7 @@ export class RevertPartialChangesHandler implements ICommandHandler<
   execute({
     data,
   }: RevertPartialChangesCommand): Promise<RevertPartialChangesCommandReturnType> {
+    rejectUnreviewedRequired(data);
     return this.transactionService.runSerializable(() => this.revert(data));
   }
 

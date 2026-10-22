@@ -10,6 +10,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 const viewsOf = (name: string) => ({
   version: 1,
@@ -23,6 +24,8 @@ describe('whole-Draft equivalence with structure changes (BR-005 oracle)', () =>
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();

@@ -13,6 +13,7 @@ import {
   Selection,
   SelectionItems,
   TableSelector,
+  UnmatchedSelection,
 } from 'src/features/partial-changes-poc/partial-changes.types';
 
 export interface SelectionResolution {
@@ -20,7 +21,7 @@ export interface SelectionResolution {
   excluded: Set<string>;
   required: Map<string, RequiredReason>;
   blockers: Blocker[];
-  unmatched: SelectionItems;
+  unmatched: UnmatchedSelection;
 }
 
 interface ItemsResolution {
@@ -66,8 +67,22 @@ export function resolveSelection(
     excluded,
     required,
     blockers,
-    unmatched: included.unmatched,
+    unmatched: unmatchedOf(included.unmatched, excludedItems.unmatched),
   };
+}
+
+export function hasUnmatched(unmatched: UnmatchedSelection): boolean {
+  return Object.keys(unmatched).length > 0;
+}
+
+function unmatchedOf(
+  included: SelectionItems,
+  excluded: SelectionItems,
+): UnmatchedSelection {
+  if (Object.keys(excluded).length === 0) {
+    return included;
+  }
+  return { ...included, exclude: excluded };
 }
 
 export function requiredExcludedBlocker(reason: RequiredReason): Blocker {

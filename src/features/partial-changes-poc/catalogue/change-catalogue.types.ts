@@ -69,6 +69,7 @@ export interface ChangeCatalogue {
   views: Map<string, ViewsPair>;
   sharedRows: Map<string, RowPair>;
   ownedRows: Map<string, RowVersion[]>;
+  ownerUnits: Map<string, string>;
 }
 
 export type ViewsMigrator = (
@@ -76,10 +77,32 @@ export type ViewsMigrator = (
   pair: TablePair,
 ) => TableViewsData | undefined;
 
+export function emptyCatalogue(): ChangeCatalogue {
+  return {
+    units: new Map(),
+    tables: new Map(),
+    ledger: {
+      published: [],
+      pending: [],
+      attribution: { ownerOf: new Map(), transient: [], problems: [] },
+      rewritten: [],
+    },
+    schemaRows: new Map(),
+    views: new Map(),
+    sharedRows: new Map(),
+    ownedRows: new Map(),
+    ownerUnits: new Map(),
+  };
+}
+
 export function structureUnitOfOwner(
   catalogue: ChangeCatalogue,
   owner: string | undefined,
 ): string {
+  const merged = owner ? catalogue.ownerUnits.get(owner) : undefined;
+  if (merged) {
+    return merged;
+  }
   const table = owner ? catalogue.tables.get(owner) : undefined;
   return table?.structureUnit ?? `t:${owner ?? ''}/structure`;
 }

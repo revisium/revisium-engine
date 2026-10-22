@@ -8,6 +8,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('foreign keys in partial commit', () => {
   let kit: PartialChangesTestKit;
@@ -15,6 +16,8 @@ describe('foreign keys in partial commit', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -71,10 +74,9 @@ describe('foreign keys in partial commit', () => {
     it('commits the referenced row together with includeRequired', async () => {
       const scenario = await givenOrderMovedToNewProduct();
 
-      const result = await scenario.commit(
-        { fields: [orderProduct] },
-        { includeRequired: true },
-      );
+      const result = await scenario.commitWithRequired({
+        fields: [orderProduct],
+      });
 
       expect(result.status).toBe('applied');
       expect(await scenario.headRowIds('products')).toEqual(['p1', 'p2']);
@@ -123,13 +125,10 @@ describe('foreign keys in partial commit', () => {
       const scenario = await givenOrderMovedAwayFromDeletedProduct();
       const revisions = await scenario.revisionCount();
 
-      const result = await scenario.commit(
-        {
-          rows: [{ tableId: 'products', rowId: 'p1' }],
-          exclude: { fields: [orderProduct] },
-        },
-        { includeRequired: true },
-      );
+      const result = await scenario.commitWithRequired({
+        rows: [{ tableId: 'products', rowId: 'p1' }],
+        exclude: { fields: [orderProduct] },
+      });
 
       expect(result.status).toBe('blocked');
       expect(result.blockers).toEqual([
@@ -183,10 +182,9 @@ describe('foreign keys in partial commit', () => {
     it('commits rename and rewritten references together without a dangling reference', async () => {
       const scenario = await givenRenamedReferencedProduct();
 
-      const result = await scenario.commit(
-        { rows: [{ tableId: 'products', rowId: 'p9' }] },
-        { includeRequired: true },
-      );
+      const result = await scenario.commitWithRequired({
+        rows: [{ tableId: 'products', rowId: 'p9' }],
+      });
 
       expect(result.status).toBe('applied');
       expect(await scenario.headRowIds('products')).toEqual(['p9']);

@@ -1,9 +1,11 @@
+import { BadRequestException } from '@nestjs/common';
 import {
   compareUnits,
   toPublicUnit,
 } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
 import {
   ApplyChangesResult,
+  Blocker,
   PreviewChangesResult,
   PreviewStatus,
   PublicUnit,
@@ -12,6 +14,7 @@ import {
   UnitCounts,
 } from 'src/features/partial-changes-poc/partial-changes.types';
 import { ChangePlan } from 'src/features/partial-changes-poc/planning/change-planner.service';
+import { hasUnmatched } from 'src/features/partial-changes-poc/selection/resolve-selection';
 
 const SAMPLE_SIZE = 20;
 
@@ -23,7 +26,7 @@ export function planStatus(
     return 'empty';
   }
 
-  if (plan.blockers.length > 0) {
+  if (plan.blockers.length > 0 || hasUnmatched(plan.unmatched)) {
     return 'blocked';
   }
 
@@ -40,6 +43,19 @@ export function planCounts(plan: ChangePlan): UnitCounts {
     required: plan.required.size,
     remaining: plan.catalogue.units.size - plan.applied.size,
   };
+}
+
+export function planBlockers(plan: ChangePlan): Blocker[] {
+  if (!hasUnmatched(plan.unmatched)) {
+    return plan.blockers;
+  }
+  return [
+    ...plan.blockers,
+    {
+      code: 'unmatchedSelector',
+      message: `Some selectors match no change: ${JSON.stringify(plan.unmatched)}`,
+    },
+  ];
 }
 
 export function requiredUnits(plan: ChangePlan): RequiredUnit[] {
@@ -67,10 +83,11 @@ export function toPreviewResult(
     fingerprint: plan.fingerprint,
     counts: planCounts(plan),
     required: requiredUnits(plan),
-    blockers: plan.blockers,
+    blockers: planBlockers(plan),
     deferred: plan.target.deferred,
     sample: appliedSample(plan),
     unmatched: plan.unmatched,
+    estimate: plan.estimate,
   };
 }
 
@@ -81,7 +98,12 @@ export function refusalOf(
   const status = planStatus(plan, Boolean(options.includeRequired));
 
   if (status === 'empty') {
-    return { status: 'empty' };
+    return {
+      status: 'empty',
+      headRevisionId: plan.snapshot.headRevisionId,
+      draftRevisionId: plan.snapshot.draftRevisionId,
+      ...unmatchedOf(plan),
+    };
   }
 
   if (options.expected !== undefined && options.expected !== plan.fingerprint) {
@@ -91,8 +113,9 @@ export function refusalOf(
   if (status === 'blocked') {
     return {
       status: 'blocked',
-      blockers: plan.blockers,
+      blockers: planBlockers(plan),
       required: requiredUnits(plan),
+      ...unmatchedOf(plan),
     };
   }
 
@@ -101,6 +124,21 @@ export function refusalOf(
   }
 
   return undefined;
+}
+
+function unmatchedOf(plan: ChangePlan): Pick<ApplyChangesResult, 'unmatched'> {
+  return hasUnmatched(plan.unmatched) ? { unmatched: plan.unmatched } : {};
+}
+
+export function rejectUnreviewedRequired(input: {
+  includeRequired?: boolean;
+  expected?: string;
+}): void {
+  if (input.includeRequired && input.expected === undefined) {
+    throw new BadRequestException(
+      'includeRequired needs expected: preview the selection and pass its fingerprint',
+    );
+  }
 }
 
 export function appliedCounts(

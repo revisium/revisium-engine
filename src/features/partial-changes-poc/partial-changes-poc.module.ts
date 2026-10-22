@@ -10,8 +10,12 @@ import { StructureConsistencyChecks } from 'src/features/partial-changes-poc/dep
 import { TargetConsistencyChecks } from 'src/features/partial-changes-poc/dependencies/target-consistency-checks.service';
 import { PartialChangesApiService } from 'src/features/partial-changes-poc/partial-changes-api.service';
 import { ChangePlanner } from 'src/features/partial-changes-poc/planning/change-planner.service';
+import { OperationEstimator } from 'src/features/partial-changes-poc/planning/operation-estimator.service';
+import { OperationLimits } from 'src/features/partial-changes-poc/planning/operation-limits.service';
 import { TargetValidator } from 'src/features/partial-changes-poc/planning/target-validator.service';
+import { ListChangesHandler } from 'src/features/partial-changes-poc/queries/handlers/list-changes.handler';
 import { PreviewChangesHandler } from 'src/features/partial-changes-poc/queries/handlers/preview-changes.handler';
+import { PlanningTransaction } from 'src/features/partial-changes-poc/queries/planning-transaction.service';
 import { SnapshotReader } from 'src/features/partial-changes-poc/snapshot/snapshot-reader.service';
 import { ViewsProjection } from 'src/features/partial-changes-poc/views/views-projection.service';
 import { CommitWriter } from 'src/features/partial-changes-poc/write/commit-writer.service';
@@ -34,11 +38,15 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
   ],
   providers: [
     PartialChangesApiService,
+    PlanningTransaction,
     PreviewChangesHandler,
+    ListChangesHandler,
     CommitChangesHandler,
     RevertPartialChangesHandler,
     SnapshotReader,
     ChangePlanner,
+    OperationLimits,
+    OperationEstimator,
     TargetAssembler,
     RowMerger,
     DependencyClosure,

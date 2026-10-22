@@ -8,6 +8,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 const address = obj({ city: str() });
 const addressWithZip = obj({ city: str(), zip: str() });
@@ -19,6 +20,8 @@ describe('shared schemas', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();

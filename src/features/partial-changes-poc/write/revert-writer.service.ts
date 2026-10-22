@@ -7,10 +7,15 @@ import {
   sideOf,
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
 import {
+  editsDraftInPlace,
   MixedTableRows,
   splitMixedTableRows,
 } from 'src/features/partial-changes-poc/write/mixed-table-rows';
-import { schemaUsesFiles } from 'src/features/partial-changes-poc/write/schema-files';
+import {
+  registerFileReferences,
+  RowsWithFiles,
+  rowsWithFiles,
+} from 'src/features/partial-changes-poc/write/file-references';
 import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
@@ -37,24 +42,33 @@ export class RevertWriter {
   async write(plan: ChangePlan): Promise<{ draftRevisionId: string }> {
     const { draftRevisionId, headRevisionId } = plan.snapshot;
     const linkChanges: TableLinkChange[] = [];
+    const filesToRegister: RowsWithFiles[] = [];
 
     for (const target of plan.target.tables) {
-      const change = await this.revertTable(plan, target);
+      const change = await this.revertTable(target, filesToRegister);
       if (change) {
         linkChanges.push(change);
       }
     }
 
     await this.relinkDraftTables(draftRevisionId, linkChanges);
+    await registerFileReferences(
+      this.fileUsageIntegration,
+      draftRevisionId,
+      filesToRegister,
+    );
     await this.recomputeDraftHasChanges(headRevisionId, draftRevisionId);
     return { draftRevisionId };
   }
 
   private async revertTable(
-    plan: ChangePlan,
     target: TargetTable,
+    filesToRegister: RowsWithFiles[],
   ): Promise<TableLinkChange | undefined> {
     const { head, draft } = target.table.pair;
+    if (target.draftFollowsHead) {
+      return this.replaceDraftVersion(draft, head);
+    }
 
     switch (target.outcome) {
       case 'unchanged':
@@ -73,8 +87,8 @@ export class RevertWriter {
         );
       case 'mixed':
         return target.linkSide === 'draft'
-          ? this.revertMixedDraftTable(plan, target)
-          : this.assembleMixedDraftTable(plan, target, head);
+          ? this.revertMixedDraftTable(target, filesToRegister)
+          : this.assembleMixedDraftTable(target, head, filesToRegister);
       default:
         throw new Error(`Cannot revert table ${target.table.tableId}`);
     }
@@ -91,8 +105,8 @@ export class RevertWriter {
   }
 
   private async revertMixedDraftTable(
-    plan: ChangePlan,
     target: TargetTable,
+    filesToRegister: RowsWithFiles[],
   ): Promise<TableLinkChange | undefined> {
     const draft = target.table.pair.draft;
     if (!draft) {
@@ -105,14 +119,15 @@ export class RevertWriter {
       target.publicId,
       rows.dropBaseVersionIds,
     );
-    await this.addRows(plan, target, tableVersionId, rows);
+    const mergedVersionIds = await this.addRows(tableVersionId, rows);
+    filesToRegister.push(...rowsWithFiles(target, mergedVersionIds));
     return change;
   }
 
   private async assembleMixedDraftTable(
-    plan: ChangePlan,
     target: TargetTable,
     head: TableVersion | undefined,
+    filesToRegister: RowsWithFiles[],
   ): Promise<TableLinkChange> {
     if (!head) {
       throw new Error(`Table ${target.table.tableId} has no Head version`);
@@ -126,7 +141,8 @@ export class RevertWriter {
       withoutRowVersionIds: rows.dropBaseVersionIds,
       readonly: false,
     });
-    await this.addRows(plan, target, tableVersionId, rows);
+    const mergedVersionIds = await this.addRows(tableVersionId, rows);
+    filesToRegister.push(...rowsWithFiles(target, mergedVersionIds));
     return {
       disconnect: target.table.pair.draft?.versionId,
       connect: tableVersionId,
@@ -134,11 +150,9 @@ export class RevertWriter {
   }
 
   private async addRows(
-    plan: ChangePlan,
-    target: TargetTable,
     tableVersionId: string,
     rows: MixedTableRows,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const mergedVersionIds = await this.versionWriter.createRowVersions(
       rows.merged,
       false,
@@ -147,14 +161,7 @@ export class RevertWriter {
       ...rows.linkOtherVersionIds,
       ...mergedVersionIds,
     ]);
-
-    if (target.table.kind !== 'system' && schemaUsesFiles(target.schema)) {
-      await this.fileUsageIntegration.registerReferencesForRowVersions({
-        revisionId: plan.snapshot.draftRevisionId,
-        tableId: target.publicId ?? target.table.tableId,
-        rowVersionIds: mergedVersionIds,
-      });
-    }
+    return mergedVersionIds;
   }
 
   private async writableDraftTable(
@@ -162,7 +169,7 @@ export class RevertWriter {
     id: string | undefined,
     dropRowVersionIds: string[],
   ): Promise<{ tableVersionId: string; change?: TableLinkChange }> {
-    if (!draft.readonly && (id === undefined || id === draft.id)) {
+    if (editsDraftInPlace(draft, id)) {
       await this.versionWriter.unlinkRows(draft.versionId, dropRowVersionIds);
       return { tableVersionId: draft.versionId };
     }

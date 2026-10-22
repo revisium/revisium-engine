@@ -6,21 +6,34 @@ import {
   TargetState,
 } from 'src/features/partial-changes-poc/assembly/target.types';
 import { buildChangeCatalogue } from 'src/features/partial-changes-poc/catalogue/build-change-catalogue';
-import { ChangeCatalogue } from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
+import {
+  ChangeCatalogue,
+  emptyCatalogue,
+} from 'src/features/partial-changes-poc/catalogue/change-catalogue.types';
 import { DependencyClosure } from 'src/features/partial-changes-poc/dependencies/dependency-closure.service';
 import {
   Blocker,
   ChangeOperation,
   ChangesBranch,
+  OperationEstimate,
   RequiredReason,
   Selection,
-  SelectionItems,
+  UnmatchedSelection,
 } from 'src/features/partial-changes-poc/partial-changes.types';
-import { computeFingerprint } from 'src/features/partial-changes-poc/planning/fingerprint';
+import {
+  computeFingerprint,
+  tablesWithMutableDraftRows,
+} from 'src/features/partial-changes-poc/planning/fingerprint';
 import {
   LedgerPlan,
   planLedger,
 } from 'src/features/partial-changes-poc/planning/ledger-plan';
+import {
+  changedRowsBlocker,
+  OperationEstimator,
+  tooLargeBlockers,
+} from 'src/features/partial-changes-poc/planning/operation-estimator.service';
+import { OperationLimits } from 'src/features/partial-changes-poc/planning/operation-limits.service';
 import { TargetValidator } from 'src/features/partial-changes-poc/planning/target-validator.service';
 import { resolveSelection } from 'src/features/partial-changes-poc/selection/resolve-selection';
 import { SnapshotReader } from 'src/features/partial-changes-poc/snapshot/snapshot-reader.service';
@@ -36,10 +49,11 @@ export interface ChangePlan {
   required: Map<string, RequiredReason>;
   applied: Set<string>;
   blockers: Blocker[];
-  unmatched: SelectionItems;
+  unmatched: UnmatchedSelection;
   target: TargetState;
   ledger: LedgerPlan;
   fingerprint: string;
+  estimate: OperationEstimate;
 }
 
 @Injectable()
@@ -49,6 +63,8 @@ export class ChangePlanner {
     private readonly dependencyClosure: DependencyClosure,
     private readonly targetValidator: TargetValidator,
     private readonly viewsProjection: ViewsProjection,
+    private readonly limits: OperationLimits,
+    private readonly estimator: OperationEstimator,
   ) {}
 
   async plan(input: {
@@ -56,13 +72,20 @@ export class ChangePlanner {
     operation: ChangeOperation;
     selection: Selection;
   }): Promise<ChangePlan> {
-    const snapshot = await this.snapshotReader.read(input.branch);
+    const limits = this.limits.values();
+    const snapshot = await this.snapshotReader.read(input.branch, limits);
+    const direction =
+      input.operation === 'commit' ? COMMIT_DIRECTION : REVERT_DIRECTION;
+    if (snapshot.oversized) {
+      return refusedPlan(input.operation, direction, snapshot, [
+        changedRowsBlocker(snapshot.changedRowCount, limits),
+      ]);
+    }
+
     const catalogue = buildChangeCatalogue(
       snapshot,
       this.viewsProjection.migrator,
     );
-    const direction =
-      input.operation === 'commit' ? COMMIT_DIRECTION : REVERT_DIRECTION;
     const resolution = resolveSelection(catalogue, input.selection);
 
     const closure = await this.dependencyClosure.close({
@@ -90,6 +113,7 @@ export class ChangePlanner {
       applied: closure.applied,
       ledger,
     });
+    const estimate = await this.estimator.estimate(snapshot, closure.target);
 
     return {
       operation: input.operation,
@@ -103,13 +127,70 @@ export class ChangePlanner {
         ...resolution.blockers,
         ...closure.blockers,
         ...validationBlockers,
+        ...tooLargeBlockers(estimate, limits),
       ]),
       unmatched: resolution.unmatched,
       target: closure.target,
       ledger,
-      fingerprint: computeFingerprint(snapshot, catalogue, closure.applied),
+      fingerprint: computeFingerprint({
+        operation: input.operation,
+        snapshot,
+        catalogue,
+        applied: closure.applied,
+        draftRowDigests: await this.draftRowDigests(catalogue, closure.applied),
+      }),
+      estimate,
     };
   }
+
+  private async draftRowDigests(
+    catalogue: ChangeCatalogue,
+    applied: ReadonlySet<string>,
+  ): Promise<Map<string, string>> {
+    const digests = new Map<string, string>();
+    for (const table of tablesWithMutableDraftRows(catalogue, applied)) {
+      digests.set(
+        table.tableCreatedId,
+        await this.snapshotReader.readRowsDigest(table.draftVersionId),
+      );
+    }
+    return digests;
+  }
+}
+
+function refusedPlan(
+  operation: ChangeOperation,
+  direction: Direction,
+  snapshot: ChangesSnapshot,
+  blockers: Blocker[],
+): ChangePlan {
+  return {
+    operation,
+    snapshot,
+    catalogue: emptyCatalogue(),
+    direction,
+    selected: new Set(),
+    required: new Map(),
+    applied: new Set(),
+    blockers,
+    unmatched: {},
+    target: {
+      operation,
+      direction,
+      tables: [],
+      views: [],
+      blockers: [],
+      deferred: [],
+    },
+    ledger: { target: [], remaining: [], renumbered: [] },
+    fingerprint: '',
+    estimate: {
+      changedRows: snapshot.changedRowCount,
+      mergedRows: 0,
+      mergedRowsWithFormulas: 0,
+      mixedTables: [],
+    },
+  };
 }
 
 function uniqueBlockers(blockers: Blocker[]): Blocker[] {

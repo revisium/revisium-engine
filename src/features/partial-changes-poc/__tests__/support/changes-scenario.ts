@@ -20,6 +20,8 @@ import {
   ApplyChangesResult,
   ChangeOperation,
   ChangesBranch,
+  ListChangesResult,
+  ListedUnit,
   PreviewChangesResult,
   Selection,
 } from 'src/features/partial-changes-poc/partial-changes.types';
@@ -59,6 +61,7 @@ export class ChangesScenario {
       branchName: graph.branchName,
       branchId: graph.branchId,
     });
+    kit.guard.track(graph.branchId);
 
     for (const [tableId, fixture] of Object.entries(tables)) {
       await scenario.createTable(tableId, fixture.schema);
@@ -74,6 +77,10 @@ export class ChangesScenario {
 
   async headRevisionId(): Promise<string> {
     return (await this.revision('head')).id;
+  }
+
+  async headComment(): Promise<string | null> {
+    return (await this.revision('head')).comment;
   }
 
   async draftRevisionId(): Promise<string> {
@@ -379,19 +386,42 @@ export class ChangesScenario {
   }
 
   commitNatively(): Promise<unknown> {
-    return this.kit.draftApi.apiCreateRevision({
-      projectId: this.branch.projectId,
-      branchName: this.branch.branchName,
-    });
-  }
-
-  revertNatively(): Promise<unknown> {
-    return this.kit.commandBus.execute(
-      new ApiRevertChangesCommand({
+    return this.guarded(() =>
+      this.kit.draftApi.apiCreateRevision({
         projectId: this.branch.projectId,
         branchName: this.branch.branchName,
       }),
     );
+  }
+
+  revertNatively(): Promise<unknown> {
+    return this.guarded(() =>
+      this.kit.commandBus.execute(
+        new ApiRevertChangesCommand({
+          projectId: this.branch.projectId,
+          branchName: this.branch.branchName,
+        }),
+      ),
+    );
+  }
+
+  listChanges(
+    page: { cursor?: string; limit?: number } = {},
+  ): Promise<ListChangesResult> {
+    return this.guarded(() =>
+      this.kit.changes.listChanges({ branch: this.publicBranch, ...page }),
+    );
+  }
+
+  async listAllChanges(limit?: number): Promise<ListedUnit[]> {
+    const units: ListedUnit[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.listChanges({ cursor, limit });
+      units.push(...page.units);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return units;
   }
 
   preview(
@@ -399,33 +429,59 @@ export class ChangesScenario {
     selection: Selection,
     includeRequired?: boolean,
   ): Promise<PreviewChangesResult> {
-    return this.kit.changes.previewChanges({
-      branch: this.publicBranch,
-      operation,
-      selection,
-      includeRequired,
-    });
+    return this.guarded(() =>
+      this.kit.changes.previewChanges({
+        branch: this.publicBranch,
+        operation,
+        selection,
+        includeRequired,
+      }),
+    );
   }
 
   commit(
     selection: Selection,
-    options: { includeRequired?: boolean; expected?: string } = {},
+    options: {
+      includeRequired?: boolean;
+      expected?: string;
+      comment?: string;
+    } = {},
   ): Promise<ApplyChangesResult> {
-    return this.kit.changes.commitChanges({
-      branch: this.publicBranch,
-      selection,
-      ...options,
-    });
+    return this.guarded(() =>
+      this.kit.changes.commitChanges({
+        branch: this.publicBranch,
+        selection,
+        ...options,
+      }),
+    );
   }
 
   revert(
     selection: Selection,
     options: { includeRequired?: boolean; expected?: string } = {},
   ): Promise<ApplyChangesResult> {
-    return this.kit.changes.revertChanges({
-      branch: this.publicBranch,
-      selection,
-      ...options,
+    return this.guarded(() =>
+      this.kit.changes.revertChanges({
+        branch: this.publicBranch,
+        selection,
+        ...options,
+      }),
+    );
+  }
+
+  async commitWithRequired(selection: Selection): Promise<ApplyChangesResult> {
+    const { fingerprint } = await this.preview('commit', selection, true);
+    return this.commit(selection, {
+      includeRequired: true,
+      expected: fingerprint,
+    });
+  }
+
+  async revertWithRequired(selection: Selection): Promise<ApplyChangesResult> {
+    const { fingerprint } = await this.preview('revert', selection, true);
+    return this.revert(selection, {
+      includeRequired: true,
+      expected: fingerprint,
     });
   }
 
@@ -471,6 +527,15 @@ export class ChangesScenario {
   async readRow(role: RevisionRole, tableId: string, rowId: string) {
     const revisionId = await this.roleRevisionId(role);
     return this.kit.rowApi.getRow({ revisionId, tableId, rowId });
+  }
+
+  private async guarded<T>(operation: () => Promise<T>): Promise<T> {
+    await this.kit.guard.verify();
+    try {
+      return await operation();
+    } finally {
+      await this.kit.guard.verify();
+    }
   }
 
   private get publicBranch(): ChangesBranch {

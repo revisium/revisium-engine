@@ -174,6 +174,15 @@ export class TargetConsistencyChecks {
   ): Finding {
     const { source, row } = reference;
     const sourceRowId = rowIdOf(row);
+    const boundStructure = this.structureBindingValue(
+      source,
+      reference,
+      applied,
+    );
+    if (boundStructure) {
+      return boundStructure;
+    }
+
     const covering = coveringUnit(row.row, reference.path);
 
     if (covering && !applied.has(covering)) {
@@ -199,6 +208,37 @@ export class TargetConsistencyChecks {
         because: `${source.publicId}/${sourceRowId}${reference.path} references ${reference.tableId}/${reference.rowId}, which exists only in the ${sideNames.other}`,
       },
     );
+  }
+
+  private structureBindingValue(
+    source: IndexedTable,
+    reference: Reference,
+    applied: ReadonlySet<string>,
+  ): Finding | undefined {
+    const { table } = source.target;
+    const changedField = table.changedPointers.find((pointer) =>
+      isSameOrInside(reference.path, pointer),
+    );
+    if (
+      !changedField ||
+      !table.structureUnit ||
+      applied.has(table.structureUnit)
+    ) {
+      return undefined;
+    }
+
+    const rowId = rowIdOf(reference.row);
+    return {
+      type: 'require',
+      unit: table.structureUnit,
+      reason: {
+        code: 'structureBoundData',
+        tableId: source.publicId,
+        rowId,
+        path: changedField,
+        because: `${source.publicId}/${rowId}${changedField} would reference the missing ${reference.tableId}/${reference.rowId}; ${changedField} is a new or changed field whose values follow the structure of ${source.publicId}`,
+      },
+    };
   }
 
   private async referencesToRemovedRows(

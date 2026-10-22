@@ -5,14 +5,17 @@ import {
   PartialChangesTestKit,
 } from 'src/features/partial-changes-poc/__tests__/support/partial-changes-test-kit';
 import {
+  expectLedgerReplaysTo,
   expectReplicaMirrorsHead,
   Replica,
 } from 'src/features/partial-changes-poc/__tests__/support/replica';
+import { publicPartOf } from 'src/features/partial-changes-poc/__tests__/support/listed-units';
 import {
   orderSchema,
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 const tagSchema = obj({ label: str() });
 
@@ -22,6 +25,8 @@ describe('table lifecycle as structure units', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -143,10 +148,7 @@ describe('table lifecycle as structure units', () => {
       const scenario = await givenProductsRenamedToGoods();
       const replica = await givenSyncedReplica(scenario);
 
-      const result = await scenario.commit(
-        { tables: ['goods'] },
-        { includeRequired: true },
-      );
+      const result = await scenario.commitWithRequired({ tables: ['goods'] });
 
       expect(result.status).toBe('applied');
       expect(await scenario.tableIds('head')).toEqual(['goods', 'orders']);
@@ -288,5 +290,114 @@ describe('table lifecycle as structure units', () => {
         reason: expect.objectContaining({ code: 'idOccupied' }),
       },
     ]);
+  });
+
+  describe('tables created and removed inside the Draft', () => {
+    async function givenTransientTable() {
+      const scenario = await ChangesScenario.committed(kit, {
+        products: { schema: productSchema, rows: { p1: product('one', 1) } },
+      });
+      await scenario.createTable('tmp', tagSchema);
+      await scenario.createRow('tmp', 'x1', { label: 'temporary' });
+      await scenario.removeTable('tmp');
+      await scenario.patchRow('products', 'p1', { price: 2 });
+      return scenario;
+    }
+
+    async function givenRecreatedTransientId() {
+      const scenario = await ChangesScenario.committed(kit, {
+        products: { schema: productSchema, rows: { p1: product('one', 1) } },
+      });
+      await scenario.createTable('tmp', tagSchema);
+      await scenario.removeTable('tmp');
+      await scenario.createTable('tmp', obj({ name: str() }));
+      await scenario.createRow('tmp', 'y1', { name: 'kept' });
+      return scenario;
+    }
+
+    it('lists the created and removed table as one structure unit', async () => {
+      const scenario = await givenTransientTable();
+
+      const units = await scenario.listAllChanges();
+
+      expect(units.map(publicPartOf)).toEqual([
+        { kind: 'field', tableId: 'products', rowId: 'p1', path: '/price' },
+        { kind: 'structure', tableId: 'tmp' },
+      ]);
+    });
+
+    it('commits its migrations alone and keeps a replica in sync', async () => {
+      const scenario = await givenTransientTable();
+      const replica = await givenSyncedReplica(scenario);
+
+      const result = await scenario.commit({ tables: ['tmp'] });
+
+      expect(result.status).toBe('applied');
+      expect(await scenario.tableIds('head')).toEqual(['products']);
+      expect((await scenario.headRow('products', 'p1')).data.price).toBe(1);
+      await expectReplicaMirrorsHead(replica, scenario);
+    });
+
+    it('keeps its migrations replayable in the Draft when other data is committed', async () => {
+      const scenario = await givenTransientTable();
+      const replica = await givenSyncedReplica(scenario);
+
+      await scenario.commit({
+        fields: [{ tableId: 'products', rowId: 'p1', path: '/price' }],
+      });
+
+      await expectReplicaMirrorsHead(replica, scenario);
+      await expectLedgerReplaysTo(kit, scenario, 'draft');
+    });
+
+    it('reverts its migrations out of the Draft ledger', async () => {
+      const scenario = await givenTransientTable();
+      const headLedger = await scenario.ledger('head');
+
+      const result = await scenario.revert({ tables: ['tmp'] });
+
+      expect(result.status).toBe('applied');
+      expect(await scenario.ledger('draft')).toEqual(headLedger);
+    });
+
+    it('lists a re-created table id with its earlier incarnation as one unit', async () => {
+      const scenario = await givenRecreatedTransientId();
+
+      const units = await scenario.listAllChanges();
+
+      expect(units.map(publicPartOf)).toEqual([
+        { kind: 'structure', tableId: 'tmp' },
+      ]);
+    });
+
+    it('commits a re-created table id with its earlier incarnation and keeps a replica in sync', async () => {
+      const scenario = await givenRecreatedTransientId();
+      const replica = await givenSyncedReplica(scenario);
+
+      const result = await scenario.commit({ tables: ['tmp'] });
+
+      expect(result.status).toBe('applied');
+      expect(await scenario.headRowIds('tmp')).toEqual(['y1']);
+      await expectReplicaMirrorsHead(replica, scenario);
+      await expectLedgerReplaysTo(kit, scenario, 'draft');
+    });
+
+    it('commits two incarnations of the same transient id as one unit', async () => {
+      const scenario = await givenTransientTable();
+      await scenario.createTable('tmp', obj({ name: str() }));
+      await scenario.removeTable('tmp');
+      const replica = await givenSyncedReplica(scenario);
+
+      const preview = await scenario.preview('commit', { tables: ['tmp'] });
+      const result = await scenario.commit({ tables: ['tmp'] });
+
+      expect(preview.counts).toEqual({
+        selected: 1,
+        required: 0,
+        remaining: 1,
+      });
+      expect(result.status).toBe('applied');
+      await expectReplicaMirrorsHead(replica, scenario);
+    });
   });
 });

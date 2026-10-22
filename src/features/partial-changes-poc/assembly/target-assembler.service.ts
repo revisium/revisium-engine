@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
+import { keepsNoUnits } from 'src/features/partial-changes-poc/assembly/remaining-units';
 import { RowMerger } from 'src/features/partial-changes-poc/assembly/row-merger.service';
 import { assembleSystemTables } from 'src/features/partial-changes-poc/assembly/system-target';
 import {
@@ -87,7 +88,9 @@ export class TargetAssembler {
     return {
       operation: input.operation,
       direction: input.direction,
-      tables: [...userTables, ...systemTables],
+      tables: [...userTables, ...systemTables].map((target) =>
+        settleRemainingUnits(target, input),
+      ),
       views,
       blockers,
       deferred,
@@ -163,17 +166,9 @@ export class TargetAssembler {
   }
 
   private tableOutcome(context: TableContext, rows: TargetRow[]): TableOutcome {
-    const { table, input } = context;
+    const { table } = context;
     if (table.kind === 'unchanged') {
       return 'unchanged';
-    }
-
-    if (
-      !table.structureUnit &&
-      table.unitKeys.length === 0 &&
-      input.preferOtherForUnitlessTables
-    ) {
-      return 'other';
     }
 
     if (rows.every((row) => keepsLinkedRow(row, context.linkSide))) {
@@ -377,6 +372,37 @@ export class TargetAssembler {
       ];
     });
   }
+}
+
+function settleRemainingUnits(
+  target: TargetTable,
+  input: AssemblyInput,
+): TargetTable {
+  const draftFollowsHead = keepsNoUnits(target.table, input);
+  if (
+    !draftFollowsHead ||
+    !input.preferOtherForUnitlessTables ||
+    target.table.kind === 'whole'
+  ) {
+    return { ...target, draftFollowsHead };
+  }
+  return {
+    ...target,
+    draftFollowsHead,
+    outcome: outcomeTaking(target, input.direction.other),
+  };
+}
+
+function outcomeTaking(target: TargetTable, side: RevisionSide): TableOutcome {
+  const { pair } = target.table;
+  const wanted = sideOf(pair, side);
+  if (!wanted) {
+    return target.outcome;
+  }
+  if (sideOf(pair, oppositeOf(side))?.versionId === wanted.versionId) {
+    return target.outcome;
+  }
+  return target.linkSide === side ? 'base' : 'other';
 }
 
 export function takenFromDraft(

@@ -15,6 +15,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('migration ledger of partial structure commits', () => {
   let kit: PartialChangesTestKit;
@@ -22,6 +23,8 @@ describe('migration ledger of partial structure commits', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();

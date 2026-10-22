@@ -14,6 +14,7 @@ import {
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
 import { CommitWriter } from 'src/features/partial-changes-poc/write/commit-writer.service';
 import { RevertWriter } from 'src/features/partial-changes-poc/write/revert-writer.service';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('concurrency of partial operations', () => {
   let kit: PartialChangesTestKit;
@@ -21,6 +22,8 @@ describe('concurrency of partial operations', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterEach(() => {
     jest.restoreAllMocks();

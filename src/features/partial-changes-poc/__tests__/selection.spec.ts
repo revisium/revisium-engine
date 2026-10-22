@@ -9,6 +9,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('selection', () => {
   let kit: PartialChangesTestKit;
@@ -16,6 +17,8 @@ describe('selection', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -68,7 +71,11 @@ describe('selection', () => {
 
     const result = await scenario.commit({ tableData: [] });
 
-    expect(result).toEqual({ status: 'empty' });
+    expect(result).toEqual({
+      status: 'empty',
+      headRevisionId: await scenario.headRevisionId(),
+      draftRevisionId: await scenario.draftRevisionId(),
+    });
   });
 
   it('reports selectors that match no change', async () => {
@@ -84,7 +91,7 @@ describe('selection', () => {
     expect(preview.unmatched).toEqual({
       rows: [{ tableId: 'products', rowId: 'missing' }],
     });
-    expect(preview.status).toBe('ready');
+    expect(preview.status).toBe('blocked');
   });
 
   it('requires the whole array when a path inside it is selected', async () => {
@@ -135,7 +142,7 @@ describe('selection', () => {
 
     const result = await scenario.commit({ all: true });
 
-    expect(result).toEqual({ status: 'empty' });
+    expect(result.status).toBe('empty');
     expect(await scenario.draftHasChanges()).toBe(true);
   });
 
@@ -186,5 +193,83 @@ describe('selection', () => {
         weight: 0,
       });
     });
+  });
+
+  describe('JSON Pointer paths and exclusions', () => {
+    async function givenNestedAndArrayEdits() {
+      const scenario = await ChangesScenario.committed(kit, {
+        boxes: {
+          schema: obj({
+            name: str(),
+            size: obj({ width: num(), height: num() }),
+            tags: arr(str()),
+          }),
+          rows: {
+            b1: { name: 'box', size: { width: 1, height: 2 }, tags: ['a'] },
+          },
+        },
+      });
+      await scenario.updateRow('boxes', 'b1', {
+        name: 'renamed box',
+        size: { width: 10, height: 20 },
+        tags: ['a', 'b'],
+      });
+      return scenario;
+    }
+
+    const box = { tableId: 'boxes', rowId: 'b1' };
+
+    it('commits one nested leaf selected by its JSON Pointer', async () => {
+      const scenario = await givenNestedAndArrayEdits();
+
+      await scenario.commit({ fields: [{ ...box, path: '/size/width' }] });
+
+      expect((await scenario.headRow('boxes', 'b1')).data).toEqual({
+        name: 'box',
+        size: { width: 10, height: 2 },
+        tags: ['a'],
+      });
+    });
+
+    it('selects every edited leaf below an object pointer', async () => {
+      const scenario = await givenNestedAndArrayEdits();
+
+      const preview = await scenario.preview('commit', {
+        fields: [{ ...box, path: '/size' }],
+      });
+
+      expect(preview.sample).toEqual([
+        { kind: 'field', ...box, path: '/size/height' },
+        { kind: 'field', ...box, path: '/size/width' },
+      ]);
+    });
+
+    it('widens an excluded path inside an array to the whole array', async () => {
+      const scenario = await givenNestedAndArrayEdits();
+
+      await scenario.commit({
+        all: true,
+        exclude: { fields: [{ ...box, path: '/tags/1' }] },
+      });
+
+      expect((await scenario.headRow('boxes', 'b1')).data).toEqual({
+        name: 'renamed box',
+        size: { width: 10, height: 20 },
+        tags: ['a'],
+      });
+    });
+  });
+
+  it('stores the comment of a partial commit on the new Head', async () => {
+    const scenario = await givenEditsInTwoTables();
+
+    await scenario.commit(
+      { rows: [{ tableId: 'products', rowId: 'p1' }] },
+      { comment: 'prices for the spring catalogue' },
+    );
+
+    expect(await scenario.headComment()).toBe(
+      'prices for the spring catalogue',
+    );
   });
 });

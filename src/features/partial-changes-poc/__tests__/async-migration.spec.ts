@@ -11,6 +11,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 const ASYNC_THRESHOLD = 3;
 
@@ -22,6 +23,8 @@ describe('async table migrations', () => {
       migrationOptions: { threshold: ASYNC_THRESHOLD, workerMode: 'disabled' },
     });
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -92,6 +95,7 @@ describe('async table migrations', () => {
     const { scenario, migrationId } = await givenBackgroundColorUpdate();
 
     await kit.migrations.processMigration(migrationId);
+    kit.guard.acceptKnownNativeMutation();
 
     expect((await scenario.schemas('head')).products).toEqual(
       (await scenario.schemas('draft')).products,
@@ -130,10 +134,7 @@ describe('async table migrations', () => {
     it('blocks the structure whose change the ledger does not record', async () => {
       const scenario = await givenUnrecordedColorOnRenamedTable();
 
-      const result = await scenario.commit(
-        { tables: ['goods'] },
-        { includeRequired: true },
-      );
+      const result = await scenario.commitWithRequired({ tables: ['goods'] });
 
       expect(result.status).toBe('blocked');
       expect(result.blockers).toEqual(

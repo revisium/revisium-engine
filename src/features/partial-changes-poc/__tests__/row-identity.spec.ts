@@ -7,6 +7,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('row identity units', () => {
   let kit: PartialChangesTestKit;
@@ -14,6 +15,8 @@ describe('row identity units', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -114,10 +117,9 @@ describe('row identity units', () => {
     it('commits both renames of a swap with includeRequired', async () => {
       const scenario = await givenSwappedRows();
 
-      const result = await scenario.commit(
-        { rows: [{ tableId: 'products', rowId: 'b' }] },
-        { includeRequired: true },
-      );
+      const result = await scenario.commitWithRequired({
+        rows: [{ tableId: 'products', rowId: 'b' }],
+      });
 
       expect(result).toMatchObject({
         status: 'applied',

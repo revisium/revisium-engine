@@ -20,6 +20,7 @@ import {
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
 import { CommitWriter } from 'src/features/partial-changes-poc/write/commit-writer.service';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 const ASYNC_THRESHOLD = 3;
 
@@ -31,6 +32,8 @@ describe('concurrency of partial structure operations', () => {
       migrationOptions: { threshold: ASYNC_THRESHOLD, workerMode: 'disabled' },
     });
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterEach(() => {
     jest.restoreAllMocks();
@@ -66,12 +69,10 @@ describe('concurrency of partial structure operations', () => {
   ) {
     const barrier = new Barrier();
     const spy = pauseOnce(kit.module.get(CommitWriter), 'write', barrier);
-    const pending = scenario
-      .commit({ tables: ['orders'] }, { includeRequired: true })
-      .then(
-        (result) => ({ result, error: undefined }),
-        (error: unknown) => ({ result: undefined, error }),
-      );
+    const pending = scenario.commit({ tables: ['orders', 'goods'] }).then(
+      (result) => ({ result, error: undefined }),
+      (error: unknown) => ({ result: undefined, error }),
+    );
     await barrier.whenReached();
     await racer();
     barrier.release();
@@ -101,12 +102,13 @@ describe('concurrency of partial structure operations', () => {
     const scenario = await givenProductsThenOrdersChanged();
     const head = await scenario.headRevisionId();
 
-    const { error } = await commitWhilePaused(scenario, () =>
+    const { result, error } = await commitWhilePaused(scenario, () =>
       scenario.startBackgroundUpdate('goods', [
         { op: 'add', path: '/properties/color', value: str() },
       ]),
     );
 
+    expect(result?.status).not.toBe('applied');
     expect(error).toBeInstanceOf(MigrationLockedException);
     expect(await scenario.headRevisionId()).toBe(head);
   });

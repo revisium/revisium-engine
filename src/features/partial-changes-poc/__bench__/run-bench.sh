@@ -4,10 +4,13 @@
 #   run-bench.sh scale <rows>x<changed> [case,...]  one jest process per case (clean peak RSS per case)
 #       cases: ensure verify preview preview-all commit-rows commit-field revert-rows commit-all native-commit native-revert
 #   run-bench.sh structure [case,...]               100k-row structure commit with renumbering, replica sync
+#   run-bench.sh fkfiles <changed> [case,...]       FK/files/deletions/required units (M4), BENCH_RUNS runs per case
+#       cases: ensure verify preview-required commit-required commit-photos commit-prices revert-required revert-photos native-commit
 #   run-bench.sh races [case,...]                   concurrency stress
 #   run-bench.sh limits [sizes]                     first native write to a committed table of N rows
 #   run-bench.sh drop <like-pattern>                drops matching bench-* projects (e.g. 'bench-run-%')
 #   run-bench.sh cleanup                            drops every bench-* project and runs VACUUM FULL
+#   run-bench.sh size                               database size and number of bench-* branches
 #
 # Env:
 #   BENCH_TX_TIMEOUT    TRANSACTION_TIMEOUT for the run in ms (default 3600000; use 15000 for the native default)
@@ -35,6 +38,14 @@ case "$mode" in
       BENCH_CASES="$item" jest_run "$DIR/scale.bench.ts"
     done
     ;;
+  fkfiles)
+    export BENCH_CHANGED="${2:?changed rows, e.g. 10000}"
+    export BENCH_RUNS="${BENCH_RUNS:-3}"
+    cases="${3:-ensure,verify,preview-required,commit-required,commit-photos,commit-prices,revert-required,revert-photos,native-commit}"
+    for item in ${cases//,/ }; do
+      BENCH_CASES="$item" jest_run "$DIR/fk-files.bench.ts"
+    done
+    ;;
   structure)
     cases="${2:-ensure,commit-structure,commit-structure-with-edits,native-commit,replica-sync}"
     for item in ${cases//,/ }; do
@@ -53,8 +64,11 @@ case "$mode" in
   cleanup)
     jest_run "$DIR/cleanup.bench.ts"
     ;;
+  size)
+    jest_run "$DIR/db-size.bench.ts"
+    ;;
   *)
-    sed -n '2,17p' "$0"
+    sed -n '2,20p' "$0"
     exit 1
     ;;
 esac

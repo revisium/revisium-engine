@@ -20,6 +20,7 @@ export class Replica {
 
   static async create(kit: PartialChangesTestKit): Promise<Replica> {
     const graph = await prepareBranch(kit.prisma);
+    kit.guard.track(graph.branchId);
     return new Replica(kit, graph);
   }
 
@@ -70,6 +71,7 @@ export class Replica {
         branchName: this.branch.branchName,
       });
     }
+    await this.kit.guard.verify();
 
     return results.map(({ id, status }) => ({ id, status }));
   }

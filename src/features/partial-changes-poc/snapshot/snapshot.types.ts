@@ -40,7 +40,6 @@ export interface TablePair {
   headSchema?: JsonSchema;
   draftSchema?: JsonSchema;
   structure?: TableStructure;
-  rowsDigest?: string;
 }
 
 export interface SideRows {
@@ -62,6 +61,8 @@ export interface ChangesSnapshot {
   draftRevisionId: string;
   tables: TablePair[];
   system: SystemRows;
+  changedRowCount: number;
+  oversized: boolean;
 }
 
 export function sideOf<T>(

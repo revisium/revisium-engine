@@ -5,9 +5,11 @@ import {
   PartialChangesTestKit,
 } from 'src/features/partial-changes-poc/__tests__/support/partial-changes-test-kit';
 import {
+  orderSchema,
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('structure units (BR-007)', () => {
   let kit: PartialChangesTestKit;
@@ -15,6 +17,8 @@ describe('structure units (BR-007)', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -189,6 +193,59 @@ describe('structure units (BR-007)', () => {
     expect(preview.deferred).toEqual([]);
   });
 
+  describe('created row whose changed field is a foreign key', () => {
+    async function givenForeignKeyDroppedAndOrderCreated() {
+      const scenario = await ChangesScenario.committed(kit, {
+        products: { schema: productSchema, rows: { p1: product('one', 1) } },
+        orders: {
+          schema: orderSchema,
+          rows: { o0: { product: 'p1', note: '' } },
+        },
+      });
+      await scenario.updateTable('orders', [
+        { op: 'replace', path: '/properties/product', value: str() },
+      ]);
+      await scenario.createRow('orders', 'o1', {
+        product: 'external-42',
+        note: 'new',
+      });
+      return scenario;
+    }
+
+    const createdOrder = { rows: [{ tableId: 'orders', rowId: 'o1' }] };
+
+    it('requires the structure instead of reporting a dangling reference', async () => {
+      const scenario = await givenForeignKeyDroppedAndOrderCreated();
+
+      const preview = await scenario.preview('commit', createdOrder);
+
+      expect(preview.status).toBe('required');
+      expect(preview.blockers).toEqual([]);
+      expect(preview.required).toEqual([
+        {
+          unit: { kind: 'structure', tableId: 'orders' },
+          reason: expect.objectContaining({
+            code: 'structureBoundData',
+            rowId: 'o1',
+            path: '/product',
+          }),
+        },
+      ]);
+    });
+
+    it('commits the created row with the structure it requires', async () => {
+      const scenario = await givenForeignKeyDroppedAndOrderCreated();
+
+      const result = await scenario.commitWithRequired(createdOrder);
+
+      expect(result.status).toBe('applied');
+      expect((await scenario.headRow('orders', 'o1')).data).toEqual({
+        product: 'external-42',
+        note: 'new',
+      });
+    });
+  });
+
   it('migrates a Head row whose deletion stays in the Draft into the committed structure', async () => {
     const scenario = await givenColorAddedWhilePricesChange();
     await scenario.removeRow('products', 'p2');
@@ -219,6 +276,57 @@ describe('structure units (BR-007)', () => {
 
       expect(result).toEqual({ status: 'stale' });
       expect(await scenario.revisionCount()).toBe(revisions);
+    });
+
+    it('returns stale when a value of the new field changed after the preview', async () => {
+      const scenario = await givenColorAddedWhilePricesChange();
+      const { fingerprint } = await scenario.preview('commit', {
+        tables: ['products'],
+      });
+      const revisions = await scenario.revisionCount();
+      await scenario.patchRow('products', 'p2', { color: 'green' });
+
+      const result = await scenario.commit(
+        { tables: ['products'] },
+        { expected: fingerprint },
+      );
+
+      expect(result.status).toBe('stale');
+      expect(await scenario.revisionCount()).toBe(revisions);
+    });
+
+    it('returns stale for a structure revert when a row of the table changed after the preview', async () => {
+      const scenario = await givenColorAddedWhilePricesChange();
+      const { fingerprint } = await scenario.preview('revert', {
+        tables: ['products'],
+      });
+      await scenario.patchRow('products', 'p2', { price: 25 });
+
+      const result = await scenario.revert(
+        { tables: ['products'] },
+        { expected: fingerprint },
+      );
+
+      expect(result.status).toBe('stale');
+      expect((await scenario.draftRow('products', 'p2')).data).toEqual({
+        ...product('two', 25),
+        color: 'blue',
+      });
+    });
+
+    it('returns stale when the selected table was renamed after the preview', async () => {
+      const scenario = await givenColorAddedWhilePricesChange();
+      const { fingerprint } = await scenario.preview('commit', {
+        tables: ['products'],
+      });
+      await scenario.renameTable('products', 'goods');
+
+      const result = await scenario.commit(
+        { tables: ['products'] },
+        { expected: fingerprint },
+      );
+
+      expect(result.status).toBe('stale');
     });
 
     it('applies when only another table changed after the preview', async () => {

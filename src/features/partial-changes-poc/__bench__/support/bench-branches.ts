@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { sql, type Sql } from 'src/engine-prisma-types';
 import type { PrismaService } from 'src/infrastructure/database/prisma.service';
 
 export const BENCH_PROJECT_PREFIX = 'bench-';
@@ -186,11 +187,34 @@ export async function dropProjects(
   prisma: PrismaService,
   pattern: string,
 ): Promise<void> {
+  await dropBranchesWhere(prisma, sql`b."projectId" LIKE ${pattern}`);
+  await prisma.$executeRaw`
+    DELETE FROM "FileBlob" WHERE "projectId" LIKE ${pattern}
+  `;
+  await prisma.$executeRaw`
+    DELETE FROM "ProjectFileUsage" WHERE "projectId" LIKE ${pattern}
+  `;
+}
+
+export async function dropBranch(
+  prisma: PrismaService,
+  branchId: string,
+): Promise<void> {
+  await dropBranchesWhere(prisma, sql`b."id" = ${branchId}`);
+}
+
+async function dropBranchesWhere(
+  prisma: PrismaService,
+  branches: Sql,
+): Promise<void> {
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`
+      CREATE TEMP TABLE bench_branches ON COMMIT DROP AS
+      SELECT b."id" FROM "Branch" b WHERE ${branches}
+    `;
+    await tx.$executeRaw`
       CREATE TEMP TABLE bench_revisions ON COMMIT DROP AS
-      SELECT r."id" FROM "Revision" r JOIN "Branch" b ON b."id" = r."branchId"
-      WHERE b."projectId" LIKE ${pattern}
+      SELECT r."id" FROM "Revision" r JOIN bench_branches bb ON bb."id" = r."branchId"
     `;
     await tx.$executeRaw`
       CREATE TEMP TABLE bench_tables ON COMMIT DROP AS
@@ -215,17 +239,121 @@ export async function dropProjects(
     await tx.$executeRaw`
       DELETE FROM "TableMigration" tm USING bench_revisions br WHERE tm."revisionId" = br."id"
     `;
-    await tx.$executeRaw`DELETE FROM "Branch" WHERE "projectId" LIKE ${pattern}`;
+    await tx.$executeRaw`DELETE FROM "Branch" b USING bench_branches bb WHERE b."id" = bb."id"`;
     await tx.$executeRaw`
       DELETE FROM "Table" t USING bench_tables bt WHERE t."versionId" = bt."versionId"
     `;
     await tx.$executeRaw`
       DELETE FROM "Row" r USING bench_rows br WHERE r."versionId" = br."versionId"
     `;
-    await tx.$executeRaw`
-      DELETE FROM "ProjectFileUsage" WHERE "projectId" LIKE ${pattern}
-    `;
   }, LONG_TRANSACTION);
+}
+
+export async function cloneBranchInProject(
+  prisma: PrismaService,
+  source: BenchBranch,
+  branchName: string,
+): Promise<BenchBranch> {
+  const branchId = `branch-${nanoid()}`;
+  const headRevisionId = nanoid();
+  const draftRevisionId = nanoid();
+  const sourceDraft = await prisma.revision.findUniqueOrThrow({
+    where: { id: source.draftRevisionId },
+  });
+  const mutableTables = await prisma.table.findMany({
+    where: {
+      readonly: false,
+      revisions: { some: { id: source.draftRevisionId } },
+    },
+    select: { versionId: true },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.branch.create({
+      data: {
+        id: branchId,
+        name: branchName,
+        isRoot: false,
+        projectId: source.projectId,
+      },
+    });
+    await tx.revision.create({
+      data: {
+        id: headRevisionId,
+        branchId,
+        isHead: true,
+        isStart: true,
+        hasChanges: false,
+      },
+    });
+    await tx.revision.create({
+      data: {
+        id: draftRevisionId,
+        branchId,
+        parentId: headRevisionId,
+        isDraft: true,
+        hasChanges: sourceDraft.hasChanges,
+      },
+    });
+    await tx.$executeRaw`
+      INSERT INTO "_RevisionToTable" ("A", "B")
+      SELECT ${headRevisionId}, rt."B" FROM "_RevisionToTable" rt
+      WHERE rt."A" = ${source.headRevisionId}
+    `;
+    await tx.$executeRaw`
+      INSERT INTO "_RevisionToTable" ("A", "B")
+      SELECT ${draftRevisionId}, rt."B" FROM "_RevisionToTable" rt
+      JOIN "Table" t ON t."versionId" = rt."B"
+      WHERE rt."A" = ${source.draftRevisionId} AND t."readonly"
+    `;
+    for (const { versionId } of mutableTables) {
+      await copyMutableTable(tx, versionId, draftRevisionId);
+    }
+  }, LONG_TRANSACTION);
+
+  await analyze(prisma);
+  await prisma.$executeRawUnsafe('CHECKPOINT');
+  return loadBranch(prisma, branchId);
+}
+
+async function copyMutableTable(
+  tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+  versionId: string,
+  revisionId: string,
+): Promise<void> {
+  const copyId = nanoid();
+  await tx.$executeRaw`
+    INSERT INTO "Table" ("versionId", "createdId", "id", "readonly", "createdAt", "updatedAt", "system")
+    SELECT ${copyId}, "createdId", "id", false, "createdAt", "updatedAt", "system"
+    FROM "Table" WHERE "versionId" = ${versionId}
+  `;
+  await tx.$executeRaw`
+    INSERT INTO "_RevisionToTable" ("A", "B") VALUES (${revisionId}, ${copyId})
+  `;
+  await tx.$executeRaw`
+    WITH source AS MATERIALIZED (
+      SELECT r.*, replace(gen_random_uuid()::text, '-', '') AS "copyVersionId"
+      FROM "_RowToTable" rt JOIN "Row" r ON r."versionId" = rt."A"
+      WHERE rt."B" = ${versionId} AND NOT r."readonly"
+    ), copied AS (
+      INSERT INTO "Row" ("versionId", "createdId", "id", "readonly", "data", "meta", "hash",
+                         "schemaHash", "createdAt", "updatedAt", "publishedAt")
+      SELECT "copyVersionId", "createdId", "id", false, "data", "meta", "hash", "schemaHash",
+             "createdAt", "updatedAt", "publishedAt"
+      FROM source
+      RETURNING "versionId"
+    ), linked AS (
+      INSERT INTO "_RowToTable" ("A", "B") SELECT "versionId", ${copyId} FROM copied
+    )
+    INSERT INTO "_FileBlobToRow" ("A", "B")
+    SELECT fbr."A", s."copyVersionId"
+    FROM source s JOIN "_FileBlobToRow" fbr ON fbr."B" = s."versionId"
+  `;
+  await tx.$executeRaw`
+    INSERT INTO "_RowToTable" ("A", "B")
+    SELECT rt."A", ${copyId} FROM "_RowToTable" rt JOIN "Row" r ON r."versionId" = rt."A"
+    WHERE rt."B" = ${versionId} AND r."readonly"
+  `;
 }
 
 export async function analyze(prisma: PrismaService): Promise<void> {
@@ -256,7 +384,7 @@ export async function vacuum(prisma: PrismaService): Promise<void> {
 
 export async function vacuumFull(prisma: PrismaService): Promise<void> {
   await prisma.$executeRawUnsafe(
-    'VACUUM FULL ANALYZE "Row", "_RowToTable", "Table", "_RevisionToTable", "Revision", "Branch", "TableMigration"',
+    'VACUUM FULL ANALYZE "Row", "_RowToTable", "Table", "_RevisionToTable", "Revision", "Branch", "TableMigration", "FileBlob", "_FileBlobToRow", "ProjectFileUsage"',
   );
 }
 

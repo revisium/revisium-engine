@@ -10,10 +10,15 @@ import { DraftModule } from 'src/features/draft/draft.module';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { MigrationModule } from 'src/features/migration/migration.module';
+import { CommittedVersionsGuard } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { PartialChangesApiService } from 'src/features/partial-changes-poc/partial-changes-api.service';
 import { PartialChangesPocModule } from 'src/features/partial-changes-poc/partial-changes-poc.module';
+import {
+  OperationLimits,
+  OperationLimitValues,
+} from 'src/features/partial-changes-poc/planning/operation-limits.service';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { RevisionChangesApiService } from 'src/features/revision-changes/revision-changes-api.service';
 import { RevisionChangesModule } from 'src/features/revision-changes/revision-changes.module';
@@ -42,14 +47,18 @@ export interface PartialChangesTestKit {
   fileUsageIntegration: FileUsageIntegrationService;
   migrations: MigrationService;
   storage: ReturnType<typeof createStorageMock>;
+  guard: CommittedVersionsGuard;
   close(): Promise<void>;
 }
 
 export async function createPartialChangesTestKit(
-  options: { migrationOptions?: MigrationOptions } = {},
+  options: {
+    migrationOptions?: MigrationOptions;
+    limits?: OperationLimitValues;
+  } = {},
 ): Promise<PartialChangesTestKit> {
   const storage = createStorageMock();
-  const module = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true }),
       DatabaseModule,
@@ -72,14 +81,21 @@ export async function createPartialChangesTestKit(
     ],
   })
     .overrideProvider(STORAGE_SERVICE)
-    .useValue(storage)
-    .compile();
+    .useValue(storage);
+  const { limits } = options;
+  if (limits) {
+    builder
+      .overrideProvider(OperationLimits)
+      .useValue({ values: () => limits });
+  }
+  const module = await builder.compile();
 
   await module.init();
+  const prisma = module.get(PrismaService);
 
   return {
     module,
-    prisma: module.get(PrismaService),
+    prisma,
     commandBus: module.get(CommandBus),
     queryBus: module.get(QueryBus),
     draftApi: module.get(DraftApiService),
@@ -90,6 +106,7 @@ export async function createPartialChangesTestKit(
     fileUsageIntegration: module.get(FileUsageIntegrationService),
     migrations: module.get(MigrationService),
     storage,
+    guard: new CommittedVersionsGuard(prisma),
     async close() {
       await module.close();
     },

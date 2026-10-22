@@ -19,6 +19,7 @@ import {
 } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
 import {
   attributePending,
+  LedgerAttribution,
   ledgerOf,
 } from 'src/features/partial-changes-poc/structure/ledger';
 import { SystemTables } from 'src/features/share/system-tables.consts';
@@ -52,6 +53,7 @@ class CatalogueBuilder {
   private readonly views = new Map<string, ViewsPair>();
   private readonly sharedRows = new Map<string, RowPair>();
   private readonly pendingByOwner = new Map<string, RowVersion[]>();
+  private readonly ownerUnits = new Map<string, string>();
   private ledger?: CatalogueLedger;
 
   constructor(
@@ -79,6 +81,7 @@ class CatalogueBuilder {
       views: this.views,
       sharedRows: this.sharedRows,
       ownedRows: this.ownedRows,
+      ownerUnits: this.ownerUnits,
     };
   }
 
@@ -280,20 +283,45 @@ class CatalogueBuilder {
   }
 
   private addTransientUnits(ledger: CatalogueLedger): void {
-    for (const slot of ledger.attribution.transient) {
-      const key = `t:${slot.key}/structure`;
-      this.addUnit({
-        key,
-        kind: 'structure',
-        tableCreatedId: slot.key,
-        tableId: slot.tableId,
-        rowCreatedIds: [],
-      });
-      this.own(
-        key,
-        slot.entries.map((entry) => entry.version),
-      );
+    for (const group of transientGroups(ledger.attribution.transient)) {
+      const [first] = group;
+      if (!first) {
+        continue;
+      }
+      const key =
+        this.structureUnitUsingIds(group) ?? this.addTransientUnit(first);
+      for (const slot of group) {
+        this.ownerUnits.set(slot.key, key);
+        this.own(
+          key,
+          slot.entries.map((entry) => entry.version),
+        );
+      }
     }
+  }
+
+  private structureUnitUsingIds(group: TransientSlot[]): string | undefined {
+    const ids = new Set(group.flatMap(tableIdsOf));
+    for (const table of this.tables.values()) {
+      const { head, draft } = table.pair;
+      if (
+        table.structureUnit &&
+        ((head && ids.has(head.id)) || (draft && ids.has(draft.id)))
+      ) {
+        return table.structureUnit;
+      }
+    }
+    return undefined;
+  }
+
+  private addTransientUnit(slot: TransientSlot): string {
+    return this.addUnit({
+      key: `t:${slot.key}/structure`,
+      kind: 'structure',
+      tableCreatedId: slot.key,
+      tableId: slot.tableId,
+      rowCreatedIds: [],
+    });
   }
 
   private catalogueRows(table: CatalogueTable): void {
@@ -487,6 +515,35 @@ class CatalogueBuilder {
   private own(key: string, rows: RowVersion[]): void {
     this.ownedRows.set(key, [...(this.ownedRows.get(key) ?? []), ...rows]);
   }
+}
+
+type TransientSlot = LedgerAttribution['transient'][number];
+
+function transientGroups(slots: readonly TransientSlot[]): TransientSlot[][] {
+  const groups: Array<{ ids: Set<string>; slots: TransientSlot[] }> = [];
+  for (const slot of slots) {
+    const ids = new Set(tableIdsOf(slot));
+    const joined = groups.filter((group) =>
+      [...ids].some((id) => group.ids.has(id)),
+    );
+    const merged = {
+      ids: new Set([...ids, ...joined.flatMap((group) => [...group.ids])]),
+      slots: [...joined.flatMap((group) => group.slots), slot],
+    };
+    for (const group of joined) {
+      groups.splice(groups.indexOf(group), 1);
+    }
+    groups.push(merged);
+  }
+  return groups.map((group) => group.slots);
+}
+
+function tableIdsOf(slot: TransientSlot): string[] {
+  return slot.entries.flatMap(({ migration }) =>
+    migration.changeType === 'rename'
+      ? [migration.tableId, migration.nextTableId]
+      : [migration.tableId],
+  );
 }
 
 function leavesOf(pair: TablePair) {

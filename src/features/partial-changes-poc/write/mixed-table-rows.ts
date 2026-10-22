@@ -1,11 +1,43 @@
 import { TargetTable } from 'src/features/partial-changes-poc/assembly/target.types';
-import { sideOf } from 'src/features/partial-changes-poc/snapshot/snapshot.types';
+import type { ChangeOperation } from 'src/features/partial-changes-poc/partial-changes.types';
+import {
+  sideOf,
+  TableVersion,
+} from 'src/features/partial-changes-poc/snapshot/snapshot.types';
 import { NewRowVersion } from 'src/features/partial-changes-poc/write/version-writer.service';
 
 export interface MixedTableRows {
   dropBaseVersionIds: string[];
   linkOtherVersionIds: string[];
   merged: NewRowVersion[];
+}
+
+export function editsDraftInPlace(
+  draft: TableVersion,
+  id: string | undefined,
+): boolean {
+  return !draft.readonly && (id === undefined || id === draft.id);
+}
+
+export function copiesLinks(
+  target: TargetTable,
+  operation: ChangeOperation,
+): boolean {
+  const draft = target.table.pair.draft;
+  if (operation === 'commit' || target.linkSide === 'head' || !draft) {
+    return true;
+  }
+  return !editsDraftInPlace(draft, target.publicId);
+}
+
+export function writesMixedTable(
+  target: TargetTable,
+  operation: ChangeOperation,
+): boolean {
+  return (
+    target.outcome === 'mixed' &&
+    !(operation === 'revert' && target.draftFollowsHead)
+  );
 }
 
 export function splitMixedTableRows(target: TargetTable): MixedTableRows {

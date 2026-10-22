@@ -9,6 +9,7 @@ import {
   product,
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 function viewsWith(
   name: string,
@@ -37,6 +38,8 @@ describe('views documents', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();
@@ -74,6 +77,24 @@ describe('views documents', () => {
         viewsWith('All', ['title', 'price'], 'title'),
       );
       expect((await scenario.headRow('products', 'p1')).data.price).toBe(10);
+    });
+
+    it('returns stale when the views document changed after the preview', async () => {
+      const scenario = await givenViewsAndDataEdited();
+      const { fingerprint } = await scenario.preview('commit', {
+        views: ['products'],
+      });
+      await scenario.updateViews(
+        'products',
+        viewsWith('All', ['title', 'price'], 'price'),
+      );
+
+      const result = await scenario.commit(
+        { views: ['products'] },
+        { expected: fingerprint },
+      );
+
+      expect(result.status).toBe('stale');
     });
 
     it('reverts the views edit alone', async () => {

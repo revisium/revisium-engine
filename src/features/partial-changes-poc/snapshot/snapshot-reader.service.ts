@@ -52,7 +52,10 @@ export class SnapshotReader {
     return this.transactionService.getTransaction();
   }
 
-  async read(branch: ChangesBranch): Promise<ChangesSnapshot> {
+  async read(
+    branch: ChangesBranch,
+    limits: { maxChangedRows?: number } = {},
+  ): Promise<ChangesSnapshot> {
     const { id: branchId } = await this.shareQueries.findBranchInProjectOrThrow(
       branch.projectId,
       branch.branchName,
@@ -66,7 +69,13 @@ export class SnapshotReader {
     const system = await this.readSystemRows(tables);
     this.attachSchemas(tables, system.schemas);
     this.attachStructures(tables, system.schemas);
-    await this.attachChangedRows(tables);
+    const changedRowCount = await this.countChangedRows(tables);
+    const oversized =
+      limits.maxChangedRows !== undefined &&
+      changedRowCount > limits.maxChangedRows;
+    if (!oversized) {
+      await this.attachChangedRows(tables);
+    }
 
     return {
       branchId,
@@ -75,7 +84,27 @@ export class SnapshotReader {
       draftRevisionId: draft.id,
       tables,
       system,
+      changedRowCount,
+      oversized,
     };
+  }
+
+  private async countChangedRows(tables: TablePair[]): Promise<number> {
+    let total = 0;
+    for (const pair of tables) {
+      if (pair.head && pair.draft && isChangedUserTable(pair)) {
+        const [counted] = await this.db.$queryRaw<{ count: number }[]>(
+          this.changedPairs(
+            pair.head.versionId,
+            pair.draft.versionId,
+            this.dataDifference(pair),
+            sql`count(*)::int AS "count"`,
+          ),
+        );
+        total += counted?.count ?? 0;
+      }
+    }
+    return total;
   }
 
   private async readTablePairs(
@@ -196,17 +225,13 @@ export class SnapshotReader {
         );
       } else if ((pair.head ?? pair.draft)?.system) {
         pair.changedRows = await this.oneSidedSystemRows(pair);
-      } else if (!pair.head || !pair.draft) {
-        pair.rowsDigest = await this.rowsDigest(
-          (pair.head ?? pair.draft)?.versionId ?? '',
-        );
       }
     }
   }
 
-  private async rowsDigest(tableVersionId: string): Promise<string> {
+  async readRowsDigest(tableVersionId: string): Promise<string> {
     const [digest] = await this.db.$queryRaw<{ digest: string }[]>(sql`
-      SELECT count(*)::text || ':' || coalesce(max(r."updatedAt")::text, '-') AS "digest"
+      SELECT count(*)::text || ':' || coalesce(md5(string_agg(r."versionId" || ':' || r."hash", ',' ORDER BY r."versionId")), '-') AS "digest"
       FROM "_RowToTable" rt
       JOIN "Row" r ON r."versionId" = rt."A"
       WHERE rt."B" = ${tableVersionId}
@@ -246,7 +271,42 @@ export class SnapshotReader {
     draftTableVersionId: string,
     dataDifference: Sql,
   ): Promise<RowPair[]> {
-    const rows = await this.db.$queryRaw<RowPairRow[]>(sql`
+    const rows = await this.db.$queryRaw<RowPairRow[]>(
+      this.changedPairs(
+        headTableVersionId,
+        draftTableVersionId,
+        dataDifference,
+        sql`
+          h."versionId" AS "h_versionId", h."createdId" AS "h_createdId", h."id" AS "h_id",
+          h."readonly" AS "h_readonly", h."data" AS "h_data", h."meta" AS "h_meta",
+          h."hash" AS "h_hash", h."schemaHash" AS "h_schemaHash", h."createdAt" AS "h_createdAt",
+          h."updatedAt" AS "h_updatedAt", h."publishedAt" AS "h_publishedAt",
+          d."versionId" AS "d_versionId", d."createdId" AS "d_createdId", d."id" AS "d_id",
+          d."readonly" AS "d_readonly", d."data" AS "d_data", d."meta" AS "d_meta",
+          d."hash" AS "d_hash", d."schemaHash" AS "d_schemaHash", d."createdAt" AS "d_createdAt",
+          d."updatedAt" AS "d_updatedAt", d."publishedAt" AS "d_publishedAt"
+        `,
+      ),
+    );
+
+    return rows.map((row) => {
+      const head = this.toRowVersion(row, 'h_');
+      const draft = this.toRowVersion(row, 'd_');
+      return {
+        createdId: (head ?? draft)?.createdId ?? '',
+        head,
+        draft,
+      };
+    });
+  }
+
+  private changedPairs(
+    headTableVersionId: string,
+    draftTableVersionId: string,
+    dataDifference: Sql,
+    columns: Sql,
+  ): Sql {
+    return sql`
       WITH head_only AS MATERIALIZED (
         ${linksMissingIn(headTableVersionId, draftTableVersionId)}
       ),
@@ -259,29 +319,11 @@ export class SnapshotReader {
       d AS (
         SELECT r.* FROM "Row" r WHERE r."versionId" = ANY(ARRAY(SELECT "A" FROM draft_only))
       )
-      SELECT
-        h."versionId" AS "h_versionId", h."createdId" AS "h_createdId", h."id" AS "h_id",
-        h."readonly" AS "h_readonly", h."data" AS "h_data", h."meta" AS "h_meta",
-        h."hash" AS "h_hash", h."schemaHash" AS "h_schemaHash", h."createdAt" AS "h_createdAt",
-        h."updatedAt" AS "h_updatedAt", h."publishedAt" AS "h_publishedAt",
-        d."versionId" AS "d_versionId", d."createdId" AS "d_createdId", d."id" AS "d_id",
-        d."readonly" AS "d_readonly", d."data" AS "d_data", d."meta" AS "d_meta",
-        d."hash" AS "d_hash", d."schemaHash" AS "d_schemaHash", d."createdAt" AS "d_createdAt",
-        d."updatedAt" AS "d_updatedAt", d."publishedAt" AS "d_publishedAt"
+      SELECT ${columns}
       FROM h FULL OUTER JOIN d ON h."createdId" = d."createdId"
       WHERE h."createdId" IS NULL OR d."createdId" IS NULL
          OR h."id" <> d."id" OR (${dataDifference})
-    `);
-
-    return rows.map((row) => {
-      const head = this.toRowVersion(row, 'h_');
-      const draft = this.toRowVersion(row, 'd_');
-      return {
-        createdId: (head ?? draft)?.createdId ?? '',
-        head,
-        draft,
-      };
-    });
+    `;
   }
 
   private toRowVersion(
@@ -297,6 +339,13 @@ export class SnapshotReader {
       ROW_COLUMNS.map((column) => [column, values[`${prefix}${column}`]]),
     ) as unknown as RowVersion;
   }
+}
+
+function isChangedUserTable(pair: TablePair): boolean {
+  return (
+    !(pair.head ?? pair.draft)?.system &&
+    pair.head?.versionId !== pair.draft?.versionId
+  );
 }
 
 function leafDiffers(leaf: SchemaLeaf): Sql {

@@ -12,6 +12,7 @@ import {
   orderSchema,
   pricedProductSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('atomicity and immutability', () => {
   let kit: PartialChangesTestKit;
@@ -19,6 +20,8 @@ describe('atomicity and immutability', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterEach(() => {
     jest.restoreAllMocks();
@@ -63,10 +66,10 @@ describe('atomicity and immutability', () => {
       .mockRejectedValueOnce(new Error('injected failure'));
 
     await expect(
-      scenario.commit(
-        { fields: [priceOfP1], rows: [{ tableId: 'orders', rowId: 'o1' }] },
-        { includeRequired: true },
-      ),
+      scenario.commitWithRequired({
+        fields: [priceOfP1],
+        rows: [{ tableId: 'orders', rowId: 'o1' }],
+      }),
     ).rejects.toThrow('injected failure');
 
     expect(await readDatabaseFootprint(kit.prisma)).toEqual(before);
@@ -99,10 +102,9 @@ describe('atomicity and immutability', () => {
       () => scenario.patchRow('products', 'p2', { qty: 5 }),
       () => scenario.revert({ fields: [{ ...priceOfP1, rowId: 'p2' }] }),
       () =>
-        scenario.commit(
-          { rows: [{ tableId: 'orders', rowId: 'o1' }] },
-          { includeRequired: true },
-        ),
+        scenario.commitWithRequired({
+          rows: [{ tableId: 'orders', rowId: 'o1' }],
+        }),
       () => scenario.patchRow('products', 'p3', { qty: 7 }),
       () => scenario.renameRow('products', 'p2', 'p2-renamed'),
       () => scenario.commit({ all: true }),

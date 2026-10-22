@@ -10,6 +10,7 @@ import {
   productSchema,
 } from 'src/features/partial-changes-poc/__tests__/support/schemas';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { guardCommittedVersions } from 'src/features/partial-changes-poc/__tests__/support/committed-versions-guard';
 
 describe('partial commit of data changes', () => {
   let kit: PartialChangesTestKit;
@@ -17,6 +18,8 @@ describe('partial commit of data changes', () => {
   beforeAll(async () => {
     kit = await createPartialChangesTestKit();
   });
+
+  guardCommittedVersions(() => kit.guard);
 
   afterAll(async () => {
     await kit.close();

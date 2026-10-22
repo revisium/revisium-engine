@@ -11,7 +11,11 @@ import {
   MixedTableRows,
   splitMixedTableRows,
 } from 'src/features/partial-changes-poc/write/mixed-table-rows';
-import { schemaUsesFiles } from 'src/features/partial-changes-poc/write/schema-files';
+import {
+  registerFileReferences,
+  RowsWithFiles,
+  rowsWithFiles,
+} from 'src/features/partial-changes-poc/write/file-references';
 import { VersionWriter } from 'src/features/partial-changes-poc/write/version-writer.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
@@ -23,11 +27,6 @@ export interface CommitWriteResult {
   previousHeadRevisionId: string;
   headRevisionId: string;
   draftRevisionId: string;
-}
-
-interface MergedRowsOfTable {
-  tableId: string;
-  rowVersionIds: string[];
 }
 
 @Injectable()
@@ -46,25 +45,29 @@ export class CommitWriter {
 
   async write(plan: ChangePlan, comment?: string): Promise<CommitWriteResult> {
     const { snapshot } = plan;
-    const headTables: string[] = [];
-    const mergedRows: MergedRowsOfTable[] = [];
+    const headTables = new Map<TargetTable, string>();
+    const filesToRegister: RowsWithFiles[] = [];
 
     for (const target of plan.target.tables) {
-      const versionId = await this.headTableVersion(target, mergedRows);
+      const versionId = await this.headTableVersion(target, filesToRegister);
       if (versionId) {
-        headTables.push(versionId);
+        headTables.set(target, versionId);
       }
     }
 
-    const draftTables = await this.nextDraftTableVersionIds(plan);
+    const draftTables = await this.nextDraftTableVersionIds(plan, headTables);
     await this.retirePreviousHead(snapshot.headRevisionId);
     await this.promoteDraftToHead(
       snapshot.draftRevisionId,
-      headTables,
+      [...headTables.values()],
       comment,
     );
     const nextDraftRevisionId = await this.createNextDraft(plan, draftTables);
-    await this.registerFileReferences(snapshot.draftRevisionId, mergedRows);
+    await registerFileReferences(
+      this.fileUsageIntegration,
+      snapshot.draftRevisionId,
+      filesToRegister,
+    );
     await this.recomputeNextDraftHasChanges(
       snapshot.draftRevisionId,
       nextDraftRevisionId,
@@ -79,7 +82,7 @@ export class CommitWriter {
 
   private async headTableVersion(
     target: TargetTable,
-    mergedRows: MergedRowsOfTable[],
+    filesToRegister: RowsWithFiles[],
   ): Promise<string | undefined> {
     const { pair } = target.table;
 
@@ -92,7 +95,7 @@ export class CommitWriter {
       case 'other':
         return this.linkWhole(target, oppositeOf(target.linkSide));
       case 'mixed':
-        return this.assembleMixedHeadTable(target, mergedRows);
+        return this.assembleMixedHeadTable(target, filesToRegister);
       default:
         throw new Error(`Cannot commit table ${pair.createdId}`);
     }
@@ -114,7 +117,7 @@ export class CommitWriter {
 
   private async assembleMixedHeadTable(
     target: TargetTable,
-    mergedRows: MergedRowsOfTable[],
+    filesToRegister: RowsWithFiles[],
   ): Promise<string> {
     const source = sideOf(target.table.pair, target.linkSide);
     if (!source) {
@@ -139,13 +142,7 @@ export class CommitWriter {
       ...mergedVersionIds,
     ]);
     await this.lockPublishedRows(target, tableVersionId, rows);
-
-    if (!source.system && schemaUsesFiles(target.schema)) {
-      mergedRows.push({
-        tableId: target.publicId ?? source.id,
-        rowVersionIds: mergedVersionIds,
-      });
-    }
+    filesToRegister.push(...rowsWithFiles(target, mergedVersionIds));
     return tableVersionId;
   }
 
@@ -164,24 +161,44 @@ export class CommitWriter {
     );
   }
 
-  private async nextDraftTableVersionIds(plan: ChangePlan): Promise<string[]> {
-    const versions = plan.snapshot.tables
-      .map((pair) => pair.draft)
-      .filter((version) => version !== undefined);
-
-    if (plan.ledger.renumbered.length === 0) {
-      return versions.map((version) => version.versionId);
-    }
-
+  private async nextDraftTableVersionIds(
+    plan: ChangePlan,
+    headTables: ReadonlyMap<TargetTable, string>,
+  ): Promise<string[]> {
     const versionIds: string[] = [];
-    for (const version of versions) {
-      versionIds.push(
-        version.system && version.id === SystemTables.Migration
-          ? await this.renumberedMigrationTable(plan, version)
-          : version.versionId,
+    for (const target of plan.target.tables) {
+      const versionId = await this.nextDraftTableVersion(
+        plan,
+        target,
+        headTables.get(target),
       );
+      if (versionId) {
+        versionIds.push(versionId);
+      }
     }
     return versionIds;
+  }
+
+  private async nextDraftTableVersion(
+    plan: ChangePlan,
+    target: TargetTable,
+    headVersionId: string | undefined,
+  ): Promise<string | undefined> {
+    const draft = target.table.pair.draft;
+    if (!draft) {
+      return undefined;
+    }
+    if (target.draftFollowsHead && headVersionId) {
+      return headVersionId;
+    }
+    if (
+      draft.system &&
+      draft.id === SystemTables.Migration &&
+      plan.ledger.renumbered.length > 0
+    ) {
+      return this.renumberedMigrationTable(plan, draft);
+    }
+    return draft.versionId;
   }
 
   private async renumberedMigrationTable(
@@ -255,19 +272,6 @@ export class CommitWriter {
       select: { id: true },
     });
     return revision.id;
-  }
-
-  private async registerFileReferences(
-    revisionId: string,
-    mergedRows: MergedRowsOfTable[],
-  ): Promise<void> {
-    for (const { tableId, rowVersionIds } of mergedRows) {
-      await this.fileUsageIntegration.registerReferencesForRowVersions({
-        revisionId,
-        tableId,
-        rowVersionIds,
-      });
-    }
   }
 
   private async recomputeNextDraftHasChanges(

@@ -40,7 +40,7 @@ Each item is delivered by its own pull requests, in this order.
 | Detection scan | Must | Not started |
 | Forward-only repair tool | Must | Not started |
 | Branch write fence | Must | Not started |
-| `createRevision` locking without scanning readonly rows | Should | Not started |
+| `createRevision` locking without scanning readonly rows | Should | Done (#91) |
 | Formulas compiled once per schema | Should | Not started |
 | Set-based file registration | Should | Not started |
 | Limits re-measured on production-like hardware | Gate | Not started |

@@ -13,7 +13,6 @@ import {
   RenameTableCommandReturnType,
 } from 'src/features/draft/commands/impl/rename-table.command';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { GetTableByIdQuery } from 'src/features/table/queries/impl/get-table-by-id.query';
 import { GetTableByIdReturnType } from 'src/features/table/queries/types';
@@ -26,22 +25,22 @@ export class ApiRenameTableHandler implements ICommandHandler<
   constructor(
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
-    private readonly transactionService: TransactionPrismaService,
     private readonly shareCommands: ShareCommands,
     private readonly migrationLockService: MigrationLockService,
   ) {}
 
   async execute({ data }: ApiRenameTableCommand) {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const {
       tableVersionId,
       previousTableVersionId,
     }: RenameTableCommandReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute<
-          RenameTableCommand,
-          RenameTableCommandReturnType
-        >(new RenameTableCommand(data)),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () =>
+          this.commandBus.execute<
+            RenameTableCommand,
+            RenameTableCommandReturnType
+          >(new RenameTableCommand(data)),
       );
 
     await this.shareCommands.notifyEndpoints({ revisionId: data.revisionId });

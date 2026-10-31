@@ -7,7 +7,6 @@ import {
 } from '@nestjs/cqrs';
 import { ApiBaseRowHandler } from 'src/features/draft/commands/handlers/api-base-row.handler';
 import { RowApiService } from 'src/features/row/row-api.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ApiCreateRowsCommand } from 'src/features/draft/commands/impl/api-create-rows.command';
 import { CreateRowsCommand } from 'src/features/draft/commands/impl/create-rows.command';
 import { ApiCreateRowsHandlerReturnType } from 'src/features/draft/commands/types/api-create-rows.handler.types';
@@ -26,7 +25,6 @@ export class ApiCreateRowsHandler
   constructor(
     protected readonly commandBus: CommandBus,
     protected readonly queryBus: QueryBus,
-    protected readonly transactionService: TransactionPrismaService,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
     protected readonly migrationLockService: MigrationLockService,
@@ -35,17 +33,18 @@ export class ApiCreateRowsHandler
   }
 
   async execute({ data }: ApiCreateRowsCommand) {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const result: CreateRowsHandlerReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute(
-          new CreateRowsCommand({
-            revisionId: data.revisionId,
-            tableId: data.tableId,
-            rows: data.rows,
-            isRestore: data.isRestore,
-          }),
-        ),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () =>
+          this.commandBus.execute(
+            new CreateRowsCommand({
+              revisionId: data.revisionId,
+              tableId: data.tableId,
+              rows: data.rows,
+              isRestore: data.isRestore,
+            }),
+          ),
       );
 
     await this.tryToNotifyEndpoints({

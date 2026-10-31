@@ -4,7 +4,6 @@ import {
   ICommandHandler,
   QueryBus,
 } from '@nestjs/cqrs';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ApiUpdateTableCommand } from 'src/features/draft/commands/impl/api-update-table.command';
 import { UpdateTableCommand } from 'src/features/draft/commands/impl/update-table.command';
 import { ApiUpdateTableHandlerReturnType } from 'src/features/draft/commands/types/api-update-table.handler.types';
@@ -25,7 +24,6 @@ export class ApiUpdateTableHandler implements ICommandHandler<
   constructor(
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
-    private readonly transactionService: TransactionPrismaService,
     private readonly shareCommands: ShareCommands,
     private readonly migrationLockService: MigrationLockService,
     private readonly migrationService: MigrationService,
@@ -58,11 +56,13 @@ export class ApiUpdateTableHandler implements ICommandHandler<
       tableVersionId,
       previousTableVersionId,
     }: UpdateTableHandlerReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute<
-          UpdateTableCommand,
-          UpdateTableHandlerReturnType
-        >(new UpdateTableCommand(data)),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () =>
+          this.commandBus.execute<
+            UpdateTableCommand,
+            UpdateTableHandlerReturnType
+          >(new UpdateTableCommand(data)),
       );
 
     await this.shareCommands.notifyEndpoints({ revisionId: data.revisionId });

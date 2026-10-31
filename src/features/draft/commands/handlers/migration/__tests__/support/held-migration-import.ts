@@ -1,5 +1,6 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
+import { createBarrier } from 'src/__tests__/utils/barrier';
 
 export async function applyMigrationWhileAnotherWriterCommits<T>(
   kit: DraftTestKit,
@@ -13,7 +14,7 @@ export async function applyMigrationWhileAnotherWriterCommits<T>(
       revisionId,
       migrations: [migration],
     });
-    await transaction.reached;
+    await transaction.expectReachedBefore(heldImport);
     const anotherWrite = await anotherWriter().finally(transaction.release);
 
     return { held: await heldImport, another: anotherWrite };
@@ -25,15 +26,8 @@ export async function applyMigrationWhileAnotherWriterCommits<T>(
 function holdFirstWriterInsideTransaction(kit: DraftTestKit) {
   const commands = kit.draftTransactionalCommands;
   const resolveDraftRevision = commands.resolveDraftRevision.bind(commands);
+  const barrier = createBarrier('The held migration import');
   let isFirstWriter = true;
-  let arrive!: () => void;
-  let release!: () => void;
-  const reached = new Promise<void>((resolve) => {
-    arrive = resolve;
-  });
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
 
   const spy = jest
     .spyOn(commands, 'resolveDraftRevision')
@@ -42,14 +36,13 @@ function holdFirstWriterInsideTransaction(kit: DraftTestKit) {
 
       if (isFirstWriter) {
         isFirstWriter = false;
-        arrive();
-        await released;
+        await barrier.arrive();
       }
     });
 
   return {
-    reached,
-    release,
+    expectReachedBefore: barrier.expectReachedBefore,
+    release: barrier.release,
     restore: () => spy.mockRestore(),
   };
 }

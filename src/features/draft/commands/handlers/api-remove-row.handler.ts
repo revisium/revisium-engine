@@ -6,7 +6,6 @@ import {
 } from '@nestjs/cqrs';
 import { GetBranchByIdQuery } from 'src/features/branch/quieries/impl';
 import { GetBranchByIdReturnType } from 'src/features/branch/quieries/types/get-branch-by-id.types';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ApiRemoveRowCommand } from 'src/features/draft/commands/impl/api-remove-row.command';
 import { RemoveRowsCommand } from 'src/features/draft/commands/impl/remove-rows.command';
 import { ApiRemoveRowHandlerReturnType } from 'src/features/draft/commands/types/api-remove-row.handler.types';
@@ -24,23 +23,24 @@ export class ApiRemoveRowHandler implements ICommandHandler<
   constructor(
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
-    private readonly transactionService: TransactionPrismaService,
     private readonly shareCommands: ShareCommands,
     private readonly migrationLockService: MigrationLockService,
   ) {}
 
   async execute({ data }: ApiRemoveRowCommand) {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const { rowId, ...rest } = data;
     const {
       branchId,
       tableVersionId,
       previousTableVersionId,
     }: RemoveRowsHandlerReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute<RemoveRowsCommand, RemoveRowsHandlerReturnType>(
-          new RemoveRowsCommand({ ...rest, rowIds: [rowId] }),
-        ),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () =>
+          this.commandBus.execute<
+            RemoveRowsCommand,
+            RemoveRowsHandlerReturnType
+          >(new RemoveRowsCommand({ ...rest, rowIds: [rowId] })),
       );
 
     if (tableVersionId !== previousTableVersionId) {

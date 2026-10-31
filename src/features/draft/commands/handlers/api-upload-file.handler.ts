@@ -16,7 +16,6 @@ import {
 import { RowApiService } from 'src/features/row/row-api.service';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { ShareCommands } from 'src/features/share/share.commands';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @CommandHandler(ApiUploadFileCommand)
 export class ApiUploadFileHandler
@@ -27,7 +26,6 @@ export class ApiUploadFileHandler
   constructor(
     protected readonly commandBus: CommandBus,
     protected readonly queryBus: QueryBus,
-    protected readonly transactionService: TransactionPrismaService,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
     protected readonly migrationLockService: MigrationLockService,
@@ -36,15 +34,15 @@ export class ApiUploadFileHandler
   }
 
   async execute({ data }: ApiUploadFileCommand) {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const {
       tableVersionId,
       previousTableVersionId,
       rowVersionId,
       previousRowVersionId,
     }: UploadFileCommandReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute(new UploadFileCommand(data)),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () => this.commandBus.execute(new UploadFileCommand(data)),
       );
 
     await this.tryToNotifyEndpoints({

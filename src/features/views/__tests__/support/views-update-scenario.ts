@@ -3,6 +3,7 @@ import {
   givenDraftProject,
   type DraftProjectScenario,
 } from 'src/__tests__/fixtures/scenarios/given-draft-project';
+import { createBarrier } from 'src/__tests__/utils/barrier';
 import { DraftRevisionInternalService } from 'src/features/draft-revision/services';
 import { createMigrationRecord } from 'src/features/migration/__tests__/support/migration-database';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
@@ -65,7 +66,7 @@ export async function updateViewsWhileBranchCommits(
   const updateSettled = Promise.allSettled([update]);
 
   try {
-    await expectUpdateHeldBeforeRowWrite(hold.reached, updateSettled);
+    await hold.expectReachedBefore(update);
 
     const committed = await kit.draftApiService.apiCreateRevision({
       projectId: draft.projectId,
@@ -80,23 +81,8 @@ export async function updateViewsWhileBranchCommits(
   }
 }
 
-async function expectUpdateHeldBeforeRowWrite(
-  reached: Promise<void>,
-  updateSettled: Promise<unknown>,
-): Promise<void> {
-  const heldFirst = await Promise.race([
-    reached.then(() => true),
-    updateSettled.then(() => false),
-  ]);
-
-  if (!heldFirst) {
-    throw new Error('The views update settled before reaching its row write');
-  }
-}
-
 function holdViewsUpdateBeforeRowWrite(kit: DraftTestKit) {
-  const reached = createSignal();
-  const released = createSignal();
+  const barrier = createBarrier('The views update');
   const internalService = kit.module.get(DraftRevisionInternalService);
   const getOrCreateDraftRow =
     internalService.getOrCreateDraftRow.bind(internalService);
@@ -105,23 +91,13 @@ function holdViewsUpdateBeforeRowWrite(kit: DraftTestKit) {
     .spyOn(internalService, 'getOrCreateDraftRow')
     .mockImplementation(async (data) => {
       const draftRow = await getOrCreateDraftRow(data);
-      reached.fire();
-      await released.fired;
+      await barrier.arrive();
       return draftRow;
     });
 
   return {
-    reached: reached.fired,
-    release: released.fire,
+    expectReachedBefore: barrier.expectReachedBefore,
+    release: barrier.release,
     restore: () => spy.mockRestore(),
   };
-}
-
-function createSignal() {
-  let fire!: () => void;
-  const fired = new Promise<void>((resolve) => {
-    fire = resolve;
-  });
-
-  return { fired, fire };
 }

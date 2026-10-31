@@ -15,7 +15,6 @@ import {
 } from 'src/features/draft/commands/impl/rename-row.command';
 import { RowApiService } from 'src/features/row/row-api.service';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 
 @CommandHandler(ApiRenameRowCommand)
@@ -26,7 +25,6 @@ export class ApiRenameRowHandler
   constructor(
     protected readonly commandBus: CommandBus,
     protected readonly queryBus: QueryBus,
-    protected readonly transactionService: TransactionPrismaService,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
     protected readonly migrationLockService: MigrationLockService,
@@ -35,15 +33,15 @@ export class ApiRenameRowHandler
   }
 
   async execute({ data }: ApiRenameRowCommand) {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const {
       tableVersionId,
       previousTableVersionId,
       rowVersionId,
       previousRowVersionId,
     }: RenameRowCommandReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute(new RenameRowCommand(data)),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () => this.commandBus.execute(new RenameRowCommand(data)),
       );
 
     await this.tryToNotifyEndpoints({

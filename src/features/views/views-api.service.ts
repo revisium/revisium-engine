@@ -10,14 +10,12 @@ import {
   GetTableViewsQueryData,
   GetTableViewsQueryReturnType,
 } from 'src/features/views/queries/impl';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @Injectable()
 export class ViewsApiService {
   constructor(
     private readonly queryBus: QueryBus,
     private readonly commandBus: CommandBus,
-    private readonly transactionService: TransactionPrismaService,
     private readonly migrationLockService: MigrationLockService,
   ) {}
 
@@ -31,12 +29,12 @@ export class ViewsApiService {
   }
 
   public updateTableViews(data: UpdateTableViewsCommandData): Promise<boolean> {
-    return this.transactionService.runSerializable(async () => {
-      await this.migrationLockService.checkRevisionLock(data.revisionId);
-
-      return this.commandBus.execute<UpdateTableViewsCommand, boolean>(
-        new UpdateTableViewsCommand(data),
-      );
-    });
+    return this.migrationLockService.runSerializableWithRevisionLockCheck(
+      data.revisionId,
+      async () =>
+        this.commandBus.execute<UpdateTableViewsCommand, boolean>(
+          new UpdateTableViewsCommand(data),
+        ),
+    );
   }
 }

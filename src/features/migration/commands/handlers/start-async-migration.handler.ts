@@ -3,6 +3,7 @@ import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { StartAsyncMigrationCommand } from 'src/features/migration/commands/impl/start-async-migration.command';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { MigrationWorkerService } from 'src/features/migration/services/migration-worker.service';
+import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
@@ -20,6 +21,7 @@ export class StartAsyncMigrationHandler implements ICommandHandler<
     private readonly migrationService: MigrationService,
     private readonly workerService: MigrationWorkerService,
     private readonly transactionService: TransactionPrismaService,
+    private readonly branchWriteFence: BranchWriteFenceService,
     private readonly jsonSchemaStore: JsonSchemaStoreService,
     private readonly jsonSchemaValidator: JsonSchemaValidatorService,
     private readonly shareTransactionalQueries: ShareTransactionalQueries,
@@ -32,6 +34,8 @@ export class StartAsyncMigrationHandler implements ICommandHandler<
 
     const migrationId = await this.transactionService.runSerializable(
       async () => {
+        await this.branchWriteFence.enterSharedForRevision(revisionId);
+
         const tx = this.transactionService.getTransaction();
         const revision = await tx.revision.findUniqueOrThrow({
           where: { id: revisionId },

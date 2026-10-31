@@ -12,14 +12,18 @@ import {
   writeWhileBranchIsFenced,
 } from './support/branch-write-fence';
 import {
+  countDraftMigrations,
   createRow,
   draftWriters,
   givenDraftWithFileRow,
   readDraftContent,
   readDraftRowIds,
+  updateTable,
 } from './support/draft-writers';
 
 const SHORT_TRANSACTION_TIMEOUT_MS = 1000;
+const ASYNC_UPDATE_TRANSACTION_TIMEOUT_MS = 3000;
+const ASYNC_MIGRATION_THRESHOLD = 1;
 
 describe('Draft API writers behind the branch write fence', () => {
   describe('within their wait limit', () => {
@@ -147,6 +151,53 @@ describe('Draft API writers behind the branch write fence', () => {
 
     afterEach(() => {
       jest.restoreAllMocks();
+    });
+
+    afterAll(async () => {
+      await kit.close();
+    });
+  });
+
+  describe('an update of a table at the async migration threshold', () => {
+    it('waits while its branch is fenced and starts exactly one migration after the fence is released', async () => {
+      const draft = await givenDraftWithFileRow(kit);
+
+      const queued = await queueWriteBehindBranchFence(
+        kit,
+        draft.branchId,
+        () => updateTable(kit, draft),
+      );
+      await expect(countDraftMigrations(kit, draft)).resolves.toBe(0);
+      await queued.releaseFence();
+
+      await expect(queued.writing).resolves.toMatchObject({
+        migrationStatus: 'migrating',
+      });
+      await expect(countDraftMigrations(kit, draft)).resolves.toBe(1);
+    });
+
+    it('fails with BRANCH_WRITE_FENCED past its wait limit and starts no migration', async () => {
+      const draft = await givenDraftWithFileRow(kit);
+
+      await expect(
+        writeWhileBranchIsFenced(kit, draft.branchId, () =>
+          updateTable(kit, draft),
+        ),
+      ).rejects.toThrow(BranchWriteFencedException);
+
+      await expect(countDraftMigrations(kit, draft)).resolves.toBe(0);
+    });
+
+    let kit: DraftTestKit;
+
+    beforeAll(async () => {
+      kit = await createDraftTestKit({
+        migrationOptions: {
+          workerMode: 'disabled',
+          threshold: ASYNC_MIGRATION_THRESHOLD,
+        },
+        transactionTimeoutMs: ASYNC_UPDATE_TRANSACTION_TIMEOUT_MS,
+      });
     });
 
     afterAll(async () => {

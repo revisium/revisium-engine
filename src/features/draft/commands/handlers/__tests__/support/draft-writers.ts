@@ -135,14 +135,7 @@ export const draftWriters: DraftWriter[] = [
   },
   {
     name: 'updateTable',
-    write: (kit, draft) =>
-      kit.draftApiService.apiUpdateTable({
-        revisionId: draft.draftRevisionId,
-        tableId: draft.tableId,
-        patches: [
-          { op: 'add', path: '/properties/name', value: getStringSchema() },
-        ],
-      }),
+    write: (kit, draft) => updateTable(kit, draft),
   },
   {
     name: 'renameTable',
@@ -215,6 +208,19 @@ export function createRow(
   });
 }
 
+export function updateTable(
+  kit: DraftTestKit,
+  draft: DraftWithFileRow,
+): Promise<unknown> {
+  return kit.draftApiService.apiUpdateTable({
+    revisionId: draft.draftRevisionId,
+    tableId: draft.tableId,
+    patches: [
+      { op: 'add', path: '/properties/name', value: getStringSchema() },
+    ],
+  });
+}
+
 export function readDraftContent(kit: DraftTestKit, revisionId: string) {
   return kit.prismaService.revision.findUniqueOrThrow({
     where: { id: revisionId },
@@ -254,4 +260,13 @@ export async function readDraftRowIds(
   });
 
   return rows.map((row) => row.id);
+}
+
+export function countDraftMigrations(
+  kit: DraftTestKit,
+  draft: DraftWithFileRow,
+): Promise<number> {
+  return kit.prismaService.tableMigration.count({
+    where: { revisionId: draft.draftRevisionId },
+  });
 }

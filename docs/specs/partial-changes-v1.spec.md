@@ -989,17 +989,30 @@ Invariants:
   `hasChanges` recomputation. Each attempt plans from a fresh snapshot.
 - The operations run their own attempt loop, independent of the engine-wide `TRANSACTION_MAX_RETRIES` of the native
   Serializable runner: retry only on serialization failures (`40001`, `40P01`, write conflict `P2034`), with backoff, up
-  to `PARTIAL_CHANGES_MAX_ATTEMPTS` (default 3). A timeout (`P2028`, or the database cancelling at the deadline) is not
-  retried.
-- One operation timeout `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` per attempt (also for preview and listing, §8.2),
-  enforced by the database at the deadline: with PostgreSQL `transaction_timeout` (PostgreSQL 17 and later; the engine's
-  Docker and CI setup runs 17) set to the operation timeout; on servers without it, `SET LOCAL statement_timeout` to the
-  remaining budget before each statement. Setting `statement_timeout` once to the whole timeout is not enough: a
-  statement started late could run up to twice the bound.
-- `transaction_timeout` terminates the session (`FATAL`, SQLSTATE `25P04`) instead of cancelling the transaction. The
-  attempt loop treats that connection error as the operation timeout and does not retry it. The implementation
-  verifies how the timer is armed for one transaction (`SET LOCAL` inside it, or set on the session before `BEGIN`);
-  if it cannot be armed per transaction, it falls back to the per-statement budget.
+  to `PARTIAL_CHANGES_MAX_ATTEMPTS` (default 3). A timeout is not retried.
+- One operation timeout `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` per attempt (also for preview and listing, §8.2). The
+  deadline starts with the attempt, and the database ends the attempt at it:
+  - PostgreSQL 17 and later (the engine's Docker and CI setup): the first statements of the transaction set
+    `transaction_timeout` locally to 0 and then to the remaining budget. A non-zero server or role default starts its
+    timer at `BEGIN`, and a later local value neither extends nor shortens a running timer; the 0 stops it, so the next
+    value starts a timer for this transaction only. At the deadline PostgreSQL terminates the session (`FATAL`,
+    SQLSTATE `25P04`). The local values end with the transaction, so a reused connection carries no timeout.
+  - Older servers (deployments run PostgreSQL 15 and 16): the transaction reads `pg_backend_pid()` first, and a
+    watchdog timer on the remaining budget runs `pg_cancel_backend` for that backend from another connection (a role
+    may cancel its own backends). The running statement fails with SQLSTATE `57014`. The watchdog stops before the
+    transaction commits or rolls back, so it never cancels a statement of the connection's next user. PostgreSQL
+    ignores a cancellation that reaches the backend between statements; the deadline check before commit covers that
+    case.
+  - Setting `statement_timeout` once to the whole timeout is not enough: a statement started late could run up to
+    twice the bound.
+- The attempt awaits the operation's result inside the transaction, so a lazy query returned without `await` also runs
+  under the deadline, and checks the deadline before it returns: past the deadline the transaction rolls back, and
+  nothing commits after the deadline. Prisma's own interactive-transaction timeout is the operation timeout plus a
+  margin, so it never ends an attempt first.
+- An error is the operation timeout only with evidence: SQLSTATE `25P04`; `57014` after the watchdog fired; Prisma
+  `P2028`; a lost connection after the deadline while `transaction_timeout` was armed; or the deadline check before
+  commit. The attempt loop reports it as one timeout error and does not retry it. Any other error keeps its type, even
+  when the rollback ends after the deadline.
 - Why Serializable and no locks: native writers take no row locks and run Serializable; SSI aborts the partial
   operation when a native write conflicts with what it read, and the retry includes that write. A ReadCommitted
   variant loses native writes and commits stale merged values.
@@ -1152,7 +1165,7 @@ structure-digest cost (§9.1) was not measured and is measured before release.
 | `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 100,000 | Changed rows of the affected tables (§6.2); an affected table counts in full | Above → `tooLarge` before the catalogue. |
 | `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 10,000 | Merged or converted rows in mixed tables whose target schema has formula or File fields | Above → `tooLarge` before the closure assembly that would exceed it (§6.5). |
 | `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | Links copied into one new table version (an in-place revert copies none) | Above for any table → `tooLarge` with `tableId`, before that assembly (§6.5). |
-| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | 180,000 | Lifetime of one preview, one listing page, or one commit or revert attempt | Expired → error, rollback; enforced by `transaction_timeout` or per-statement budgets (§8.1). |
+| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | 180,000 | Lifetime of one preview, one listing page, or one commit or revert attempt | Expired → error, rollback; enforced by `transaction_timeout` or a cancelling watchdog (§8.1). |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | 3 | Serializable attempts of the operation's own loop (§8.1) | Exhausted → error. |
 | `listChanges` `pageSize` | 500 (max 5,000) | Units per page, and so changed rows read per page (§5.2) | — |
 
@@ -1482,11 +1495,11 @@ versions unchanged" (§14) holds in every scenario.
   applies where it must be blocked); the repair migration appended after the table's pending migrations, or the patch
   diffed against the Draft schema (AS-47i replay fails); predicate (a) used for the refusal (AS-47f blocked);
   unledgered tables not refused (AS-49 applies); listing without keyset paging (a page reads a whole table); no deadline
-  enforcement (`transaction_timeout` or per-statement budget); the engine-wide retry loop instead of the operation's
-  attempt cap; no write fence; required, deferred and blocking units without exact selectors; endpoint notification
-  inside the transaction or missing; unattributable migrations ignored (AS-48); published-at ownership by the first of
-  several leaves; an unclassified model column; a writer that locks by scanning the table (a cost assertion on locked
-  rows).
+  enforcement (`transaction_timeout` or the watchdog); a commit after the deadline; the engine-wide retry loop instead
+  of the operation's attempt cap; no write fence; required, deferred and blocking units without exact selectors;
+  endpoint notification inside the transaction or missing; unattributable migrations ignored (AS-48); published-at
+  ownership by the first of several leaves; an unclassified model column; a writer that locks by scanning the table (a
+  cost assertion on locked rows).
 - **Benchmarks** fail the run on any check and verify every Head and Draft row in SQL: data, `hash`, `schemaHash`,
   formula consistency, `readonly` of rows and tables, no dangling foreign keys, file links and project bytes; at least
   3 runs per cell on production-like hardware; the estimate is compared with the links and rows written. A scoped
@@ -1594,6 +1607,12 @@ Follow-up of [async-row-migration-v2]:
 - §12: #85–#92 marked landed; the `applyMigrations` item, the scan and the repair point to async-row-migration-v2;
   ledger backfill and row remediation are decided with the scan results.
 - §13.4: AS-47c, AS-47g and AS-47i use the repair outcomes; AS-49 covers the lineage cases.
+
+Deadline enforcement:
+
+- §8.1, §11, §14: `transaction_timeout` is re-armed in each transaction on PostgreSQL 17; older servers use a watchdog
+  that cancels the backend instead of per-statement budgets; the deadline is checked before commit; an error counts as
+  the timeout only with evidence.
 
 ### Version 1 (2026-10-22)
 

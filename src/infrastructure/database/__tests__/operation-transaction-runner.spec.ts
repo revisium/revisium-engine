@@ -4,18 +4,26 @@ import {
   createDatabaseServiceTestKit,
   type DatabaseServiceTestKit,
 } from 'src/__tests__/kit/create-database-service-test-kit';
-import { TransactionIsolationLevel } from 'src/engine-prisma-types';
-import { OperationDeadline } from 'src/infrastructure/database/operation-deadline';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
-import { StatementBudgets } from 'src/infrastructure/database/statement-budgets';
+import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
 
 const NATIVE_TRANSACTION_TIMEOUT_MS = 200;
 const NATIVE_MAX_RETRIES = 10;
 const OPERATION_TIMEOUT_MS = 1000;
 const STATEMENT_BEYOND_TIMEOUT_MS = 10 * OPERATION_TIMEOUT_MS;
+const SHORTER_SESSION_DEFAULT_MS = 300;
+const LONGER_SESSION_DEFAULT_MS = 30 * OPERATION_TIMEOUT_MS;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const CONFIGURED_MAX_ATTEMPTS = 2;
+
+const RUNNER_SETTINGS = {
+  TRANSACTION_TIMEOUT: String(NATIVE_TRANSACTION_TIMEOUT_MS),
+  TRANSACTION_MAX_RETRIES: String(NATIVE_MAX_RETRIES),
+  TRANSACTION_BASE_DELAY_MS: '1',
+  TRANSACTION_MAX_DELAY_MS: '10',
+  PARTIAL_CHANGES_OPERATION_TIMEOUT_MS: String(OPERATION_TIMEOUT_MS),
+};
 
 describe('OperationTransactionRunner', () => {
   describe('write attempts', () => {
@@ -75,6 +83,18 @@ describe('OperationTransactionRunner', () => {
       await expect(readCounter(kit, counter)).resolves.toBe(0);
     });
 
+    it('ends a write that continues after idling past it with OperationTimeoutException, rolled back', async () => {
+      const counter = await givenCounter(kit);
+
+      await expect(
+        runner.runWrite(() =>
+          incrementIdleThenContinue(kit, counter, 1.5 * OPERATION_TIMEOUT_MS),
+        ),
+      ).rejects.toThrow(OperationTimeoutException);
+
+      await expect(readCounter(kit, counter)).resolves.toBe(0);
+    });
+
     it('ends planning at the deadline while its statement still runs, with OperationTimeoutException', async () => {
       const failure = await failureOf(
         runner.runPlanning(() =>
@@ -84,6 +104,32 @@ describe('OperationTransactionRunner', () => {
 
       expect(failure.error).toBeInstanceOf(OperationTimeoutException);
       expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
+    });
+
+    it('covers a statement the operation returns without awaiting it', async () => {
+      const failure = await failureOf(
+        runner.runWrite(() => statementFor(kit, STATEMENT_BEYOND_TIMEOUT_MS)),
+      );
+
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+      expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
+    });
+
+    it('keeps a failure that is not a timeout although its rollback ends after the deadline', async () => {
+      const counter = await givenCounter(kit);
+
+      const failure = await failureOf(
+        runner.runWrite(() =>
+          failWithDuplicateWhileStatementRuns(
+            kit,
+            counter,
+            STATEMENT_BEYOND_TIMEOUT_MS,
+          ),
+        ),
+      );
+
+      expect(failure.elapsedMs).toBeGreaterThanOrEqual(OPERATION_TIMEOUT_MS);
+      expect(failure.error).toMatchObject({ code: 'P2002' });
     });
   });
 
@@ -117,31 +163,158 @@ describe('OperationTransactionRunner', () => {
     });
   });
 
-  describe('statement budgets on servers without transaction_timeout', () => {
-    it('limit each statement to the time left until the deadline', async () => {
-      const elapsedMs = 300;
+  describe('connection reuse', () => {
+    it('leaves no timeout on the connection of a committed operation', async () => {
+      const backendPid = await runner.runWrite(() => readBackendPid(kit));
 
-      const limits = await runWithStatementBudgets(kit, () =>
-        statementTimeoutsAroundStatementFor(kit, elapsedMs),
+      await expect(runTransactionLongerThanOperationTimeout(kit)).resolves.toBe(
+        backendPid,
       );
-
-      expectBudgetOfAtMost(limits.first, OPERATION_TIMEOUT_MS);
-      expectBudgetOfAtMost(limits.afterwards, OPERATION_TIMEOUT_MS - elapsedMs);
     });
 
-    it('cancel a statement that is still running at the deadline', async () => {
+    it('leaves no timeout on the connection of a rolled-back operation', async () => {
+      const operation = failingAfterReadingBackendPid(kit);
+
+      await expect(runner.runWrite(operation.run)).rejects.toThrow(
+        OPERATION_FAILURE,
+      );
+
+      await expect(runTransactionLongerThanOperationTimeout(kit)).resolves.toBe(
+        operation.backendPid,
+      );
+    });
+  });
+
+  describe('on connections whose transaction_timeout default is shorter than the operation timeout', () => {
+    it('do not end an operation before its own deadline', async () => {
+      await expect(
+        shortDefaultRunner.runPlanning(() =>
+          runStatementFor(shortDefaultKit, 2 * SHORTER_SESSION_DEFAULT_MS),
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    let shortDefaultKit: DatabaseServiceTestKit;
+    let shortDefaultRunner: OperationTransactionRunner;
+
+    beforeAll(async () => {
+      shortDefaultKit = await createKitWithTransactionTimeoutDefault(
+        SHORTER_SESSION_DEFAULT_MS,
+      );
+      shortDefaultRunner = shortDefaultKit.module.get(
+        OperationTransactionRunner,
+      );
+    });
+
+    afterAll(async () => {
+      await shortDefaultKit.close();
+    });
+  });
+
+  describe('on connections whose transaction_timeout default is longer than the operation timeout', () => {
+    it('still end an operation at its own deadline', async () => {
       const failure = await failureOf(
-        runWithStatementBudgets(kit, () =>
-          runStatementFor(kit, STATEMENT_BEYOND_TIMEOUT_MS),
+        longDefaultRunner.runPlanning(() =>
+          runStatementFor(longDefaultKit, STATEMENT_BEYOND_TIMEOUT_MS),
         ),
       );
 
-      expect(failure.error).toMatchObject({
-        message: expect.stringContaining(
-          'canceling statement due to statement timeout',
-        ),
-      });
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
       expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
+    });
+
+    let longDefaultKit: DatabaseServiceTestKit;
+    let longDefaultRunner: OperationTransactionRunner;
+
+    beforeAll(async () => {
+      longDefaultKit = await createKitWithTransactionTimeoutDefault(
+        LONGER_SESSION_DEFAULT_MS,
+      );
+      longDefaultRunner = longDefaultKit.module.get(OperationTransactionRunner);
+    });
+
+    afterAll(async () => {
+      await longDefaultKit.close();
+    });
+  });
+
+  describe('on servers without transaction_timeout', () => {
+    it('cancels a statement still running at the deadline and ends with OperationTimeoutException, rolled back', async () => {
+      const counter = await givenCounter(watchdogKit);
+
+      const failure = await failureOf(
+        watchdogRunner.runWrite(() =>
+          incrementThenRunStatementFor(
+            watchdogKit,
+            counter,
+            STATEMENT_BEYOND_TIMEOUT_MS,
+          ),
+        ),
+      );
+
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+      expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
+      await expect(readCounter(watchdogKit, counter)).resolves.toBe(0);
+    });
+
+    it('rolls back an operation that finishes after its deadline', async () => {
+      const counter = await givenCounter(watchdogKit);
+
+      await expect(
+        watchdogRunner.runWrite(() =>
+          incrementThenIdleFor(
+            watchdogKit,
+            counter,
+            1.5 * OPERATION_TIMEOUT_MS,
+          ),
+        ),
+      ).rejects.toThrow(OperationTimeoutException);
+
+      await expect(readCounter(watchdogKit, counter)).resolves.toBe(0);
+    });
+
+    it("ends an operation that continues after Prisma's own transaction timeout with OperationTimeoutException", async () => {
+      const counter = await givenCounter(watchdogKit);
+
+      await expect(
+        watchdogRunner.runWrite(() =>
+          incrementIdleThenContinue(
+            watchdogKit,
+            counter,
+            2.5 * OPERATION_TIMEOUT_MS,
+          ),
+        ),
+      ).rejects.toThrow(OperationTimeoutException);
+
+      await expect(readCounter(watchdogKit, counter)).resolves.toBe(0);
+    });
+
+    it('covers a statement the operation returns without awaiting it', async () => {
+      const failure = await failureOf(
+        watchdogRunner.runWrite(() =>
+          statementFor(watchdogKit, STATEMENT_BEYOND_TIMEOUT_MS),
+        ),
+      );
+
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+      expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
+    });
+
+    let watchdogKit: DatabaseServiceTestKit;
+    let watchdogRunner: OperationTransactionRunner;
+
+    beforeAll(async () => {
+      watchdogKit = await createDatabaseServiceTestKit([], RUNNER_SETTINGS, [
+        {
+          provide: TransactionTimeoutSupport,
+          useValue: serverWithoutTransactionTimeout,
+        },
+      ]);
+      watchdogRunner = watchdogKit.module.get(OperationTransactionRunner);
+    });
+
+    afterAll(async () => {
+      await watchdogKit.close();
     });
   });
 
@@ -178,13 +351,7 @@ describe('OperationTransactionRunner', () => {
   let runner: OperationTransactionRunner;
 
   beforeAll(async () => {
-    kit = await createDatabaseServiceTestKit([], {
-      TRANSACTION_TIMEOUT: String(NATIVE_TRANSACTION_TIMEOUT_MS),
-      TRANSACTION_MAX_RETRIES: String(NATIVE_MAX_RETRIES),
-      TRANSACTION_BASE_DELAY_MS: '1',
-      TRANSACTION_MAX_DELAY_MS: '10',
-      PARTIAL_CHANGES_OPERATION_TIMEOUT_MS: String(OPERATION_TIMEOUT_MS),
-    });
+    kit = await createDatabaseServiceTestKit([], RUNNER_SETTINGS);
     runner = kit.module.get(OperationTransactionRunner);
   });
 
@@ -193,10 +360,11 @@ describe('OperationTransactionRunner', () => {
   });
 });
 
-function expectBudgetOfAtMost(budgetMs: number, maxMs: number) {
-  expect(budgetMs).toBeGreaterThan(0);
-  expect(budgetMs).toBeLessThanOrEqual(maxMs);
-}
+const OPERATION_FAILURE = 'operation failed';
+
+const serverWithoutTransactionTimeout: TransactionTimeoutSupport = {
+  isSupportedOn: () => Promise.resolve(false),
+};
 
 async function failureOf(operation: Promise<unknown>) {
   const startedAt = performance.now();
@@ -206,6 +374,25 @@ async function failureOf(operation: Promise<unknown>) {
   );
 
   return { error, elapsedMs: performance.now() - startedAt };
+}
+
+async function createKitWithTransactionTimeoutDefault(
+  defaultMs: number,
+): Promise<DatabaseServiceTestKit> {
+  const databaseUrl = process.env.DATABASE_URL ?? '';
+  const urlWithDefault = new URL(databaseUrl);
+  urlWithDefault.searchParams.set(
+    'options',
+    `-c transaction_timeout=${defaultMs}`,
+  );
+
+  process.env.DATABASE_URL = urlWithDefault.toString();
+
+  try {
+    return await createDatabaseServiceTestKit([], RUNNER_SETTINGS);
+  } finally {
+    process.env.DATABASE_URL = databaseUrl;
+  }
 }
 
 interface Counter {
@@ -259,6 +446,18 @@ function conflictingOnFirstAttempt(
   };
 }
 
+function failingAfterReadingBackendPid(kit: DatabaseServiceTestKit) {
+  const operation = {
+    backendPid: 0,
+    async run() {
+      operation.backendPid = await readBackendPid(kit);
+      throw new Error(OPERATION_FAILURE);
+    },
+  };
+
+  return operation;
+}
+
 async function increment(
   kit: DatabaseServiceTestKit,
   counter: Counter,
@@ -294,6 +493,24 @@ async function incrementThenIdleFor(
   await new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
+async function incrementIdleThenContinue(
+  kit: DatabaseServiceTestKit,
+  counter: Counter,
+  idleMs: number,
+): Promise<void> {
+  await incrementThenIdleFor(kit, counter, idleMs);
+  await readCounterInTransaction(kit, counter);
+}
+
+async function failWithDuplicateWhileStatementRuns(
+  kit: DatabaseServiceTestKit,
+  counter: Counter,
+  durationMs: number,
+): Promise<void> {
+  statementFor(kit, durationMs).catch(() => undefined);
+  await kit.prismaService.projectFileUsage.create({ data: counter });
+}
+
 async function readAroundConcurrentIncrement(
   kit: DatabaseServiceTestKit,
   counter: Counter,
@@ -305,33 +522,15 @@ async function readAroundConcurrentIncrement(
   return { before, after };
 }
 
-async function statementTimeoutsAroundStatementFor(
+function runTransactionLongerThanOperationTimeout(
   kit: DatabaseServiceTestKit,
-  durationMs: number,
-) {
-  const first = await readStatementTimeout(kit);
-  await runStatementFor(kit, durationMs);
-  const afterwards = await readStatementTimeout(kit);
-
-  return { first, afterwards };
-}
-
-function runWithStatementBudgets<T>(
-  kit: DatabaseServiceTestKit,
-  body: () => Promise<T>,
-): Promise<T> {
-  const budgets = new StatementBudgets(
-    kit.prismaService,
-    kit.transactionService,
-  );
-
-  return budgets.runTransaction(
-    new OperationDeadline(OPERATION_TIMEOUT_MS),
-    {
-      isolationLevel: TransactionIsolationLevel.Serializable,
-      timeout: 5 * OPERATION_TIMEOUT_MS,
+): Promise<number> {
+  return kit.transactionService.run(
+    async () => {
+      await runStatementFor(kit, 1.5 * OPERATION_TIMEOUT_MS);
+      return readBackendPid(kit);
     },
-    body,
+    { timeout: 5 * OPERATION_TIMEOUT_MS },
   );
 }
 
@@ -366,20 +565,25 @@ async function incrementConcurrently(
   });
 }
 
+async function readBackendPid(kit: DatabaseServiceTestKit): Promise<number> {
+  const [session] = await kit.transactionService.getTransaction().$queryRaw<
+    { pid: number }[]
+  >`SELECT pg_backend_pid() AS pid`;
+
+  return session?.pid ?? 0;
+}
+
 async function runStatementFor(
   kit: DatabaseServiceTestKit,
   durationMs: number,
 ): Promise<void> {
-  await kit.transactionService.getTransaction()
-    .$executeRaw`SELECT pg_sleep(${durationMs / 1000})`;
+  await statementFor(kit, durationMs);
 }
 
-async function readStatementTimeout(
+function statementFor(
   kit: DatabaseServiceTestKit,
+  durationMs: number,
 ): Promise<number> {
-  const [setting] = await kit.transactionService.getTransaction().$queryRaw<
-    { ms: number }[]
-  >`SELECT setting::int AS ms FROM pg_settings WHERE name = 'statement_timeout'`;
-
-  return setting?.ms ?? 0;
+  return kit.transactionService.getTransaction()
+    .$executeRaw`SELECT pg_sleep(${durationMs / 1000})`;
 }

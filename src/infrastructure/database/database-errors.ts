@@ -15,6 +15,12 @@ const SERIALIZATION_FAILURE_MESSAGES = [
   'Please retry your transaction',
 ];
 
+const CONNECTION_LOST_MESSAGES = [
+  'Client has encountered a connection error and is not queryable',
+  'Connection terminated',
+  'Server has closed the connection',
+];
+
 interface DriverErrorCause {
   originalCode?: string;
 }
@@ -27,17 +33,19 @@ interface DatabaseError {
 }
 
 export function isSerializationFailure(error: unknown): boolean {
-  const code = (error as DatabaseError | undefined)?.code || '';
-
-  if (SERIALIZATION_FAILURE_CODES.includes(code)) {
+  if (SERIALIZATION_FAILURE_CODES.includes(errorCodeOf(error) || '')) {
     return true;
   }
 
-  const message = (error as DatabaseError | undefined)?.message || '';
+  return messageContainsAny(error, SERIALIZATION_FAILURE_MESSAGES);
+}
 
-  return SERIALIZATION_FAILURE_MESSAGES.some((pattern) =>
-    message.includes(pattern),
-  );
+export function isConnectionLost(error: unknown): boolean {
+  return messageContainsAny(error, CONNECTION_LOST_MESSAGES);
+}
+
+export function errorCodeOf(error: unknown): string | undefined {
+  return (error as DatabaseError | undefined)?.code;
 }
 
 export function sqlStateOf(error: unknown): string | undefined {
@@ -47,4 +55,10 @@ export function sqlStateOf(error: unknown): string | undefined {
     databaseError?.meta?.driverAdapterError?.cause?.originalCode ??
     databaseError?.cause?.originalCode
   );
+}
+
+function messageContainsAny(error: unknown, patterns: string[]): boolean {
+  const message = (error as DatabaseError | undefined)?.message || '';
+
+  return patterns.some((pattern) => message.includes(pattern));
 }

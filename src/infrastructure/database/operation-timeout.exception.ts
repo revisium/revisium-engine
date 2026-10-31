@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
 export class OperationTimeoutException extends HttpException {
-  constructor(timeoutMs: number, cause: unknown) {
+  constructor(timeoutMs: number, cause?: unknown) {
     super(
       {
         code: 'OPERATION_TIMEOUT',

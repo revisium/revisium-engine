@@ -2,26 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { setTimeout as waitFor } from 'node:timers/promises';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
-import {
-  isSerializationFailure,
-  sqlStateOf,
-} from 'src/infrastructure/database/database-errors';
+import { TransactionPrismaClient } from 'src/features/share/types';
+import { isSerializationFailure } from 'src/infrastructure/database/database-errors';
 import {
   NumericSetting,
   readNumericSetting,
 } from 'src/infrastructure/database/numeric-setting';
-import {
-  OperationDeadline,
-  setLocalTimeoutToDeadline,
-} from 'src/infrastructure/database/operation-deadline';
-import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
+import { OperationDeadline } from 'src/infrastructure/database/operation-deadline';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { retryDelayMs } from 'src/infrastructure/database/retry-backoff';
-import { StatementBudgets } from 'src/infrastructure/database/statement-budgets';
 import {
   TransactionOptions,
   TransactionPrismaService,
 } from 'src/infrastructure/database/transaction-prisma.service';
+import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
 
 const MAX_ATTEMPTS: NumericSetting = {
   envKey: 'PARTIAL_CHANGES_MAX_ATTEMPTS',
@@ -38,9 +32,6 @@ const OPERATION_TIMEOUT_MS: NumericSetting = {
 // The database ends an attempt at its deadline; Prisma's own timer only has to stay out of its way.
 const PRISMA_TIMEOUT_MARGIN_MS = 1_000;
 
-const PRISMA_TRANSACTION_EXPIRED = 'P2028';
-const TRANSACTION_TIMEOUT_TERMINATION = '25P04';
-
 type AttemptOptions = Omit<TransactionOptions, 'retry'>;
 
 @Injectable()
@@ -51,13 +42,10 @@ export class OperationTransactionRunner {
 
   private readonly operationTimeoutMs: number;
 
-  private readonly statementBudgets: StatementBudgets;
-
-  private transactionTimeoutArmable?: boolean;
-
   constructor(
     private readonly prismaService: PrismaService,
     private readonly transactionService: TransactionPrismaService,
+    private readonly transactionTimeoutSupport: TransactionTimeoutSupport,
     configService: ConfigService,
   ) {
     this.maxAttempts = readNumericSetting(
@@ -69,10 +57,6 @@ export class OperationTransactionRunner {
       configService,
       OPERATION_TIMEOUT_MS,
       this.logger,
-    );
-    this.statementBudgets = new StatementBudgets(
-      prismaService,
-      transactionService,
     );
   }
 
@@ -122,21 +106,30 @@ export class OperationTransactionRunner {
     isolationLevel: TransactionIsolationLevel,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const deadline = new OperationDeadline(this.operationTimeoutMs);
+    const deadline = new OperationDeadline(
+      this.operationTimeoutMs,
+      this.prismaService,
+      this.transactionTimeoutSupport,
+    );
 
     try {
-      return await this.runUntilDeadline(
-        deadline,
+      return await this.prismaService.$transaction(
+        ($prisma) => this.runBeforeDeadline($prisma, deadline, operation),
         this.attemptOptions(isolationLevel),
-        operation,
       );
     } catch (error) {
-      if (endedByDeadline(error, deadline)) {
-        throw new OperationTimeoutException(this.operationTimeoutMs, error);
-      }
-
-      throw error;
+      throw deadline.failureOf(error);
     }
+  }
+
+  private runBeforeDeadline<T>(
+    $prisma: TransactionPrismaClient,
+    deadline: OperationDeadline,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return deadline.run($prisma, () =>
+      this.transactionService.runInTransactionContext($prisma, operation),
+    );
   }
 
   private attemptOptions(
@@ -148,58 +141,4 @@ export class OperationTransactionRunner {
       timeout: this.operationTimeoutMs + PRISMA_TIMEOUT_MARGIN_MS,
     };
   }
-
-  private async runUntilDeadline<T>(
-    deadline: OperationDeadline,
-    options: AttemptOptions,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    if (await this.canArmTransactionTimeout()) {
-      return this.runWithTransactionTimeout(deadline, options, operation);
-    }
-
-    return this.statementBudgets.runTransaction(deadline, options, operation);
-  }
-
-  private runWithTransactionTimeout<T>(
-    deadline: OperationDeadline,
-    options: AttemptOptions,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    return this.prismaService.$transaction(async ($prisma) => {
-      await setLocalTimeoutToDeadline($prisma, 'transaction_timeout', deadline);
-      return this.transactionService.runInTransactionContext(
-        $prisma,
-        operation,
-      );
-    }, options);
-  }
-
-  private async canArmTransactionTimeout(): Promise<boolean> {
-    this.transactionTimeoutArmable ??= await this.probeTransactionTimeout();
-
-    return this.transactionTimeoutArmable;
-  }
-
-  // PostgreSQL before 17 has no transaction_timeout (NULL). A non-zero server default starts its timer at BEGIN,
-  // and SET LOCAL inside the transaction then neither extends nor shortens it.
-  private async probeTransactionTimeout(): Promise<boolean> {
-    const [probe] = await this.prismaService.$queryRaw<
-      { armable: boolean | null }[]
-    >`SELECT current_setting('transaction_timeout', true) = '0' AS armable`;
-
-    return probe?.armable === true;
-  }
-}
-
-// A session that transaction_timeout terminates between statements fails the next statement or the commit
-// with a lost connection and no SQLSTATE, so a failure after the deadline counts as the timeout too.
-function endedByDeadline(error: unknown, deadline: OperationDeadline): boolean {
-  const code = (error as { code?: string } | undefined)?.code;
-
-  return (
-    deadline.hasPassed() ||
-    code === PRISMA_TRANSACTION_EXPIRED ||
-    sqlStateOf(error) === TRANSACTION_TIMEOUT_TERMINATION
-  );
 }

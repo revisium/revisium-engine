@@ -219,7 +219,11 @@ export class TransactionPrismaService implements OnModuleInit {
     $prisma: TransactionPrismaClient,
     handler: () => Promise<T>,
   ): Promise<T> {
-    return this.asyncLocalStorage.run({ $prisma }, handler);
+    return this.asyncLocalStorage.run({ $prisma }, async () => {
+      // A lazy PrismaPromise returned by the handler runs only when awaited: await it inside the context.
+      const result = await handler();
+      return result;
+    });
   }
 
   private executeTransaction<T>(

@@ -9,6 +9,7 @@ import { OperationTransactionRunner } from 'src/infrastructure/database/operatio
 import { PostgresqlNotificationService } from 'src/infrastructure/database/postgresql-notification.service';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
 
 @Module({
   imports: [ConfigModule, CqrsModule],
@@ -20,6 +21,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
     HashService,
     CleanupService,
     BranchWriteFenceService,
+    TransactionTimeoutSupport,
     OperationTransactionRunner,
   ],
   exports: [

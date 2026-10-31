@@ -4,7 +4,6 @@ import {
   createDatabaseServiceTestKit,
   type DatabaseServiceTestKit,
 } from 'src/__tests__/kit/create-database-service-test-kit';
-import { isConnectionLost } from 'src/infrastructure/database/database-errors';
 import { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
@@ -14,7 +13,7 @@ const NATIVE_TRANSACTION_TIMEOUT_MS = 200;
 const NATIVE_MAX_RETRIES = 10;
 const OPERATION_TIMEOUT_MS = 1000;
 const STATEMENT_BEYOND_TIMEOUT_MS = 10 * OPERATION_TIMEOUT_MS;
-const LONG_AFTER_DEADLINE_MS = 2.5 * OPERATION_TIMEOUT_MS;
+const IDLE_PAST_DEADLINE_MS = 1.5 * OPERATION_TIMEOUT_MS;
 const SHORTER_SESSION_DEFAULT_MS = 300;
 const LONGER_SESSION_DEFAULT_MS = 30 * OPERATION_TIMEOUT_MS;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -27,6 +26,23 @@ const RUNNER_SETTINGS = {
   TRANSACTION_MAX_DELAY_MS: '10',
   PARTIAL_CHANGES_OPERATION_TIMEOUT_MS: String(OPERATION_TIMEOUT_MS),
 };
+
+const serverWithoutTransactionTimeout: TransactionTimeoutSupport = {
+  isSupportedOn: () => Promise.resolve(false),
+};
+
+const WITHOUT_TRANSACTION_TIMEOUT = {
+  provide: TransactionTimeoutSupport,
+  useValue: serverWithoutTransactionTimeout,
+};
+
+const DEADLINE_ENFORCEMENTS = [
+  { server: 'with transaction_timeout', overrides: [] },
+  {
+    server: 'without transaction_timeout',
+    overrides: [WITHOUT_TRANSACTION_TIMEOUT],
+  },
+];
 
 describe('OperationTransactionRunner', () => {
   describe('write attempts', () => {
@@ -57,90 +73,18 @@ describe('OperationTransactionRunner', () => {
     });
   });
 
-  describe('operation timeout', () => {
-    it('ends a write at the deadline while its statement still runs, with OperationTimeoutException, rolled back and not retried', async () => {
-      const counter = await givenCounter(kit);
-      const write = countAttempts(() =>
-        incrementThenRunStatementFor(kit, counter, STATEMENT_BEYOND_TIMEOUT_MS),
-      );
-
-      const failure = await failureOf(runner.runWrite(write.run));
-
-      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
-      expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
-      expect(write.attempts).toBe(1);
-      await expect(readCounter(kit, counter)).resolves.toBe(0);
-    });
-
-    it('ends a write that stays idle in its transaction past it with OperationTimeoutException, rolled back and not retried', async () => {
-      const counter = await givenCounter(kit);
-      const write = countAttempts(() =>
-        incrementThenIdleFor(kit, counter, 1.5 * OPERATION_TIMEOUT_MS),
-      );
-
-      await expect(runner.runWrite(write.run)).rejects.toThrow(
-        OperationTimeoutException,
-      );
-
-      expect(write.attempts).toBe(1);
-      await expect(readCounter(kit, counter)).resolves.toBe(0);
-    });
-
-    it('ends a write that continues after idling past it with OperationTimeoutException, rolled back', async () => {
-      const counter = await givenCounter(kit);
-
-      await expect(
-        runner.runWrite(() =>
-          incrementIdleThenContinue(kit, counter, 1.5 * OPERATION_TIMEOUT_MS),
-        ),
-      ).rejects.toThrow(OperationTimeoutException);
-
-      await expect(readCounter(kit, counter)).resolves.toBe(0);
-    });
-
-    it('ends a write that continues long after its session ended with OperationTimeoutException, rolled back', async () => {
-      const counter = await givenCounter(kit);
-
-      await expect(
-        runner.runWrite(() =>
-          incrementIdleThenContinue(kit, counter, LONG_AFTER_DEADLINE_MS),
-        ),
-      ).rejects.toThrow(OperationTimeoutException);
-
-      await expect(readCounter(kit, counter)).resolves.toBe(0);
-    });
-
-    it('ends planning at the deadline while its statement still runs, with OperationTimeoutException', async () => {
-      const failure = await failureOf(
-        runner.runPlanning(() =>
-          runStatementFor(kit, STATEMENT_BEYOND_TIMEOUT_MS),
-        ),
-      );
-
-      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
-      expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
-    });
-
-    it('covers a statement the operation returns without awaiting it', async () => {
-      const failure = await failureOf(
-        runner.runWrite(() => statementFor(kit, STATEMENT_BEYOND_TIMEOUT_MS)),
-      );
-
-      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
-      expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
-    });
-
-    it('keeps a P2028 of an already closed transaction before the deadline as it is', async () => {
-      const closed = await transactionOfCommittedOperation(kit, runner);
+  describe('failures that are not timeouts', () => {
+    it('keep a P2028 of a stale transaction client as it is', async () => {
+      const stale = await transactionOfCommittedOperation(kit, runner);
 
       const failure = await failureOf(
-        runner.runWrite(() => closed.transaction.projectFileUsage.count()),
+        runner.runWrite(() => stale.transaction.projectFileUsage.count()),
       );
 
       expect(failure.error).toMatchObject({ code: 'P2028' });
     });
 
-    it('keeps a failure that is not a timeout although its rollback ends after the deadline', async () => {
+    it('keep a failure whose rollback ends after the deadline as it is', async () => {
       const counter = await givenCounter(kit);
 
       const failure = await failureOf(
@@ -188,25 +132,181 @@ describe('OperationTransactionRunner', () => {
     });
   });
 
-  describe('connection reuse', () => {
-    it('leaves no timeout on the connection of a committed operation', async () => {
-      const backendPid = await runner.runWrite(() => readBackendPid(kit));
+  describe.each(DEADLINE_ENFORCEMENTS)(
+    'on servers $server',
+    ({ overrides }) => {
+      it('ends a write at the deadline while its statement still runs, with OperationTimeoutException, rolled back and not retried', async () => {
+        const counter = await givenCounter(serverKit);
+        const write = countAttempts(() =>
+          incrementThenRunStatementFor(
+            serverKit,
+            counter,
+            STATEMENT_BEYOND_TIMEOUT_MS,
+          ),
+        );
 
-      await expect(runTransactionLongerThanOperationTimeout(kit)).resolves.toBe(
-        backendPid,
+        const failure = await failureOf(serverRunner.runWrite(write.run));
+
+        expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+        expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
+        expect(write.attempts).toBe(1);
+        await expect(readCounter(serverKit, counter)).resolves.toBe(0);
+      });
+
+      it('ends planning at the deadline while its statement still runs, with OperationTimeoutException', async () => {
+        const failure = await failureOf(
+          serverRunner.runPlanning(() =>
+            runStatementFor(serverKit, STATEMENT_BEYOND_TIMEOUT_MS),
+          ),
+        );
+
+        expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+        expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
+      });
+
+      it('settles a callback that idles past the deadline at the deadline with OperationTimeoutException, rolled back', async () => {
+        const counter = await givenCounter(serverKit);
+
+        const failure = await failureOf(
+          serverRunner.runWrite(() =>
+            incrementThenIdleFor(serverKit, counter, IDLE_PAST_DEADLINE_MS),
+          ),
+        );
+
+        expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+        expect(failure.elapsedMs).toBeLessThan(IDLE_PAST_DEADLINE_MS);
+        await expect(readCounter(serverKit, counter)).resolves.toBe(0);
+      });
+
+      it('ends an operation that continues past the deadline at the deadline and absorbs its later failure', async () => {
+        const counter = await givenCounter(serverKit);
+        const operation = continuingPastTheDeadline(serverKit, counter);
+
+        const failure = await failureOf(serverRunner.runWrite(operation.run));
+        await untilAbandonedOperationSettles(operation);
+
+        expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+        expect(failure.elapsedMs).toBeLessThan(IDLE_PAST_DEADLINE_MS);
+        expect(operation.laterFailure).toBeDefined();
+        await expect(readCounter(serverKit, counter)).resolves.toBe(0);
+      });
+
+      it('lets the database end the session of an operation that blocks the event loop past the deadline, and keeps the pool usable', async () => {
+        const counter = await givenCounter(serverKit);
+        const operation = blockingPastTheDeadline(serverKit, counter);
+
+        await expect(serverRunner.runWrite(operation.run)).rejects.toThrow(
+          OperationTimeoutException,
+        );
+
+        await expect(
+          isBackendAlive(serverKit, operation.backendPid),
+        ).resolves.toBe(false);
+        await expect(readCounter(serverKit, counter)).resolves.toBe(0);
+      });
+
+      it('covers a statement the operation returns without awaiting it', async () => {
+        const failure = await failureOf(
+          serverRunner.runWrite(() =>
+            statementFor(serverKit, STATEMENT_BEYOND_TIMEOUT_MS),
+          ),
+        );
+
+        expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+        expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
+      });
+
+      it('refuses a checkpoint after the deadline with OperationTimeoutException', async () => {
+        const operation = checkpointingPastTheDeadline();
+
+        await failureOf(serverRunner.runWrite(operation.run));
+        await untilAbandonedOperationSettles(operation);
+
+        expect(operation.checkpoint).toBeInstanceOf(OperationTimeoutException);
+      });
+
+      it('leaves no setting on the connection of a committed operation', async () => {
+        const backendPid = await serverRunner.runWrite(() =>
+          readBackendPid(serverKit),
+        );
+
+        await expect(
+          runTransactionLongerThanOperationTimeout(serverKit),
+        ).resolves.toBe(backendPid);
+      });
+
+      it('leaves no setting on the connection of a rolled-back operation', async () => {
+        const operation = failingAfterReadingBackendPid(serverKit);
+
+        await expect(serverRunner.runWrite(operation.run)).rejects.toThrow(
+          OPERATION_FAILURE,
+        );
+
+        await expect(
+          runTransactionLongerThanOperationTimeout(serverKit),
+        ).resolves.toBe(operation.backendPid);
+      });
+
+      let serverKit: DatabaseServiceTestKit;
+      let serverRunner: OperationTransactionRunner;
+
+      beforeAll(async () => {
+        serverKit = await createDatabaseServiceTestKit(
+          [],
+          RUNNER_SETTINGS,
+          overrides,
+        );
+        serverRunner = serverKit.module.get(OperationTransactionRunner);
+      });
+
+      afterAll(async () => {
+        await serverKit.close();
+      });
+    },
+  );
+
+  describe('on servers without transaction_timeout', () => {
+    it('cuts a statement started after a checkpoint at the deadline', async () => {
+      const failure = await failureOf(
+        fallbackRunner.runWrite((deadline) =>
+          runStatementsAroundCheckpoint(fallbackKit, deadline, {
+            beforeMs: 0.6 * OPERATION_TIMEOUT_MS,
+            afterMs: STATEMENT_BEYOND_TIMEOUT_MS,
+          }),
+        ),
       );
+
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+      expect(failure.elapsedMs).toBeLessThan(1.3 * OPERATION_TIMEOUT_MS);
     });
 
-    it('leaves no timeout on the connection of a rolled-back operation', async () => {
-      const operation = failingAfterReadingBackendPid(kit);
-
-      await expect(runner.runWrite(operation.run)).rejects.toThrow(
-        OPERATION_FAILURE,
+    it('keeps a statement cancellation before the deadline as it is', async () => {
+      const failure = await failureOf(
+        fallbackRunner.runWrite(() =>
+          runStatementPastOwnStatementTimeout(fallbackKit),
+        ),
       );
 
-      await expect(runTransactionLongerThanOperationTimeout(kit)).resolves.toBe(
-        operation.backendPid,
-      );
+      expect(failure.error).not.toBeInstanceOf(OperationTimeoutException);
+      expect(failure.error).toMatchObject({
+        message: expect.stringContaining(
+          'canceling statement due to statement timeout',
+        ),
+      });
+    });
+
+    let fallbackKit: DatabaseServiceTestKit;
+    let fallbackRunner: OperationTransactionRunner;
+
+    beforeAll(async () => {
+      fallbackKit = await createDatabaseServiceTestKit([], RUNNER_SETTINGS, [
+        WITHOUT_TRANSACTION_TIMEOUT,
+      ]);
+      fallbackRunner = fallbackKit.module.get(OperationTransactionRunner);
+    });
+
+    afterAll(async () => {
+      await fallbackKit.close();
     });
   });
 
@@ -263,164 +363,6 @@ describe('OperationTransactionRunner', () => {
     });
   });
 
-  describe('on servers without transaction_timeout', () => {
-    it('cuts a statement still running at the deadline with OperationTimeoutException, rolled back', async () => {
-      const counter = await givenCounter(fallbackKit);
-
-      const failure = await failureOf(
-        fallbackRunner.runWrite(() =>
-          incrementThenRunStatementFor(
-            fallbackKit,
-            counter,
-            STATEMENT_BEYOND_TIMEOUT_MS,
-          ),
-        ),
-      );
-
-      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
-      expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
-      await expect(readCounter(fallbackKit, counter)).resolves.toBe(0);
-    });
-
-    it('cuts a statement started after a checkpoint at the deadline', async () => {
-      const failure = await failureOf(
-        fallbackRunner.runWrite((deadline) =>
-          runStatementsAroundCheckpoint(fallbackKit, deadline, {
-            beforeMs: 0.6 * OPERATION_TIMEOUT_MS,
-            afterMs: STATEMENT_BEYOND_TIMEOUT_MS,
-          }),
-        ),
-      );
-
-      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
-      expect(failure.elapsedMs).toBeLessThan(1.3 * OPERATION_TIMEOUT_MS);
-    });
-
-    it('ends the session of an operation that idles past the remaining budget, reported as OperationTimeoutException', async () => {
-      const counter = await givenCounter(fallbackKit);
-
-      const failure = await failureOf(
-        fallbackRunner.runWrite(() =>
-          incrementIdleThenContinue(
-            fallbackKit,
-            counter,
-            1.5 * OPERATION_TIMEOUT_MS,
-          ),
-        ),
-      );
-
-      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
-      expectEndedSession((failure.error as OperationTimeoutException).cause);
-      await expect(readCounter(fallbackKit, counter)).resolves.toBe(0);
-    });
-
-    it('refuses a checkpoint after the deadline with OperationTimeoutException', async () => {
-      const checkpoint = await checkpointAfterIdling(
-        fallbackRunner,
-        1.5 * OPERATION_TIMEOUT_MS,
-      );
-
-      expect(checkpoint).toBeInstanceOf(OperationTimeoutException);
-    });
-
-    it('rolls back an operation that finishes after its deadline', async () => {
-      const counter = await givenCounter(fallbackKit);
-
-      await expect(
-        fallbackRunner.runWrite(() =>
-          incrementThenIdleFor(
-            fallbackKit,
-            counter,
-            1.5 * OPERATION_TIMEOUT_MS,
-          ),
-        ),
-      ).rejects.toThrow(OperationTimeoutException);
-
-      await expect(readCounter(fallbackKit, counter)).resolves.toBe(0);
-    });
-
-    it('ends an operation that continues long after its session ended with OperationTimeoutException, rolled back', async () => {
-      const counter = await givenCounter(fallbackKit);
-
-      await expect(
-        fallbackRunner.runWrite(() =>
-          incrementIdleThenContinue(
-            fallbackKit,
-            counter,
-            LONG_AFTER_DEADLINE_MS,
-          ),
-        ),
-      ).rejects.toThrow(OperationTimeoutException);
-
-      await expect(readCounter(fallbackKit, counter)).resolves.toBe(0);
-    });
-
-    it('covers a statement the operation returns without awaiting it', async () => {
-      const failure = await failureOf(
-        fallbackRunner.runWrite(() =>
-          statementFor(fallbackKit, STATEMENT_BEYOND_TIMEOUT_MS),
-        ),
-      );
-
-      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
-      expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
-    });
-
-    it('keeps a statement cancellation before the deadline as it is', async () => {
-      const failure = await failureOf(
-        fallbackRunner.runWrite(() =>
-          runStatementPastOwnStatementTimeout(fallbackKit),
-        ),
-      );
-
-      expect(failure.error).not.toBeInstanceOf(OperationTimeoutException);
-      expect(failure.error).toMatchObject({
-        message: expect.stringContaining(
-          'canceling statement due to statement timeout',
-        ),
-      });
-    });
-
-    it('leaves no setting on the connection of a committed operation', async () => {
-      const backendPid = await fallbackRunner.runWrite(() =>
-        readBackendPid(fallbackKit),
-      );
-
-      await expect(
-        runTransactionLongerThanOperationTimeout(fallbackKit),
-      ).resolves.toBe(backendPid);
-    });
-
-    it('leaves no setting on the connection of a rolled-back operation', async () => {
-      const operation = failingAfterReadingBackendPid(fallbackKit);
-
-      await expect(fallbackRunner.runWrite(operation.run)).rejects.toThrow(
-        OPERATION_FAILURE,
-      );
-
-      await expect(
-        runTransactionLongerThanOperationTimeout(fallbackKit),
-      ).resolves.toBe(operation.backendPid);
-    });
-
-    let fallbackKit: DatabaseServiceTestKit;
-    let fallbackRunner: OperationTransactionRunner;
-
-    beforeAll(async () => {
-      fallbackKit = await createDatabaseServiceTestKit([], RUNNER_SETTINGS, [
-        {
-          provide: TransactionTimeoutSupport,
-          useValue: serverWithoutTransactionTimeout,
-        },
-      ]);
-      fallbackRunner = fallbackKit.module.get(OperationTransactionRunner);
-    });
-
-    afterAll(async () => {
-      await fallbackKit.close();
-    });
-  });
-
   describe('with PARTIAL_CHANGES_MAX_ATTEMPTS configured', () => {
     it('stops after the configured number of attempts', async () => {
       const counter = await givenCounter(configuredKit);
@@ -464,14 +406,6 @@ describe('OperationTransactionRunner', () => {
 });
 
 const OPERATION_FAILURE = 'operation failed';
-
-const serverWithoutTransactionTimeout: TransactionTimeoutSupport = {
-  isSupportedOn: () => Promise.resolve(false),
-};
-
-function expectEndedSession(cause: unknown) {
-  expect(isConnectionLost(cause)).toBe(true);
-}
 
 async function failureOf(operation: Promise<unknown>) {
   const startedAt = performance.now();
@@ -553,23 +487,95 @@ function conflictingOnFirstAttempt(
   };
 }
 
-async function checkpointAfterIdling(
-  runner: OperationTransactionRunner,
-  idleMs: number,
-): Promise<unknown> {
-  let checkpoint: unknown;
+interface AbandonedOperation {
+  settled: Promise<void>;
+}
 
-  await runner
-    .runWrite(async (deadline) => {
-      await idleFor(idleMs);
-      checkpoint = await deadline.checkpoint().then(
-        () => 'passed',
-        (error: unknown) => error,
-      );
-    })
-    .catch(() => undefined);
+function continuingPastTheDeadline(
+  kit: DatabaseServiceTestKit,
+  counter: Counter,
+) {
+  const settlement = settlementSignal();
+  const operation = {
+    laterFailure: undefined as unknown,
+    settled: settlement.promise,
+    async run() {
+      try {
+        await increment(kit, counter);
+        await idleFor(IDLE_PAST_DEADLINE_MS);
+        await increment(kit, counter);
+      } catch (error) {
+        operation.laterFailure = error;
+        throw error;
+      } finally {
+        settlement.resolve();
+      }
+    },
+  };
 
-  return checkpoint;
+  return operation;
+}
+
+function blockingPastTheDeadline(
+  kit: DatabaseServiceTestKit,
+  counter: Counter,
+) {
+  const operation = {
+    backendPid: 0,
+    async run() {
+      operation.backendPid = await readBackendPid(kit);
+      await increment(kit, counter);
+      blockEventLoopFor(IDLE_PAST_DEADLINE_MS);
+    },
+  };
+
+  return operation;
+}
+
+function blockEventLoopFor(durationMs: number): void {
+  const until = performance.now() + durationMs;
+
+  while (performance.now() < until) {
+    continue;
+  }
+}
+
+function checkpointingPastTheDeadline() {
+  const settlement = settlementSignal();
+  const operation = {
+    checkpoint: undefined as unknown,
+    settled: settlement.promise,
+    async run(deadline: DeadlineHandle) {
+      try {
+        await idleFor(IDLE_PAST_DEADLINE_MS);
+        operation.checkpoint = await deadline.checkpoint().then(
+          () => 'passed',
+          (error: unknown) => error,
+        );
+      } finally {
+        settlement.resolve();
+      }
+    },
+  };
+
+  return operation;
+}
+
+// Node reports an unhandled rejection after the microtasks that follow the settlement; Jest fails the running test on it.
+async function untilAbandonedOperationSettles(
+  operation: AbandonedOperation,
+): Promise<void> {
+  await operation.settled;
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+function settlementSignal() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+
+  return { promise, resolve };
 }
 
 async function transactionOfCommittedOperation(
@@ -650,15 +656,6 @@ async function runStatementPastOwnStatementTimeout(
   await runStatementFor(kit, 300);
 }
 
-async function incrementIdleThenContinue(
-  kit: DatabaseServiceTestKit,
-  counter: Counter,
-  idleMs: number,
-): Promise<void> {
-  await incrementThenIdleFor(kit, counter, idleMs);
-  await readCounterInTransaction(kit, counter);
-}
-
 async function failWithDuplicateWhileStatementRuns(
   kit: DatabaseServiceTestKit,
   counter: Counter,
@@ -720,6 +717,16 @@ async function incrementConcurrently(
     where: counter,
     data: { fileBytes: { increment: 1 } },
   });
+}
+
+async function isBackendAlive(
+  kit: DatabaseServiceTestKit,
+  backendPid: number,
+): Promise<boolean> {
+  const [activity] = await kit.prismaService.$queryRaw<[{ alive: boolean }]>`
+    SELECT EXISTS (SELECT FROM pg_stat_activity WHERE pid = ${backendPid}::int) AS alive`;
+
+  return activity.alive;
 }
 
 async function readBackendPid(kit: DatabaseServiceTestKit): Promise<number> {

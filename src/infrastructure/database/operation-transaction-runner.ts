@@ -32,10 +32,9 @@ const OPERATION_TIMEOUT_MS: NumericSetting = {
   minValue: 1,
 };
 
-// The database and the deadline checkpoints end an attempt. Prisma's own timer rolls back from a detached callback,
-// and on a session the database has already ended that rollback fails as an unhandled rejection, so it stays far
-// beyond the deadline and fires only for an operation that never settles.
-const PRISMA_TIMEOUT_FACTOR = 10;
+// The callback settles by the deadline and Prisma rolls back on its awaited path. Prisma's own timer rolls back from
+// a detached callback, which fails unhandled on a session the database has ended, so it stays a grace beyond.
+const PRISMA_TIMEOUT_GRACE_MS = 30_000;
 
 type AttemptOptions = Omit<TransactionOptions, 'retry'>;
 
@@ -150,7 +149,7 @@ export class OperationTransactionRunner {
     return {
       isolationLevel,
       maxWait: this.transactionService.serializableMaxWaitMs,
-      timeout: PRISMA_TIMEOUT_FACTOR * this.operationTimeoutMs,
+      timeout: this.operationTimeoutMs + PRISMA_TIMEOUT_GRACE_MS,
     };
   }
 }

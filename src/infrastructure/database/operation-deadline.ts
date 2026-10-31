@@ -1,19 +1,21 @@
 import { performance } from 'node:perf_hooks';
 import { TransactionPrismaClient } from 'src/features/share/types';
 import {
-  errorCodeOf,
   isConnectionLost,
   sqlStateOf,
 } from 'src/infrastructure/database/database-errors';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
 
-const PRISMA_TRANSACTION_CLOSED = 'P2028';
 const TRANSACTION_TIMEOUT_TERMINATION = '25P04';
 const QUERY_CANCELED = '57014';
 
 // PostgreSQL reads a timeout of 0 as "no timeout", so a passed deadline still sets the smallest one.
 const SMALLEST_TIMEOUT_MS = 1;
+
+// The callback settles this long before the deadline, so its rollback reaches the server before the database's own
+// limits end the session: a session ended during the rollback returns to the pool as a dead connection.
+const ROLLBACK_LEAD_MS = 100;
 
 type Enforcement =
   | { kind: 'transactionTimeout' }
@@ -39,13 +41,18 @@ export class OperationDeadline implements DeadlineHandle {
     $prisma: TransactionPrismaClient,
     body: (deadline: DeadlineHandle) => Promise<T>,
   ): Promise<T> {
-    await this.enforce($prisma);
+    try {
+      await this.enforce($prisma);
 
-    const result = await body(this);
+      const result = await this.settledByDeadline(body(this));
 
-    await this.checkpoint();
+      await this.checkpoint();
 
-    return result;
+      return result;
+    } catch (error) {
+      await this.letEndedSessionSurface();
+      throw error;
+    }
   }
 
   public async checkpoint(): Promise<void> {
@@ -68,6 +75,32 @@ export class OperationDeadline implements DeadlineHandle {
     }
 
     return error;
+  }
+
+  private settledByDeadline<T>(operation: Promise<T>): Promise<T> {
+    // Past the deadline the operation is abandoned while it still runs; its later failure is expected.
+    operation.catch(() => undefined);
+
+    let expiry: NodeJS.Timeout | undefined;
+    const deadlineReached = new Promise<never>((_, reject) => {
+      expiry = setTimeout(
+        () => reject(new OperationTimeoutException(this.timeoutMs)),
+        Math.max(this.remainingMs() - ROLLBACK_LEAD_MS, 0),
+      );
+    });
+
+    return Promise.race([operation, deadlineReached]).finally(() =>
+      clearTimeout(expiry),
+    );
+  }
+
+  // Past the deadline the database may have ended the session while the event loop was busy. Waiting for the next
+  // poll phase lets pg read that from the socket first, so the rollback fails fast and the ended connection leaves
+  // the pool instead of serving the next query.
+  private async letEndedSessionSurface(): Promise<void> {
+    if (this.hasPassed()) {
+      await afterNextPollPhase();
+    }
   }
 
   private async enforce($prisma: TransactionPrismaClient): Promise<void> {
@@ -108,7 +141,6 @@ export class OperationDeadline implements DeadlineHandle {
 
   private failedAtDeadline(error: unknown): boolean {
     return (
-      errorCodeOf(error) === PRISMA_TRANSACTION_CLOSED ||
       (this.enforcement?.kind === 'statementLimits' &&
         sqlStateOf(error) === QUERY_CANCELED) ||
       (this.enforcement !== undefined && isConnectionLost(error))
@@ -119,9 +151,16 @@ export class OperationDeadline implements DeadlineHandle {
     return performance.now() >= this.endsAt;
   }
 
-  private remainingBudget(): string {
-    const remainingMs = Math.ceil(this.endsAt - performance.now());
-
-    return String(Math.max(remainingMs, SMALLEST_TIMEOUT_MS));
+  private remainingMs(): number {
+    return Math.max(Math.ceil(this.endsAt - performance.now()), 0);
   }
+
+  private remainingBudget(): string {
+    return String(Math.max(this.remainingMs(), SMALLEST_TIMEOUT_MS));
+  }
+}
+
+// A setImmediate callback runs after the current poll phase; the one it schedules runs after the next poll phase.
+function afterNextPollPhase(): Promise<void> {
+  return new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
 }

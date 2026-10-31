@@ -44,10 +44,6 @@ export function isConnectionLost(error: unknown): boolean {
   return messageContainsAny(error, CONNECTION_LOST_MESSAGES);
 }
 
-export function errorCodeOf(error: unknown): string | undefined {
-  return (error as DatabaseError | undefined)?.code;
-}
-
 export function sqlStateOf(error: unknown): string | undefined {
   const databaseError = error as DatabaseError | undefined;
 
@@ -61,4 +57,8 @@ function messageContainsAny(error: unknown, patterns: string[]): boolean {
   const message = (error as DatabaseError | undefined)?.message || '';
 
   return patterns.some((pattern) => message.includes(pattern));
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  return (error as DatabaseError | undefined)?.code;
 }

@@ -991,33 +991,36 @@ Invariants:
   Serializable runner: retry only on serialization failures (`40001`, `40P01`, write conflict `P2034`), with backoff, up
   to `PARTIAL_CHANGES_MAX_ATTEMPTS` (default 3). A timeout is not retried.
 - One operation timeout `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` per attempt (also for preview and listing, §8.2). The
-  deadline starts with the attempt. The operation calls `checkpoint()` on its deadline between its phases; the runner
-  calls it when the transaction starts and before it returns the result. A checkpoint after the deadline fails with the
-  timeout error, so the transaction rolls back: on every server, nothing commits after the deadline.
+  deadline starts with the attempt.
+  - The runner races the operation against the deadline: the operation's callback settles with the timeout error at
+    the latest 100 ms before the deadline, so the rollback reaches the server while the session is still alive, and
+    Prisma rolls back on its awaited path. The abandoned operation runs on until its next statement fails on the closed
+    transaction; the runner absorbs that failure. Prisma's own interactive-transaction timeout is the operation timeout
+    plus 30 s; it does not fire, because the callback settles first.
+  - The operation calls `checkpoint()` on its deadline between its phases; the runner calls it when the transaction
+    starts and before it returns the result. A checkpoint after the deadline fails with the timeout error, so the
+    attempt never starts COMMIT after the deadline. COMMIT itself can complete shortly after the deadline: PostgreSQL
+    holds interrupts and does not apply `transaction_timeout` while it commits.
   - PostgreSQL 17 and later (the engine's Docker and CI setup): the first statements of the transaction set
     `transaction_timeout` locally to 0 and then to the remaining budget. A non-zero server or role default starts its
     timer at `BEGIN`, and a later local value neither extends nor shortens a running timer; the 0 stops it, so the next
     value starts a timer for this transaction only. At the deadline PostgreSQL terminates the session (`FATAL`,
-    SQLSTATE `25P04`), whether a statement runs or the session is idle. The bound is exact.
+    SQLSTATE `25P04`), whether a statement runs or the session is idle, so a statement is cut at the deadline.
   - Older servers (deployments run PostgreSQL 15 and 16): each checkpoint sets `statement_timeout` and
-    `idle_in_transaction_session_timeout` locally to the remaining budget. A statement, or an idle period between
-    statements, is limited to the budget that remained at the last checkpoint before it started: one that starts right
-    after a checkpoint ends at the deadline, and a later one can overrun the deadline by the time elapsed since that
-    checkpoint, at most that remaining budget. The bound is approximate; operations tighten it by calling `checkpoint()`
-    between phases. A cut statement fails with SQLSTATE `57014`; PostgreSQL terminates a session that stays idle past
-    its limit.
+    `idle_in_transaction_session_timeout` locally to the remaining budget. The callback still settles at the deadline,
+    but a statement in flight then runs until PostgreSQL stops it: at the latest when the budget that remained at the
+    last checkpoint before the statement started is used up. The rollback, and with it the attempt, ends after that
+    statement. A session that stays idle in its transaction for that budget, for example while the event loop is
+    blocked, is terminated. Operations tighten the bound by calling `checkpoint()` between phases.
   - The settings are transaction-local: when the transaction ends, the connection returns to its own defaults, so a
     reused connection carries nothing from the operation.
-  - Prisma's own interactive-transaction timeout is 10 times the operation timeout. Prisma rolls back on its timer from
-    a detached callback, and on a session the database has already ended that rollback fails as an unhandled
-    rejection, so the timer only ends an operation that never settles.
 - The attempt awaits the operation's result inside the transaction, so a lazy query returned without `await` also runs
-  under the deadline and before the final checkpoint.
-- An error is the operation timeout only with evidence: SQLSTATE `25P04`; after the deadline, `57014` on servers
-  without `transaction_timeout`, Prisma `P2028`, or a lost connection of a session the database ended; or a checkpoint
-  after the deadline. The attempt loop reports it as one timeout error and does not retry it. Any other error keeps its
-  type, even when its rollback ends after the deadline; a `P2028` for an already closed transaction before the deadline
-  keeps its type.
+  under the deadline.
+- An error is the operation timeout only with evidence: the deadline race or a checkpoint after the deadline; SQLSTATE
+  `25P04`; on servers without `transaction_timeout`, `57014` after the deadline; or a lost connection after the
+  deadline the database enforces. Prisma `P2028` is never timeout evidence and keeps its type. The attempt loop reports
+  a timeout as one error and does not retry it. Any other error keeps its type, even when its rollback ends after the
+  deadline.
 - Why Serializable and no locks: native writers take no row locks and run Serializable; SSI aborts the partial
   operation when a native write conflicts with what it read, and the retry includes that write. A ReadCommitted
   variant loses native writes and commits stale merged values.
@@ -1170,7 +1173,7 @@ structure-digest cost (§9.1) was not measured and is measured before release.
 | `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 100,000 | Changed rows of the affected tables (§6.2); an affected table counts in full | Above → `tooLarge` before the catalogue. |
 | `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 10,000 | Merged or converted rows in mixed tables whose target schema has formula or File fields | Above → `tooLarge` before the closure assembly that would exceed it (§6.5). |
 | `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | Links copied into one new table version (an in-place revert copies none) | Above for any table → `tooLarge` with `tableId`, before that assembly (§6.5). |
-| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | 180,000 | Lifetime of one preview, one listing page, or one commit or revert attempt | Expired → error, rollback; enforced exactly by `transaction_timeout` on PostgreSQL 17, approximately by statement and idle limits renewed at checkpoints on older servers (§8.1). |
+| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | 180,000 | Lifetime of one preview, one listing page, or one commit or revert attempt | Expired → error, rollback; the callback settles at the deadline and COMMIT never starts after it; a statement is cut at the deadline by `transaction_timeout` on PostgreSQL 17, and within the budget left at the last checkpoint on older servers (§8.1). |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | 3 | Serializable attempts of the operation's own loop (§8.1) | Exhausted → error. |
 | `listChanges` `pageSize` | 500 (max 5,000) | Units per page, and so changed rows read per page (§5.2) | — |
 
@@ -1500,9 +1503,9 @@ versions unchanged" (§14) holds in every scenario.
   applies where it must be blocked); the repair migration appended after the table's pending migrations, or the patch
   diffed against the Draft schema (AS-47i replay fails); predicate (a) used for the refusal (AS-47f blocked);
   unledgered tables not refused (AS-49 applies); listing without keyset paging (a page reads a whole table); no deadline
-  enforcement (`transaction_timeout` or the checkpoint limits); a commit after the deadline; the engine-wide retry
-  loop instead of the operation's attempt cap; no write fence; required, deferred and blocking units without exact
-  selectors;
+  enforcement (the deadline race, `transaction_timeout` or the checkpoint limits); COMMIT started after the deadline;
+  the engine-wide retry loop instead of the operation's attempt cap; no write fence; required, deferred and blocking
+  units without exact selectors;
   endpoint notification inside the transaction or missing; unattributable migrations ignored (AS-48); published-at
   ownership by the first of several leaves; an unclassified model column; a writer that locks by scanning the table (a
   cost assertion on locked rows).
@@ -1616,10 +1619,10 @@ Follow-up of [async-row-migration-v2]:
 
 Deadline enforcement:
 
-- §8.1, §11, §14: `transaction_timeout` is re-armed in each transaction on PostgreSQL 17 (exact bound); older servers
-  renew `statement_timeout` and `idle_in_transaction_session_timeout` at deadline checkpoints (approximate bound)
-  instead of per-statement budgets; nothing commits after the deadline; an error counts as the timeout only with
-  evidence; Prisma's own timer stays far beyond the deadline.
+- §8.1, §11, §14: the operation's callback settles at the deadline, and Prisma's own timeout stays a fixed grace beyond
+  it; `transaction_timeout` is re-armed in each transaction on PostgreSQL 17; older servers renew `statement_timeout`
+  and `idle_in_transaction_session_timeout` at deadline checkpoints instead of per-statement budgets; COMMIT never
+  starts after the deadline; an error counts as the timeout only with evidence, and `P2028` never does.
 
 ### Version 1 (2026-10-22)
 

@@ -202,12 +202,16 @@ export class ForeignKeysService {
     jsonPaths.forEach((path) => this.validateJsonPath(path));
 
     const result: CountResult[] = await this.transaction.$queryRaw`
+        WITH "searched" AS MATERIALIZED (
+          SELECT jsonb_build_object('values', to_jsonb(${values}::text[])) AS "vars"
+        )
         SELECT count(*)
         FROM "Row"
+        CROSS JOIN "searched"
         WHERE "versionId" IN (
           SELECT "A" FROM "_RowToTable" WHERE "B" = ${tableVersionId}
         )
-        AND (${this.pathsValuesCondition(jsonPaths, values)})
+        AND (${this.pathsValuesCondition(jsonPaths)})
         AND "id" <> ALL(${excludeRowIds}::text[]);
       `;
 
@@ -284,14 +288,14 @@ export class ForeignKeysService {
   }
 
   // Lax mode unwraps the $values array, so `@ == $values` holds when @ equals any of them.
-  private pathsValuesCondition(jsonPaths: string[], values: string[]): Sql {
+  private pathsValuesCondition(jsonPaths: string[]): Sql {
     return join(
       jsonPaths.map(
         (path) => sql`
           jsonb_path_exists(
             "data",
             ${`${path} ? (@ == $values)`}::jsonpath,
-            jsonb_build_object('values', to_jsonb(${values}::text[]))
+            "searched"."vars"
           )
         `,
       ),

@@ -10,8 +10,11 @@ import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import {
   createDraftRevisionTestingModule,
+  givenCommittedTableWithRows,
   prepareDraftRevisionTest,
 } from './utils';
+
+const ROW_COUNT_ABOVE_BIND_PARAMETER_LIMIT = 32_768;
 
 describe('DraftRevisionGetOrCreateDraftTableHandler', () => {
   let prismaService: PrismaService;
@@ -49,6 +52,16 @@ describe('DraftRevisionGetOrCreateDraftTableHandler', () => {
     command: DraftRevisionGetOrCreateDraftTableCommand,
   ): Promise<DraftRevisionGetOrCreateDraftTableCommandReturnType> {
     return transactionService.run(() => commandBus.execute(command));
+  }
+
+  async function findRowVersionIds(tableVersionId: string): Promise<string[]> {
+    const rows = await prismaService.row.findMany({
+      where: { tables: { some: { versionId: tableVersionId } } },
+      select: { versionId: true },
+      orderBy: { versionId: 'asc' },
+    });
+
+    return rows.map((row) => row.versionId);
   }
 
   describe('validation', () => {
@@ -170,6 +183,34 @@ describe('DraftRevisionGetOrCreateDraftTableHandler', () => {
       expect(
         revision?.tables.some((t) => t.versionId === result.tableVersionId),
       ).toBe(true);
+    });
+
+    it('should link the same row versions to the new version of a table with more rows than the bind parameter limit', async () => {
+      const { headRevisionId, draftRevisionId } =
+        await prepareDraftRevisionTest(prismaService);
+      const committedTable = await givenCommittedTableWithRows(prismaService, {
+        headRevisionId,
+        draftRevisionId,
+        tableId: 'large-table',
+        rowCount: ROW_COUNT_ABOVE_BIND_PARAMETER_LIMIT,
+      });
+
+      const result = await runInTransaction(
+        new DraftRevisionGetOrCreateDraftTableCommand({
+          revisionId: draftRevisionId,
+          tableId: 'large-table',
+        }),
+      );
+
+      const committedRowVersionIds = await findRowVersionIds(
+        committedTable.tableVersionId,
+      );
+      expect(committedRowVersionIds).toHaveLength(
+        ROW_COUNT_ABOVE_BIND_PARAMETER_LIMIT,
+      );
+      expect(await findRowVersionIds(result.tableVersionId)).toEqual(
+        committedRowVersionIds,
+      );
     });
   });
 });

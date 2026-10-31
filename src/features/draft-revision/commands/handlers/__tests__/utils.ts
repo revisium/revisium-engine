@@ -67,6 +67,63 @@ export async function prepareDraftRevisionTest(
   };
 }
 
+interface GivenCommittedTableWithRowsOptions {
+  headRevisionId: string;
+  draftRevisionId: string;
+  tableId: string;
+  rowCount: number;
+}
+
+export interface CommittedTableScenario {
+  tableVersionId: string;
+}
+
+export async function givenCommittedTableWithRows(
+  prismaService: PrismaService,
+  {
+    headRevisionId,
+    draftRevisionId,
+    tableId,
+    rowCount,
+  }: GivenCommittedTableWithRowsOptions,
+): Promise<CommittedTableScenario> {
+  const tableVersionId = nanoid();
+
+  await prismaService.table.create({
+    data: {
+      versionId: tableVersionId,
+      createdId: nanoid(),
+      id: tableId,
+      readonly: true,
+      revisions: {
+        connect: [{ id: headRevisionId }, { id: draftRevisionId }],
+      },
+    },
+  });
+
+  await insertCommittedRows(prismaService, tableVersionId, rowCount);
+
+  return { tableVersionId };
+}
+
+async function insertCommittedRows(
+  prismaService: PrismaService,
+  tableVersionId: string,
+  rowCount: number,
+): Promise<void> {
+  await prismaService.$executeRaw`
+    WITH committed_rows AS (
+      INSERT INTO "Row" ("versionId", "createdId", "id", "readonly", "data", "hash", "schemaHash")
+      SELECT gen_random_uuid()::text, gen_random_uuid()::text, 'row-' || n, true, '{}', '', ''
+      FROM generate_series(1, ${rowCount}::integer) AS n
+      RETURNING "versionId"
+    )
+    INSERT INTO "_RowToTable" ("A", "B")
+    SELECT "versionId", ${tableVersionId}
+    FROM committed_rows
+  `;
+}
+
 export const createDraftRevisionTestingModule = async () => {
   const module: TestingModule = await Test.createTestingModule({
     imports: [

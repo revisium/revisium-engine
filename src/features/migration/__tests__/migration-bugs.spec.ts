@@ -104,27 +104,24 @@ describe('Migration bugs', () => {
         },
       });
 
-      const spy = jest.spyOn(
-        kit.migrationProgressService,
-        'setShadowTableVersionId',
-      );
+      const migration = await kit.prisma.tableMigration.findFirstOrThrow({
+        where: {
+          revisionId: draft.draftRevisionId,
+          tableId: draft.tableId,
+        },
+      });
 
-      try {
-        await kit.migrationService.processMigration(
-          (
-            await kit.prisma.tableMigration.findFirst({
-              where: {
-                revisionId: draft.draftRevisionId,
-                tableId: draft.tableId,
-              },
-            })
-          )?.id ?? '',
-        );
-      } catch {
-        // may fail on validate/swap — that's ok, we're testing initPhase
-      }
+      await expect(
+        kit.migrationService.processMigration(migration.id),
+      ).resolves.toBe('completed');
 
-      expect(spy).not.toHaveBeenCalled();
+      const draftTable = await kit.prisma.table.findFirstOrThrow({
+        where: {
+          id: draft.tableId,
+          revisions: { some: { id: draft.draftRevisionId } },
+        },
+      });
+      expect(draftTable.versionId).toBe(shadowVersionId);
     });
   });
 

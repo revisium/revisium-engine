@@ -46,33 +46,42 @@ All rows loaded into memory, schema patches applied, rows updated — single ser
 PHASE 1: START (serializable transaction)
   ├─ validate revision is draft
   ├─ validate schema patches
-  ├─ create TableMigration record
+  ├─ create TableMigration record (PENDING, payload envelope)
   └─ transaction commits (schema row NOT updated yet)
 
-PHASE 2: INIT
-  └─ create empty shadow table (not attached to revision)
+CLAIM: the owner writes a fresh claim token into lockedBy
 
-PHASE 3: COPY (batched)
+PHASE 2: INIT (one transaction, T-init)
+  ├─ PENDING and token → COPYING, startedAt (first time only)
+  └─ create and record the shadow table (createdId, createdAt, system of the source)
+
+PHASE 3: COPY (one transaction per batch, T-batch)
   for each batch:
-    ├─ load N rows from source (ORDER BY id, cursor-based)
-    ├─ apply schema patches via SchemaTable
-    ├─ run plugin pipeline (targetSchema passed directly, not read from DB)
-    ├─ insert batch into shadow ($transaction — atomic per batch)
-    ├─ update progress (copiedRows, lastCopiedRowId)
-    └─ check cancellation
+    ├─ load N rows from source (ORDER BY id, cursor-based), outside the transaction
+    ├─ apply schema patches via SchemaTable, run plugin pipeline
+    ├─ advance the checkpoint first: COPYING, token, copiedRows and lastCopiedRowId as read
+    └─ insert the batch into the shadow table; a checkpoint that matches nothing writes nothing
 
-PHASE 4: VALIDATE
-  └─ shadow row count == source row count
+PHASE 4: SWAP-BEGIN (T-swap-begin)
+  ├─ shadow row count == totalRows
+  └─ COPYING, token, copiedRows = totalRows → SWAPPING
 
 PHASE 5: SWAP (single serializable transaction)
-  ├─ detach source table from revision
-  ├─ attach shadow table to revision
-  ├─ update schema row in revisium_schema_table
+  ├─ first statement: renew heartbeatAt where SWAPPING and the owner's token, else stop
+  ├─ detach source table from revision, attach shadow table
+  ├─ update schema row in revisium_schema_table and the views row
   └─ set revision.hasChanges = true
 
 PHASE 6: CLEANUP
-  └─ delete migration record
+  └─ delete the record, guarded by SWAPPING and the owner's token
 ```
+
+Every transition is one guarded statement or one transaction: a compare-and-set on the record status and the owner's
+claim token. A guard that matches nothing writes nothing, and the owner stops. Each step returns `continue`,
+`completed`, `failed`, `cancelled` or `stopped`; the owner runs the next step only after `continue`. A `PENDING`
+record resumes at T-init, a `COPYING` record at the next batch from its committed checkpoint, a `SWAPPING` record
+directly at the swap. No transition starts from a terminal state (`FAILED`, `CANCELLED`); a new `updateTable` of the
+table deletes such a record.
 
 During migration, the entire draft revision is locked for writes (HTTP 423). All reads continue from the source table until swap completes.
 
@@ -85,17 +94,19 @@ During migration, the entire draft revision is locked for writes (HTTP 423). All
 - Schema row: unchanged (still has original schema)
 - Source table: still attached to revision, rows unchanged
 - Shadow table: partially filled (0 to N batches completed)
-- Migration record: status=PENDING (reset by retry), retryCount incremented
+- Migration record: status unchanged (`COPYING`), retryCount incremented, lease released (T-retry)
 
 **What readers see:** old schema + old rows. Fully consistent — no visible change until swap succeeds.
 
-**What happens next:** the worker retries automatically (up to `maxRetries`). On retry:
+**What happens next:** the owner claims the record again at once and resumes the same phase, up to `maxRetries`.
+The copy resumes from the committed checkpoint (`copiedRows`, `lastCopiedRowId`); T-init does not run again.
 
-1. `initPhase` detects `shadowTableVersionId` is already set — skips shadow creation
-2. `copyPhase` resumes from `lastCopiedRowId` — each completed batch is checkpointed via `$transaction`, so partial batches from the crash don't produce duplicates
-3. After all rows are copied, validate + swap proceeds as normal
+**Permanent failures** skip the retries: a payload that is neither a patch array nor a version 2 envelope fails with
+`PAYLOAD_UNSUPPORTED`. `errorMessage` starts with the code.
 
-**If all retries fail:** migration record stays with `status=FAILED` and `errorMessage`. The revision is **unlocked** (`FAILED` is not an active status), so writes resume. Schema and rows are consistent (both still original). To retry:
+**If all retries fail:** the record stays with `status=FAILED`, the phase it failed in, `completedAt` and
+`errorMessage`; the lease is cleared. The revision is **unlocked** (`FAILED` is not an active status), so writes
+resume. Schema and rows are consistent (both still original). To retry:
 
 - Call `abortMigration(revisionId, tableId)` to delete the failed record, then retry `updateTable`
 - Or call `revertChanges` on the branch to reset the entire draft
@@ -115,16 +126,31 @@ After abort, the draft is in a clean state — the next `updateTable` call on th
 
 The swap runs in a single serializable transaction:
 
-1. Detach source table
-2. Attach shadow table
-3. Update schema row
-4. Set hasChanges
+1. Renew `heartbeatAt` of the record where it is still `SWAPPING` with the owner's token; no match stops the swap
+2. Detach source table
+3. Attach shadow table
+4. Update schema row
+5. Set hasChanges
 
-If the process crashes mid-swap, the transaction rolls back — all four operations are atomic. The source table, schema row, and revision stay unchanged. The migration record has `status=SWAPPING`. On restart, the worker retries from the beginning — `initPhase` sees the shadow exists and `copyPhase` sees all rows are already copied (copiedRows == totalRows), so it proceeds directly to validate and swap again.
+The first statement locks the record row until the swap commits. A claim that arrives meanwhile waits for it and then
+finds a live lease, and a claim that committed earlier makes the first statement match nothing, so a replaced owner
+never commits a swap.
+
+If the process crashes mid-swap, the transaction rolls back. The record stays `SWAPPING`. After its lease expires,
+the next claim counts a retry and runs the swap directly, without copying again. When `retryCount` has reached
+`maxRetries`, the claim fails the record with `SWAP_STALLED` instead.
+
+The record is deleted in a separate statement after the swap commits. A crash between the two leaves `SWAPPING`, and
+the next claim runs the swap again; the atomic swap of [async-row-migration v2](specs/async-row-migration-v2.spec.md)
+§3.5 removes this gap.
 
 ### What happens when two workers pick up the same migration?
 
-Prevented by `FOR UPDATE SKIP LOCKED` in the polling query. Each worker atomically sets `lockedBy` to its worker ID. If a worker crashes, its heartbeat stops updating. After `lockTimeoutMs` without a heartbeat, another worker can acquire the stale lock.
+A worker owns a record after writing a fresh claim token (worker id plus a random suffix) into `lockedBy`. A claim
+succeeds only for an active record whose `lockedBy` is empty or whose `heartbeatAt` is older than `lockTimeoutMs`.
+The owner renews `heartbeatAt` every `heartbeatIntervalMs` with its token; when the renewal matches nothing, it stops
+renewing. A stalled owner that resumes after another worker claimed the record fails every guard: its batch writes
+nothing, and it cannot renew, release or fail the new owner's record.
 
 ### What happens after maxRetries exhausted?
 
@@ -163,7 +189,7 @@ All options are passed via `EngineModule.forRoot({ migration: { ... } })`:
 | `batchSize`           | 1000       | Rows processed per batch                                                       |
 | `workerMode`          | `'inline'` | `'inline'` (fire-and-forget), `'polling'` (multi-pod), `'disabled'` (external) |
 | `pollIntervalMs`      | 5000       | Polling interval (polling mode only)                                           |
-| `heartbeatIntervalMs` | 30000      | Heartbeat refresh interval (polling mode)                                      |
+| `heartbeatIntervalMs` | 30000      | Lease renewal interval of a running owner                                      |
 | `lockTimeoutMs`       | 60000      | Stale lock threshold                                                           |
 | `stallTimeoutMs`      | 600000     | Auto-abort if no progress for 10 min                                           |
 | `maxRetries`          | 3          | Retry attempts on failure                                                      |
@@ -195,28 +221,27 @@ Allowed operations: getRows, getTable, getRevision, searchRows, getMigrationStat
 
 `processMigration()` runs as a detached Promise immediately after the migration record is created. Suitable for single-pod deployments. The caller gets the response immediately with `{ migrationId, migrationStatus: 'migrating' }`.
 
-On application startup, inline mode scans for existing `PENDING` / `COPYING` / `SWAPPING` migrations and resumes them in created-at order. If the source table no longer exists, the migration is marked `FAILED` instead of being retried forever. This covers process restarts without requiring polling mode.
+On application startup, inline mode processes the active migrations that no live lease holds, in created-at order. This covers process restarts without requiring polling mode.
 
 ### Polling (multi-pod)
 
-Workers poll the database for pending migrations every `pollIntervalMs`. Lock acquisition uses `FOR UPDATE SKIP LOCKED` to prevent double-processing. Workers send heartbeats every `heartbeatIntervalMs`. On startup, stale locks (no heartbeat for `lockTimeoutMs`) are released. Stalled migrations (no progress for `stallTimeoutMs`) with no active lock are auto-cancelled.
+Workers poll the database every `pollIntervalMs`, pick the oldest active migration without a live lease and process it; the claim decides which worker wins. Stalled migrations (no progress for `stallTimeoutMs`) with no live lease are auto-cancelled.
 
 A `pollingInProgress` guard prevents `setInterval` tick overlap.
 
 ### Disabled
 
-No worker runs. The host application must call `processMigration(migrationId)` externally (e.g. from a job queue). The migration record is created with `status=PENDING` and can be picked up by any external system.
+No worker runs. The host application must call `processMigration(migrationId)` externally (e.g. from a job queue). The migration record is created with `status=PENDING`. `processMigration` claims the record, renews its lease while it runs and returns the result of its last step; it returns `stopped` when another owner holds a live lease.
 
 ## Retry and Recovery
 
-On failure, the migration retries up to `maxRetries` times. Retry is restart-safe:
+On a transient failure of a step, including the read of the record that starts it, the owner applies T-retry and claims the record again, up to `maxRetries`. T-retry and T-fail are guarded by the owner's token and an active status. Retry is restart-safe:
 
-- If a shadow table already exists (from a previous attempt), `initPhase` reuses it
-- `copiedRows` and `lastCopiedRowId` are persisted after each batch, so copy resumes from the last checkpoint
-- Each batch insert is wrapped in `$transaction` — no partial batch duplicates
-- If the migration record is deleted (abort), `isCancelled()` returns true and the worker stops
-- `retryCount` is incremented and status reset to PENDING before each retry
-- Inline mode resumes active migrations on process startup; polling mode resumes them via lock recovery and queue polling
+- T-retry increments `retryCount`, keeps the status and releases the lease; the next claim resumes the same phase
+- `copiedRows` and `lastCopiedRowId` are committed with each batch, so copy resumes from the last checkpoint
+- Each batch advances its checkpoint by compare-and-set before inserting — no partial or repeated batches
+- If the record is deleted (abort) or changed by another owner, the next guard matches nothing and the worker stops
+- Inline mode resumes active migrations on process startup; polling mode claims expired leases while polling
 
 ## Database Schema
 
@@ -257,11 +282,16 @@ model TableMigration {
 }
 ```
 
+`patches` holds the payload envelope `{ "version": 2, "patches": [...] }`. Records written before the envelope hold a
+plain patch array, which decodes as version 1; any other payload fails the migration with `PAYLOAD_UNSUPPORTED`. Old
+workers misread the envelope, so stop every process running the old worker code before a new process writes a record.
+`lockedBy` holds the owner's claim token. `phase` takes `INIT`, `COPYING` and `SWAPPING` only.
+
 `@@unique([revisionId, tableId])` ensures one migration per table per draft at a time. Records are deleted on completion, abort, and when aborting failed migrations. Call `abortMigration` to clean up a failed record before retrying.
 
 `status` and `phase` are String fields (not Prisma enums) to avoid enum migration issues across deployments.
 
-`previousSchema` and `patches` together define the migration. The target schema is never stored explicitly — it is computed on demand as `SchemaTable(previousSchema).applyPatches(patches)`:
+`previousSchema` and the decoded patches together define the migration. The target schema is never stored explicitly — it is computed on demand as `SchemaTable(previousSchema).applyPatches(patches)`:
 
 - **During copy**: `MigrationBatchService` computes target schema per batch, passes it directly to `PluginService.afterMigrateRows({ targetSchema })` so plugins don't read from DB
 - **During swap**: `updateSchemaRowInTx` reads the current schema row (still original), applies the same patches, writes the result — all inside the serializable transaction
@@ -279,11 +309,14 @@ src/features/migration/
   types/migration.types.ts         Status/Phase enums, result interfaces
   exceptions/                      MigrationLockedException (HTTP 423)
   services/
-    migration.service.ts           Orchestration: phase flow, retry loop
-    migration-batch.service.ts     Row-level: load, patch, plugin, insert
-    migration-worker.service.ts    Inline/polling worker, heartbeat, stale locks
+    migration.service.ts           processMigration: claim, heartbeat, step runner, retries
+    migration-transition.service.ts Guarded transitions of the record (claim, renew, release, init,
+                                   checkpoint, swap-begin, swap ownership, fail, retry)
+    migration-batch.service.ts     Row-level: load, patch, plugin, guarded batch write
+    migration-worker.service.ts    Inline/polling worker: picks claimable migrations
     migration-lock.service.ts      Lock check for Api*Handlers
-    migration-progress.service.ts  Progress tracking, phase transitions
+    lease-heartbeat.ts             Lease renewal timer of one claim
+  migration-payload.ts             Payload envelope encoder and decoder
   commands/                        StartAsyncMigration, AbortMigration
   queries/                         GetMigrationStatus, GetActiveMigrations
 ```

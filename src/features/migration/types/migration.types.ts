@@ -28,6 +28,13 @@ export const ACTIVE_MIGRATION_STATUSES: MigrationStatus[] = [
   MigrationStatus.SWAPPING,
 ];
 
+export type MigrationStepResult =
+  | 'continue'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'stopped';
+
 export interface MigrationProgress {
   percentage: number;
   copiedRows: number;

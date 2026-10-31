@@ -5,7 +5,7 @@
 | Date | 2026-10-22 |
 | Status | Draft |
 | Supports | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), [partial-changes-v1](../specs/partial-changes-v1.spec.md) |
-| Code | `poc/partial-changes-assembly@c86e86c` (not published; an archive tag may be pushed on request); base master `139eb7b` |
+| Code | branch `poc/partial-changes-assembly` at `c86e86c`, tag `archive/partial-changes-poc-v2`; base master `139eb7b` |
 | Milestone commits | M1 `b197c1e`, M2 `3b35324`, M3 `3f9ad2d`, M4 `023b65f`, M5 `c86e86c` |
 | Numbers | From the milestone reports, including their errata, and the run logs; times are inside the transaction unless marked |
 

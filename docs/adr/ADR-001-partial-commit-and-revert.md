@@ -43,7 +43,7 @@ oracle against native commit and revert, property tests (replica sync, unit-by-u
 full plan), mutation controls (34 shown across M4–M5, 30 apply to the final code), and benchmarks at 10k–1M rows.
 Two independent reviews accepted it with conditions; their findings are fixed in the PoC or decided in the SPEC.
 Summary: [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md) (code:
-`poc/partial-changes-assembly@c86e86c`, not published; an archive tag may be pushed on request). Measurements come
+`c86e86c`, tag `archive/partial-changes-poc-v2`). Measurements come
 from a 2 CPU / 4 GB sandbox and show the cost shape, not SLAs.
 
 ## Decision

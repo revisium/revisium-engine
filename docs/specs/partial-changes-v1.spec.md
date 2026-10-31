@@ -9,7 +9,7 @@
 | Date | 2026-10-22 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
-| Evidence | [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md) (PoC v2, `poc/partial-changes-assembly@c86e86c`, not published; an archive tag may be pushed on request) |
+| Evidence | [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md) (PoC v2, `c86e86c`, tag `archive/partial-changes-poc-v2`) |
 
 This specification defines partial commit and partial revert of Draft changes in revisium-engine: the operations
 `listChanges`, `previewChanges`, `commitChanges` and `revertChanges`, the unit and selection model, the assembly
@@ -1484,7 +1484,7 @@ versions unchanged" (§14) holds in every scenario.
 
 **PoC evidence** (PoC v2, sandbox of 2 CPU and 4 GB; summary in
 [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md), code on
-`poc/partial-changes-assembly@c86e86c`, not published; an archive tag may be pushed on request): 256 scenarios green
+`c86e86c`, tag `archive/partial-changes-poc-v2`): 256 scenarios green
 after M5 with `tsc` and lint clean, re-run independently; 34 mutation controls shown across M4–M5, 30 of them
 applying to the final code. M5 proved the completeness properties
 both ways for 6 seeds each (the commit property was red before the fix, with the `publishedAt` edit lost); the

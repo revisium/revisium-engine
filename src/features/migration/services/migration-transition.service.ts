@@ -91,6 +91,12 @@ export class MigrationTransitionService {
     return claimed.count === 1 ? lease : null;
   }
 
+  findOwned(lease: MigrationLease): Promise<TableMigration | null> {
+    return this.prisma.tableMigration.findFirst({
+      where: { id: lease.migrationId, lockedBy: lease.token },
+    });
+  }
+
   async renew(lease: MigrationLease): Promise<boolean> {
     const renewed = await this.prisma.tableMigration.updateMany({
       where: { id: lease.migrationId, lockedBy: lease.token },
@@ -189,15 +195,16 @@ export class MigrationTransitionService {
     return begun.count === 1;
   }
 
-  async ownsSwap(
+  async lockSwap(
     lease: MigrationLease,
     transaction: TransactionPrismaClient,
   ): Promise<boolean> {
-    const owned = await transaction.tableMigration.count({
+    const locked = await transaction.tableMigration.updateMany({
       where: this.swapOwnedBy(lease),
+      data: { heartbeatAt: new Date() },
     });
 
-    return owned === 1;
+    return locked.count === 1;
   }
 
   async completeSwap(lease: MigrationLease): Promise<boolean> {
@@ -208,12 +215,10 @@ export class MigrationTransitionService {
     return deleted.count === 1;
   }
 
-  async retry(lease: MigrationLease, status: string): Promise<boolean> {
+  async retry(lease: MigrationLease): Promise<boolean> {
     const retried = await this.prisma.tableMigration.updateMany({
       where: {
-        id: lease.migrationId,
-        status,
-        lockedBy: lease.token,
+        ...this.activeOwnedBy(lease),
         retryCount: { lt: this.prisma.tableMigration.fields.maxRetries },
       },
       data: { retryCount: { increment: 1 }, ...RELEASED },
@@ -222,13 +227,9 @@ export class MigrationTransitionService {
     return retried.count === 1;
   }
 
-  async fail(
-    lease: MigrationLease,
-    status: string,
-    errorMessage: string,
-  ): Promise<boolean> {
+  async fail(lease: MigrationLease, errorMessage: string): Promise<boolean> {
     const failed = await this.prisma.tableMigration.updateMany({
-      where: { id: lease.migrationId, status, lockedBy: lease.token },
+      where: this.activeOwnedBy(lease),
       data: {
         status: MigrationStatus.FAILED,
         errorMessage,
@@ -306,6 +307,14 @@ export class MigrationTransitionService {
         { heartbeatAt: null },
         { heartbeatAt: { lt: new Date(Date.now() - this.lockTimeoutMs) } },
       ],
+    };
+  }
+
+  private activeOwnedBy(lease: MigrationLease) {
+    return {
+      id: lease.migrationId,
+      status: { in: ACTIVE_MIGRATION_STATUSES },
+      lockedBy: lease.token,
     };
   }
 

@@ -212,18 +212,16 @@ export class MigrationService {
   }
 
   private async runNextStep(lease: MigrationLease): Promise<ClaimedRunResult> {
-    const migration = await this.prisma.tableMigration.findUnique({
-      where: { id: lease.migrationId },
-    });
-
-    if (migration?.lockedBy !== lease.token) {
-      return 'stopped';
-    }
-
     try {
+      const migration = await this.transitions.findOwned(lease);
+
+      if (!migration) {
+        return 'stopped';
+      }
+
       return await this.runStep(lease, migration);
     } catch (error) {
-      return this.handleStepFailure(lease, migration.status, error);
+      return this.handleStepFailure(lease, error);
     }
   }
 
@@ -247,31 +245,29 @@ export class MigrationService {
 
   private async handleStepFailure(
     lease: MigrationLease,
-    status: string,
     error: unknown,
   ): Promise<ClaimedRunResult> {
     const message = error instanceof Error ? error.message : String(error);
 
     if (error instanceof PermanentMigrationFailure) {
-      return this.failMigration(lease, status, message);
+      return this.failMigration(lease, message);
     }
 
-    if (await this.transitions.retry(lease, status)) {
+    if (await this.transitions.retry(lease)) {
       this.logger.warn(
         `Migration ${lease.migrationId} failed, retrying: ${message}`,
       );
       return 'retry';
     }
 
-    return this.failMigration(lease, status, message);
+    return this.failMigration(lease, message);
   }
 
   private async failMigration(
     lease: MigrationLease,
-    status: string,
     message: string,
   ): Promise<MigrationStepResult> {
-    if (!(await this.transitions.fail(lease, status, message))) {
+    if (!(await this.transitions.fail(lease, message))) {
       return 'stopped';
     }
 
@@ -376,7 +372,7 @@ export class MigrationService {
     const swapped = await this.transactionService.runSerializable(async () => {
       const tx = this.transactionService.getTransaction();
 
-      if (!(await this.transitions.ownsSwap(lease, tx))) {
+      if (!(await this.transitions.lockSwap(lease, tx))) {
         return false;
       }
 

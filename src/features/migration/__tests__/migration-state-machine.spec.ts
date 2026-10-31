@@ -5,6 +5,7 @@ import {
 } from 'src/__tests__/kit/create-migration-test-kit';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import type { TableMigration } from 'src/engine-prisma-types';
+import type { MigrationCheckpoint } from 'src/features/migration/services/migration-transition.service';
 import {
   MigrationPhase,
   MigrationStatus,
@@ -21,8 +22,11 @@ import {
   afterSwapBegins,
   beforeBatchWrite,
   beforeCopyStarts,
+  insideSwapAfterItsRecordCheck,
   releaseStartedOwners,
   startOwnerUntil,
+  waitUntilSettledOrBlockedBy,
+  type PausedOwner,
 } from './support/migration-owners';
 import {
   givenStartedFieldAddition,
@@ -231,6 +235,45 @@ describe('Async migration state machine', () => {
       await expect(stale.resume()).resolves.toBe('stopped');
       await expectRowsMigratedOnce(migration);
     });
+
+    it.each([
+      {
+        batch: 'a stale copiedRows',
+        from: (migration: StartedMigration) => ({
+          copiedRows: 0,
+          lastCopiedRowId: lastRowOfBatch(migration, 1),
+        }),
+      },
+      {
+        batch: 'a stale lastCopiedRowId',
+        from: (migration: StartedMigration) => ({
+          copiedRows: BATCH_SIZE,
+          lastCopiedRowId: migration.rowIds[0] ?? null,
+        }),
+      },
+      {
+        batch: 'the checkpoint of the committed batch, submitted again',
+        from: () => ({ copiedRows: 0, lastCopiedRowId: null }),
+      },
+    ])(
+      'T-batch refuses $batch from the owner of a COPYING record and writes nothing',
+      async ({ from }) => {
+        const migration = await givenMigration();
+        const owner = await startOwnerUntil(
+          kit,
+          migration.migrationId,
+          beforeBatchWrite(kit, 2),
+        );
+        const progress = await readProgress(migration);
+
+        await expect(
+          writeBatchFrom(owner, migration, from(migration)),
+        ).resolves.toBe(false);
+
+        await expectMigrationState(migration, progress);
+        await expectShadowRowCount(migration, BATCH_SIZE);
+      },
+    );
   });
 
   describe('swapping', () => {
@@ -264,6 +307,30 @@ describe('Async migration state machine', () => {
       await expect(died.resume()).resolves.toBe('stopped');
     });
 
+    it('a claim during the swap transaction waits for it, so the replaced owner commits no swap', async () => {
+      const migration = await givenMigration();
+      const owner = await startOwnerUntil(
+        kit,
+        migration.migrationId,
+        afterSwapBegins(kit),
+      );
+      await expireLease(kit.prisma, migration.migrationId, LOCK_TIMEOUT_MS);
+      const swapTransaction = insideSwapAfterItsRecordCheck(kit);
+      await owner.continueUntil(swapTransaction);
+
+      const otherClaim = kit.migrationTransitions.claim(migration.migrationId);
+      await waitUntilSettledOrBlockedBy(
+        kit,
+        swapTransaction.backendPid(),
+        otherClaim,
+      );
+
+      await expect(owner.resume()).resolves.toBe('completed');
+      await expect(otherClaim).resolves.toBeNull();
+      await expectMigrationAbsent(kit, migration.revisionId, migration.tableId);
+      await expectRowsMigratedOnce(migration);
+    });
+
     it('a claim of an abandoned SWAPPING record counts a retry', async () => {
       const abandoned = await givenAbandonedSwap(1);
 
@@ -294,6 +361,23 @@ describe('Async migration state machine', () => {
   });
 
   describe('failures', () => {
+    it('a failed read of the record after a committed batch resumes the copy from that checkpoint', async () => {
+      const migration = await givenMigration();
+      failStateReadAfterFirstBatch();
+      const batchLoads = jest.spyOn(kit.migrationBatchService, 'loadBatchRows');
+
+      await expect(
+        kit.migrationService.processMigration(migration.migrationId),
+      ).resolves.toBe('completed');
+      expect(batchLoads.mock.calls.map(([, after]) => after)).toEqual([
+        null,
+        lastRowOfBatch(migration, 1),
+        lastRowOfBatch(migration, 2),
+      ]);
+      await expectMigrationAbsent(kit, migration.revisionId, migration.tableId);
+      await expectRowsMigratedOnce(migration);
+    });
+
     it('a transient batch failure resumes the copy at its checkpoint without starting it again', async () => {
       const migration = await givenMigration();
       failSecondBatchInsert(1);
@@ -503,6 +587,56 @@ describe('Async migration state machine', () => {
       batchLoads: jest.spyOn(kit.migrationBatchService, 'loadBatchRows'),
       swapTransactions: jest.spyOn(kit.transactionService, 'runSerializable'),
     };
+  }
+
+  async function readProgress(
+    migration: StartedMigration,
+  ): Promise<Partial<TableMigration>> {
+    const record = await readMigration(migration);
+
+    return {
+      status: record.status,
+      lockedBy: record.lockedBy,
+      copiedRows: record.copiedRows,
+      lastCopiedRowId: record.lastCopiedRowId,
+      currentBatch: record.currentBatch,
+      lastProgressAt: record.lastProgressAt,
+    };
+  }
+
+  async function writeBatchFrom(
+    owner: PausedOwner,
+    migration: StartedMigration,
+    from: MigrationCheckpoint,
+  ): Promise<boolean> {
+    const record = await readMigration(migration);
+    const rows = await kit.migrationBatchService.loadBatchRows(
+      record.sourceTableVersionId,
+      from.lastCopiedRowId,
+      BATCH_SIZE,
+    );
+
+    return kit.migrationBatchService.writeBatch(owner.lease, {
+      shadowTableVersionId: record.shadowTableVersionId ?? '',
+      targetSchemaHash: record.targetSchemaHash,
+      from,
+      to: {
+        copiedRows: from.copiedRows + rows.length,
+        lastCopiedRowId: rows.at(-1)?.id ?? null,
+      },
+      rows,
+    });
+  }
+
+  function failStateReadAfterFirstBatch(): void {
+    const transitions = kit.migrationTransitions;
+    const findOwned = transitions.findOwned.bind(transitions);
+
+    jest
+      .spyOn(transitions, 'findOwned')
+      .mockImplementationOnce(findOwned)
+      .mockImplementationOnce(findOwned)
+      .mockRejectedValueOnce(new Error(TRANSIENT_FAILURE));
   }
 
   function failSecondBatchInsert(times: number): void {

@@ -7,12 +7,17 @@ export interface OwnerHold {
   barrier: Barrier;
 }
 
+export interface TransactionHold extends OwnerHold {
+  backendPid(): number;
+}
+
 export interface PausedOwner {
   lease: MigrationLease;
+  continueUntil(hold: OwnerHold): Promise<void>;
   resume(): Promise<MigrationStepResult>;
 }
 
-const startedOwners: { hold: OwnerHold; result: Promise<unknown> }[] = [];
+const startedOwners: { holds: OwnerHold[]; result: Promise<unknown> }[] = [];
 
 export async function startOwnerUntil(
   kit: MigrationTestKit,
@@ -20,13 +25,22 @@ export async function startOwnerUntil(
   hold: OwnerHold,
 ): Promise<PausedOwner> {
   const result = kit.migrationService.processMigration(migrationId);
-  startedOwners.push({ hold, result });
+  const holds = [hold];
+  startedOwners.push({ holds, result });
   await hold.barrier.expectReachedBefore(result);
 
   return {
     lease: await readLease(kit, migrationId),
-    resume() {
+    async continueUntil(next) {
+      holds.push(next);
       hold.barrier.release();
+      await next.barrier.expectReachedBefore(result);
+    },
+    resume() {
+      for (const held of holds) {
+        held.barrier.release();
+      }
+
       return result;
     },
   };
@@ -35,11 +49,29 @@ export async function startOwnerUntil(
 export async function releaseStartedOwners(): Promise<void> {
   const owners = startedOwners.splice(0);
 
-  for (const { hold } of owners) {
-    hold.barrier.release();
+  for (const held of owners.flatMap(({ holds }) => holds)) {
+    held.barrier.release();
   }
 
   await Promise.allSettled(owners.map(({ result }) => result));
+}
+
+export async function waitUntilSettledOrBlockedBy(
+  kit: MigrationTestKit,
+  backendPid: number,
+  contending: Promise<unknown>,
+): Promise<void> {
+  let isSettled = false;
+  const markSettled = () => {
+    isSettled = true;
+  };
+  contending.then(markSettled, markSettled);
+
+  while (!(await isBlockedBy(kit, backendPid))) {
+    if (isSettled) {
+      return;
+    }
+  }
 }
 
 export function beforeCopyStarts(kit: MigrationTestKit): OwnerHold {
@@ -62,6 +94,42 @@ export function afterSwapBegins(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.migrationTransitions, 'beginSwap', 1, 'after');
 }
 
+export function insideSwapAfterItsRecordCheck(
+  kit: MigrationTestKit,
+): TransactionHold {
+  let backendPid = 0;
+  const hold = holdCall(
+    kit.migrationTransitions,
+    'lockSwap',
+    1,
+    'after',
+    async () => {
+      backendPid = await readBackendPid(kit);
+    },
+  );
+
+  return { ...hold, backendPid: () => backendPid };
+}
+
+async function readBackendPid(kit: MigrationTestKit): Promise<number> {
+  const [backend] = await kit.transactionService.getTransaction().$queryRaw<
+    { pid: number }[]
+  >`SELECT pg_backend_pid() AS pid`;
+
+  return backend?.pid ?? 0;
+}
+
+async function isBlockedBy(
+  kit: MigrationTestKit,
+  backendPid: number,
+): Promise<boolean> {
+  const blocked = await kit.prisma.$queryRaw<unknown[]>`
+    SELECT 1 FROM pg_stat_activity
+    WHERE ${backendPid}::int = ANY(pg_blocking_pids(pid))`;
+
+  return blocked.length > 0;
+}
+
 async function readLease(
   kit: MigrationTestKit,
   migrationId: string,
@@ -80,9 +148,15 @@ async function readLease(
 type AsyncMethod = (...args: never[]) => Promise<unknown>;
 type HoldTiming = 'before' | 'after';
 
+interface CallHold {
+  barrier: Barrier;
+  timing: HoldTiming;
+  onHold?: () => Promise<void>;
+}
+
 interface CallHolds {
   calls: number;
-  holds: Map<number, { barrier: Barrier; timing: HoldTiming }>;
+  holds: Map<number, CallHold>;
 }
 
 const callHoldsBySpy = new WeakMap<object, CallHolds>();
@@ -92,11 +166,16 @@ function holdCall(
   method: string,
   callNumber: number,
   timing: HoldTiming,
+  onHold?: () => Promise<void>,
 ): OwnerHold {
   const barrier = createBarrier(
     `The migration owner at ${method} call ${callNumber}`,
   );
-  callHoldsOf(target, method).holds.set(callNumber, { barrier, timing });
+  callHoldsOf(target, method).holds.set(callNumber, {
+    barrier,
+    timing,
+    onHold,
+  });
 
   return { barrier };
 }
@@ -122,13 +201,13 @@ function callHoldsOf(target: object, method: string): CallHolds {
     const hold = callHolds.holds.get(callHolds.calls);
 
     if (hold?.timing === 'before') {
-      await hold.barrier.arrive();
+      await arriveAt(hold);
     }
 
     const result = await original(...args);
 
     if (hold?.timing === 'after') {
-      await hold.barrier.arrive();
+      await arriveAt(hold);
     }
 
     return result;
@@ -136,4 +215,9 @@ function callHoldsOf(target: object, method: string): CallHolds {
   callHoldsBySpy.set(methods[method] as object, callHolds);
 
   return callHolds;
+}
+
+async function arriveAt(hold: CallHold): Promise<void> {
+  await hold.onHold?.();
+  await hold.barrier.arrive();
 }

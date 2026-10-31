@@ -67,7 +67,7 @@ PHASE 4: SWAP-BEGIN (T-swap-begin)
   └─ COPYING, token, copiedRows = totalRows → SWAPPING
 
 PHASE 5: SWAP (single serializable transaction)
-  ├─ the record is still SWAPPING with the owner's token, else stop
+  ├─ first statement: renew heartbeatAt where SWAPPING and the owner's token, else stop
   ├─ detach source table from revision, attach shadow table
   ├─ update schema row in revisium_schema_table and the views row
   └─ set revision.hasChanges = true
@@ -126,11 +126,15 @@ After abort, the draft is in a clean state — the next `updateTable` call on th
 
 The swap runs in a single serializable transaction:
 
-1. Check that the record is still `SWAPPING` with the owner's token
+1. Renew `heartbeatAt` of the record where it is still `SWAPPING` with the owner's token; no match stops the swap
 2. Detach source table
 3. Attach shadow table
 4. Update schema row
 5. Set hasChanges
+
+The first statement locks the record row until the swap commits. A claim that arrives meanwhile waits for it and then
+finds a live lease, and a claim that committed earlier makes the first statement match nothing, so a replaced owner
+never commits a swap.
 
 If the process crashes mid-swap, the transaction rolls back. The record stays `SWAPPING`. After its lease expires,
 the next claim counts a retry and runs the swap directly, without copying again. When `retryCount` has reached
@@ -231,7 +235,7 @@ No worker runs. The host application must call `processMigration(migrationId)` e
 
 ## Retry and Recovery
 
-On a transient failure, the owner applies T-retry and claims the record again, up to `maxRetries`. Retry is restart-safe:
+On a transient failure of a step, including the read of the record that starts it, the owner applies T-retry and claims the record again, up to `maxRetries`. T-retry and T-fail are guarded by the owner's token and an active status. Retry is restart-safe:
 
 - T-retry increments `retryCount`, keeps the status and releases the lease; the next claim resumes the same phase
 - `copiedRows` and `lastCopiedRowId` are committed with each batch, so copy resumes from the last checkpoint

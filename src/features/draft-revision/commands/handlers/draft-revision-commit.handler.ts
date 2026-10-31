@@ -43,7 +43,11 @@ export class DraftRevisionCommitHandler implements ICommandHandler<DraftRevision
       draftRevision.id,
       tableVersionIds,
     );
-    await this.lockTablesAndRows(tableVersionIds);
+    await this.lockRowsAndTables(
+      draftRevision.id,
+      headRevision.id,
+      tableVersionIds,
+    );
 
     return {
       previousHeadRevisionId: headRevision.id,
@@ -87,20 +91,61 @@ export class DraftRevisionCommitHandler implements ICommandHandler<DraftRevision
     });
   }
 
-  private async lockTablesAndRows(
+  private async lockRowsAndTables(
+    revisionId: string,
+    previousHeadRevisionId: string,
     tableVersionIds: { versionId: string }[],
   ): Promise<void> {
     if (tableVersionIds.length === 0) {
       return;
     }
 
+    await this.lockDraftOwnedRows(revisionId, previousHeadRevisionId);
+    await this.lockTables(tableVersionIds);
+  }
+
+  private async lockDraftOwnedRows(
+    revisionId: string,
+    previousHeadRevisionId: string,
+  ): Promise<void> {
+    await this.transaction.$executeRaw`
+      WITH draft_table AS (
+        SELECT "Table"."versionId", "Table"."createdId"
+        FROM "_RevisionToTable"
+        JOIN "Table" ON "Table"."versionId" = "_RevisionToTable"."B"
+        WHERE "_RevisionToTable"."A" = ${revisionId}
+          AND "Table"."readonly" = false
+      ),
+      head_table AS (
+        SELECT "Table"."versionId"
+        FROM "_RevisionToTable"
+        JOIN "Table" ON "Table"."versionId" = "_RevisionToTable"."B"
+        WHERE "_RevisionToTable"."A" = ${previousHeadRevisionId}
+          AND "Table"."readonly" = true
+          AND "Table"."createdId" IN (SELECT "createdId" FROM draft_table)
+      )
+      UPDATE "Row"
+      SET "readonly" = true
+      WHERE "readonly" = false
+        AND "versionId" IN (
+          SELECT draft_link."A"
+          FROM "_RowToTable" AS draft_link
+          WHERE draft_link."B" IN (SELECT "versionId" FROM draft_table)
+            AND NOT EXISTS (
+              SELECT 1
+              FROM "_RowToTable" AS head_link
+              WHERE head_link."B" IN (SELECT "versionId" FROM head_table)
+                AND head_link."A" = draft_link."A"
+            )
+        )
+    `;
+  }
+
+  private async lockTables(
+    tableVersionIds: { versionId: string }[],
+  ): Promise<void> {
     await this.transaction.table.updateMany({
       where: { OR: tableVersionIds, readonly: false },
-      data: { readonly: true },
-    });
-
-    await this.transaction.row.updateMany({
-      where: { readonly: false, tables: { some: { OR: tableVersionIds } } },
       data: { readonly: true },
     });
   }

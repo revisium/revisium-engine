@@ -31,6 +31,7 @@ export class RenameTableHandler extends DraftHandler<
     const { revisionId, tableId, nextTableId } = data;
 
     await this.draftTransactionalCommands.resolveDraftRevision(revisionId);
+    await this.draftTransactionalCommands.checkImportedMigrationId(revisionId);
 
     await this.draftTransactionalCommands.validateNotSystemTable(tableId);
 

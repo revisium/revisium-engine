@@ -68,6 +68,7 @@ export class UpdateTableHandler extends DraftHandler<
     const { revisionId, tableId } = data;
 
     await this.draftTransactionalCommands.resolveDraftRevision(revisionId);
+    await this.draftTransactionalCommands.checkImportedMigrationId(revisionId);
     await this.validations({ data });
 
     const table =

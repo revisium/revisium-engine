@@ -39,6 +39,7 @@ export class RemoveTableHandler extends DraftHandler<
     const { revisionId, tableId } = data;
 
     await this.draftTransactionalCommands.resolveDraftRevision(revisionId);
+    await this.draftTransactionalCommands.checkImportedMigrationId(revisionId);
 
     await this.draftTransactionalCommands.validateNotSystemTable(tableId);
     await this.validateForeignKeys(data);

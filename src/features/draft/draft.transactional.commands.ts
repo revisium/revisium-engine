@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import type { InputJsonValue } from 'src/engine-prisma-types';
+import { CheckImportedMigrationIdCommand } from 'src/features/draft/commands/impl/migration';
 import { ResolveDraftRevisionCommand } from 'src/features/draft/commands/impl/transactional/resolve-draft-revision.command';
 import {
   ValidateDataCommand,
@@ -17,6 +18,12 @@ export class DraftTransactionalCommands {
   public async resolveDraftRevision(revisionId: string) {
     return this.commandBus.execute<ResolveDraftRevisionCommand>(
       new ResolveDraftRevisionCommand(revisionId),
+    );
+  }
+
+  public async checkImportedMigrationId(revisionId: string) {
+    return this.commandBus.execute<CheckImportedMigrationIdCommand>(
+      new CheckImportedMigrationIdCommand(revisionId),
     );
   }
 

@@ -30,7 +30,7 @@ Each item is delivered by its own pull requests, in this order.
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| `applyMigrations` checks the migration id inside the migration's transaction | Must | In progress |
+| `applyMigrations` checks the migration id inside the migration's transaction | Must | Done (#87) |
 | Migration lock checked inside every API writer's transaction, views writes included | Must | In progress (views: #86) |
 | Serializable views writes | Must | Done (#86) |
 | Referrer rewrites and the row-removal guard without the 100 limits | Must | Not started |

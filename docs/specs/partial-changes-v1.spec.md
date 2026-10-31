@@ -129,7 +129,9 @@ A Draft leaf is **unchanged** by the structure when all hold:
    `foreignKey` is compared by the identity of the referenced table (so a referrer rewritten by a table rename stays
    unchanged);
 3. no pending migration of the table touches its path or an ancestor: any `add`, `remove`, `replace` or `move` patch
-   (both `from` and `path` of a move) at the leaf's pointer or above it.
+   (both `from` and `path` of a move) at the leaf's pointer or above it. A patch path is mapped to the data pointer it
+   affects before this check: a path inside an atomic leaf's schema (array `items`, the File schema) touches that leaf,
+   because the leaf's value is one unit (§3.2).
 
 Every other leaf of either schema is a **changed** (structure-bound) field. Its values belong to the table's structure
 unit (REQ-001.BR-007), also when a later patch restored the leaf schema (values the migration converted stay with the
@@ -1580,6 +1582,8 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 ### Version 1.1 (2026-10-31)
 
 Follow-up of [async-row-migration-v2]:
+
+- §3.3: a patch inside an atomic leaf's schema touches that leaf (clarification).
 
 - §5.8, §6.9, §6.10: the ledger replay runs an identity pass and a schema pass; "unledgered" is a property of the
   table's lineage, not of a literal `init`; a failing step taints only the slots it reaches.

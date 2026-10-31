@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1 |
+| Version | 1.1 |
 | Status | Accepted |
-| Date | 2026-10-22 |
+| Date | 2026-10-31 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
 | Evidence | [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md) (PoC v2, `c86e86c`, tag `archive/partial-changes-poc-v2`) |
@@ -22,8 +22,8 @@ a table version links row versions (both many-to-many); tables and rows carry `v
 Committed versions are readonly and shared; a Draft edit copies the version it changes first. Schemas with their
 history, the migration ledger, views and shared schemas are rows of system tables in the same revision. Native
 commit turns the Draft revision into Head and creates a child Draft linking the same table versions; native revert
-links the Head table versions into the Draft. Native row and schema writers run Serializable and take no row locks;
-views writes and async-migration copy batches do not run Serializable (§12).
+links the Head table versions into the Draft. Native row, schema and views writers run Serializable and take no row locks;
+async-migration copy batches do not run Serializable (§12).
 
 ## 1. Terms
 
@@ -452,7 +452,7 @@ Decided in this order; preview skips step 3 and returns `ready` in step 6:
 | `ledgerInconsistent` | A resulting ledger does not replay to its schemas (a mismatch the operation introduces); a published migration is missing or changed in the Draft ledger; a pending migration cannot be attributed to a table (§10.1); or a Draft schema history does not extend its Head history. | Change the selection, or repair the Draft natively. |
 | `unrecordedStructureChange` | The Draft structure is not reproduced by its schema history and migrations (an async migration on a schema row the Draft already owned, until stage 0): its commit is refused, and Head rows cannot be migrated into it. Reverting it is allowed. | Commit other units; revert the structure. |
 | `headSchemaInconsistent` | Head schema check (§6.10): a selector or a required addition involves a table whose Head schema does not match the schema replayed from the Head ledger (left by a completed native async migration, published or not). `tableId` is set. Raised by every partial operation on that table, with no exception (`all: true` with `exclude` names every table). Not raised for exactly `{ all: true }`. | Commit or revert natively or with exactly `{ all: true }`; to make the table eligible again, run the forward-only repair (§12) and publish it with a native or exactly `{ all: true }` commit. Units of other tables are unaffected. |
-| `unledgeredTable` | A selector or a required addition involves an unledgered table (§6.10): present in the Head with no `init` migration in the Head ledger (including a revision without a migration table), or created in the Draft with no pending `init`. `tableId` is set. Not raised for exactly `{ all: true }`. | Commit or revert natively or with exactly `{ all: true }`; a ledger backfill is a stage-0 design item (§12). |
+| `unledgeredTable` | A selector or a required addition involves an unledgered table (§6.10): its id has no intact ledger lineage, in the Head ledger for a Head table (including a revision without a migration table) or in the Draft ledger for a table created in the Draft. `tableId` is set. Not raised for exactly `{ all: true }`. | Commit or revert natively or with exactly `{ all: true }`; a ledger backfill is a stage-0 design item (§12). |
 | `migrationInProgress` | Preview only: an async migration is active on the branch. | Wait for it. |
 | `unmatchedSelector` | Some selectors match no unit. | Fix the selection. |
 | `tooLarge` | A limit (§11) is exceeded; `tableId` is set for a per-table limit. | Select less. |
@@ -805,12 +805,14 @@ Per user table on both sides, with structure side S and the opposite side O:
 
 1. Commit only: an applied structure unit whose table is not recorded → `unrecordedStructureChange`.
 2. A published migration missing or changed in the Draft ledger → `ledgerInconsistent`.
-3. Replay in memory the ledger of every resulting role with the native rules (a foreign-key target must exist at
-   each step; `remove` is refused while referenced; `rename` refuses a taken id and rewrites referrer schemas) and
-   compare with the role's schemas: commit → new Head and remaining Draft (with renumbered ids); revert → reverted
-   Draft. A mismatch or failure that the source role does not already have → `ledgerInconsistent`. Inconsistencies
-   that exist natively are tolerated, except damaged Head tables (§6.10). Unledgered tables (§6.10) are left out of
-   the comparison (only exactly `{ all: true }` can apply their units).
+3. Replay in memory the ledger of every resulting role with the shared ledger replay of [async-row-migration-v2]
+   §5.1: an identity pass that follows each table id through `init`, `rename` and `remove`, then a schema pass with the
+   native rules (a foreign-key target must exist at each step; `remove` is refused while referenced; `rename` refuses a
+   taken id and rewrites referrer schemas), in which a failing step taints its slot and every later step that reads a
+   tainted slot taints its own. Compare the result with the role's schemas: commit → new Head and remaining Draft (with
+   renumbered ids); revert → reverted Draft. A mismatch or failure that the source role does not already have →
+   `ledgerInconsistent`. Inconsistencies that exist natively are tolerated, except damaged Head tables (§6.10).
+   Unledgered tables (§6.10) are left out of the comparison (only exactly `{ all: true }` can apply their units).
 4. Validate every merged row against its target schema → `invalidRow`.
 5. When unique constraints exist ([ADR-0029]): validate uniqueness over the whole target table, not only the written
    rows, because Head and Draft rows that are valid on their own sides can collide when combined.
@@ -834,9 +836,10 @@ Head structure), and §6.9 step 1 applies to commits only.
 
 **Predicates**, per user table and revision:
 
-- **(b) Ledger replay — the refusal predicate.** When that revision's ledger has an `init` migration for the table,
-  replaying the ledger with the native rules gives a schema deep-equal (object key order ignored) to the schema row.
-  A table fails it when the replayed schema differs, or when the ledger no longer replays at all.
+- **(b) Ledger replay — the refusal predicate.** For a ledgered table, the replay of that revision's ledger (§6.9)
+  gives its slot a schema deep-equal (object key order ignored) to the schema row. A table fails it when the replayed
+  schema differs, or when its slot is tainted: a step of its own lineage failed, or one of its steps read a tainted slot. A taint fails only
+  the tables whose slots it reaches, not every table of the ledger.
 - **(a) Row invariant — a scan diagnostic only (§12), never a refusal.** Every row of the table version has
   `schemaHash` equal to the `hash` of that revision's schema row (both are `objectHash` of the schema). Damage shape
   (i) breaks it in the Head, but it is not a native invariant: a table rename rewrites the referencing tables' schema
@@ -848,10 +851,13 @@ Head structure), and §6.9 step 1 applies to commits only.
 - **Views:** the ledger records nothing about views and direct views edits are not derivable from it, so a views row
   cannot be checked by replay. The swap rewrites the views row in the same step as the schema row, so a table that
   fails (b) is treated as having damaged views too; damage to views alone is not detectable.
-- **Unledgered table:** a table present in the Head with no `init` migration in the Head ledger (including every
-  table of a revision without a migration table: the host created the project without one, and native writers then
-  skip the ledger silently), or a table created in the Draft with no pending `init` migration. Predicate (b) cannot
-  be evaluated for it.
+- **Unledgered table:** a table whose id ends the identity pass of the replay (§6.9) without an open slot or with a
+  broken lineage: no `init` opened a slot that leads to its id, or an unattributable `rename`, `update` or `remove`
+  broke that lineage. This covers every table of a revision without a migration table (the host created the project
+  without one, and native writers then skip the ledger silently). A Head table is checked against the Head ledger, a
+  table created in the Draft against the Draft ledger. "Unledgered" is a property of the lineage, not of a literal
+  `init` of the current id: a table created as `A` and renamed to `B` through recorded migrations is ledgered.
+  Predicate (b) cannot be evaluated for an unledgered table.
 
 **Refused tables.** A *partial operation* is anything other than exactly `{ all: true }` without `exclude`.
 
@@ -1011,8 +1017,15 @@ migration as the blocker `migrationInProgress`; listing ignores the lock.
 - Commit and revert check the branch migration lock inside their transaction; an active async migration → error
   `MigrationLocked`. An async migration that starts while an operation plans makes it fail serialization; the retry
   sees the lock.
-- Native revert cancels branch migrations and notifies endpoints; partial revert refuses until stage 0 (§17, question
-  2).
+- Native revert cancels branch migrations in `PENDING` or `COPYING` and notifies endpoints; like `abortMigration`, it
+  rejects a migration in `SWAPPING`, which is bounded ([async-row-migration-v2] §3.2, §3.6). Partial revert refuses
+  until stage 0 (§17, question 2).
+- **The fixed async migration** ([async-row-migration-v2] §3) is a recorded native `updateTable` run in batches: one
+  active migration per revision, checked inside the start transaction; the schema validation of the synchronous path at
+  start and data validation of every copied row; a guarded state machine with bounded recovery of every phase. The swap
+  re-checks the Draft, the source table and the schema, writes the schema row and views row with copy-on-write, the
+  `update` migration row and the schema history, and deletes the record in one Serializable transaction, so the Head
+  and earlier revisions never change.
 - Until stage 0, an async migration records no migration and no schema history. Async migration is on by default
   since v0.7.0 (threshold 1,000 rows), so deployed projects may already hold its results:
   - on a schema row the Draft already owned, the swap rewrites the Draft's own row: the Draft structure is not
@@ -1033,14 +1046,20 @@ Under continuous native writes to the same tables, a long Serializable commit (n
 serialization victim and fails after its attempts. Stage 0 adds a branch write fence for liveness (consistency is
 already guaranteed by Serializable):
 
-- native writers take the fence shared; native and partial commit and revert, the async-migration swap and
-  `applyMigrations` take it exclusive;
+- native writers take the fence shared (#92); native and partial commit and revert take it exclusive; the
+  async-migration start and swap and the forward-only repair take it shared and wait behind an exclusive holder;
+  `applyMigrations` takes no exclusive fence and holds no fence while it waits for an async migration
+  ([async-row-migration-v2] §3.9, §4);
 - the exclusive fence is taken in a separate holder transaction before the Serializable snapshot, so in-flight writers
   drain first;
+- the operation the holder protects runs in the `exclusiveHeld` admission mode of its transaction context for that
+  branch: it skips shared admission for the branch (otherwise it would wait for its own holder), still checks the
+  migration lock inside its transaction, and the holder is released on every exit (success, error, timeout);
 - an operation takes it only after serialization failures (escalation) and with a `lock_timeout`; parameters are set
   in stage 0 (§17, question 3);
 - consequence for native writers: every native writer takes the shared fence, and while an operation holds it
-  exclusively, writers wait up to that operation's timeout. The evidence for the fence is one benchmark prototype
+  exclusively, writers wait at most half of `TRANSACTION_TIMEOUT`, then fail with `BranchWriteFencedException`
+  ([async-row-migration-v2] §1). The evidence for the fence is one benchmark prototype
   (PoC M3), not a tested implementation.
 
 ## 9. Freshness and idempotency
@@ -1102,7 +1121,7 @@ migration could be neither published nor reverted.
 
 | Consumer | Guarantee |
 | --- | --- |
-| Replica synced from Head exports (`getMigrations` of Head → `applyMigrations` into its Draft → commit) | Accepts every partial commit and every later commit; its replayed schemas equal the source Head schemas (REQ-001.BR-004). `applyMigrations` applies one migration per transaction, so the guarantee is incremental, not all-or-nothing: the replica's ledger is always a prefix of the source Head ledger, each migration applies atomically, and a resumed sync continues from the next id (with the stage-0 in-transaction id check). Depends on the stage-0 must items (§12), including the async-migration fix and copy-on-write by `INSERT … SELECT`. Not covered: an exactly `{ all: true }` commit of an unrepaired damaged table (§6.10) publishes a Head no replica can reproduce, exactly as native commit does; unledgered tables (§6.10) were never received by a replica through migrations, and partial operations refuse them. |
+| Replica synced from Head exports (`getMigrations` of Head → `applyMigrations` into its Draft → commit) | Accepts every partial commit and every later commit; its replayed schemas equal the source Head schemas (REQ-001.BR-004). `applyMigrations` applies one migration per transaction, so the guarantee is incremental, not all-or-nothing: the replica's ledger is always a prefix of the source Head ledger, each migration applies atomically, and a resumed sync continues from the next id (with the stage-0 in-transaction id check). Depends on the stage-0 must items (§12), including the async-migration fix and copy-on-write by `INSERT … SELECT`. An imported `update` above the async threshold keeps its source id: the swap records it, and `applyMigrations` reports `applied` only then ([async-row-migration-v2] §4). Async migrations in flight at upgrade carry no source id and are cancelled (`LEGACY_JOB`), so an import that started one is rerun. Not covered: an exactly `{ all: true }` commit of an unrepaired damaged table (§6.10) publishes a Head no replica can reproduce, exactly as native commit does; unledgered tables (§6.10) were never received by a replica through migrations, and partial operations refuse them. |
 | Replica synced from Draft exports | Unsupported: a renumbered migration is offered again under a new id and fails (for example "field already exists"). `renumbered` lets such a consumer detect it. |
 | Replicas of large tables | Native limits apply independently of partial commits: memory of synchronous table updates (backlog, §12). |
 
@@ -1144,7 +1163,7 @@ brings compiled formulas and set-based file registration, the per-row-work limit
 Delivery stages 1–3 (ADR-001) may be developed in parallel with stage 0. Paths are under `src/features/` at master
 `139eb7b` unless they start with `src/` or `prisma/`.
 
-**Async migration fix, detection and repair** (its own stage-0 design: a new version of
+**Async migration fix, detection and repair** (its own stage-0 design: [async-row-migration-v2], the new version of
 [async-row-migration-v1]). This SPEC depends on these results:
 
 | Requirement | Today (139eb7b) | Where |
@@ -1156,49 +1175,42 @@ Delivery stages 1–3 (ADR-001) may be developed in parallel with stage 0. Paths
 | File references for migrated rows. | Migrated rows get no blob links. | `migration/services/migration-batch.service.ts:84-112` |
 | Orphan cleanup spares in-flight shadow tables. | It deletes every table no revision links, including shadow tables before their swap. | `src/infrastructure/database/cleanup.service.ts:41-51`; `migration.service.ts:240-250` |
 
-- **Detection (scan).** The scan covers every revision of every branch (Head, Draft and earlier revisions), but
-  evaluates predicate (b) once per distinct pair of ledger version and schema-row version, and predicate (a) once per
-  distinct table version, because versions are shared across revisions. It reports: damaged tables (predicate (b)
-  failures, §6.10), with damaged earlier revisions reported as damaged history; ledgers that no longer replay at all,
-  because a later published migration builds on the unrecorded change (for example a rename of the field the async
-  migration added); unledgered tables; and predicate (a) failures as a diagnostic only, each marked with its known
-  false-positive sources (a table that references a renamed table; rows written through the low-level row API).
-  Predicate (a) refuses nothing. Views are covered as §6.10 describes.
-- **Repair (forward-only): the recorded native write, replayed.** Nothing committed is rewritten again. In the
-  Draft, the repair writes what a recorded native synchronous `updateTable` would have written:
-  - **Patch:** the diff from the schema replayed from the Head ledger to the Head schema row, so it covers only the
-    change the Head shows and the ledger does not record (not the Draft's own pending changes). The async migration
-    record is deleted when the migration completes (`migration/services/migration.service.ts:511-520`), so the patch
-    can only come from this diff. A diff turns a field rename into remove and add: on replicas that apply the repair
-    migration, that field's values are lost. The stage-0 fix records future async migrations with their original
-    patches, so no new damage needs a diff.
-  - **Position:** a migration row whose id `nextNativeMigrationId` computes from the last published migration (so
-    Head-synced replicas accept it), placed before the table's pending migrations. The Draft's pending migrations
-    that it would follow are renumbered after it in their original order by the native rule, as in §6.8; they are
-    unpublished, so this is allowed. The renumbering is reported as for a commit.
-  - **History and rows:** the patch is inserted into the Draft schema row's history at the same position (after the
-    Head's history prefix, before the pending patches), and the Draft gets its own schema and views row versions where
-    it still shares the damaged ones.
-  - **Verification and rollback:** after writing, the repair checks that replaying the Head ledger followed by the
-    pending migrations gives the Draft schema. If it does not, the repair of that table is rolled back, and the scan
-    reports the table as needing its Draft structure reverted first (natively or with a whole-Draft revert, since
-    partial operations refuse the table).
+The orphan cleanup landed in #90; [async-row-migration-v2] §3.3–§3.7 designs the other rows.
+
+- **Detection (scan):** `scanSchemaLedger` ([async-row-migration-v2] §5). It covers every revision of every branch
+  and evaluates each predicate once per distinct combination of shared versions. It reports unledgered tables;
+  unreplayable ledgers (a tainted slot, for example after a later published migration built on the unrecorded change);
+  damaged Head tables with their shape and planned repair outcome; Draft-only damage; damaged history; and predicate
+  (a) failures as a diagnostic only, classified by their known false-positive sources. Predicate (a) refuses nothing.
+  Views are covered as §6.10 describes.
+- **Repair (forward-only):** `repairSchemaLedger` ([async-row-migration-v2] §6). Nothing committed is rewritten
+  again. In the Draft, the repair writes only what recorded native schema writes would have written: ledger rows and
+  schema history, no rows and no views copy. Per damaged Head table the patch is the diff from the schema replayed from
+  the Head ledger to the Head schema row (a field rename becomes remove and add, so replicas that apply the repair lose
+  that field's values). Coupled candidates are planned and verified together; one global sequence after the last
+  published migration numbers the repairs, and the pending migrations are renumbered once after them, as in §6.8.
+  Draft rows must pass data and foreign-key validation, and a validation fingerprint proves them unchanged at the
+  write; the write verifies the published prefix and the stored ledger. A table that cannot be repaired gets its
+  outcome ([async-row-migration-v2] §6.2) and nothing is written for it, for example `needsDraftStructureRevert` when
+  its Draft structure must be reverted first (natively or with a whole-Draft revert, since partial operations refuse
+  the table).
 
   The table becomes eligible for partial operations again only after a native or exactly `{ all: true }` commit
   publishes the repair (§6.10); earlier revisions stay as they are, and rewriting history would need its own ADR and
   is not planned. The repair is not a gate for partial operations: the refusal of §6.10 protects damaged tables, and
   native or `{ all: true }` commits still work. Draft-only damage (§6.10) needs no repair: reverting the table's
   structure unit removes it.
-- **Ledgers that no longer replay** cannot be repaired forward: such tables stay refused, and their Head-synced
-  replicas need a re-sync.
-- **Ledger backfill for unledgered tables** (stage-0 design item decided with the scan results, not a release gate):
-  forward-only like the repair, it would add an `init` migration for such a table to the Draft so that a later commit
-  gives it ledger history. Until then partial operations refuse those tables (`unledgeredTable`).
+- **Tables whose ledger slot is tainted** (§6.10) cannot be repaired forward: such tables stay refused, and their
+  Head-synced replicas need a re-sync.
+- **Ledger backfill for unledgered tables and row remediation** for damaged tables whose Draft rows fail validation
+  (`rowsNeedMigration`) are decided with the scan results, not release gates ([async-row-migration-v2] §7). Until then partial operations
+  refuse those tables (`unledgeredTable`, `headSchemaInconsistent`).
 - **No change to table rename** in stage 0: re-hashing the referencing rows would copy every row of every
   referencing table; predicate (a) reports such tables as known false positives instead.
 - **Release gate:** the async migration fix shipped; the forward-only repair tool; the scan run on existing
-  deployments with its results reviewed (damaged tables and history, ledgers that no longer replay, unledgered tables,
-  and the predicate (a) diagnostics with their known false positives); the Head schema check
+  deployments with its results reviewed (damaged tables and history, tainted ledger slots, unledgered tables, the
+  predicate (a) diagnostics with their known false positives, and the host-side check for files possibly lost before
+  the fix, [async-row-migration-v2] §13); the Head schema check
   (`headSchemaInconsistent`, `unledgeredTable`) in partial operations; limits re-measured on production-like hardware
   (§11), including the row-digest cost (§9.1).
 
@@ -1206,16 +1218,16 @@ Delivery stages 1–3 (ADR-001) may be developed in parallel with stage 0. Paths
 
 | Priority | Item | Why | Where |
 | --- | --- | --- | --- |
-| Must | `applyMigrations` applies an `update` synchronously or waits for the async migration before reporting `applied`. | Above the threshold the update goes async, is reported `applied`, writes no ledger row, and later migrations of the batch hit the lock. | `draft/commands/handlers/migration/apply-migrations.handler.ts:107-112, 126-129`; `draft/commands/handlers/api-update-table.handler.ts:37-38` |
-| Must | `applyMigrations` checks the migration id inside the migration's transaction. | The existence and id checks run outside any transaction (race). | `apply-migrations.handler.ts:141-162, 164-188` |
-| Must | Migration lock checked inside the writer's transaction, in every API writer; views writes check it at all. | Every API writer checks before its transaction starts; views writes do not check. | `draft/commands/handlers/api-create-revision.handler.ts:25-28` vs `:33`; `api-create-row.handler.ts:35` vs `:37`; `api-update-table.handler.ts:35` vs `:61`; `views/views-api.service.ts:31-37` |
-| Must | Referrer rewrites and the row-removal guard without the 100 limits. | A row rename rewrites at most 100 rows per referrer table and searches at most 100 referrer tables; a table rename rewrites at most 100 referrer schemas; the row-removal guard checks at most 100 referrer tables and fails above 1,000 paths × row ids. Native commit publishes the dangling rest. | `share/foreign-keys.service.ts:8, 89, 157, 212-217`; `draft/commands/handlers/transactional/internal-rename-row.handler.ts:108-118, 167-183`; `transactional/rename-schema.handler.ts:55-59`; `draft/commands/handlers/remove-rows.handler.ts:74-80` |
-| Must | Serializable views writes. | Views writes run with default isolation, so a concurrent update can change a views row that a commit has just published. | `views/views-api.service.ts:31-37`; `views/commands/handlers/update-table-views.handler.ts:55-88` |
-| Must | Branch write fence (§8.4). | Long Serializable commits (native and partial) starve under continuous writers. Evidence: one benchmark prototype. | `src/infrastructure/database` and native writers |
-| Must | Table copy-on-write by `INSERT … SELECT`. | The first native edit of a table loads every row version id and connects them in one write; the PoC hit `P2029` above 32,767 rows (32,800 in M5, the replica sync in M3). Large tables and the replica guarantee depend on it. | `draft-revision/commands/handlers/draft-revision-get-or-create-draft-table.handler.ts:103-115, 117-145` |
-| Should | `createRevision` finds the rows to lock without scanning shared readonly rows. | Its lock is one `updateMany` that updates only mutable rows, but its filter joins every row of every table version of the revision, shared readonly ones included (7.8 s for 1k changes in a 1M-row table). | `draft-revision/commands/handlers/draft-revision-commit.handler.ts:97-105` |
+| Must | `applyMigrations` starts the async migration of a large `update` with its source id and reports `applied` only after the swap recorded it; the source id travels in the payload envelope, and a Draft without a migration table fails with `LEDGER_UNAVAILABLE` ([async-row-migration-v2] §4). | Above the threshold the update goes async, is reported `applied`, writes no ledger row, and later migrations of the batch hit the lock. | `draft/commands/handlers/migration/apply-migrations.handler.ts:107-112, 126-129`; `draft/commands/handlers/api-update-table.handler.ts:37-38` |
+| Must; landed (#87) | `applyMigrations` checks the migration id inside the migration's transaction. | The existence and id checks run outside any transaction (race). | `apply-migrations.handler.ts:141-162, 164-188` |
+| Must; landed (#86, #89) | Migration lock checked inside the writer's transaction, in every API writer; views writes check it at all. | Every API writer checks before its transaction starts; views writes do not check. | `draft/commands/handlers/api-create-revision.handler.ts:25-28` vs `:33`; `api-create-row.handler.ts:35` vs `:37`; `api-update-table.handler.ts:35` vs `:61`; `views/views-api.service.ts:31-37` |
+| Must; landed (#88) | Referrer rewrites and the row-removal guard without the 100 limits. | A row rename rewrites at most 100 rows per referrer table and searches at most 100 referrer tables; a table rename rewrites at most 100 referrer schemas; the row-removal guard checks at most 100 referrer tables and fails above 1,000 paths × row ids. Native commit publishes the dangling rest. | `share/foreign-keys.service.ts:8, 89, 157, 212-217`; `draft/commands/handlers/transactional/internal-rename-row.handler.ts:108-118, 167-183`; `transactional/rename-schema.handler.ts:55-59`; `draft/commands/handlers/remove-rows.handler.ts:74-80` |
+| Must; landed (#86) | Serializable views writes. | Views writes run with default isolation, so a concurrent update can change a views row that a commit has just published. | `views/views-api.service.ts:31-37`; `views/commands/handlers/update-table-views.handler.ts:55-88` |
+| Must; shared fence landed (#92) | Branch write fence (§8.4). | Long Serializable commits (native and partial) starve under continuous writers. Evidence: one benchmark prototype. | `src/infrastructure/database` and native writers |
+| Must; landed (#85) | Table copy-on-write by `INSERT … SELECT`. | The first native edit of a table loads every row version id and connects them in one write; the PoC hit `P2029` above 32,767 rows (32,800 in M5, the replica sync in M3). Large tables and the replica guarantee depend on it. | `draft-revision/commands/handlers/draft-revision-get-or-create-draft-table.handler.ts:103-115, 117-145` |
+| Should; landed (#91) | `createRevision` finds the rows to lock without scanning shared readonly rows. | Its lock is one `updateMany` that updates only mutable rows, but its filter joins every row of every table version of the revision, shared readonly ones included (7.8 s for 1k changes in a 1M-row table). | `draft-revision/commands/handlers/draft-revision-commit.handler.ts:97-105` |
 | Should | Formulas compiled once per schema. | Formulas are parsed per formula per row; dominates merges. | `plugin/formula/formula.plugin.ts:49-79` → `plugin/formula/formula-calculation.ts:13-15` |
-| Should | Set-based file registration for row versions. | Several queries per row. | `file-usage/commands/handlers/register-file-references-for-rows.handler.ts:52-54, 93-137` (called by `register-file-references-for-row-versions.handler.ts`) |
+| Should (landed, #94) | Set-based file registration for row versions. | Several queries per row. | `file-usage/commands/handlers/register-file-references-for-rows.handler.ts:52-54, 93-137` (called by `register-file-references-for-row-versions.handler.ts`) |
 | Documented, not a fix | `applyMigrations` runs one transaction per migration and stops at the first failure. | Accepted: the replica guarantee is incremental (§10.3). | `apply-migrations.handler.ts:35-46` |
 | Backlog | Memory of synchronous and async table updates. | The synchronous update holds the whole table in memory; 100k-row updates exhausted a 2 GB heap in the PoC. | `draft/commands/handlers/update-table.handler.ts:116-137, 152-162`; `migration.service.ts:281-338` |
 | Backlog | Prisma default 5 s timeout on transactions run without options. | Views writes and async copy batches run without options. | `src/infrastructure/database/prisma.service.ts:13-19`; `src/infrastructure/database/transaction-prisma.service.ts:197-208, 224-231`; `migration.service.ts:316`; `views/views-api.service.ts:32` |
@@ -1325,9 +1337,10 @@ versions unchanged" (§14) holds in every scenario.
     (`headSchemaInconsistent`).
   - AS-47b A partial revert of the damaged table's units (data, row or structure) → `blocked`
     (`headSchemaInconsistent`).
-  - AS-47c After the forward-only repair (§12) but before it is published, every partial operation on the table is
-    still `blocked`. After a native commit publishes the repair, the table's Head ledger replays to its Head schema,
-    a partial commit of its units applies, and a Head-synced replica applies the repair migration.
+  - AS-47c After the forward-only repair (§12; outcome `repaired`) but before it is published, every partial
+    operation on the table is still `blocked`, and a second repair returns `alreadyRepaired`. After a native commit
+    publishes the repair, the table's Head ledger replays to its Head schema (the repair returns `notDamaged`), a
+    partial commit of its units applies, and a Head-synced replica applies the repair migration.
   - AS-47d `listChanges` lists no units of the damaged table and returns it in `refusedTables`; a preview that selects
     it returns `blocked` (`headSchemaInconsistent`), not `unmatched`.
   - AS-47e Head-schema-row baseline (unrepaired Draft): exactly `{ all: true }` commit and revert produce the same
@@ -1335,27 +1348,31 @@ versions unchanged" (§14) holds in every scenario.
     native commit stays available; `{ all: true, exclude }` → `blocked`.
   - AS-47f A table that fails only predicate (a) (rows of a table that references a renamed table) → partial
     operations apply normally; the scan reports it as a diagnostic with its known false-positive source.
-  - AS-47g Replayed-ledger baseline (repaired Draft): an exactly `{ all: true }` commit is `applied` with no
-    `unrecordedStructureChange`; it publishes the repair migration, the new Head passes predicate (b), and a
-    Head-synced replica applies the repair migration.
+  - AS-47g Replayed-ledger baseline (a Draft the repair left `repaired` or `alreadyRepaired`): an exactly
+    `{ all: true }` commit is `applied` with no `unrecordedStructureChange`; it publishes the repair migration, the
+    new Head passes predicate (b), and a Head-synced replica applies the repair migration.
   - AS-47h Neither baseline (SQL fixture: the Draft schema matches neither the Head schema row nor the replayed
     schema after the pending migrations) → an exactly `{ all: true }` commit is `blocked`
     (`unrecordedStructureChange`).
   - AS-47i Repair with pending migrations for the table (after the stage-0 fix, the Draft holds a recorded pending
     migration of the damaged table that builds on the unrecorded change, for example a rename of the field the async
-    migration added): the repair writes the repair migration with the diff from the replayed schema to the Head
-    schema row, places it before that pending migration and renumbers the pending migrations after it; the
-    verification passes; an exactly `{ all: true }` commit is `applied`, the new Head passes predicate (b), and a
-    Head-synced replica applies the repair migration and then the renumbered one. When the verification fails (SQL
-    fixture of a pending migration the repair cannot precede), the repair of that table is rolled back, the Draft is
-    unchanged, and the scan reports the table as needing its Draft structure reverted first.
+    migration added): the repair returns `repaired`; it writes the repair migration with the diff from the replayed
+    schema to the Head schema row, places it before that pending migration and renumbers the pending migrations after
+    it; the combined verification passes; an exactly `{ all: true }` commit is `applied`, the new Head passes predicate
+    (b), and a Head-synced replica applies the repair migration and then the renumbered one. When the combined
+    verification fails (SQL fixture of a pending migration the repair cannot precede), the repair returns
+    `needsDraftStructureRevert` (`blockedByDependency` when the table is coupled to a damaged table that is not repaired
+    in the same call), nothing is written, and the scan reports the same outcome.
 - AS-48 Ledger attribution: a pending migration that cannot be attributed (SQL fixture), or a Draft schema history
   that does not extend the Head history → every preview, commit and revert is `blocked` (`ledgerInconsistent`).
-- AS-49 Unledgered table (§6.10): a Head table with no `init` migration in the Head ledger (SQL fixture; and a
-  project whose revisions have no migration table), and a table created in the Draft with no pending `init` (SQL
-  fixture) → every partial operation on it is `blocked` (`unledgeredTable`) and listing returns it in
-  `refusedTables`; units of other tables apply; exactly `{ all: true }` and native commit and revert it as before. A
-  table created in the Draft with its pending `init` is not affected (AS-14).
+- AS-49 Unledgered table (§6.10), with the lineage cases of [async-row-migration-v2] AM-46: a Head table with no
+  `init` migration in the Head ledger (SQL fixture; and a project whose revisions have no migration table), an id
+  removed and recreated with no `init` after the `remove` (SQL fixture), a lineage broken by an unattributable `rename`
+  (SQL fixture), and a table created in the Draft with no pending `init` (SQL fixture) → every partial operation on it
+  is `blocked` (`unledgeredTable`) and listing returns it in `refusedTables`; units of other tables apply; exactly
+  `{ all: true }` and native commit and revert it as before. Not unledgered: a table created in the Draft with its
+  pending `init` (AS-14), and a Head table recorded as `init A`, `rename A → B`, although no `init` names `B`. A failed
+  `rename` taints the new id's slot: that table fails predicate (b) and is refused with `headSchemaInconsistent`.
 
 ### 13.5 REQ-001.BR-005
 
@@ -1560,6 +1577,21 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 
 ## Changelog
 
+### Version 1.1 (2026-10-31)
+
+Follow-up of [async-row-migration-v2]:
+
+- §5.8, §6.9, §6.10: the ledger replay runs an identity pass and a schema pass; "unledgered" is a property of the
+  table's lineage, not of a literal `init`; a failing step taints only the slots it reaches.
+- §8.3: the fixed async migration; native revert and `abortMigration` reject `SWAPPING`.
+- §8.4: the `exclusiveHeld` admission mode; the async start and swap and the repair take the fence shared;
+  `applyMigrations` takes no exclusive fence; native writers wait for an exclusive holder at most half of
+  `TRANSACTION_TIMEOUT`.
+- §10.3: imported async updates keep their source ids; async migrations in flight at upgrade are cancelled.
+- §12: #85–#92 marked landed; the `applyMigrations` item, the scan and the repair point to async-row-migration-v2;
+  ledger backfill and row remediation are decided with the scan results.
+- §13.4: AS-47c, AS-47g and AS-47i use the repair outcomes; AS-49 covers the lineage cases.
+
 ### Version 1 (2026-10-22)
 
 - Initial version, based on PoC v2 (M1–M5). Accepted on 2026-10-31.
@@ -1577,6 +1609,7 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 [ADR-0032]: https://github.com/revisium/architecture/blob/master/adr/ADR-0032-time-travel-foreign-keys.md
 [ADR-0046]: https://github.com/revisium/architecture/blob/master/adr/ADR-0046-versioning-engine-v2-cow.md
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md
+[async-row-migration-v2]: async-row-migration-v2.spec.md
 [audit-logs-v1]: https://github.com/revisium/architecture/blob/master/specs/audit-logs-v1.spec.md
 [endpoint-v1]: https://github.com/revisium/architecture/blob/master/specs/endpoint-v1.spec.md
 [permission-system-v1]: https://github.com/revisium/architecture/blob/master/specs/permission-system-v1.spec.md

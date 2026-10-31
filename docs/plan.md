@@ -9,6 +9,7 @@ Design: Accepted on 2026-10-31.
 | [REQ-001](requirements/REQ-001-partial-commit-and-revert.md) | Accepted |
 | [ADR-001](adr/ADR-001-partial-commit-and-revert.md) | Accepted |
 | [partial-changes-v1](specs/partial-changes-v1.spec.md) | Accepted |
+| [async-row-migration-v2](specs/async-row-migration-v2.spec.md) | Accepted |
 | [PoC v2 summary](research/partial-changes-poc-v2.md) | Evidence for ADR-001 |
 
 ### Work order
@@ -35,10 +36,10 @@ Each item is delivered by its own pull requests, in this order.
 | Serializable views writes | Must | Done (#86) |
 | Referrer rewrites and the row-removal guard without the 100 limits | Must | Done (#88) |
 | Table copy-on-write by `INSERT … SELECT` | Must | Done (#85) |
-| `applyMigrations` applies an `update` synchronously or waits for the async migration | Must | Not started |
-| Async migration fix (own design, a new version of async-row-migration) | Must | In progress (cleanup: #90) |
-| Detection scan | Must | Not started |
-| Forward-only repair tool | Must | Not started |
+| `applyMigrations` waits for the async migration ([async SPEC §4](specs/async-row-migration-v2.spec.md#4-applymigrations-above-the-threshold)) | Must | Not started |
+| Async migration fix ([async-row-migration-v2 §3](specs/async-row-migration-v2.spec.md#3-the-fixed-async-migration)) | Must | In progress (cleanup: #90) |
+| Detection scan ([async-row-migration-v2 §5](specs/async-row-migration-v2.spec.md#5-detection-scan-scanschemaledger)) | Must | Not started |
+| Forward-only repair tool ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger)) | Must | Not started |
 | Branch write fence | Must | In progress (shared: #92) |
 | `createRevision` locking without scanning readonly rows | Should | Done (#91) |
 | Formulas compiled once per schema | Should | Not started |

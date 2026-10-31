@@ -838,7 +838,7 @@ Head structure), and §6.9 step 1 applies to commits only.
 
 - **(b) Ledger replay — the refusal predicate.** For a ledgered table, the replay of that revision's ledger (§6.9)
   gives its slot a schema deep-equal (object key order ignored) to the schema row. A table fails it when the replayed
-  schema differs, or when its slot is tainted: a step of its lineage, or a step that read it, failed. A taint fails only
+  schema differs, or when its slot is tainted: a step of its own lineage failed, or one of its steps read a tainted slot. A taint fails only
   the tables whose slots it reaches, not every table of the ledger.
 - **(a) Row invariant — a scan diagnostic only (§12), never a refusal.** Every row of the table version has
   `schemaHash` equal to the `hash` of that revision's schema row (both are `objectHash` of the schema). Damage shape
@@ -1227,7 +1227,7 @@ The orphan cleanup landed in #90; [async-row-migration-v2] §3.3–§3.7 designs
 | Must; landed (#85) | Table copy-on-write by `INSERT … SELECT`. | The first native edit of a table loads every row version id and connects them in one write; the PoC hit `P2029` above 32,767 rows (32,800 in M5, the replica sync in M3). Large tables and the replica guarantee depend on it. | `draft-revision/commands/handlers/draft-revision-get-or-create-draft-table.handler.ts:103-115, 117-145` |
 | Should; landed (#91) | `createRevision` finds the rows to lock without scanning shared readonly rows. | Its lock is one `updateMany` that updates only mutable rows, but its filter joins every row of every table version of the revision, shared readonly ones included (7.8 s for 1k changes in a 1M-row table). | `draft-revision/commands/handlers/draft-revision-commit.handler.ts:97-105` |
 | Should | Formulas compiled once per schema. | Formulas are parsed per formula per row; dominates merges. | `plugin/formula/formula.plugin.ts:49-79` → `plugin/formula/formula-calculation.ts:13-15` |
-| Should | Set-based file registration for row versions. | Several queries per row. | `file-usage/commands/handlers/register-file-references-for-rows.handler.ts:52-54, 93-137` (called by `register-file-references-for-row-versions.handler.ts`) |
+| Should (landed, #94) | Set-based file registration for row versions. | Several queries per row. | `file-usage/commands/handlers/register-file-references-for-rows.handler.ts:52-54, 93-137` (called by `register-file-references-for-row-versions.handler.ts`) |
 | Documented, not a fix | `applyMigrations` runs one transaction per migration and stops at the first failure. | Accepted: the replica guarantee is incremental (§10.3). | `apply-migrations.handler.ts:35-46` |
 | Backlog | Memory of synchronous and async table updates. | The synchronous update holds the whole table in memory; 100k-row updates exhausted a 2 GB heap in the PoC. | `draft/commands/handlers/update-table.handler.ts:116-137, 152-162`; `migration.service.ts:281-338` |
 | Backlog | Prisma default 5 s timeout on transactions run without options. | Views writes and async copy batches run without options. | `src/infrastructure/database/prisma.service.ts:13-19`; `src/infrastructure/database/transaction-prisma.service.ts:197-208, 224-231`; `migration.service.ts:316`; `views/views-api.service.ts:32` |

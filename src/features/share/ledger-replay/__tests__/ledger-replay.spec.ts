@@ -9,6 +9,7 @@ import {
   type JsonSchema,
 } from '@revisium/schema-toolkit/types';
 import { replayLedger } from 'src/features/share/ledger-replay/ledger-replay';
+import { traceTableSlots } from 'src/features/share/ledger-replay/table-slots';
 import {
   addField,
   failure,
@@ -21,6 +22,7 @@ import {
   replaceField,
   replayOf,
   schemasOf,
+  slotOf,
   unattributedFailure,
   unattributedOf,
   unreplayableOf,
@@ -66,38 +68,24 @@ describe('replayLedger', () => {
 
       const replay = replayOf(init('categories', categorySchema), repeatedInit);
 
-      expect(unreplayableOf(replay)).toEqual({
-        categories: failure(repeatedInit, 'Table "categories" already exists'),
-      });
+      expect(slotOf(replay, repeatedInit)?.failure).toEqual(
+        failure(repeatedInit, 'Table "categories" already exists'),
+      );
       expect(schemasOf(replay)).toEqual({});
     });
 
-    it('refuses a foreign key to a missing table without taking the id', () => {
+    it('refuses a foreign key to a missing table while the table still takes its id', () => {
       const initProducts = init('products', productSchema);
 
       const replay = replayOf(initProducts);
 
-      expect(unattributedOf(replay)).toEqual([
-        unattributedFailure(
+      expect(unreplayableOf(replay)).toEqual({
+        products: failure(
           initProducts,
           'Foreign key target "categories" does not exist',
         ),
-      ]);
-      expect(unreplayableOf(replay)).toEqual({});
-    });
-
-    it('creates a table at an id whose earlier creation failed', () => {
-      const replay = replayOf(
-        init('products', productSchema),
-        init('categories', categorySchema),
-        init('products', productSchema),
-      );
-
-      expect(schemasOf(replay)).toEqual({
-        categories: categorySchema,
-        products: productSchema,
       });
-      expect(unreplayableOf(replay)).toEqual({});
+      expect(unattributedOf(replay)).toEqual([]);
     });
   });
 
@@ -128,7 +116,7 @@ describe('replayLedger', () => {
       expect(unreplayableOf(replay)).toEqual({});
     });
 
-    it('refuses an update of a missing table without taking the id', () => {
+    it('refuses an update of a missing table as unattributable', () => {
       const updateProducts = update('products', [addField('price', num())]);
 
       const replay = replayOf(updateProducts);
@@ -217,7 +205,7 @@ describe('replayLedger', () => {
       });
     });
 
-    it('refuses a taken id and leaves the table and its referrers unchanged', () => {
+    it('refuses a taken id and leaves the referrers unchanged', () => {
       const renameIntoGroups = rename('categories', 'groups');
 
       const replay = replayOf(
@@ -227,16 +215,13 @@ describe('replayLedger', () => {
         renameIntoGroups,
       );
 
-      expect(unreplayableOf(replay)).toEqual({
-        categories: failure(renameIntoGroups, 'Table "groups" already exists'),
-      });
-      expect(schemasOf(replay)).toEqual({
-        products: productSchema,
-        groups: tagSchema,
-      });
+      expect(slotOf(replay, renameIntoGroups)?.failure).toEqual(
+        failure(renameIntoGroups, 'Table "groups" already exists'),
+      );
+      expect(schemasOf(replay)).toEqual({ products: productSchema });
     });
 
-    it('refuses a missing table without taking an id', () => {
+    it('refuses a missing table as unattributable', () => {
       const renameCategories = rename('categories', 'groups');
 
       const replay = replayOf(renameCategories);
@@ -247,17 +232,6 @@ describe('replayLedger', () => {
           'Table "categories" does not exist',
         ),
       ]);
-      expect(unreplayableOf(replay)).toEqual({});
-    });
-
-    it('renames a table into an id that a failed step named', () => {
-      const replay = replayOf(
-        update('groups', [addField('price', num())]),
-        init('categories', categorySchema),
-        rename('categories', 'groups'),
-      );
-
-      expect(schemasOf(replay)).toEqual({ groups: categorySchema });
       expect(unreplayableOf(replay)).toEqual({});
     });
   });
@@ -280,7 +254,7 @@ describe('replayLedger', () => {
       expect(unreplayableOf(replay)).toEqual({});
     });
 
-    it('refuses a table that another table references', () => {
+    it('refuses a table that another table references and still closes it', () => {
       const removeCategories = remove('categories');
 
       const replay = replayOf(
@@ -289,16 +263,17 @@ describe('replayLedger', () => {
         removeCategories,
       );
 
-      expect(unreplayableOf(replay)).toEqual({
-        categories: failure(
+      expect(slotOf(replay, removeCategories)?.failure).toEqual(
+        failure(
           removeCategories,
           'Table "categories" is referenced by "products"',
         ),
-      });
+      );
       expect(schemasOf(replay)).toEqual({ products: productSchema });
+      expect(unreplayableOf(replay)).toEqual({});
     });
 
-    it('refuses a missing table without taking the id', () => {
+    it('refuses a missing table as unattributable', () => {
       const removeCategories = remove('categories');
 
       const replay = replayOf(removeCategories);
@@ -335,12 +310,12 @@ describe('replayLedger', () => {
 
       const replay = replayOf(initProducts);
 
-      expect(unattributedOf(replay)).toEqual([
-        unattributedFailure(
+      expect(unreplayableOf(replay)).toEqual({
+        products: failure(
           initProducts,
           `Invalid field names: __hidden. ${VALIDATE_JSON_FIELD_NAME_ERROR_MESSAGE}`,
         ),
-      ]);
+      });
     });
 
     it('refuses an added field with an invalid nested field name', () => {
@@ -371,12 +346,12 @@ describe('replayLedger', () => {
 
       const replay = replayOf(initProducts);
 
-      expect(unattributedOf(replay)).toEqual([
-        unattributedFailure(
+      expect(unreplayableOf(replay)).toEqual({
+        products: failure(
           initProducts,
           expect.stringMatching(/^schema is not valid: /),
         ),
-      ]);
+      });
     });
 
     it('refuses a patch that violates the patch schema', () => {
@@ -415,9 +390,9 @@ describe('replayLedger', () => {
 
       const replay = replayOf(initBadName);
 
-      expect(unattributedOf(replay)).toEqual([
-        unattributedFailure(initBadName, TABLE_ID_ERROR_MESSAGE),
-      ]);
+      expect(unreplayableOf(replay)).toEqual({
+        'bad name': failure(initBadName, TABLE_ID_ERROR_MESSAGE),
+      });
       expect(schemasOf(replay)).toEqual({});
     });
 
@@ -426,15 +401,15 @@ describe('replayLedger', () => {
 
       const replay = replayOf(initReservedName);
 
-      expect(unattributedOf(replay)).toEqual([
-        unattributedFailure(
+      expect(unreplayableOf(replay)).toEqual({
+        revisium_categories: failure(
           initReservedName,
           TABLE_ID_SYSTEM_PREFIX_ERROR_MESSAGE,
         ),
-      ]);
+      });
     });
 
-    it('refuses a rename into a table id that native table ids do not allow', () => {
+    it('refuses a rename into a table id that native table ids do not allow and still moves the table', () => {
       const renameToBadName = rename('categories', 'bad name');
 
       const replay = replayOf(
@@ -443,7 +418,7 @@ describe('replayLedger', () => {
       );
 
       expect(unreplayableOf(replay)).toEqual({
-        categories: failure(renameToBadName, TABLE_ID_ERROR_MESSAGE),
+        'bad name': failure(renameToBadName, TABLE_ID_ERROR_MESSAGE),
       });
     });
   });
@@ -483,6 +458,78 @@ describe('replayLedger', () => {
         categories: obj({ title: str() }),
         products: obj({ category: str({ foreignKey: 'categories' }) }),
       });
+    });
+  });
+
+  describe('slots', () => {
+    it('reports the schema or the first failure of each slot', () => {
+      const initCategories = init('categories', categorySchema);
+      const initTags = init('tags', tagSchema);
+      const failingTagsUpdate = update('tags', [removeField('missing')]);
+      const renameCategories = rename('categories', 'groups');
+
+      const replay = replayOf(
+        initCategories,
+        initTags,
+        failingTagsUpdate,
+        renameCategories,
+      );
+
+      expect(replay.slots).toEqual([
+        {
+          tableIds: ['categories', 'groups'],
+          migrations: [initCategories, renameCategories],
+          currentTableId: 'groups',
+          schema: categorySchema,
+        },
+        {
+          tableIds: ['tags'],
+          migrations: [initTags, failingTagsUpdate],
+          currentTableId: 'tags',
+          failure: failure(
+            failingTagsUpdate,
+            'Not found "missing" in "/properties"',
+          ),
+        },
+      ]);
+    });
+
+    it('reports the slots that the identity pass traces from the same starting tables', () => {
+      const ledger = [
+        rename('categories', 'swapping'),
+        rename('products', 'categories'),
+        rename('swapping', 'products'),
+        remove('tags'),
+        update('orders', [addField('price', num())]),
+        init('categories', tagSchema),
+      ];
+
+      const replay = replayLedger({
+        ledger,
+        refs,
+        validator,
+        schemas: new Map<string, JsonSchema>([
+          ['categories', categorySchema],
+          ['products', productSchema],
+          ['tags', tagSchema],
+        ]),
+      });
+
+      expect(replay.slots).toEqual(
+        traceTableSlots(ledger, ['categories', 'products', 'tags']).map(
+          (slot) => expect.objectContaining(slot),
+        ),
+      );
+    });
+
+    it('leaves a table with a broken lineage out of the schemas and the unreplayable tables', () => {
+      const replay = replayOf(
+        init('categories', categorySchema),
+        init('categories', tagSchema),
+      );
+
+      expect(schemasOf(replay)).toEqual({});
+      expect(unreplayableOf(replay)).toEqual({});
     });
   });
 
@@ -641,11 +688,13 @@ describe('replayLedger', () => {
         removeCategories,
       );
 
-      expect(unreplayableOf(replay)).toEqual({
-        categories: failure(
+      expect(slotOf(replay, removeCategories)?.failure).toEqual(
+        failure(
           removeCategories,
           'Table "categories" is referenced by "products"',
         ),
+      );
+      expect(unreplayableOf(replay)).toEqual({
         products: failure(
           failingProductsUpdate,
           'Not found "missing" in "/properties"',
@@ -653,23 +702,16 @@ describe('replayLedger', () => {
       });
     });
 
-    it('keeps the id of a table whose removal was refused', () => {
-      const removeCategories = remove('categories');
-
+    it('frees the id of a table whose removal was refused', () => {
       const replay = replayOf(
         init('categories', categorySchema),
         init('products', productSchema),
         update('products', [removeField('missing')]),
-        removeCategories,
+        remove('categories'),
         init('categories', tagSchema),
       );
 
-      expect(unreplayableOf(replay).categories).toEqual(
-        failure(
-          removeCategories,
-          'Table "categories" is referenced by "products"',
-        ),
-      );
+      expect(schemasOf(replay)).toEqual({ categories: tagSchema });
     });
 
     it('rewrites the references of an unreplayable referrer when the table it names is renamed', () => {
@@ -683,7 +725,7 @@ describe('replayLedger', () => {
         removeGroups,
       );
 
-      expect(unreplayableOf(replay).groups).toEqual(
+      expect(slotOf(replay, removeGroups)?.failure).toEqual(
         failure(removeGroups, 'Table "groups" is referenced by "products"'),
       );
     });
@@ -698,7 +740,7 @@ describe('replayLedger', () => {
         renameIntoCategories,
       );
 
-      expect(unreplayableOf(replay).tags).toEqual(
+      expect(slotOf(replay, renameIntoCategories)?.failure).toEqual(
         failure(
           renameIntoCategories,
           'Depends on unreplayable table "categories"',

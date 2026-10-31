@@ -13,6 +13,7 @@ import { JsonSchemaValidatorService } from 'src/features/share/json-schema-valid
 import {
   replayLedger,
   type ReplayedLedger,
+  type ReplayedSlot,
   type ReplayFailure,
   type UnattributedFailure,
 } from 'src/features/share/ledger-replay/ledger-replay';
@@ -86,6 +87,13 @@ export function unreplayableOf(replay: ReplayedLedger) {
 
 export function unattributedOf(replay: ReplayedLedger) {
   return replay.unattributed;
+}
+
+export function slotOf(
+  replay: ReplayedLedger,
+  migration: Migration,
+): ReplayedSlot | undefined {
+  return replay.slots.find(({ migrations }) => migrations.includes(migration));
 }
 
 export function failure(migration: Migration, error: string): ReplayFailure {

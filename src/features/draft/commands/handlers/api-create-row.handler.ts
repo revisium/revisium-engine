@@ -11,7 +11,7 @@ import { ApiCreateRowCommand } from 'src/features/draft/commands/impl/api-create
 import { CreateRowsCommand } from 'src/features/draft/commands/impl/create-rows.command';
 import { ApiCreateRowHandlerReturnType } from 'src/features/draft/commands/types/api-create-row.handler.types';
 import { CreateRowsHandlerReturnType } from 'src/features/draft/commands/types/create-rows.handler.types';
-import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 
 @CommandHandler(ApiCreateRowCommand)
@@ -24,14 +24,14 @@ export class ApiCreateRowHandler
     protected readonly queryBus: QueryBus,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
-    protected readonly migrationLockService: MigrationLockService,
+    protected readonly draftWriteAdmission: DraftWriteAdmissionService,
   ) {
     super(queryBus, shareCommands, rowApi);
   }
 
   async execute({ data }: ApiCreateRowCommand) {
     const result: CreateRowsHandlerReturnType =
-      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+      await this.draftWriteAdmission.runSerializableRevisionWrite(
         data.revisionId,
         async () =>
           this.commandBus.execute(

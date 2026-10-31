@@ -10,7 +10,7 @@ import { ApiRemoveRowsCommand } from 'src/features/draft/commands/impl/api-remov
 import { RemoveRowsCommand } from 'src/features/draft/commands/impl/remove-rows.command';
 import { ApiRemoveRowsHandlerReturnType } from 'src/features/draft/commands/types/api-remove-rows.handler.types';
 import { RemoveRowsHandlerReturnType } from 'src/features/draft/commands/types/remove-rows.handler.types';
-import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { GetTableByIdQuery } from 'src/features/table/queries/impl/get-table-by-id.query';
 import { GetTableByIdReturnType } from 'src/features/table/queries/types';
@@ -24,7 +24,7 @@ export class ApiRemoveRowsHandler implements ICommandHandler<
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
     private readonly shareCommands: ShareCommands,
-    private readonly migrationLockService: MigrationLockService,
+    private readonly draftWriteAdmission: DraftWriteAdmissionService,
   ) {}
 
   async execute({ data }: ApiRemoveRowsCommand) {
@@ -33,7 +33,7 @@ export class ApiRemoveRowsHandler implements ICommandHandler<
       tableVersionId,
       previousTableVersionId,
     }: RemoveRowsHandlerReturnType =
-      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+      await this.draftWriteAdmission.runSerializableRevisionWrite(
         data.revisionId,
         async () =>
           this.commandBus.execute<

@@ -54,12 +54,20 @@ export interface DraftTestKit {
   close(): Promise<void>;
 }
 
+interface DraftTestKitOptions {
+  migrationOptions?: MigrationOptions;
+  transactionTimeoutMs?: number;
+}
+
 export async function createDraftTestKit(
-  options: { migrationOptions?: MigrationOptions } = {},
+  options: DraftTestKitOptions = {},
 ): Promise<DraftTestKit> {
   const module = await Test.createTestingModule({
     imports: [
-      ConfigModule.forRoot({ isGlobal: true }),
+      ConfigModule.forRoot({
+        isGlobal: true,
+        load: transactionSettings(options),
+      }),
       DatabaseModule,
       CqrsModule,
       StorageModule.forRoot(),
@@ -107,4 +115,12 @@ export async function createDraftTestKit(
       await module.close();
     },
   };
+}
+
+function transactionSettings({ transactionTimeoutMs }: DraftTestKitOptions) {
+  if (transactionTimeoutMs === undefined) {
+    return [];
+  }
+
+  return [() => ({ TRANSACTION_TIMEOUT: String(transactionTimeoutMs) })];
 }

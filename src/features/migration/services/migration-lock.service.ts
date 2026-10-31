@@ -14,29 +14,6 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 export class MigrationLockService {
   constructor(private readonly transactionService: TransactionPrismaService) {}
 
-  runSerializableWithRevisionLockCheck<T>(
-    revisionId: string,
-    write: () => Promise<T>,
-  ): Promise<T> {
-    return this.transactionService.runSerializable(async () => {
-      await this.checkRevisionLock(revisionId);
-
-      return write();
-    });
-  }
-
-  runSerializableWithBranchLockCheck<T>(
-    projectId: string,
-    branchName: string,
-    write: () => Promise<T>,
-  ): Promise<T> {
-    return this.transactionService.runSerializable(async () => {
-      await this.checkBranchLock(projectId, branchName);
-
-      return write();
-    });
-  }
-
   async cancelBranchMigrations(
     projectId: string,
     branchName: string,
@@ -103,19 +80,6 @@ export class MigrationLockService {
             throw err;
           }
         });
-    }
-  }
-
-  async checkBranchLock(projectId: string, branchName: string): Promise<void> {
-    const client = this.transactionService.getTransactionOrPrisma();
-    const branch = await client.branch.findUnique({
-      where: { name_projectId: { name: branchName, projectId } },
-      include: { revisions: { where: { isDraft: true }, take: 1 } },
-    });
-
-    const draftRevision = branch?.revisions[0];
-    if (draftRevision) {
-      await this.checkRevisionLock(draftRevision.id);
     }
   }
 

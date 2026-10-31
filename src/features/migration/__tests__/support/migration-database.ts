@@ -19,14 +19,6 @@ export interface ShadowTableFixture {
   rowVersionIds: string[];
 }
 
-export async function renameMigrationBranch(
-  database: Pick<PrismaService, 'branch'>,
-  branchId: string,
-  name: string,
-): Promise<void> {
-  await database.branch.update({ where: { id: branchId }, data: { name } });
-}
-
 export function createMigrationRecord(
   database: Pick<PrismaService, 'tableMigration'>,
   revisionId: string,

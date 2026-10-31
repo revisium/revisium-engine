@@ -1,6 +1,6 @@
 import { CommandBus, CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { RevisionsApiService } from 'src/features/revision';
-import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import {
   ApiCreateRevisionCommand,
   ApiCreateRevisionCommandReturnType,
@@ -16,7 +16,7 @@ export class ApiCreateRevisionHandler implements ICommandHandler<
   constructor(
     private readonly commandBus: CommandBus,
     private readonly revisionApi: RevisionsApiService,
-    private readonly migrationLockService: MigrationLockService,
+    private readonly draftWriteAdmission: DraftWriteAdmissionService,
   ) {}
 
   async execute({ data }: ApiCreateRevisionCommand) {
@@ -24,7 +24,7 @@ export class ApiCreateRevisionHandler implements ICommandHandler<
       previousDraftRevisionId,
       previousHeadRevisionId,
     }: CreateRevisionHandlerReturnType =
-      await this.migrationLockService.runSerializableWithBranchLockCheck(
+      await this.draftWriteAdmission.runSerializableBranchWrite(
         data.projectId,
         data.branchName,
         async () =>

@@ -172,6 +172,10 @@ export class TransactionPrismaService implements OnModuleInit {
     this.logger.log(`Transaction settings: ${settings.join(', ')}`);
   }
 
+  public get serializableTimeoutMs(): number {
+    return this.serializableOptions.timeout;
+  }
+
   public getTransaction() {
     const transactionInCurrentContext = this.asyncLocalStorage.getStore();
 

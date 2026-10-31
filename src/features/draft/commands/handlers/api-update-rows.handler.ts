@@ -10,7 +10,7 @@ import { ApiUpdateRowsCommand } from 'src/features/draft/commands/impl/api-updat
 import { UpdateRowsCommand } from 'src/features/draft/commands/impl/update-rows.command';
 import { ApiUpdateRowsHandlerReturnType } from 'src/features/draft/commands/types/api-update-rows.handler.types';
 import { UpdateRowsHandlerReturnType } from 'src/features/draft/commands/types/update-rows.handler.types';
-import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 
 @CommandHandler(ApiUpdateRowsCommand)
@@ -24,14 +24,14 @@ export class ApiUpdateRowsHandler
     protected readonly queryBus: QueryBus,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
-    protected readonly migrationLockService: MigrationLockService,
+    protected readonly draftWriteAdmission: DraftWriteAdmissionService,
   ) {
     super(queryBus, shareCommands, rowApi);
   }
 
   async execute({ data }: ApiUpdateRowsCommand) {
     const result: UpdateRowsHandlerReturnType =
-      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+      await this.draftWriteAdmission.runSerializableRevisionWrite(
         data.revisionId,
         async () =>
           this.commandBus.execute(

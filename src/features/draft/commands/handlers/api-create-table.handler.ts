@@ -9,7 +9,7 @@ import { ApiCreateTableCommand } from 'src/features/draft/commands/impl/api-crea
 import { CreateTableCommand } from 'src/features/draft/commands/impl/create-table.command';
 import { ApiCreateTableHandlerReturnType } from 'src/features/draft/commands/types/api-create-table.handler.types';
 import { CreateTableHandlerReturnType } from 'src/features/draft/commands/types/create-table.handler.types';
-import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { GetTableByIdQuery } from 'src/features/table/queries/impl/get-table-by-id.query';
 
@@ -22,12 +22,12 @@ export class ApiCreateTableHandler implements ICommandHandler<
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
     private readonly shareCommands: ShareCommands,
-    private readonly migrationLockService: MigrationLockService,
+    private readonly draftWriteAdmission: DraftWriteAdmissionService,
   ) {}
 
   async execute({ data }: ApiCreateTableCommand) {
     const { branchId, tableVersionId }: CreateTableHandlerReturnType =
-      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+      await this.draftWriteAdmission.runSerializableRevisionWrite(
         data.revisionId,
         async () =>
           this.commandBus.execute<

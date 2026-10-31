@@ -100,31 +100,33 @@ export class DraftRevisionGetOrCreateDraftTableHandler implements ICommandHandle
     });
   }
 
-  private async getTableRows(
-    revisionId: string,
-    tableVersionId: string,
-  ): Promise<{ versionId: string }[]> {
-    return this.transaction.table
-      .findUniqueOrThrow({
-        where: {
-          versionId: tableVersionId,
-          revisions: { some: { id: revisionId } },
-        },
-      })
-      .rows({ select: { versionId: true } });
-  }
-
   private async cloneTable(
     revisionId: string,
     tableId: string,
     previousTable: TableWithDetails,
   ): Promise<string> {
-    const previousRows = await this.getTableRows(
-      revisionId,
-      previousTable.versionId,
-    );
     const newTableVersionId = this.idService.generate();
 
+    await this.createTableVersion(
+      newTableVersionId,
+      revisionId,
+      tableId,
+      previousTable,
+    );
+    await this.linkRowsOfPreviousVersion(
+      newTableVersionId,
+      previousTable.versionId,
+    );
+
+    return newTableVersionId;
+  }
+
+  private async createTableVersion(
+    newTableVersionId: string,
+    revisionId: string,
+    tableId: string,
+    previousTable: TableWithDetails,
+  ): Promise<void> {
     await this.transaction.table.create({
       data: {
         versionId: newTableVersionId,
@@ -135,13 +137,20 @@ export class DraftRevisionGetOrCreateDraftTableHandler implements ICommandHandle
         revisions: {
           connect: { id: revisionId },
         },
-        rows: {
-          connect: previousRows,
-        },
       },
     });
+  }
 
-    return newTableVersionId;
+  private async linkRowsOfPreviousVersion(
+    newTableVersionId: string,
+    previousTableVersionId: string,
+  ): Promise<void> {
+    await this.transaction.$executeRaw`
+      INSERT INTO "_RowToTable" ("A", "B")
+      SELECT "A", ${newTableVersionId}
+      FROM "_RowToTable"
+      WHERE "B" = ${previousTableVersionId}
+    `;
   }
 
   private async disconnectTableFromRevision(

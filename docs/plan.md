@@ -39,7 +39,7 @@ Each item is delivered by its own pull requests, in this order.
 | Async migration fix (own design, a new version of async-row-migration) | Must | In progress (cleanup: #90) |
 | Detection scan | Must | Not started |
 | Forward-only repair tool | Must | Not started |
-| Branch write fence | Must | Not started |
+| Branch write fence | Must | In progress (shared: #92) |
 | `createRevision` locking without scanning readonly rows | Should | Done (#91) |
 | Formulas compiled once per schema | Should | Not started |
 | Set-based file registration | Should | Not started |

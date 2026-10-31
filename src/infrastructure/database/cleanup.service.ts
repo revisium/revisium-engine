@@ -1,7 +1,9 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
+import { join } from 'src/engine-prisma-types';
 import { CleanupOrphanedFileBlobsCommand } from 'src/features/file-usage/commands/impl/cleanup-orphaned-file-blobs.command';
 import { CleanupOrphanedFileBlobsResult } from 'src/features/file-usage/types';
+import { ACTIVE_MIGRATION_STATUSES } from 'src/features/migration/types/migration.types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 
 const ZERO_BYTES: bigint = BigInt(0);
@@ -39,15 +41,24 @@ export class CleanupService {
   }
 
   private async deleteOrphanTables(): Promise<number> {
-    const result = await this.prisma.table.deleteMany({
-      where: { revisions: { none: {} } },
-    });
+    const count = await this.prisma.$executeRaw`
+      DELETE FROM "Table"
+      WHERE NOT EXISTS (
+        SELECT 1 FROM "_RevisionToTable"
+        WHERE "_RevisionToTable"."B" = "Table"."versionId"
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM "TableMigration"
+        WHERE "TableMigration"."shadowTableVersionId" = "Table"."versionId"
+          AND "TableMigration"."status" IN (${join(ACTIVE_MIGRATION_STATUSES)})
+      )
+    `;
 
-    if (result.count) {
-      this.logger.log(`Deleted ${result.count} orphaned tables`);
+    if (count) {
+      this.logger.log(`Deleted ${count} orphaned tables`);
     }
 
-    return result.count;
+    return count;
   }
 
   private async deleteOrphanRows(): Promise<number> {

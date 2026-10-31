@@ -67,9 +67,7 @@ export class InternalRenameRowHandler extends DraftHandler<
   private async updateForeignKeys(
     input: InternalRenameRowCommandData,
   ): Promise<void> {
-    const foreignKeyTableIds = await this.getForeignTableIds(input);
-
-    for (const foreignKeyTableId of foreignKeyTableIds) {
+    for await (const foreignKeyTableId of this.getForeignTableIds(input)) {
       await this.updateForeignKeysInTable(input, foreignKeyTableId);
     }
   }
@@ -91,7 +89,7 @@ export class InternalRenameRowHandler extends DraftHandler<
 
     const schemaStore = this.jsonSchemaStore.create(schema);
     const foreignPaths = getForeignKeyJsonPaths(schemaStore, input.tableId);
-    const rows = await this.getRowsWithForeignKeys(
+    const rows = this.getRowsWithForeignKeys(
       foreignKeyTable.versionId,
       foreignPaths,
       input.rowId,
@@ -105,12 +103,12 @@ export class InternalRenameRowHandler extends DraftHandler<
     );
   }
 
-  private async getRowsWithForeignKeys(
+  private getRowsWithForeignKeys(
     tableVersionId: string,
     paths: string[],
     value: string,
-  ) {
-    return this.foreignKeysService.findRowsByPathsAndValueInData(
+  ): AsyncGenerator<Row> {
+    return this.foreignKeysService.iterateRowsByPathsAndValueInData(
       tableVersionId,
       paths,
       value,
@@ -120,10 +118,10 @@ export class InternalRenameRowHandler extends DraftHandler<
   private async updateRowsWithNewForeignKey(
     input: InternalRenameRowCommandData,
     foreignKeyTableId: string,
-    rows: Row[],
+    rows: AsyncIterable<Row>,
     schemaStore: JsonSchemaStore,
   ): Promise<void> {
-    for (const row of rows) {
+    for await (const row of rows) {
       const valueStore = createJsonValueStore(
         schemaStore,
         row.id,
@@ -164,21 +162,23 @@ export class InternalRenameRowHandler extends DraftHandler<
     );
   }
 
-  private async getForeignTableIds(
+  private async *getForeignTableIds(
     input: InternalRenameRowCommandData,
-  ): Promise<string[]> {
+  ): AsyncGenerator<string> {
     const schemaTable =
       await this.shareTransactionalQueries.findTableInRevisionOrThrow(
         input.revisionId,
         SystemTables.Schema,
       );
 
-    const rows = await this.foreignKeysService.findRowsByKeyValueInData(
+    const schemaRows = this.foreignKeysService.iterateRowsByKeyValueInData(
       schemaTable.versionId,
       CustomSchemeKeywords.ForeignKey,
       input.tableId,
     );
 
-    return rows.map((row) => row.id);
+    for await (const schemaRow of schemaRows) {
+      yield schemaRow.id;
+    }
   }
 }

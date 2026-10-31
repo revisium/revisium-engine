@@ -52,13 +52,13 @@ export class RenameSchemaHandler extends DraftHandler<
         SystemTables.Schema,
       );
 
-    const schemaRows = await this.foreignKeysService.findRowsByKeyValueInData(
+    const schemaRows = this.foreignKeysService.iterateRowsByKeyValueInData(
       schemaTable.versionId,
       CustomSchemeKeywords.ForeignKey,
       data.tableId,
     );
 
-    for (const schemaRow of schemaRows) {
+    for await (const schemaRow of schemaRows) {
       const { schema, patches } = this.updateForeignKeyInSchema(
         data,
         schemaRow.data as JsonSchema,

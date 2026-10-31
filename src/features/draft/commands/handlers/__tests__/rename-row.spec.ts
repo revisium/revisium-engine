@@ -21,6 +21,16 @@ import {
   RenameRowCommandReturnType,
 } from 'src/features/draft/commands/impl/rename-row.command';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import {
+  countDraftRowsReferencing,
+  givenTableReferencingRow,
+  givenTablesReferencingRow,
+  givenTableWithRows,
+  type ReferencedTable,
+} from './support/references-scenario';
+
+const REFERRING_ROW_COUNT = 150;
+const REFERRER_TABLE_COUNT = 105;
 
 describe('RenameRowHandler', () => {
   const nextRowId = 'nextRowId';
@@ -353,6 +363,56 @@ describe('RenameRowHandler', () => {
       assignee: 'alex2',
     });
   });
+
+  it('should rewrite every reference when more than 100 rows of one table reference the renamed row', async () => {
+    const customers = await givenTableWithRows(kit, {
+      tableId: 'customers',
+      rowIds: ['alice'],
+    });
+    await givenTableReferencingRow(kit, customers, {
+      tableId: 'orders',
+      rowCount: REFERRING_ROW_COUNT,
+      referencedRowId: 'alice',
+    });
+
+    await runTransaction(renameRow(customers, 'alice', 'alice2'));
+
+    expect(await countDraftRowsReferencing(kit, customers, 'alice')).toBe(0);
+    expect(await countDraftRowsReferencing(kit, customers, 'alice2')).toBe(
+      REFERRING_ROW_COUNT,
+    );
+  });
+
+  it('should rewrite references in every table when more than 100 tables reference the renamed row', async () => {
+    const customers = await givenTableWithRows(kit, {
+      tableId: 'customers',
+      rowIds: ['alice'],
+    });
+    await givenTablesReferencingRow(kit, customers, {
+      tableCount: REFERRER_TABLE_COUNT,
+      referencedRowId: 'alice',
+    });
+
+    await runTransaction(renameRow(customers, 'alice', 'alice2'));
+
+    expect(await countDraftRowsReferencing(kit, customers, 'alice')).toBe(0);
+    expect(await countDraftRowsReferencing(kit, customers, 'alice2')).toBe(
+      REFERRER_TABLE_COUNT,
+    );
+  });
+
+  function renameRow(
+    table: ReferencedTable,
+    rowId: string,
+    nextRowId: string,
+  ): RenameRowCommand {
+    return new RenameRowCommand({
+      revisionId: table.draftRevisionId,
+      tableId: table.tableId,
+      rowId,
+      nextRowId,
+    });
+  }
 
   function runTransaction(
     command: RenameRowCommand,

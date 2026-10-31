@@ -71,15 +71,14 @@ export class RemoveRowsHandler extends DraftHandler<
         SystemTables.Schema,
       );
 
-    const foreignKeyTableIds = (
-      await this.foreignKeysService.findRowsByKeyValueInData(
+    const foreignKeySchemaRows =
+      this.foreignKeysService.iterateRowsByKeyValueInData(
         schemaTable.versionId,
         CustomSchemeKeywords.ForeignKey,
         data.tableId,
-      )
-    ).map((row) => row.id);
+      );
 
-    for (const foreignKeyTableId of foreignKeyTableIds) {
+    for await (const { id: foreignKeyTableId } of foreignKeySchemaRows) {
       const foreignKeyTable =
         await this.shareTransactionalQueries.findTableInRevisionOrThrow(
           data.revisionId,

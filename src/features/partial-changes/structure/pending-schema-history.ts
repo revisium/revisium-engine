@@ -21,6 +21,12 @@ export function pendingSchemaHistory(
   return { extendsHead: true, entries: draftHistory.slice(headHistory.length) };
 }
 
+export function hasPendingEntries(
+  pendingHistory: PendingSchemaHistory,
+): boolean {
+  return !pendingHistory.extendsHead || pendingHistory.entries.length > 0;
+}
+
 export function isStructureRecorded(
   headSchema: JsonSchema,
   pendingHistory: PendingSchemaHistory,

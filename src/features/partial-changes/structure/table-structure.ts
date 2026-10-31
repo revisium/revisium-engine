@@ -7,6 +7,7 @@ import type {
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { normalizedLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
+  hasPendingEntries,
   isStructureRecorded,
   pendingSchemaHistory,
   type PendingSchemaHistory,
@@ -17,11 +18,13 @@ import {
   SchemaLeaves,
 } from 'src/features/partial-changes/structure/schema-leaves';
 import type { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
+import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 
 export type TableIdentities = ReadonlyMap<string, string>;
 
 export interface TableSide {
+  readonly tableId: string;
   readonly schema: JsonSchema;
   readonly history: readonly HistoryPatches[];
   readonly tableIdentities: TableIdentities;
@@ -41,6 +44,7 @@ export type PublishedAtOwner =
 export interface TableStructure {
   readonly pendingHistory: PendingSchemaHistory;
   readonly recorded: boolean;
+  readonly differs: boolean;
   readonly unchangedLeaves: readonly SchemaLeaf[];
   readonly changedPointers: readonly JsonPointer[];
   readonly publishedAtOwner: PublishedAtOwner;
@@ -55,6 +59,7 @@ export function analyzeTableStructure(
     input.draft.history,
   );
   const leaves = new LeafComparison(input);
+  const changedPointers = leaves.changedPointers();
 
   return {
     pendingHistory,
@@ -64,10 +69,25 @@ export function analyzeTableStructure(
       input.draft.schema,
       rules,
     ),
+    differs: structureDiffers(input, pendingHistory, changedPointers),
     unchangedLeaves: leaves.unchanged,
-    changedPointers: leaves.changedPointers(),
+    changedPointers,
     publishedAtOwner: leaves.publishedAtOwner(),
   };
+}
+
+function structureDiffers(
+  input: TableStructureInput,
+  pendingHistory: PendingSchemaHistory,
+  changedPointers: readonly JsonPointer[],
+): boolean {
+  return (
+    input.head.tableId !== input.draft.tableId ||
+    input.pendingMigrations.length > 0 ||
+    hasPendingEntries(pendingHistory) ||
+    !schemasEqual(input.head.schema, input.draft.schema) ||
+    changedPointers.length > 0
+  );
 }
 
 class LeafComparison {

@@ -10,6 +10,7 @@ import {
   waitForMigrationStatus,
 } from 'src/__tests__/assertions/migration';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
+import { encodeMigrationPayload } from 'src/features/migration/migration-payload';
 import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-revert-changes.command';
 
 const TEST_THRESHOLD = 10;
@@ -248,7 +249,7 @@ describe('Atomic swap — schema consistency', () => {
           sourceTableVersionId: 'source-v1',
           status: MigrationStatus.COPYING,
           phase: 'COPYING',
-          patches: [],
+          patches: encodeMigrationPayload([]),
           previousSchema: {},
           previousSchemaHash: 'h1',
           targetSchemaHash: 'h2',
@@ -275,7 +276,7 @@ describe('Atomic swap — schema consistency', () => {
           sourceTableVersionId: 'source-v1',
           status: MigrationStatus.SWAPPING,
           phase: 'SWAPPING',
-          patches: [],
+          patches: encodeMigrationPayload([]),
           previousSchema: {},
           previousSchemaHash: 'h1',
           targetSchemaHash: 'h2',

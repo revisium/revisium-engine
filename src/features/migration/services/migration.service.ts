@@ -7,6 +7,7 @@ import { MigrationBatchService } from 'src/features/migration/services/migration
 import {
   MigrationTransitionService,
   type MigrationLease,
+  type OwnershipEpoch,
 } from 'src/features/migration/services/migration-transition.service';
 import {
   MigrationStatus,
@@ -169,19 +170,31 @@ export class MigrationService {
   }
 
   async processMigration(migrationId: string): Promise<MigrationStepResult> {
-    for (;;) {
-      const lease = await this.transitions.claim(migrationId);
+    return this.runUntilSettled(await this.transitions.claim(migrationId));
+  }
 
-      if (!lease) {
-        return 'stopped';
-      }
+  async takeOverStalledSwap(
+    stalledOwner: OwnershipEpoch,
+  ): Promise<MigrationStepResult> {
+    return this.runUntilSettled(await this.transitions.takeOver(stalledOwner));
+  }
 
+  private async runUntilSettled(
+    firstLease: MigrationLease | null,
+  ): Promise<MigrationStepResult> {
+    let lease = firstLease;
+
+    while (lease) {
       const result = await this.runClaimedMigration(lease);
 
       if (result !== 'retry') {
         return result;
       }
+
+      lease = await this.transitions.claim(lease.migrationId);
     }
+
+    return 'stopped';
   }
 
   private async runClaimedMigration(

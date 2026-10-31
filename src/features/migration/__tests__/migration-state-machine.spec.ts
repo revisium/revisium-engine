@@ -11,11 +11,11 @@ import {
   MigrationStatus,
 } from 'src/features/migration/types/migration.types';
 import {
-  cancelAsStalled,
   cancelKeepingOwner,
   createMigrationRecord,
   expiredHeartbeat,
   expireLease,
+  passTimeWithoutProgress,
   replacePayload,
 } from './support/migration-database';
 import {
@@ -38,8 +38,9 @@ const ROW_COUNT = 3 * BATCH_SIZE;
 const MAX_RETRIES = 3;
 const FIELD = 'price';
 
-// Below the default lease of concurrently started test kits, whose inline recovery then leaves leases expired here alone.
+// Below the default lease of sweeping test kits, whose claims then leave leases expired here alone.
 const LOCK_TIMEOUT_MS = 10_000;
+const STALL_TIMEOUT_MS = 60_000;
 
 describe('Async migration state machine', () => {
   describe('AM-01 an owner paused between its claim and T-init', () => {
@@ -114,7 +115,7 @@ describe('Async migration state machine', () => {
   });
 
   describe('copy batches', () => {
-    it('AM-02 a batch waiting before its transaction writes nothing once the record is cancelled', async () => {
+    it('AM-02 a batch waiting before its transaction writes nothing once T-deadline cancelled the record', async () => {
       const migration = await givenMigration();
       const owner = await startOwnerUntil(
         kit,
@@ -129,7 +130,12 @@ describe('Async migration state machine', () => {
         copiedRows: BATCH_SIZE,
       });
 
-      await cancelAsStalled(kit.prisma, migration.migrationId);
+      await passTimeWithoutProgress(
+        kit.prisma,
+        migration.migrationId,
+        2 * STALL_TIMEOUT_MS,
+      );
+      await kit.migrationTransitions.cancelStalled();
 
       await expect(owner.resume()).resolves.toBe('stopped');
       await expectMigrationState(migration, {
@@ -137,7 +143,9 @@ describe('Async migration state machine', () => {
         phase: MigrationPhase.COPYING,
         startedAt: expect.any(Date),
         completedAt: expect.any(Date),
+        errorMessage: expect.stringMatching(/^STALLED: /),
         copiedRows: BATCH_SIZE,
+        lockedBy: null,
       });
       await expectShadowRowCount(migration, BATCH_SIZE);
     });
@@ -474,6 +482,7 @@ describe('Async migration state machine', () => {
       batchSize: BATCH_SIZE,
       workerMode: 'disabled',
       lockTimeoutMs: LOCK_TIMEOUT_MS,
+      stallTimeoutMs: STALL_TIMEOUT_MS,
     });
   });
 

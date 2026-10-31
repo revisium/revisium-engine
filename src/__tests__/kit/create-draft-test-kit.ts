@@ -10,6 +10,7 @@ import { DraftContextService } from 'src/features/draft/draft-context.service';
 import { MigrationContextService } from 'src/features/draft/migration-context.service';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { MigrationModule } from 'src/features/migration/migration.module';
+import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { PluginService } from 'src/features/plugin/plugin.service';
@@ -73,7 +74,10 @@ export async function createDraftTestKit(
       StorageModule.forRoot(),
       ShareModule,
       PluginModule,
-      MigrationModule.forRoot(options.migrationOptions),
+      MigrationModule.forRoot({
+        ...WITHOUT_RECURRING_SWEEP,
+        ...options.migrationOptions,
+      }),
       RevisionModule,
       BranchModule,
       TableModule,

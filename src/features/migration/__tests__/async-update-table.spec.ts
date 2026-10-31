@@ -10,6 +10,7 @@ import {
   waitForMigration,
 } from 'src/__tests__/assertions/migration';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
+import { encodeMigrationPayload } from 'src/features/migration/migration-payload';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
   prepareBranch,
@@ -266,7 +267,7 @@ describe('Async Update Table', () => {
         sourceTableVersionId: 'fake-source',
         status: MigrationStatus.COPYING,
         phase: 'COPYING',
-        patches: [],
+        patches: encodeMigrationPayload([]),
         previousSchema: {},
         previousSchemaHash: 'h1',
         targetSchemaHash: 'h2',
@@ -293,7 +294,7 @@ describe('Async Update Table', () => {
         sourceTableVersionId: 'fake-source',
         status: MigrationStatus.COPYING,
         phase: 'COPYING',
-        patches: [],
+        patches: encodeMigrationPayload([]),
         previousSchema: {},
         previousSchemaHash: 'h1',
         targetSchemaHash: 'h2',

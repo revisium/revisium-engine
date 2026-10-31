@@ -147,7 +147,7 @@ async function givenMigrationWithShadowTable(
   });
 }
 
-// Inline workers of concurrently starting test kits resume active migrations that no running worker holds.
+// A live lease keeps these fixture records out of any recovery sweep that another spec runs.
 function heldByRunningWorker() {
   return { lockedBy: 'cleanup-spec-worker', heartbeatAt: new Date() };
 }

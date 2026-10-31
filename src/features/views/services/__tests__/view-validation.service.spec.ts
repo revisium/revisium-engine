@@ -474,16 +474,18 @@ describe('ViewValidationService', () => {
 
   let viewValidationService: ViewValidationService;
   let prismaService: PrismaService;
+  let closeTestingModule: () => Promise<void>;
   let transactionPrismaService: TransactionPrismaService;
 
   beforeAll(async () => {
     const result = await createTestingModule();
+    closeTestingModule = () => result.close();
     prismaService = result.prismaService;
     transactionPrismaService = result.transactionService;
     viewValidationService = result.module.get(ViewValidationService);
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await closeTestingModule();
   });
 });

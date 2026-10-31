@@ -2,6 +2,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { nanoid } from 'nanoid';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
+import type { Prisma } from 'src/__generated__/client';
 import type { TableMigration } from 'src/engine-prisma-types';
 import {
   MIGRATION_DEFAULTS,
@@ -15,10 +16,15 @@ import {
 } from 'src/features/migration/types/migration.types';
 import type { TransactionPrismaClient } from 'src/features/share/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 export interface MigrationLease {
   migrationId: string;
   token: string;
+}
+
+export interface OwnershipEpoch extends MigrationLease {
+  lockedAt: Date;
 }
 
 export interface MigrationCheckpoint {
@@ -26,8 +32,9 @@ export interface MigrationCheckpoint {
   lastCopiedRowId: string | null;
 }
 
+const STALLED = 'STALLED: no progress within stallTimeoutMs';
 const SWAP_STALLED =
-  'SWAP_STALLED: the swap did not complete within maxRetries claims';
+  'SWAP_STALLED: the swap did not complete within maxRetries claims and takeovers';
 
 const RELEASED = { lockedBy: null, lockedAt: null };
 
@@ -40,27 +47,36 @@ type CopySource = Pick<
 export class MigrationTransitionService {
   private readonly workerId = `${hostname()}-${process.pid}`;
   private readonly lockTimeoutMs: number;
+  private readonly stallTimeoutMs: number;
+  private readonly swapBoundMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
+    transactionService: TransactionPrismaService,
     @Optional() @Inject(MIGRATION_OPTIONS) options?: MigrationOptions,
   ) {
     this.lockTimeoutMs =
       options?.lockTimeoutMs ?? MIGRATION_DEFAULTS.lockTimeoutMs;
+    this.stallTimeoutMs =
+      options?.stallTimeoutMs ?? MIGRATION_DEFAULTS.stallTimeoutMs;
+    this.swapBoundMs = Math.max(
+      this.stallTimeoutMs,
+      transactionService.serializableTimeoutMs *
+        transactionService.serializableMaxAttempts,
+    );
   }
 
-  async findClaimable(limit?: number): Promise<string[]> {
-    const migrations = await this.prisma.tableMigration.findMany({
+  async findOldestClaimable(): Promise<string | null> {
+    const migration = await this.prisma.tableMigration.findFirst({
       where: {
         status: { in: ACTIVE_MIGRATION_STATUSES },
         ...this.withoutLiveLease(),
       },
       orderBy: { createdAt: 'asc' },
-      take: limit,
       select: { id: true },
     });
 
-    return migrations.map((migration) => migration.id);
+    return migration?.id ?? null;
   }
 
   async claim(migrationId: string): Promise<MigrationLease | null> {
@@ -73,7 +89,7 @@ export class MigrationTransitionService {
       return null;
     }
 
-    const lease = { migrationId, token: `${this.workerId}-${randomUUID()}` };
+    const lease = this.newLease(migrationId);
 
     if (migration.status === MigrationStatus.SWAPPING) {
       return this.claimSwap(lease);
@@ -89,6 +105,52 @@ export class MigrationTransitionService {
     });
 
     return claimed.count === 1 ? lease : null;
+  }
+
+  async findStalledSwaps(): Promise<OwnershipEpoch[]> {
+    const owners = await this.prisma.tableMigration.findMany({
+      where: {
+        status: MigrationStatus.SWAPPING,
+        lockedBy: { not: null },
+        ...this.withoutProgressWithin(this.swapBoundMs),
+      },
+      select: { id: true, lockedBy: true, lockedAt: true },
+    });
+
+    return owners.flatMap(({ id, lockedBy, lockedAt }) =>
+      lockedBy && lockedAt
+        ? [{ migrationId: id, token: lockedBy, lockedAt }]
+        : [],
+    );
+  }
+
+  takeOver(stalledOwner: OwnershipEpoch): Promise<MigrationLease | null> {
+    return this.replaceSwapOwner(
+      {
+        id: stalledOwner.migrationId,
+        status: MigrationStatus.SWAPPING,
+        lockedBy: stalledOwner.token,
+        lockedAt: stalledOwner.lockedAt,
+      },
+      this.newLease(stalledOwner.migrationId),
+    );
+  }
+
+  async cancelStalled(): Promise<number> {
+    const cancelled = await this.prisma.tableMigration.updateMany({
+      where: {
+        status: { in: [MigrationStatus.PENDING, MigrationStatus.COPYING] },
+        ...this.withoutProgressWithin(this.stallTimeoutMs),
+      },
+      data: {
+        status: MigrationStatus.CANCELLED,
+        errorMessage: STALLED,
+        completedAt: new Date(),
+        ...RELEASED,
+      },
+    });
+
+    return cancelled.count;
   }
 
   findOwned(lease: MigrationLease): Promise<TableMigration | null> {
@@ -241,34 +303,44 @@ export class MigrationTransitionService {
     return failed.count === 1;
   }
 
-  private async claimSwap(
-    lease: MigrationLease,
-  ): Promise<MigrationLease | null> {
-    const claimed = await this.prisma.tableMigration.updateMany({
-      where: {
+  private claimSwap(lease: MigrationLease): Promise<MigrationLease | null> {
+    return this.replaceSwapOwner(
+      {
         id: lease.migrationId,
         status: MigrationStatus.SWAPPING,
-        retryCount: { lt: this.prisma.tableMigration.fields.maxRetries },
         ...this.withoutLiveLease(),
+      },
+      lease,
+    );
+  }
+
+  private async replaceSwapOwner(
+    owner: Prisma.TableMigrationWhereInput,
+    lease: MigrationLease,
+  ): Promise<MigrationLease | null> {
+    const replaced = await this.prisma.tableMigration.updateMany({
+      where: {
+        ...owner,
+        retryCount: { lt: this.prisma.tableMigration.fields.maxRetries },
       },
       data: { ...this.ownedBy(lease), retryCount: { increment: 1 } },
     });
 
-    if (claimed.count === 1) {
+    if (replaced.count === 1) {
       return lease;
     }
 
-    await this.failStalledSwap(lease.migrationId);
+    await this.failStalledSwap(owner);
     return null;
   }
 
-  private async failStalledSwap(migrationId: string): Promise<void> {
+  private async failStalledSwap(
+    owner: Prisma.TableMigrationWhereInput,
+  ): Promise<void> {
     await this.prisma.tableMigration.updateMany({
       where: {
-        id: migrationId,
-        status: MigrationStatus.SWAPPING,
+        ...owner,
         retryCount: { gte: this.prisma.tableMigration.fields.maxRetries },
-        ...this.withoutLiveLease(),
       },
       data: {
         status: MigrationStatus.FAILED,
@@ -300,6 +372,19 @@ export class MigrationTransitionService {
     });
   }
 
+  private withoutProgressWithin(timeoutMs: number) {
+    const before = { lt: new Date(Date.now() - timeoutMs) };
+
+    return {
+      OR: [
+        { lastProgressAt: before, lockedAt: before },
+        { lastProgressAt: before, lockedAt: null },
+        { lastProgressAt: null, lockedAt: before },
+        { lastProgressAt: null, lockedAt: null, createdAt: before },
+      ],
+    };
+  }
+
   private withoutLiveLease() {
     return {
       OR: [
@@ -324,6 +409,10 @@ export class MigrationTransitionService {
       status: MigrationStatus.SWAPPING,
       lockedBy: lease.token,
     };
+  }
+
+  private newLease(migrationId: string): MigrationLease {
+    return { migrationId, token: `${this.workerId}-${randomUUID()}` };
   }
 
   private ownedBy(lease: MigrationLease) {

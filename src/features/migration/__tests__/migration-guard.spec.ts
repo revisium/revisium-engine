@@ -9,6 +9,7 @@ import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-
 import { givenDraftProject } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
+import { encodeMigrationPayload } from 'src/features/migration/migration-payload';
 
 describe('Migration Guard (integration)', () => {
   let kit: MigrationTestKit;
@@ -31,7 +32,7 @@ describe('Migration Guard (integration)', () => {
         sourceTableVersionId: 'source-v1',
         status: MigrationStatus.COPYING,
         phase: 'COPYING',
-        patches: [],
+        patches: encodeMigrationPayload([]),
         previousSchema: {},
         previousSchemaHash: 'hash1',
         targetSchemaHash: 'hash2',

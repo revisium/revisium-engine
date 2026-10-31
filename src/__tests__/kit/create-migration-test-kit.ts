@@ -28,13 +28,19 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { createStorageMock } from 'src/__tests__/kit/storage.mock';
+import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
 
 const DEFAULT_MIGRATION_THRESHOLD = 10;
 const DEFAULT_MIGRATION_BATCH_SIZE = 5;
 
 type MigrationTestKitOptions = Pick<
   MigrationOptions,
-  'threshold' | 'batchSize' | 'workerMode' | 'lockTimeoutMs'
+  | 'threshold'
+  | 'batchSize'
+  | 'workerMode'
+  | 'pollIntervalMs'
+  | 'lockTimeoutMs'
+  | 'stallTimeoutMs'
 >;
 
 export interface MigrationTestKit {
@@ -79,6 +85,7 @@ export async function createMigrationTestKit(
     .useValue(createStorageMock())
     .overrideProvider(MIGRATION_OPTIONS)
     .useValue({
+      ...WITHOUT_RECURRING_SWEEP,
       ...options,
       threshold: options.threshold ?? DEFAULT_MIGRATION_THRESHOLD,
       batchSize: options.batchSize ?? DEFAULT_MIGRATION_BATCH_SIZE,

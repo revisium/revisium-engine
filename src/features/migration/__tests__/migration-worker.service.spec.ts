@@ -1,277 +1,231 @@
 import { MigrationWorkerService } from 'src/features/migration/services/migration-worker.service';
-import { MigrationStatus } from 'src/features/migration/types/migration.types';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 
-function createMockPrisma() {
-  return {
-    tableMigration: {
-      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-    },
-  };
-}
+type WorkerMode = NonNullable<MigrationOptions['workerMode']>;
 
-function createMockMigrationService() {
-  return {
-    processMigration: jest.fn().mockResolvedValue('completed'),
-  };
-}
-
-function createMockTransitions() {
-  return {
-    findClaimable: jest.fn().mockResolvedValue([]),
-  };
-}
-
-function createWorker(
-  overrides: {
-    workerMode?: 'inline' | 'polling' | 'disabled';
-    prisma?: ReturnType<typeof createMockPrisma>;
-    migrationService?: ReturnType<typeof createMockMigrationService>;
-    transitions?: ReturnType<typeof createMockTransitions>;
-  } = {},
-) {
-  const prisma = overrides.prisma ?? createMockPrisma();
-  const migrationService =
-    overrides.migrationService ?? createMockMigrationService();
-  const transitions = overrides.transitions ?? createMockTransitions();
-
-  const worker = new MigrationWorkerService(
-    prisma as never,
-    migrationService as never,
-    transitions as never,
-    {
-      workerMode: overrides.workerMode ?? 'inline',
-      pollIntervalMs: 100_000,
-      lockTimeoutMs: 1000,
-      stallTimeoutMs: 1000,
-    },
-  );
-
-  return { worker, prisma, migrationService, transitions };
-}
-
-function pollForWork(worker: MigrationWorkerService): Promise<void> {
-  return (
-    worker as unknown as { pollForWork: () => Promise<void> }
-  ).pollForWork();
-}
+const POLL_INTERVAL_MS = 1_000;
+const STALLED_SWAP = {
+  migrationId: 'mig-swapping',
+  token: 'stalled-owner',
+  lockedAt: new Date(0),
+};
 
 describe('MigrationWorkerService', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
-    (
-      MigrationWorkerService as unknown as {
-        inlineRecoveryPromise?: Promise<void>;
-      }
-    ).inlineRecoveryPromise = undefined;
+  describe('startup', () => {
+    it.each<WorkerMode>(['inline', 'polling', 'disabled'])(
+      'disposes legacy records in %s mode',
+      async (workerMode) => {
+        const { worker, legacyMigrations } = createWorker(workerMode);
+
+        await worker.onModuleInit();
+
+        expect(legacyMigrations.dispose).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('sweeps only after the legacy records are disposed', async () => {
+      const { worker, legacyMigrations, transitions } = createWorker('inline');
+      const disposal = deferred<void>();
+      legacyMigrations.dispose.mockReturnValue(disposal.promise);
+
+      const startup = worker.onModuleInit();
+      await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
+      expect(transitions.cancelStalled).not.toHaveBeenCalled();
+
+      disposal.resolve();
+      await startup;
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      expect(transitions.cancelStalled).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('recurring sweep', () => {
+    it.each<WorkerMode>(['inline', 'polling'])(
+      'runs every pollIntervalMs in %s mode',
+      async (workerMode) => {
+        const { worker, transitions } = createWorker(workerMode);
+        await worker.onModuleInit();
+
+        await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
+
+        expect(transitions.cancelStalled).toHaveBeenCalledTimes(3);
+      },
+    );
+
+    it('never runs in disabled mode', async () => {
+      const { worker, transitions } = createWorker('disabled');
+      await worker.onModuleInit();
+
+      await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
+
+      expect(transitions.cancelStalled).not.toHaveBeenCalled();
+    });
+
+    it('cancels stalled migrations and looks for stalled swaps before it claims the oldest abandoned migration', async () => {
+      const { worker, transitions, migrationService } = createWorker('polling');
+      transitions.findOldestClaimable.mockResolvedValueOnce('mig-abandoned');
+      await worker.onModuleInit();
+
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+
+      expect(migrationService.processMigration).toHaveBeenCalledWith(
+        'mig-abandoned',
+      );
+      expect(callOrderOf(transitions.cancelStalled)).toBeLessThan(
+        callOrderOf(transitions.findStalledSwaps),
+      );
+      expect(callOrderOf(transitions.findStalledSwaps)).toBeLessThan(
+        callOrderOf(transitions.findOldestClaimable),
+      );
+    });
+
+    it('drives every stalled swap it takes over', async () => {
+      const { worker, transitions, migrationService } = createWorker('polling');
+      const otherStalledSwap = { ...STALLED_SWAP, migrationId: 'mig-other' };
+      transitions.findStalledSwaps.mockResolvedValueOnce([
+        STALLED_SWAP,
+        otherStalledSwap,
+      ]);
+      await worker.onModuleInit();
+
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+
+      expect(migrationService.takeOverStalledSwap.mock.calls).toEqual([
+        [STALLED_SWAP],
+        [otherStalledSwap],
+      ]);
+    });
+
+    it('keeps cancelling and taking over while it drives a migration, and claims no other', async () => {
+      const { worker, transitions, migrationService } = createWorker('polling');
+      transitions.findOldestClaimable.mockResolvedValue('mig-abandoned');
+      migrationService.processMigration.mockReturnValue(
+        deferred<string>().promise,
+      );
+      await worker.onModuleInit();
+
+      await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
+
+      expect(transitions.cancelStalled).toHaveBeenCalledTimes(3);
+      expect(transitions.findStalledSwaps).toHaveBeenCalledTimes(3);
+      expect(transitions.findOldestClaimable).toHaveBeenCalledTimes(1);
+      expect(migrationService.processMigration).toHaveBeenCalledTimes(1);
+    });
+
+    it('sweeps again on the next tick after a failed sweep', async () => {
+      const { worker, transitions } = createWorker('polling');
+      transitions.cancelStalled.mockRejectedValueOnce(
+        new Error('connection lost'),
+      );
+      await worker.onModuleInit();
+
+      await jest.advanceTimersByTimeAsync(2 * POLL_INTERVAL_MS);
+
+      expect(transitions.findOldestClaimable).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('triggerInline', () => {
-    it('should process the migration in inline mode', async () => {
-      const { worker, migrationService } = createWorker({
-        workerMode: 'inline',
-      });
+    it('drives the started migration in inline mode', async () => {
+      const { worker, migrationService } = createWorker('inline');
 
-      await worker.triggerInline('mig-1');
-      await worker.onModuleDestroy();
+      await worker.triggerInline('mig-started');
 
-      expect(migrationService.processMigration).toHaveBeenCalledWith('mig-1');
+      expect(migrationService.processMigration).toHaveBeenCalledWith(
+        'mig-started',
+      );
     });
 
-    it('should not process the migration in disabled mode', async () => {
-      const { worker, migrationService } = createWorker({
-        workerMode: 'disabled',
+    it.each<WorkerMode>(['polling', 'disabled'])(
+      'leaves the started migration to its owner in %s mode',
+      async (workerMode) => {
+        const { worker, migrationService } = createWorker(workerMode);
+
+        await worker.triggerInline('mig-started');
+
+        expect(migrationService.processMigration).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('shutdown', () => {
+    it('stops sweeping and waits for the migrations it drives', async () => {
+      const { worker, transitions, migrationService } = createWorker('inline');
+      const drive = deferred<string>();
+      migrationService.processMigration.mockReturnValue(drive.promise);
+      await worker.onModuleInit();
+      await worker.triggerInline('mig-started');
+
+      let isDestroyed = false;
+      const destroying = worker.onModuleDestroy().then(() => {
+        isDestroyed = true;
       });
+      await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
+      expect(isDestroyed).toBe(false);
 
-      await worker.triggerInline('mig-1');
-      await worker.onModuleDestroy();
-
-      expect(migrationService.processMigration).not.toHaveBeenCalled();
+      drive.resolve('completed');
+      await destroying;
+      expect(transitions.cancelStalled).not.toHaveBeenCalled();
     });
 
-    it('should not process the migration in polling mode', async () => {
-      const { worker, migrationService } = createWorker({
-        workerMode: 'polling',
-      });
-
-      await worker.triggerInline('mig-1');
-      await worker.onModuleDestroy();
-
-      expect(migrationService.processMigration).not.toHaveBeenCalled();
-    });
-
-    it('should catch errors from inline processing', async () => {
-      const migrationService = createMockMigrationService();
+    it('completes after a migration it drives fails', async () => {
+      const { worker, migrationService } = createWorker('inline');
       migrationService.processMigration.mockRejectedValue(
         new Error('processing failed'),
       );
-      const { worker } = createWorker({
-        workerMode: 'inline',
-        migrationService,
-      });
-
-      await worker.triggerInline('mig-1');
+      await worker.triggerInline('mig-started');
 
       await expect(worker.onModuleDestroy()).resolves.toBeUndefined();
-      expect(migrationService.processMigration).toHaveBeenCalled();
     });
   });
 
-  describe('onModuleInit', () => {
-    it('should resume claimable migrations in created-at order in inline mode', async () => {
-      const transitions = createMockTransitions();
-      transitions.findClaimable.mockResolvedValue([
-        'mig-pending',
-        'mig-copying',
-      ]);
-      const { worker, migrationService } = createWorker({
-        workerMode: 'inline',
-        transitions,
-      });
-
-      await worker.onModuleInit();
-
-      expect(migrationService.processMigration).toHaveBeenNthCalledWith(
-        1,
-        'mig-pending',
-      );
-      expect(migrationService.processMigration).toHaveBeenNthCalledWith(
-        2,
-        'mig-copying',
-      );
-    });
-
-    it('should only run inline recovery once per process', async () => {
-      const firstTransitions = createMockTransitions();
-      firstTransitions.findClaimable.mockResolvedValue(['mig-first']);
-      const first = createWorker({
-        workerMode: 'inline',
-        transitions: firstTransitions,
-      });
-      const second = createWorker({ workerMode: 'inline' });
-
-      await first.worker.onModuleInit();
-      await second.worker.onModuleInit();
-
-      expect(first.migrationService.processMigration).toHaveBeenCalledWith(
-        'mig-first',
-      );
-      expect(second.transitions.findClaimable).not.toHaveBeenCalled();
-      expect(second.migrationService.processMigration).not.toHaveBeenCalled();
-    });
-
-    it('should not resume migrations at init in polling mode', async () => {
-      const { worker, transitions } = createWorker({ workerMode: 'polling' });
-
-      await worker.onModuleInit();
-      await worker.onModuleDestroy();
-
-      expect(transitions.findClaimable).not.toHaveBeenCalled();
-    });
+  beforeEach(() => {
+    jest.useFakeTimers();
   });
 
-  describe('onModuleDestroy', () => {
-    it('should wait for active processing', async () => {
-      const migrationService = createMockMigrationService();
-      let finishProcessing!: () => void;
-      migrationService.processMigration.mockReturnValue(
-        new Promise<string>((resolve) => {
-          finishProcessing = () => resolve('completed');
-        }),
-      );
-      const { worker } = createWorker({
-        workerMode: 'inline',
-        migrationService,
-      });
-      await worker.triggerInline('mig-active');
-      let destroyed = false;
-
-      const destroying = worker.onModuleDestroy().then(() => {
-        destroyed = true;
-      });
-      await Promise.resolve();
-      expect(destroyed).toBe(false);
-
-      finishProcessing();
-      await destroying;
-      expect(destroyed).toBe(true);
-    });
-  });
-
-  describe('pollForWork', () => {
-    it('should process the oldest claimable migration', async () => {
-      const transitions = createMockTransitions();
-      transitions.findClaimable.mockResolvedValue(['mig-pending']);
-      const { worker, migrationService } = createWorker({
-        workerMode: 'polling',
-        transitions,
-      });
-
-      await pollForWork(worker);
-
-      expect(transitions.findClaimable).toHaveBeenCalledWith(1);
-      expect(migrationService.processMigration).toHaveBeenCalledWith(
-        'mig-pending',
-      );
-    });
-
-    it('should skip polling when shutting down', async () => {
-      const { worker, transitions } = createWorker({ workerMode: 'polling' });
-
-      await worker.onModuleDestroy();
-      await pollForWork(worker);
-
-      expect(transitions.findClaimable).not.toHaveBeenCalled();
-    });
-
-    it('should skip polling while a migration is processed', async () => {
-      const { worker, transitions } = createWorker({ workerMode: 'polling' });
-      (worker as unknown as { activeMigrationId: string }).activeMigrationId =
-        'busy';
-
-      await pollForWork(worker);
-
-      expect(transitions.findClaimable).not.toHaveBeenCalled();
-    });
-
-    it('should handle a processing failure gracefully', async () => {
-      const migrationService = createMockMigrationService();
-      migrationService.processMigration.mockRejectedValue(new Error('boom'));
-      const transitions = createMockTransitions();
-      transitions.findClaimable.mockResolvedValue(['mig-fail']);
-      const { worker } = createWorker({
-        workerMode: 'polling',
-        migrationService,
-        transitions,
-      });
-
-      await expect(pollForWork(worker)).resolves.toBeUndefined();
-      expect(migrationService.processMigration).toHaveBeenCalledWith(
-        'mig-fail',
-      );
-    });
-  });
-
-  describe('autoAbortStalledMigrations', () => {
-    it('should cancel stalled migrations atomically', async () => {
-      const prisma = createMockPrisma();
-      prisma.tableMigration.updateMany.mockResolvedValue({ count: 2 });
-      const { worker } = createWorker({ workerMode: 'polling', prisma });
-
-      await pollForWork(worker);
-
-      expect(prisma.tableMigration.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            status: { in: [MigrationStatus.PENDING, MigrationStatus.COPYING] },
-            lastProgressAt: { lt: expect.any(Date) },
-            OR: [{ lockedBy: null }, { heartbeatAt: { lt: expect.any(Date) } }],
-          }),
-          data: expect.objectContaining({
-            status: MigrationStatus.CANCELLED,
-            errorMessage: expect.stringContaining('Auto-aborted'),
-          }),
-        }),
-      );
-    });
+  afterEach(() => {
+    jest.useRealTimers();
   });
 });
+
+function createWorker(workerMode: WorkerMode) {
+  const migrationService = {
+    processMigration: jest.fn().mockResolvedValue('completed'),
+    takeOverStalledSwap: jest.fn().mockResolvedValue('completed'),
+  };
+  const transitions = {
+    cancelStalled: jest.fn().mockResolvedValue(0),
+    findStalledSwaps: jest.fn().mockResolvedValue([]),
+    findOldestClaimable: jest.fn().mockResolvedValue(null),
+  };
+  const legacyMigrations = {
+    dispose: jest.fn().mockResolvedValue(undefined),
+  };
+  const worker = new MigrationWorkerService(
+    migrationService as never,
+    transitions as never,
+    legacyMigrations as never,
+    { workerMode, pollIntervalMs: POLL_INTERVAL_MS },
+  );
+
+  return { worker, migrationService, transitions, legacyMigrations };
+}
+
+function callOrderOf(mock: jest.Mock): number {
+  const [order] = mock.mock.invocationCallOrder;
+
+  if (order === undefined) {
+    throw new Error('The sweep step was not called');
+  }
+
+  return order;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+
+  return { promise, resolve };
+}

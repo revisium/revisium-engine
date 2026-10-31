@@ -6,10 +6,10 @@ import {
   OnModuleDestroy,
   Optional,
 } from '@nestjs/common';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
-import { MigrationStatus } from 'src/features/migration/types/migration.types';
+import { LegacyMigrationDisposalService } from 'src/features/migration/services/legacy-migration-disposal.service';
+import type { MigrationStepResult } from 'src/features/migration/types/migration.types';
 import {
   MIGRATION_DEFAULTS,
   MIGRATION_OPTIONS,
@@ -18,58 +18,40 @@ import type { MigrationOptions } from 'src/features/migration/types/migration-op
 
 @Injectable()
 export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
-  private static inlineRecoveryPromise?: Promise<void>;
-
   private readonly logger = new Logger(MigrationWorkerService.name);
   private readonly workerMode: 'inline' | 'polling' | 'disabled';
   private readonly pollIntervalMs: number;
-  private readonly lockTimeoutMs: number;
-  private readonly stallTimeoutMs: number;
+  private readonly drivers = new Set<Promise<void>>();
 
-  private pollingTimer?: ReturnType<typeof setInterval>;
-  private activeMigrationId?: string;
-  private activeProcessingPromise?: Promise<void>;
+  private sweepTimer?: ReturnType<typeof setInterval>;
+  private runningSweep?: Promise<void>;
   private isShuttingDown = false;
-  private pollingInProgress = false;
 
   constructor(
-    private readonly prisma: PrismaService,
     private readonly migrationService: MigrationService,
     private readonly transitions: MigrationTransitionService,
+    private readonly legacyMigrations: LegacyMigrationDisposalService,
     @Optional() @Inject(MIGRATION_OPTIONS) migrationOptions?: MigrationOptions,
   ) {
     this.workerMode =
       migrationOptions?.workerMode ?? MIGRATION_DEFAULTS.workerMode;
     this.pollIntervalMs =
       migrationOptions?.pollIntervalMs ?? MIGRATION_DEFAULTS.pollIntervalMs;
-    this.lockTimeoutMs =
-      migrationOptions?.lockTimeoutMs ?? MIGRATION_DEFAULTS.lockTimeoutMs;
-    this.stallTimeoutMs =
-      migrationOptions?.stallTimeoutMs ?? MIGRATION_DEFAULTS.stallTimeoutMs;
   }
 
   async onModuleInit() {
-    if (this.workerMode === 'inline') {
-      await this.resumeInlineMigrationsOnce();
-      return;
-    }
+    await this.legacyMigrations.dispose();
 
-    if (this.workerMode === 'polling') {
-      this.startPolling();
+    if (this.workerMode !== 'disabled') {
+      this.startSweeping();
     }
   }
 
   async onModuleDestroy() {
     this.isShuttingDown = true;
-    this.stopPolling();
-
-    try {
-      if (this.activeProcessingPromise) {
-        await this.activeProcessingPromise;
-      }
-    } finally {
-      MigrationWorkerService.inlineRecoveryPromise = undefined;
-    }
+    this.stopSweeping();
+    await this.runningSweep;
+    await Promise.allSettled(this.drivers);
   }
 
   async triggerInline(migrationId: string): Promise<void> {
@@ -81,133 +63,105 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.workerMode === 'inline') {
-      this.runInlineMigration(migrationId);
-    }
-  }
-
-  private async resumeInlineMigrations() {
-    const migrationIds = await this.transitions.findClaimable();
-
-    for (const migrationId of migrationIds) {
-      await this.runMigration(migrationId);
-    }
-  }
-
-  private async resumeInlineMigrationsOnce() {
-    if (!MigrationWorkerService.inlineRecoveryPromise) {
-      const recoveryPromise = this.resumeInlineMigrations();
-      MigrationWorkerService.inlineRecoveryPromise = recoveryPromise.catch(
-        (error) => {
-          MigrationWorkerService.inlineRecoveryPromise = undefined;
-          throw error;
-        },
+      this.drive(migrationId, () =>
+        this.migrationService.processMigration(migrationId),
       );
     }
-
-    await MigrationWorkerService.inlineRecoveryPromise;
   }
 
-  private runInlineMigration(migrationId: string) {
-    this.runMigration(migrationId).catch((err) => {
-      this.logger.error(
-        `Inline migration ${migrationId} failed: ${err.message}`,
-      );
-    });
-  }
-
-  private startPolling() {
+  private startSweeping() {
     this.logger.log(
-      `Starting migration worker in polling mode (interval: ${this.pollIntervalMs}ms)`,
+      `Sweeping migrations every ${this.pollIntervalMs}ms in ${this.workerMode} mode`,
     );
-    this.pollingTimer = setInterval(() => {
-      this.pollForWork().catch((err) => {
-        this.logger.error(`Polling error: ${err.message}`);
-      });
+    this.sweepTimer = setInterval(() => {
+      this.sweepUnlessRunning();
     }, this.pollIntervalMs);
   }
 
-  private stopPolling() {
-    if (this.pollingTimer) {
-      clearInterval(this.pollingTimer);
-      this.pollingTimer = undefined;
+  private stopSweeping() {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = undefined;
     }
   }
 
-  private async pollForWork() {
-    if (
-      this.isShuttingDown ||
-      this.activeMigrationId ||
-      this.pollingInProgress
-    ) {
+  private sweepUnlessRunning() {
+    if (this.isShuttingDown || this.runningSweep) {
       return;
     }
 
-    this.pollingInProgress = true;
-
-    try {
-      await this.autoAbortStalledMigrations();
-
-      const [migrationId] = await this.transitions.findClaimable(1);
-      if (!migrationId) {
-        return;
-      }
-
-      await this.runMigration(migrationId);
-    } finally {
-      this.pollingInProgress = false;
-    }
-  }
-
-  private async runMigration(migrationId: string) {
-    const processingPromise = this.processLoggingFailure(migrationId);
-    this.activeProcessingPromise = processingPromise;
-
-    try {
-      await processingPromise;
-    } finally {
-      if (this.activeProcessingPromise === processingPromise) {
-        this.activeProcessingPromise = undefined;
-      }
-    }
-  }
-
-  private async processLoggingFailure(migrationId: string) {
-    this.activeMigrationId = migrationId;
-
-    try {
-      await this.migrationService.processMigration(migrationId);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Migration ${migrationId} failed: ${msg}`);
-    } finally {
-      this.activeMigrationId = undefined;
-    }
-  }
-
-  private async autoAbortStalledMigrations() {
-    const stallThreshold = new Date(Date.now() - this.stallTimeoutMs);
-    const staleHeartbeatThreshold = new Date(Date.now() - this.lockTimeoutMs);
-
-    const result = await this.prisma.tableMigration.updateMany({
-      where: {
-        status: { in: [MigrationStatus.PENDING, MigrationStatus.COPYING] },
-        lastProgressAt: { lt: stallThreshold },
-        OR: [
-          { lockedBy: null },
-          { heartbeatAt: { lt: staleHeartbeatThreshold } },
-        ],
-      },
-      data: {
-        status: MigrationStatus.CANCELLED,
-        errorMessage: 'Auto-aborted: no progress within stall timeout',
-        completedAt: new Date(),
-        lockedBy: null,
-        lockedAt: null,
-      },
+    this.runningSweep = this.sweepLoggingFailure().finally(() => {
+      this.runningSweep = undefined;
     });
+  }
 
-    if (result.count > 0) {
-      this.logger.warn(`Auto-aborted ${result.count} stalled migration(s)`);
+  private async sweepLoggingFailure() {
+    try {
+      await this.sweep();
+    } catch (error) {
+      this.logger.error(`Migration sweep failed: ${messageOf(error)}`);
     }
   }
+
+  private async sweep() {
+    await this.cancelStalledMigrations();
+    await this.takeOverStalledSwaps();
+    await this.claimAbandonedMigration();
+  }
+
+  private async cancelStalledMigrations() {
+    const cancelled = await this.transitions.cancelStalled();
+
+    if (cancelled > 0) {
+      this.logger.warn(`Cancelled ${cancelled} stalled migration(s)`);
+    }
+  }
+
+  private async takeOverStalledSwaps() {
+    for (const stalledOwner of await this.transitions.findStalledSwaps()) {
+      this.drive(stalledOwner.migrationId, () =>
+        this.migrationService.takeOverStalledSwap(stalledOwner),
+      );
+    }
+  }
+
+  private async claimAbandonedMigration() {
+    if (this.drivers.size > 0) {
+      return;
+    }
+
+    const migrationId = await this.transitions.findOldestClaimable();
+
+    if (migrationId) {
+      this.drive(migrationId, () =>
+        this.migrationService.processMigration(migrationId),
+      );
+    }
+  }
+
+  private drive(migrationId: string, run: () => Promise<MigrationStepResult>) {
+    if (this.isShuttingDown) {
+      return;
+    }
+
+    const driver = this.runLoggingFailure(migrationId, run).finally(() => {
+      this.drivers.delete(driver);
+    });
+    this.drivers.add(driver);
+  }
+
+  private async runLoggingFailure(
+    migrationId: string,
+    run: () => Promise<MigrationStepResult>,
+  ) {
+    try {
+      await run();
+    } catch (error) {
+      this.logger.error(`Migration ${migrationId} failed: ${messageOf(error)}`);
+    }
+  }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

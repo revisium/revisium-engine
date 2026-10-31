@@ -10,44 +10,6 @@ All methods delegate to the underlying `*ApiService` classes. Input types are re
 
 ---
 
-## ChangeSet availability
-
-The published package does not currently export or implement a ChangeSet,
-consistency-audit, Commit Plan, or partial-commit API. The current runtime
-surface remains the `hasChanges` field, whole-Draft `createRevision` and
-`revertChanges` operations, and immutable Revision comparison queries.
-
-The [proposed ChangeSet contract](consistency.md) defines exactly eight future
-methods. Their names and contracts describe a proposed API and are not callable
-`EngineApiService` methods today.
-
-| Proposed method | Availability | Contract |
-| --- | --- | --- |
-| `changeSet` | Not implemented | Computed singleton summary |
-| `changeSetItems` | Not implemented | Bounded semantic-item connection |
-| `changeSetItemDetails` | Not implemented | Bounded detail connection |
-| `discardChangeSet` | Not implemented | Atomic item or all-scope Discard |
-| `commitChangeSet` | Not implemented | Atomic all-scope Commit |
-| `auditBranchConsistency` | Not implemented | Pure operator-facing audit read |
-| `auditBranchConsistencyFindings` | Not implemented | Bounded immutable audit-finding connection |
-| `changeSetDiagnosticDetails` | Not implemented | Bounded immutable diagnostic connection |
-
-The [partial-commit design](design/partial-commit.md) is exploratory, and no
-runtime API exists. It defines exactly these five possible future methods:
-
-| Future method | Availability |
-| --- | --- |
-| `planChangeSetCommit` | Exploratory future design; not implemented |
-| `previewChangeSetCommitItems` | Exploratory future design; not implemented |
-| `previewChangeSetCommitIssues` | Exploratory future design; not implemented |
-| `previewChangeSetCommitIssueRequired` | Exploratory future design; not implemented |
-| `commitPlannedChangeSet` | Exploratory future design; not implemented |
-
-Neither inventory adds TypeScript declarations, package exports, stubs, or a
-runtime availability promise.
-
----
-
 ## Tables
 
 ### createTable
@@ -426,6 +388,9 @@ Count of foreign key references for a row.
 
 ## Revisions
 
+Partial commit and revert of selected Draft changes are accepted but not
+implemented yet; see [ADR-001](adr/ADR-001-partial-commit-and-revert.md).
+
 ### createRevision
 
 Commit the current draft (creates a new revision).
@@ -443,10 +408,7 @@ Returns: `{ id, sequence, createdAt, comment, isHead, isDraft, isStart, hasChang
 The current implementation gates this operation on stored
 `Draft.hasChanges`. `false` returns the established `There are no changes`
 error even if another computation would find a semantic delta; `true`
-continues the current whole-Draft path. The optional historical `comment` input
-has no new ChangeSet message-length limit. The proposed ChangeSet compatibility
-rules keep this exact input and successful Revision projection; see
-[Legacy adapters](consistency.md#legacy-adapters).
+continues the current whole-Draft path.
 
 ### revertChanges
 
@@ -463,9 +425,7 @@ Returns: branch data
 
 The current implementation gates this operation on stored
 `Draft.hasChanges`. `false` returns the established `There are no changes`
-error, while `true` continues the current whole-Draft revert path. The proposed
-ChangeSet compatibility rules keep this exact input and successful full Branch
-projection; see [Legacy adapters](consistency.md#legacy-adapters).
+error, while `true` continues the current whole-Draft revert path.
 
 ### getRevision
 
@@ -532,10 +492,7 @@ Returns: `Branch`
 
 ## Revision Changes (Diffs)
 
-These current APIs compare immutable Revision snapshots. They are not
-ChangeSet aliases, and the proposed ChangeSet contract does not change their
-names, inputs, pagination, physical projections, ordering, hashes, or response
-bytes.
+These current APIs compare immutable Revision snapshots.
 
 ### revisionChanges
 

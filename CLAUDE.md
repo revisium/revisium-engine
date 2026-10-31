@@ -1,5 +1,7 @@
 # CLAUDE.md — Revisium Engine
 
+Read and follow [AGENTS.md](AGENTS.md) first: shared agent rules, documentation workflow and verification.
+
 ## Quick Reference
 
 ```bash

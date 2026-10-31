@@ -14,7 +14,7 @@ import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.ser
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { JsonPatch } from '@revisium/schema-toolkit/types';
-import { VALIDATE_JSON_FIELD_NAME_ERROR_MESSAGE } from 'src/features/share/utils/validateUrlLikeId/validateJsonFieldName';
+import { invalidFieldNamesMessage } from 'src/features/share/utils/validateUrlLikeId/validateJsonFieldName';
 import { HashService } from 'src/infrastructure/database/hash.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -102,7 +102,7 @@ export class UpdateSchemaHandler extends DraftHandler<
 
         if (invalidFields.length > 0) {
           throw new BadRequestException(
-            `Invalid field names: ${invalidFields.map((item) => item.name).join(', ')}. ${VALIDATE_JSON_FIELD_NAME_ERROR_MESSAGE}`,
+            invalidFieldNamesMessage(invalidFields.map((item) => item.name)),
           );
         }
       }

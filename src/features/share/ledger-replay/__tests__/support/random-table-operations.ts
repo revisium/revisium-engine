@@ -6,40 +6,33 @@ import {
   type JsonObjectSchema,
   type JsonPatch,
   type JsonSchema,
-  type Migration,
 } from '@revisium/schema-toolkit/types';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
-import { prepareBranch } from 'src/__tests__/utils/prepareProject';
-import { RevisionsApiService } from 'src/features/revision/revisions-api.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import type { SchemaRefs } from 'src/features/share/ledger-replay/ledger-replay';
-import { SystemTables } from 'src/features/share/system-tables.consts';
+import { init, remove, rename, update } from './ledger-steps';
+import {
+  givenNativeDraft,
+  type DraftSchemas,
+  type NativeDraft,
+} from './native-draft';
 import { seededRandom, type SeededRandom } from './seeded-random';
 
 const MAX_FIELDS_PER_TABLE = 3;
 const MAX_PATCHES_PER_UPDATE = 3;
 
-type DraftSchemas = ReadonlyMap<string, JsonObjectSchema>;
-type TableOperation = 'create' | 'update' | 'rename' | 'remove';
+type TableOperation = 'create' | 'update' | 'rename' | 'swap' | 'remove';
 type PatchKind = 'add' | 'remove' | 'replace' | 'move' | 'addNested';
 type PatchableFields = Map<string, JsonSchema>;
-
-export interface NativeDraft {
-  refs: SchemaRefs;
-  readLedger(): Promise<Migration[]>;
-  readSchemas(): Promise<DraftSchemas>;
-}
 
 export async function givenDraftAfterRandomTableOperations(
   kit: DraftTestKit,
   { seed, operations }: { seed: number; operations: number },
 ): Promise<NativeDraft> {
-  const { draftRevisionId } = await prepareBranch(kit.prismaService);
-  const draft = nativeDraft(kit, draftRevisionId);
+  const draft = await givenNativeDraft(kit);
   const writer = new RandomTableWriter(
-    kit,
-    draftRevisionId,
+    draft,
     seededRandom(seed),
+    kit.module.get(JsonSchemaStoreService),
   );
 
   for (let written = 0; written < operations; written += 1) {
@@ -49,44 +42,15 @@ export async function givenDraftAfterRandomTableOperations(
   return draft;
 }
 
-function nativeDraft(kit: DraftTestKit, revisionId: string): NativeDraft {
-  return {
-    refs: kit.module.get(JsonSchemaStoreService).refs,
-    readLedger: () =>
-      kit.module.get(RevisionsApiService).migrations({ revisionId }),
-    readSchemas: () => readDraftSchemas(kit, revisionId),
-  };
-}
-
-async function readDraftSchemas(
-  kit: DraftTestKit,
-  revisionId: string,
-): Promise<DraftSchemas> {
-  const schemaRows = await kit.prismaService.row.findMany({
-    where: {
-      tables: {
-        some: {
-          id: SystemTables.Schema,
-          revisions: { some: { id: revisionId } },
-        },
-      },
-    },
-    select: { id: true, data: true },
-  });
-
-  return new Map(
-    schemaRows.map(({ id, data }) => [id, data as unknown as JsonObjectSchema]),
-  );
-}
-
 class RandomTableWriter {
   private tableCount = 0;
   private fieldCount = 0;
+  private readonly freedTableIds = new Set<string>();
 
   constructor(
-    private readonly kit: DraftTestKit,
-    private readonly revisionId: string,
+    private readonly draft: NativeDraft,
     private readonly random: SeededRandom,
+    private readonly jsonSchemaStore: JsonSchemaStoreService,
   ) {}
 
   public writeRandomOperation(schemas: DraftSchemas): Promise<unknown> {
@@ -97,6 +61,8 @@ class RandomTableWriter {
         return this.updateTable(schemas);
       case 'rename':
         return this.renameTable(schemas);
+      case 'swap':
+        return this.swapTables(schemas);
       case 'remove':
         return this.removeTable(schemas);
     }
@@ -113,6 +79,9 @@ class RandomTableWriter {
       'update',
       'rename',
     ];
+    if (schemas.size > 1) {
+      operations.push('swap');
+    }
     if (this.removableTables(schemas).length > 0) {
       operations.push('remove');
     }
@@ -121,14 +90,12 @@ class RandomTableWriter {
   }
 
   private createTable(schemas: DraftSchemas) {
-    const tableId = this.nextTableId();
+    const tableId = this.tableIdFor(schemas);
     const referenceTargets = [...tableIdsOf(schemas), tableId];
 
-    return this.kit.draftApiService.apiCreateTable({
-      revisionId: this.revisionId,
-      tableId,
-      schema: obj(this.randomFields(referenceTargets)),
-    });
+    return this.draft.write(
+      init(tableId, obj(this.randomFields(referenceTargets))),
+    );
   }
 
   private updateTable(schemas: DraftSchemas) {
@@ -137,26 +104,48 @@ class RandomTableWriter {
       Object.entries(schemaOf(schemas, tableId).properties),
     );
 
-    return this.kit.draftApiService.apiUpdateTable({
-      revisionId: this.revisionId,
-      tableId,
-      patches: this.randomPatches(fields, tableIdsOf(schemas)),
-    });
+    return this.draft.write(
+      update(tableId, this.randomPatches(fields, tableIdsOf(schemas))),
+    );
   }
 
   private renameTable(schemas: DraftSchemas) {
-    return this.kit.draftApiService.apiRenameTable({
-      revisionId: this.revisionId,
-      tableId: this.random.pick(tableIdsOf(schemas)),
-      nextTableId: this.nextTableId(),
-    });
+    const tableId = this.random.pick(tableIdsOf(schemas));
+    const nextTableId = this.tableIdFor(schemas);
+    this.freedTableIds.add(tableId);
+
+    return this.draft.write(rename(tableId, nextTableId));
+  }
+
+  private async swapTables(schemas: DraftSchemas) {
+    const first = this.random.pick(tableIdsOf(schemas));
+    const second = this.random.pick(
+      tableIdsOf(schemas).filter((tableId) => tableId !== first),
+    );
+    const temporary = this.nextTableId();
+
+    await this.draft.write(rename(first, temporary));
+    await this.draft.write(rename(second, first));
+    await this.draft.write(rename(temporary, second));
+    this.freedTableIds.add(temporary);
   }
 
   private removeTable(schemas: DraftSchemas) {
-    return this.kit.draftApiService.apiRemoveTable({
-      revisionId: this.revisionId,
-      tableId: this.random.pick(this.removableTables(schemas)),
-    });
+    const tableId = this.random.pick(this.removableTables(schemas));
+    this.freedTableIds.add(tableId);
+
+    return this.draft.write(remove(tableId));
+  }
+
+  private tableIdFor(schemas: DraftSchemas): string {
+    const reusable = [...this.freedTableIds].filter(
+      (tableId) => !schemas.has(tableId),
+    );
+    if (reusable.length > 0 && this.random.pick([true, false])) {
+      return this.random.pick(reusable);
+    }
+
+    return this.nextTableId();
   }
 
   private removableTables(schemas: DraftSchemas): string[] {
@@ -172,9 +161,7 @@ class RandomTableWriter {
   }
 
   private foreignKeysOf(schema: JsonSchema): string[] {
-    return getForeignKeysFromSchema(
-      this.kit.module.get(JsonSchemaStoreService).create(schema),
-    );
+    return getForeignKeysFromSchema(this.jsonSchemaStore.create(schema));
   }
 
   private randomPatches(fields: PatchableFields, referenceTargets: string[]) {

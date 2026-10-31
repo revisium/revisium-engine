@@ -1,4 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
+import {
+  formatFormulaValidationMessage,
+  type FormulaErrorDetail,
+} from 'src/features/share/exceptions/formula-validation-message';
+
+export type { FormulaErrorDetail };
 
 function formatContextString(context?: ValidationErrorContext): string {
   if (!context) {
@@ -82,19 +88,6 @@ function formatForeignKeyRowsNotFoundMessage(
   return `Foreign key validation failed: ${details.length} references not found${contextStr}`;
 }
 
-function formatFormulaValidationMessage(details: FormulaErrorDetail[]): string {
-  if (details.length === 0) {
-    return 'Formula validation failed';
-  }
-
-  if (details.length === 1) {
-    const first = details[0] as FormulaErrorDetail;
-    return `Formula validation error in field "${first.field}": ${first.error}`;
-  }
-
-  return `Formula validation failed with ${details.length} errors`;
-}
-
 export interface ValidationErrorDetail {
   path: string;
   message: string;
@@ -104,11 +97,6 @@ export interface ForeignKeyErrorDetail {
   path: string;
   tableId: string;
   missingRowIds: string[];
-}
-
-export interface FormulaErrorDetail {
-  field: string;
-  error: string;
 }
 
 export interface ValidationErrorContext {

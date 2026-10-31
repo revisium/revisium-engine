@@ -7,18 +7,26 @@ import type {
   RenameMigration,
   UpdateMigration,
 } from '@revisium/schema-toolkit/types';
+import type { Cache } from '@nestjs/cache-manager';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import {
   replayLedger,
   type ReplayedLedger,
   type ReplayFailure,
+  type UnattributedFailure,
 } from 'src/features/share/ledger-replay/ledger-replay';
 
 const UNCHECKED_HASH = '';
+const SCHEMA_VALIDATION_USES_NO_CACHE = {} as Cache;
 
 let migrationCount = 0;
 
 export const refs = new JsonSchemaStoreService().refs;
+
+export const validator = new JsonSchemaValidatorService(
+  SCHEMA_VALIDATION_USES_NO_CACHE,
+);
 
 export function init(tableId: string, schema: JsonSchema): InitMigration {
   return {
@@ -65,7 +73,7 @@ export function moveField(from: string, to: string): JsonPatch {
 }
 
 export function replayOf(...ledger: Migration[]): ReplayedLedger {
-  return replayLedger({ ledger, refs });
+  return replayLedger({ ledger, refs, validator });
 }
 
 export function schemasOf(replay: ReplayedLedger) {
@@ -76,8 +84,19 @@ export function unreplayableOf(replay: ReplayedLedger) {
   return Object.fromEntries(replay.unreplayable);
 }
 
+export function unattributedOf(replay: ReplayedLedger) {
+  return replay.unattributed;
+}
+
 export function failure(migration: Migration, error: string): ReplayFailure {
   return { migrationId: migration.id, step: migration.changeType, error };
+}
+
+export function unattributedFailure(
+  migration: Migration,
+  error: string,
+): UnattributedFailure {
+  return { tableId: migration.tableId, ...failure(migration, error) };
 }
 
 function nextMigrationId(): string {

@@ -1,8 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
+import { VALIDATE_URL_LIKE_ID_ERROR_MESSAGE } from 'src/features/share/utils/validateUrlLikeId/url-like-id-error-message';
 
-const MAX_LENGTH = 64;
-
-export const VALIDATE_URL_LIKE_ID_ERROR_MESSAGE = `It must contain between 1 and ${MAX_LENGTH} characters, start with a letter or underscore (_), cannot start with two underscores (__), and can only include letters (a-z, A-Z), numbers (0-9), hyphens (-), and underscores (_).`;
+export { VALIDATE_URL_LIKE_ID_ERROR_MESSAGE };
 
 export const validateUrlLikeId = (id: string) => {
   const validPattern = /^(?!__)[a-zA-Z_][a-zA-Z0-9-_]*$/;

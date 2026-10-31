@@ -1,0 +1,97 @@
+import { CacheModule } from '@nestjs/cache-manager';
+import { ConfigModule } from '@nestjs/config';
+import { CommandBus, CqrsModule } from '@nestjs/cqrs';
+import { Test, TestingModule } from '@nestjs/testing';
+import { CommittedVersionsGuard } from 'src/__tests__/assertions/committed-versions-guard';
+import { createStorageMock } from 'src/__tests__/kit/storage.mock';
+import { BranchModule } from 'src/features/branch/branch.module';
+import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
+import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
+import { DraftApiService } from 'src/features/draft/draft-api.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
+import { DraftModule } from 'src/features/draft/draft.module';
+import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
+import { MigrationModule } from 'src/features/migration/migration.module';
+import { PartialChangesModule } from 'src/features/partial-changes/partial-changes.module';
+import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import { PluginModule } from 'src/features/plugin/plugin.module';
+import { RevisionModule } from 'src/features/revision/revision.module';
+import { RowModule } from 'src/features/row/row.module';
+import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
+import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
+import { ShareModule } from 'src/features/share/share.module';
+import { TableModule } from 'src/features/table/table.module';
+import { ViewsApiService } from 'src/features/views/views-api.service';
+import { ViewsModule } from 'src/features/views/views.module';
+import { DatabaseModule } from 'src/infrastructure/database/database.module';
+import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
+import { StorageModule } from 'src/infrastructure/storage/storage.module';
+
+export interface PartialChangesTestKit {
+  module: TestingModule;
+  prisma: PrismaService;
+  transactionService: TransactionPrismaService;
+  commandBus: CommandBus;
+  draftApi: DraftApiService;
+  draftRevisionApi: DraftRevisionApiService;
+  draftWriteAdmission: DraftWriteAdmissionService;
+  viewsApi: ViewsApiService;
+  snapshotReader: ChangesSnapshotReader;
+  schemaRules: NativeSchemaRules;
+  guard: CommittedVersionsGuard;
+  close(): Promise<void>;
+}
+
+export async function createPartialChangesTestKit(): Promise<PartialChangesTestKit> {
+  const module = await Test.createTestingModule({
+    imports: [
+      ConfigModule.forRoot({ isGlobal: true }),
+      DatabaseModule,
+      CqrsModule,
+      StorageModule.forRoot(),
+      ShareModule,
+      PluginModule,
+      MigrationModule.forRoot(),
+      RevisionModule,
+      BranchModule,
+      TableModule,
+      RowModule,
+      DraftRevisionModule,
+      DraftModule,
+      ViewsModule,
+      FileUsageModule,
+      PartialChangesModule,
+      CacheModule.register(),
+    ],
+  })
+    .overrideProvider(STORAGE_SERVICE)
+    .useValue(createStorageMock())
+    .compile();
+
+  await module.init();
+
+  const prisma = module.get(PrismaService);
+
+  return {
+    module,
+    prisma,
+    transactionService: module.get(TransactionPrismaService),
+    commandBus: module.get(CommandBus),
+    draftApi: module.get(DraftApiService),
+    draftRevisionApi: module.get(DraftRevisionApiService),
+    draftWriteAdmission: module.get(DraftWriteAdmissionService),
+    viewsApi: module.get(ViewsApiService),
+    snapshotReader: module.get(ChangesSnapshotReader),
+    schemaRules: new NativeSchemaRules(
+      module.get(JsonSchemaStoreService).refs,
+      module.get(JsonSchemaValidatorService),
+    ),
+    guard: new CommittedVersionsGuard(prisma),
+    async close() {
+      await module.close();
+    },
+  };
+}

@@ -36,7 +36,7 @@ Each item is delivered by its own pull requests, in this order.
 | Referrer rewrites and the row-removal guard without the 100 limits | Must | Done (#88) |
 | Table copy-on-write by `INSERT … SELECT` | Must | Done (#85) |
 | `applyMigrations` applies an `update` synchronously or waits for the async migration | Must | Not started |
-| Async migration fix (own design, a new version of async-row-migration) | Must | Not started |
+| Async migration fix (own design, a new version of async-row-migration) | Must | In progress (cleanup: #90) |
 | Detection scan | Must | Not started |
 | Forward-only repair tool | Must | Not started |
 | Branch write fence | Must | Not started |

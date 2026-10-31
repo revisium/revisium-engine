@@ -1584,7 +1584,6 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 Follow-up of [async-row-migration-v2]:
 
 - §3.3: a patch inside an atomic leaf's schema touches that leaf (clarification).
-
 - §5.8, §6.9, §6.10: the ledger replay runs an identity pass and a schema pass; "unledgered" is a property of the
   table's lineage, not of a literal `init`; a failing step taints only the slots it reaches.
 - §8.3: the fixed async migration; native revert and `abortMigration` reject `SWAPPING`.

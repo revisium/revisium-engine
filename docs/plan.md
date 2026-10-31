@@ -24,6 +24,28 @@ The stages run in the order 0–4; stages 1–3 may be developed in parallel wit
 | 3 | Partial commit of structure units, ledger renumbering, replica guarantee | Not started | [SPEC §6.8](specs/partial-changes-v1.spec.md#68-planledger), [§10](specs/partial-changes-v1.spec.md#10-migration-history-and-replicas) |
 | 4 | Public API, CLI and MCP | Not started | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports) |
 
+### Stage 0 items
+
+Each item is delivered by its own pull requests, in this order.
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| `applyMigrations` checks the migration id inside the migration's transaction | Must | In progress |
+| Migration lock checked inside every API writer's transaction, views writes included | Must | Not started |
+| Serializable views writes | Must | Not started |
+| Referrer rewrites and the row-removal guard without the 100 limits | Must | Not started |
+| Table copy-on-write by `INSERT … SELECT` | Must | Not started |
+| `applyMigrations` applies an `update` synchronously or waits for the async migration | Must | Not started |
+| Async migration fix (own design, a new version of async-row-migration) | Must | Not started |
+| Detection scan | Must | Not started |
+| Forward-only repair tool | Must | Not started |
+| Branch write fence | Must | Not started |
+| `createRevision` locking without scanning readonly rows | Should | Not started |
+| Formulas compiled once per schema | Should | Not started |
+| Set-based file registration | Should | Not started |
+| Limits re-measured on production-like hardware | Gate | Not started |
+| Scan run on existing deployments, results reviewed | Gate | Not started |
+
 Acceptance scenarios for every stage: [SPEC §13](specs/partial-changes-v1.spec.md#13-acceptance-scenarios).
 
 ### Release gate

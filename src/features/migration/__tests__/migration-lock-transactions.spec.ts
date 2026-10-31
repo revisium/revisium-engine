@@ -63,16 +63,6 @@ describe('Migration lock transactions', () => {
       MigrationStatus.PENDING,
     );
   });
-
-  it('checks an uncommitted branch rename and migration through the caller transaction', async () => {
-    const scenario = await kit.givenBranch();
-
-    await expectMigrationLock(
-      scenario.renameBranchAndCheckUncommittedLock(),
-      'branch-lock',
-      MigrationStatus.PENDING,
-    );
-  });
 });
 
 async function expectMigrationLock(

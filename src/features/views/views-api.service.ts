@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
-import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import {
   UpdateTableViewsCommand,
   UpdateTableViewsCommandData,
@@ -16,7 +16,7 @@ export class ViewsApiService {
   constructor(
     private readonly queryBus: QueryBus,
     private readonly commandBus: CommandBus,
-    private readonly migrationLockService: MigrationLockService,
+    private readonly draftWriteAdmission: DraftWriteAdmissionService,
   ) {}
 
   public getTableViews(
@@ -29,7 +29,7 @@ export class ViewsApiService {
   }
 
   public updateTableViews(data: UpdateTableViewsCommandData): Promise<boolean> {
-    return this.migrationLockService.runSerializableWithRevisionLockCheck(
+    return this.draftWriteAdmission.runSerializableRevisionWrite(
       data.revisionId,
       async () =>
         this.commandBus.execute<UpdateTableViewsCommand, boolean>(

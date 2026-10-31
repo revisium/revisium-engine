@@ -9,6 +9,7 @@ import { RowModule } from 'src/features/row/row.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { DRAFT_COMMANDS_HANDLERS } from 'src/features/draft/commands/handlers';
 import { DraftContextService } from 'src/features/draft/draft-context.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import { DRAFT_REQUEST_DTO } from 'src/features/draft/draft-request-dto';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { ShareModule } from 'src/features/share/share.module';
@@ -26,10 +27,16 @@ import { ShareModule } from 'src/features/share/share.module';
     DraftTransactionalCommands,
     DraftApiService,
     DraftContextService,
+    DraftWriteAdmissionService,
     MigrationContextService,
     ...DRAFT_REQUEST_DTO,
     ...DRAFT_COMMANDS_HANDLERS,
   ],
-  exports: [DraftApiService, DraftContextService, DraftTransactionalCommands],
+  exports: [
+    DraftApiService,
+    DraftContextService,
+    DraftTransactionalCommands,
+    DraftWriteAdmissionService,
+  ],
 })
 export class DraftModule {}

@@ -4,7 +4,6 @@ import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import {
   createMigrationRecord,
   MigrationFixtureOptions,
-  renameMigrationBranch,
 } from './migration-database';
 
 export async function createMigrationLockTestKit() {
@@ -39,26 +38,6 @@ export async function createMigrationLockTestKit() {
             );
             return kit.migrationLockService.checkRevisionLock(
               branch.draftRevisionId,
-            );
-          }),
-        renameBranchAndCheckUncommittedLock: () =>
-          kit.transactionService.run(async () => {
-            const renamedBranch = `transaction-${branch.branchName}`;
-            const transaction = kit.transactionService.getTransaction();
-            await renameMigrationBranch(
-              transaction,
-              branch.branchId,
-              renamedBranch,
-            );
-            await createMigrationRecord(
-              transaction,
-              branch.draftRevisionId,
-              MigrationStatus.PENDING,
-              { tableId: 'branch-lock' },
-            );
-            return kit.migrationLockService.checkBranchLock(
-              branch.projectId,
-              renamedBranch,
             );
           }),
       };

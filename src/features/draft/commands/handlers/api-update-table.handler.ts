@@ -9,6 +9,7 @@ import { UpdateTableCommand } from 'src/features/draft/commands/impl/update-tabl
 import { ApiUpdateTableHandlerReturnType } from 'src/features/draft/commands/types/api-update-table.handler.types';
 import { UpdateTableHandlerReturnType } from 'src/features/draft/commands/types/update-table.handler.types';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { StartAsyncMigrationCommand } from 'src/features/migration/commands/impl/start-async-migration.command';
 import { StartAsyncMigrationResult } from 'src/features/migration/types/migration.types';
@@ -26,6 +27,7 @@ export class ApiUpdateTableHandler implements ICommandHandler<
     private readonly queryBus: QueryBus,
     private readonly shareCommands: ShareCommands,
     private readonly migrationLockService: MigrationLockService,
+    private readonly draftWriteAdmission: DraftWriteAdmissionService,
     private readonly migrationService: MigrationService,
   ) {}
 
@@ -56,7 +58,7 @@ export class ApiUpdateTableHandler implements ICommandHandler<
       tableVersionId,
       previousTableVersionId,
     }: UpdateTableHandlerReturnType =
-      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+      await this.draftWriteAdmission.runSerializableRevisionWrite(
         data.revisionId,
         async () =>
           this.commandBus.execute<

@@ -105,31 +105,4 @@ describe('MigrationLockService', () => {
       ).resolves.toBeUndefined();
     });
   });
-
-  describe('checkBranchLock', () => {
-    it('should not throw when no active migration exists for draft revision', async () => {
-      const { projectId, branchName } = await prepareBranch(kit.prisma);
-
-      await expect(
-        kit.migrationLockService.checkBranchLock(projectId, branchName),
-      ).resolves.toBeUndefined();
-    });
-
-    it('should throw MigrationLockedException when draft revision has active migration', async () => {
-      const { projectId, branchName, draftRevisionId } = await prepareBranch(
-        kit.prisma,
-      );
-
-      await createMigrationRecord(
-        kit.prisma,
-        draftRevisionId,
-        MigrationStatus.SWAPPING,
-        { tableId: 'test-table', phase: 'SWAPPING', totalRows: 500 },
-      );
-
-      await expect(
-        kit.migrationLockService.checkBranchLock(projectId, branchName),
-      ).rejects.toThrow(MigrationLockedException);
-    });
-  });
 });

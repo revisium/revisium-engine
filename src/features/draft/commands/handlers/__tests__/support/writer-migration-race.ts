@@ -1,40 +1,8 @@
-import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import {
-  getNumberSchema,
-  getObjectSchema,
-  getRefSchema,
-} from '@revisium/schema-toolkit/mocks';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
-import {
-  givenDraftProjectWithSchema,
-  type DraftProjectScenario,
-} from 'src/__tests__/fixtures/scenarios/given-draft-project';
+import type { DraftProjectScenario } from 'src/__tests__/fixtures/scenarios/given-draft-project';
 import { createBarrier } from 'src/__tests__/utils/barrier';
-import { createPreviousFile } from 'src/__tests__/utils/prepareProject';
 import { createMigrationRecord } from 'src/features/migration/__tests__/support/migration-database';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
-
-export interface DraftWithFileRow extends DraftProjectScenario {
-  file: ReturnType<typeof createPreviousFile>;
-}
-
-const fileRowSchema = getObjectSchema({
-  ver: getNumberSchema(),
-  file: getRefSchema(SystemSchemaIds.File),
-});
-
-export async function givenDraftWithFileRow(
-  kit: DraftTestKit,
-): Promise<DraftWithFileRow> {
-  const file = createPreviousFile();
-  const draft = await givenDraftProjectWithSchema({
-    prismaService: kit.prismaService,
-    schema: fileRowSchema,
-    row: { data: { ver: 1, file } },
-  });
-
-  return { ...draft, file };
-}
 
 export async function writeWhileMigrationStarts<T>(
   kit: DraftTestKit,
@@ -55,28 +23,6 @@ export async function writeWhileMigrationStarts<T>(
   }
 
   return writing;
-}
-
-export function readDraftContent(kit: DraftTestKit, revisionId: string) {
-  return kit.prismaService.revision.findUniqueOrThrow({
-    where: { id: revisionId },
-    select: {
-      isDraft: true,
-      isHead: true,
-      hasChanges: true,
-      tables: {
-        orderBy: { versionId: 'asc' },
-        select: {
-          id: true,
-          versionId: true,
-          rows: {
-            orderBy: { versionId: 'asc' },
-            select: { id: true, versionId: true, data: true },
-          },
-        },
-      },
-    },
-  });
 }
 
 async function startMigration(

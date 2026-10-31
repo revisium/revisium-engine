@@ -8,12 +8,14 @@ import {
   RegisterFileReferencesRowInput,
 } from 'src/features/file-usage/commands/impl/register-file-references-for-rows.command';
 import { FileReferenceExtractorService } from 'src/features/file-usage/services/file-reference-extractor.service';
-import { FileReference } from 'src/features/file-usage/types';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { systemTablesIds } from 'src/features/share/system-tables.consts';
+import { IdService } from 'src/infrastructure/database/id.service';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+
+const ZERO_BYTES: bigint = BigInt(0);
 
 @Injectable()
 @CommandHandler(RegisterFileReferencesForRowsCommand)
@@ -32,6 +34,7 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
     private readonly shareTransactionalQueries: ShareTransactionalQueries,
     private readonly jsonSchemaStore: JsonSchemaStoreService,
     private readonly extractor: FileReferenceExtractorService,
+    private readonly idService: IdService,
   ) {}
 
   async execute({ data }: RegisterFileReferencesForRowsCommand): Promise<void> {
@@ -48,10 +51,14 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
       data.revisionId,
       data.tableId,
     );
+    const references = this.extractReferences(
+      projectId,
+      data.rows,
+      schemaStore,
+    );
+    const linkedBlobs = await this.loadLinkedBlobs(data.rows);
 
-    for (const row of data.rows) {
-      await this.registerReferencesForRow(projectId, row, schemaStore);
-    }
+    await this.registerReferences(projectId, references, linkedBlobs);
   }
 
   private shouldProcess(
@@ -90,185 +97,178 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
     return this.jsonSchemaStore.create(schemaResult.schema);
   }
 
-  private async registerReferencesForRow(
+  private extractReferences(
     projectId: string,
-    row: RegisterFileReferencesRowInput,
+    rows: readonly RegisterFileReferencesRowInput[],
     schemaStore: JsonSchemaStore,
+  ): RowFileReference[] {
+    return rows.flatMap((row) =>
+      this.extractor
+        .extract({
+          data: row.data as JsonValue,
+          schemaStore,
+          rowId: row.rowId,
+          projectId,
+        })
+        .map(({ hash, size }) => ({
+          rowVersionId: row.rowVersionId,
+          hash,
+          size,
+        })),
+    );
+  }
+
+  private async registerReferences(
+    projectId: string,
+    references: RowFileReference[],
+    linkedBlobs: LinkedBlob[],
   ): Promise<void> {
-    const references = this.extractor.extract({
-      data: row.data as JsonValue,
-      schemaStore,
-      rowId: row.rowId,
+    const plan = planRowBlobLinks(references, linkedBlobs);
+
+    await this.disconnectRowBlobLinks(plan.staleLinks);
+
+    const createdBytes = await this.createMissingBlobs(
       projectId,
-    });
-
-    const existing = await this.loadExistingRowBlobLinks(row.rowVersionId);
-    const referencedHashes = new Set(
-      references.map((reference) => reference.hash),
+      plan.unlinkedReferences,
     );
-    const blobIdsToDisconnect = existing
-      .filter((blob) => !referencedHashes.has(blob.hash))
-      .map((blob) => blob.id);
+    const newlyResolved = await this.resolveProjectBlobs(
+      projectId,
+      plan.unlinkedReferences,
+    );
+    const resolved = [...plan.linkedReferences, ...newlyResolved];
 
-    if (blobIdsToDisconnect.length > 0) {
-      await this.disconnectBlobsFromRowVersion(
-        row.rowVersionId,
-        blobIdsToDisconnect,
-      );
-    }
+    this.warnOnSizeMismatches(projectId, resolved);
 
-    for (const reference of references) {
-      await this.registerOneReference({
-        projectId,
-        rowVersionId: row.rowVersionId,
-        reference,
-        existing,
-      });
-    }
+    const reactivatedBytes = await this.reactivateTombstonedBlobs(resolved);
+    await this.incrementProjectCounter(
+      projectId,
+      createdBytes + reactivatedBytes,
+    );
 
-    if (blobIdsToDisconnect.length > 0) {
-      await this.commandBus.execute(
-        new CleanupFileBlobsByIdsCommand({
-          projectId,
-          blobIds: blobIdsToDisconnect,
-        }),
-      );
-    }
+    await this.connectRowBlobLinks(newlyResolved);
+    await this.cleanupDisconnectedBlobs(projectId, plan.staleLinks);
   }
 
-  private async registerOneReference(args: {
-    projectId: string;
-    rowVersionId: string;
-    reference: FileReference;
-    existing: RowBlobLink[];
-  }): Promise<void> {
-    const existingBlob = args.existing.find(
-      (blob) => blob.hash === args.reference.hash,
-    );
+  private loadLinkedBlobs(
+    rows: readonly RegisterFileReferencesRowInput[],
+  ): Promise<LinkedBlob[]> {
+    const rowVersionIds = rows.map((row) => row.rowVersionId);
 
-    if (existingBlob) {
-      this.warnOnSizeMismatch(
-        args.projectId,
-        args.reference,
-        existingBlob.size,
-      );
+    return this.prisma.$queryRaw<LinkedBlob[]>`
+      SELECT link."B" AS "rowVersionId", blob."id", blob."hash", blob."size"
+      FROM "_FileBlobToRow" AS link
+      JOIN "FileBlob" AS blob ON blob."id" = link."A"
+      WHERE link."B" = ANY(${rowVersionIds}::text[])
+    `;
+  }
 
-      if (existingBlob.deletedAt !== null) {
-        const reactivated = await this.tryReactivateBlob(existingBlob.id);
-        if (reactivated) {
-          await this.incrementProjectCounter(args.projectId, existingBlob.size);
-        }
-      }
+  private async disconnectRowBlobLinks(links: LinkedBlob[]): Promise<void> {
+    if (links.length === 0) {
       return;
     }
 
-    const blobId = await this.ensureActiveBlob(args.projectId, args.reference);
-
-    if (!blobId) {
-      return;
-    }
-
-    await this.linkBlobToRowVersion(blobId, args.rowVersionId);
+    await this.prisma.$executeRaw`
+      DELETE FROM "_FileBlobToRow" AS link
+      USING unnest(
+        ${links.map((link) => link.id)}::text[],
+        ${links.map((link) => link.rowVersionId)}::text[]
+      ) AS stale("blobId", "rowVersionId")
+      WHERE link."A" = stale."blobId" AND link."B" = stale."rowVersionId"
+    `;
   }
 
-  private async loadExistingRowBlobLinks(
-    rowVersionId: string,
-  ): Promise<RowBlobLink[]> {
-    const row = await this.prisma.row.findUnique({
-      where: { versionId: rowVersionId },
-      select: {
-        fileBlobs: {
-          select: { id: true, hash: true, size: true, deletedAt: true },
-        },
-      },
-    });
-
-    return row?.fileBlobs ?? [];
-  }
-
-  private async disconnectBlobsFromRowVersion(
-    rowVersionId: string,
-    blobIds: readonly string[],
-  ): Promise<void> {
-    await this.prisma.row.update({
-      where: { versionId: rowVersionId },
-      data: {
-        fileBlobs: {
-          disconnect: blobIds.map((id) => ({ id })),
-        },
-      },
-      select: { versionId: true },
-    });
-  }
-
-  private async ensureActiveBlob(
+  private async createMissingBlobs(
     projectId: string,
-    reference: FileReference,
-  ): Promise<string | null> {
-    const { count } = await this.prisma.fileBlob.createMany({
-      data: [
-        {
-          projectId,
-          hash: reference.hash,
-          size: reference.size,
-        },
-      ],
-      skipDuplicates: true,
-    });
-
-    const existing = await this.prisma.fileBlob.findUnique({
-      where: { projectId_hash: { projectId, hash: reference.hash } },
-      select: { id: true, size: true, deletedAt: true },
-    });
-
-    if (!existing) {
-      this.logger.warn(
-        `FileBlob for projectId=${projectId} hash=${reference.hash} disappeared between insert and lookup`,
-      );
-      return null;
+    references: RowFileReference[],
+  ): Promise<bigint> {
+    const candidates = firstReferencePerHash(references);
+    if (candidates.length === 0) {
+      return ZERO_BYTES;
     }
 
-    if (count === 1) {
-      await this.incrementProjectCounter(projectId, reference.size);
-      return existing.id;
+    const created = await this.prisma.$queryRaw<SizedBlob[]>`
+      INSERT INTO "FileBlob" ("id", "projectId", "hash", "size")
+      SELECT candidate."id", ${projectId}, candidate."hash", candidate."size"
+      FROM unnest(
+        ${candidates.map(() => this.idService.generate())}::text[],
+        ${candidates.map((candidate) => candidate.hash)}::text[],
+        ${candidates.map((candidate) => candidate.size)}::bigint[]
+      ) AS candidate("id", "hash", "size")
+      ON CONFLICT ("projectId", "hash") DO NOTHING
+      RETURNING "size"
+    `;
+
+    return sumSizes(created);
+  }
+
+  private async resolveProjectBlobs(
+    projectId: string,
+    references: RowFileReference[],
+  ): Promise<ResolvedReference[]> {
+    if (references.length === 0) {
+      return [];
     }
 
-    this.warnOnSizeMismatch(projectId, reference, existing.size);
+    const hashes = [...new Set(references.map((reference) => reference.hash))];
+    const blobs = await this.prisma.$queryRaw<StoredBlob[]>`
+      SELECT "id", "hash", "size"
+      FROM "FileBlob"
+      WHERE "projectId" = ${projectId} AND "hash" = ANY(${hashes}::text[])
+    `;
+    const blobByHash = new Map(blobs.map((blob) => [blob.hash, blob]));
 
-    if (existing.deletedAt !== null) {
-      const reactivated = await this.tryReactivateBlob(existing.id);
-      if (reactivated) {
-        await this.incrementProjectCounter(projectId, existing.size);
+    return references.flatMap((reference) => {
+      const blob = blobByHash.get(reference.hash);
+      if (!blob) {
+        this.logger.warn(
+          `FileBlob for projectId=${projectId} hash=${reference.hash} disappeared between insert and lookup`,
+        );
+        return [];
       }
-    }
 
-    return existing.id;
+      return [{ reference, blob }];
+    });
   }
 
-  private warnOnSizeMismatch(
+  private warnOnSizeMismatches(
     projectId: string,
-    reference: FileReference,
-    existingSize: bigint,
+    resolved: ResolvedReference[],
   ): void {
-    if (existingSize !== reference.size) {
-      this.logger.warn(
-        `FileBlob size mismatch for projectId=${projectId} hash=${reference.hash}: existing=${existingSize} incoming=${reference.size}`,
-      );
+    for (const { reference, blob } of resolved) {
+      if (blob.size !== reference.size) {
+        this.logger.warn(
+          `FileBlob size mismatch for projectId=${projectId} hash=${reference.hash}: existing=${blob.size} incoming=${reference.size}`,
+        );
+      }
     }
   }
 
-  private async tryReactivateBlob(blobId: string): Promise<boolean> {
-    const { count } = await this.prisma.fileBlob.updateMany({
-      where: { id: blobId, deletedAt: { not: null } },
-      data: { deletedAt: null },
-    });
-    return count > 0;
+  private async reactivateTombstonedBlobs(
+    resolved: ResolvedReference[],
+  ): Promise<bigint> {
+    if (resolved.length === 0) {
+      return ZERO_BYTES;
+    }
+
+    const blobIds = resolved.map(({ blob }) => blob.id);
+    const reactivated = await this.prisma.$queryRaw<SizedBlob[]>`
+      UPDATE "FileBlob"
+      SET "deletedAt" = NULL
+      WHERE "id" = ANY(${blobIds}::text[]) AND "deletedAt" IS NOT NULL
+      RETURNING "size"
+    `;
+
+    return sumSizes(reactivated);
   }
 
   private async incrementProjectCounter(
     projectId: string,
     delta: bigint,
   ): Promise<void> {
+    if (delta === ZERO_BYTES) {
+      return;
+    }
+
     await this.prisma.projectFileUsage.upsert({
       where: { projectId },
       create: { projectId, fileBytes: delta },
@@ -276,15 +276,37 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
     });
   }
 
-  private async linkBlobToRowVersion(
-    blobId: string,
-    rowVersionId: string,
+  private async connectRowBlobLinks(
+    resolved: ResolvedReference[],
   ): Promise<void> {
-    await this.prisma.fileBlob.update({
-      where: { id: blobId },
-      data: { rows: { connect: { versionId: rowVersionId } } },
-      select: { id: true },
-    });
+    if (resolved.length === 0) {
+      return;
+    }
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "_FileBlobToRow" ("A", "B")
+      SELECT * FROM unnest(
+        ${resolved.map(({ blob }) => blob.id)}::text[],
+        ${resolved.map(({ reference }) => reference.rowVersionId)}::text[]
+      )
+      ON CONFLICT DO NOTHING
+    `;
+  }
+
+  private async cleanupDisconnectedBlobs(
+    projectId: string,
+    staleLinks: LinkedBlob[],
+  ): Promise<void> {
+    if (staleLinks.length === 0) {
+      return;
+    }
+
+    await this.commandBus.execute(
+      new CleanupFileBlobsByIdsCommand({
+        projectId,
+        blobIds: [...new Set(staleLinks.map((link) => link.id))],
+      }),
+    );
   }
 
   private get prisma() {
@@ -292,9 +314,81 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
   }
 }
 
-interface RowBlobLink {
-  id: string;
+interface RowFileReference {
+  rowVersionId: string;
   hash: string;
   size: bigint;
-  deletedAt: Date | null;
+}
+
+interface SizedBlob {
+  size: bigint;
+}
+
+interface StoredBlob extends SizedBlob {
+  id: string;
+  hash: string;
+}
+
+interface LinkedBlob extends StoredBlob {
+  rowVersionId: string;
+}
+
+interface ResolvedReference {
+  reference: RowFileReference;
+  blob: StoredBlob;
+}
+
+interface RowBlobLinksPlan {
+  staleLinks: LinkedBlob[];
+  linkedReferences: ResolvedReference[];
+  unlinkedReferences: RowFileReference[];
+}
+
+function planRowBlobLinks(
+  references: RowFileReference[],
+  linkedBlobs: LinkedBlob[],
+): RowBlobLinksPlan {
+  const linkByKey = new Map(
+    linkedBlobs.map((link) => [rowHashKey(link), link]),
+  );
+  const referencedKeys = new Set(references.map(rowHashKey));
+  const plan: RowBlobLinksPlan = {
+    staleLinks: linkedBlobs.filter(
+      (link) => !referencedKeys.has(rowHashKey(link)),
+    ),
+    linkedReferences: [],
+    unlinkedReferences: [],
+  };
+
+  for (const reference of references) {
+    const link = linkByKey.get(rowHashKey(reference));
+    if (link) {
+      plan.linkedReferences.push({ reference, blob: link });
+    } else {
+      plan.unlinkedReferences.push(reference);
+    }
+  }
+
+  return plan;
+}
+
+function rowHashKey(entry: { rowVersionId: string; hash: string }): string {
+  return `${entry.rowVersionId}:${entry.hash}`;
+}
+
+function firstReferencePerHash(
+  references: RowFileReference[],
+): RowFileReference[] {
+  const byHash = new Map<string, RowFileReference>();
+  for (const reference of references) {
+    if (!byHash.has(reference.hash)) {
+      byHash.set(reference.hash, reference);
+    }
+  }
+
+  return [...byHash.values()];
+}
+
+function sumSizes(blobs: SizedBlob[]): bigint {
+  return blobs.reduce((total, blob) => total + blob.size, ZERO_BYTES);
 }

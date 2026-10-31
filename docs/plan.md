@@ -42,7 +42,7 @@ Each item is delivered by its own pull requests, in this order.
 | Branch write fence | Must | In progress (shared: #92) |
 | `createRevision` locking without scanning readonly rows | Should | Done (#91) |
 | Formulas compiled once per schema | Should | Not started |
-| Set-based file registration | Should | Not started |
+| Set-based file registration | Should | Done (#94) |
 | Limits re-measured on production-like hardware | Gate | Not started |
 | Scan run on existing deployments, results reviewed | Gate | Not started |
 

@@ -44,6 +44,14 @@ export function makeUploadedFileValue(hashSeed: string, size: number) {
   };
 }
 
+export function makePendingFileValue() {
+  return {
+    ...makeUploadedFileValue('pending', 0),
+    status: FileStatus.ready,
+    hash: '',
+  };
+}
+
 export async function givenBranchWithFileTable(kit: DraftTestKit) {
   const branch = await prepareBranch(kit.prismaService);
 

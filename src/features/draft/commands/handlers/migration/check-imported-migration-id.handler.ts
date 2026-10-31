@@ -27,16 +27,14 @@ export class CheckImportedMigrationIdHandler implements ICommandHandler<CheckImp
       return;
     }
 
-    const conflicts = await this.findConflictingMigrations(
-      revisionId,
-      migrationId,
-    );
-
-    if (conflicts.some(({ id }) => id === migrationId)) {
+    if (await this.isRecorded(revisionId, migrationId)) {
       throw new MigrationAlreadyAppliedException(migrationId);
     }
 
-    const [lastMigration] = conflicts;
+    const lastMigration = await this.findLastMigrationNotBefore(
+      revisionId,
+      migrationId,
+    );
 
     if (lastMigration) {
       throw new MigrationIdOutOfOrderException(
@@ -46,19 +44,29 @@ export class CheckImportedMigrationIdHandler implements ICommandHandler<CheckImp
     }
   }
 
-  private findConflictingMigrations(revisionId: string, migrationId: string) {
-    return this.prisma.row.findMany({
+  private async isRecorded(revisionId: string, migrationId: string) {
+    const migration = await this.prisma.row.findFirst({
       where: {
-        OR: [{ id: migrationId }, { publishedAt: { gte: migrationId } }],
-        tables: {
-          some: {
-            id: SystemTables.Migration,
-            revisions: { some: { id: revisionId } },
-          },
-        },
+        id: migrationId,
+        tables: migrationTableOf(revisionId),
       },
       select: {
         id: true,
+      },
+    });
+
+    return Boolean(migration);
+  }
+
+  private findLastMigrationNotBefore(revisionId: string, migrationId: string) {
+    return this.prisma.row.findFirst({
+      where: {
+        publishedAt: {
+          gte: migrationId,
+        },
+        tables: migrationTableOf(revisionId),
+      },
+      select: {
         publishedAt: true,
       },
       orderBy: {
@@ -66,4 +74,17 @@ export class CheckImportedMigrationIdHandler implements ICommandHandler<CheckImp
       },
     });
   }
+}
+
+function migrationTableOf(revisionId: string) {
+  return {
+    some: {
+      id: SystemTables.Migration,
+      revisions: {
+        some: {
+          id: revisionId,
+        },
+      },
+    },
+  };
 }

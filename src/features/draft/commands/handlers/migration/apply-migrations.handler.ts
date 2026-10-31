@@ -1,5 +1,6 @@
 import { BadRequestException, Logger } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
+import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import {
   ApplyMigrationCommandReturnType,
   ApplyMigrationResult,
@@ -12,6 +13,7 @@ import { MigrationContextService } from 'src/features/draft/migration-context.se
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { Migration } from '@revisium/schema-toolkit/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @CommandHandler(ApplyMigrationsCommand)
 export class ApplyMigrationsHandler implements ICommandHandler<
@@ -22,6 +24,7 @@ export class ApplyMigrationsHandler implements ICommandHandler<
 
   constructor(
     protected readonly prisma: PrismaService,
+    protected readonly transactionService: TransactionPrismaService,
     protected readonly jsonSchemaValidator: JsonSchemaValidatorService,
     protected readonly draftApiService: DraftApiService,
     protected readonly draftTransactionalCommands: DraftTransactionalCommands,
@@ -81,11 +84,7 @@ export class ApplyMigrationsHandler implements ICommandHandler<
     migration: Migration,
   ): Promise<ApplyMigrationResult> {
     try {
-      // Table changes repeat this check inside their transaction; an update
-      // that runs asynchronously is guarded by this check only.
-      await this.draftTransactionalCommands.checkImportedMigrationId(
-        revisionId,
-      );
+      await this.checkIdBeforeChange(revisionId);
       await this.changeTable(revisionId, migration);
 
       return {
@@ -95,6 +94,16 @@ export class ApplyMigrationsHandler implements ICommandHandler<
     } catch (error) {
       return this.unappliedResult(migration.id, error);
     }
+  }
+
+  private checkIdBeforeChange(revisionId: string) {
+    // Table changes repeat this check in their transaction; an async update
+    // has only this one. RepeatableRead gives both lookups one snapshot.
+    return this.transactionService.run(
+      () =>
+        this.draftTransactionalCommands.checkImportedMigrationId(revisionId),
+      { isolationLevel: TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   private unappliedResult(id: string, error: unknown): ApplyMigrationResult {

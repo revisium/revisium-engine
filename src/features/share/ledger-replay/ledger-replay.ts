@@ -7,6 +7,7 @@ import type {
   RenameMigration,
   UpdateMigration,
 } from '@revisium/schema-toolkit/types';
+import { findTableIdError } from 'src/features/share/utils/validateUrlLikeId/table-id-error';
 import {
   NativeSchemaRules,
   patchValues,
@@ -112,12 +113,13 @@ class LedgerReplay {
   private createTable(migration: InitMigration): void {
     const { tableId, schema } = migration;
     this.validateSchema(tableId, schema);
+    this.ensureValidTableId(tableId);
     this.ensureFree(tableId);
     this.rules.ensureValidFieldNames([schema]);
 
     const slot: TableSlot = { schema };
     this.slots.set(tableId, slot);
-    this.taintIfDependent(tableId, slot, migration);
+    this.taintIfDependent(tableId, slot, migration, [schema]);
   }
 
   private updateTable(migration: UpdateMigration): void {
@@ -129,12 +131,16 @@ class LedgerReplay {
     this.rules.ensureRecordableChange(schema, patches);
 
     slot.schema = schema;
-    this.taintIfDependent(tableId, slot, migration);
+    this.taintIfDependent(tableId, slot, migration, [
+      ...patchValues(patches),
+      schema,
+    ]);
   }
 
   private renameTable(migration: RenameMigration): void {
     const { tableId, nextTableId } = migration;
     const renamed = this.existingSlot(tableId);
+    this.ensureValidTableId(nextTableId);
     this.ensureFree(nextTableId);
     const referrerSchemas = this.referrerSchemasAfterRename(
       tableId,
@@ -182,9 +188,10 @@ class LedgerReplay {
     tableId: string,
     slot: TableSlot,
     migration: Migration,
+    namedSchemas: JsonSchema[],
   ): void {
-    const unreplayableTarget = this.rules
-      .foreignKeysOf(slot.schema)
+    const unreplayableTarget = namedSchemas
+      .flatMap((schema) => this.rules.foreignKeysOf(schema))
       .find((target) => target !== tableId && this.slots.get(target)?.failure);
 
     if (unreplayableTarget) {
@@ -215,6 +222,14 @@ class LedgerReplay {
     }
 
     return slot;
+  }
+
+  private ensureValidTableId(tableId: string): void {
+    const error = findTableIdError(tableId);
+
+    if (error) {
+      throw new Error(error);
+    }
   }
 
   private ensureFree(tableId: string): void {

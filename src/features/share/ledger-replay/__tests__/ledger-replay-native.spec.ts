@@ -84,6 +84,26 @@ const nativeRejections: {
     given: [init('products', obj({ code: str() }))],
     rejected: update('products', []),
   },
+  {
+    name: 'a table id that native table ids do not allow',
+    given: [],
+    rejected: init('bad name', obj({ code: str() })),
+  },
+  {
+    name: 'a table id with the system table prefix',
+    given: [],
+    rejected: init('revisium_products', obj({ code: str() })),
+  },
+  {
+    name: 'a rename into a table id that native table ids do not allow',
+    given: [init('products', obj({ code: str() }))],
+    rejected: rename('products', 'bad name'),
+  },
+  {
+    name: 'a rename into a table id with the system table prefix',
+    given: [init('products', obj({ code: str() }))],
+    rejected: rename('products', 'revisium_products'),
+  },
 ];
 
 describe('ledger replay of native table operations', () => {

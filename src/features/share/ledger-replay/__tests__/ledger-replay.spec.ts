@@ -1,4 +1,8 @@
 import { VALIDATE_JSON_FIELD_NAME_ERROR_MESSAGE } from 'src/features/share/utils/validateUrlLikeId/validateJsonFieldName';
+import {
+  TABLE_ID_ERROR_MESSAGE,
+  TABLE_ID_SYSTEM_PREFIX_ERROR_MESSAGE,
+} from 'src/features/share/utils/validateUrlLikeId/validateTableId';
 import { arr, num, numFormula, obj, str } from '@revisium/schema-toolkit/mocks';
 import {
   JsonSchemaTypeName,
@@ -405,6 +409,43 @@ describe('replayLedger', () => {
         products: failure(emptyUpdate, 'Invalid length of patches'),
       });
     });
+
+    it('refuses a table id that native table ids do not allow', () => {
+      const initBadName = init('bad name', categorySchema);
+
+      const replay = replayOf(initBadName);
+
+      expect(unattributedOf(replay)).toEqual([
+        unattributedFailure(initBadName, TABLE_ID_ERROR_MESSAGE),
+      ]);
+      expect(schemasOf(replay)).toEqual({});
+    });
+
+    it('refuses a table id with the system table prefix', () => {
+      const initReservedName = init('revisium_categories', categorySchema);
+
+      const replay = replayOf(initReservedName);
+
+      expect(unattributedOf(replay)).toEqual([
+        unattributedFailure(
+          initReservedName,
+          TABLE_ID_SYSTEM_PREFIX_ERROR_MESSAGE,
+        ),
+      ]);
+    });
+
+    it('refuses a rename into a table id that native table ids do not allow', () => {
+      const renameToBadName = rename('categories', 'bad name');
+
+      const replay = replayOf(
+        init('categories', categorySchema),
+        renameToBadName,
+      );
+
+      expect(unreplayableOf(replay)).toEqual({
+        categories: failure(renameToBadName, TABLE_ID_ERROR_MESSAGE),
+      });
+    });
   });
 
   describe('starting schemas', () => {
@@ -515,6 +556,27 @@ describe('replayLedger', () => {
 
       expect(unreplayableOf(replay).products).toEqual(
         failure(addPrice, 'Depends on unreplayable table "categories"'),
+      );
+    });
+
+    it('makes a table unreplayable when a patch value names an unreplayable table', () => {
+      const addAndDropCategory = update('products', [
+        addField('category', str({ foreignKey: 'categories' })),
+        removeField('category'),
+      ]);
+
+      const replay = replayOf(
+        init('categories', categorySchema),
+        init('products', obj({ code: str() })),
+        failingUpdate(),
+        addAndDropCategory,
+      );
+
+      expect(unreplayableOf(replay).products).toEqual(
+        failure(
+          addAndDropCategory,
+          'Depends on unreplayable table "categories"',
+        ),
       );
     });
 

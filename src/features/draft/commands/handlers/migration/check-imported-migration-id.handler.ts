@@ -1,4 +1,5 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
+import { SortOrder } from 'src/engine-prisma-types';
 import {
   CheckImportedMigrationIdCommand,
   MigrationAlreadyAppliedException,
@@ -26,61 +27,43 @@ export class CheckImportedMigrationIdHandler implements ICommandHandler<CheckImp
       return;
     }
 
-    if (await this.isRecorded(revisionId, migrationId)) {
-      throw new MigrationAlreadyAppliedException(migrationId);
-    }
-
-    const laterMigration = await this.findMigrationNotBefore(
+    const conflicts = await this.findConflictingMigrations(
       revisionId,
       migrationId,
     );
 
-    if (laterMigration) {
+    if (conflicts.some(({ id }) => id === migrationId)) {
+      throw new MigrationAlreadyAppliedException(migrationId);
+    }
+
+    const [lastMigration] = conflicts;
+
+    if (lastMigration) {
       throw new MigrationIdOutOfOrderException(
         migrationId,
-        laterMigration.publishedAt,
+        lastMigration.publishedAt,
       );
     }
   }
 
-  private async isRecorded(revisionId: string, migrationId: string) {
-    const migration = await this.prisma.row.findFirst({
+  private findConflictingMigrations(revisionId: string, migrationId: string) {
+    return this.prisma.row.findMany({
       where: {
-        id: migrationId,
-        tables: migrationTableOf(revisionId),
+        OR: [{ id: migrationId }, { publishedAt: { gte: migrationId } }],
+        tables: {
+          some: {
+            id: SystemTables.Migration,
+            revisions: { some: { id: revisionId } },
+          },
+        },
       },
       select: {
         id: true,
-      },
-    });
-
-    return Boolean(migration);
-  }
-
-  private findMigrationNotBefore(revisionId: string, migrationId: string) {
-    return this.prisma.row.findFirst({
-      where: {
-        publishedAt: {
-          gte: migrationId,
-        },
-        tables: migrationTableOf(revisionId),
-      },
-      select: {
         publishedAt: true,
       },
+      orderBy: {
+        publishedAt: SortOrder.desc,
+      },
     });
   }
-}
-
-function migrationTableOf(revisionId: string) {
-  return {
-    some: {
-      id: SystemTables.Migration,
-      revisions: {
-        some: {
-          id: revisionId,
-        },
-      },
-    },
-  };
 }

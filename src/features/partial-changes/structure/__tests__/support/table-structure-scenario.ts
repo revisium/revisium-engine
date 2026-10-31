@@ -29,6 +29,7 @@ const nativeSchemaRules = new NativeSchemaRules(refs, validator);
 export interface StructureScenario {
   readonly head: JsonSchema;
   readonly draft: JsonSchema;
+  readonly draftTableId?: string;
   readonly pending?: readonly Migration[];
   readonly headHistory?: readonly JsonPatch[][];
   readonly draftHistory?: readonly JsonPatch[][];
@@ -47,11 +48,13 @@ export function analyzeStructure(scenario: StructureScenario): TableStructure {
   return analyzeTableStructure(
     {
       head: {
+        tableId: TABLE_ID,
         schema: scenario.head,
         history: headHistory.map(historyEntry),
         tableIdentities: identitiesOf(scenario.headTables),
       },
       draft: {
+        tableId: scenario.draftTableId ?? TABLE_ID,
         schema: scenario.draft,
         history: draftHistory.map(historyEntry),
         tableIdentities: identitiesOf(scenario.draftTables),

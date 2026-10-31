@@ -24,6 +24,7 @@ import type { HistoryPatches } from 'src/features/share/queries/impl';
 export type TableIdentities = ReadonlyMap<string, string>;
 
 export interface TableSide {
+  readonly tableId: string;
   readonly schema: JsonSchema;
   readonly history: readonly HistoryPatches[];
   readonly tableIdentities: TableIdentities;
@@ -81,6 +82,8 @@ function structureDiffers(
   changedPointers: readonly JsonPointer[],
 ): boolean {
   return (
+    input.head.tableId !== input.draft.tableId ||
+    input.pendingMigrations.length > 0 ||
     hasPendingEntries(pendingHistory) ||
     !schemasEqual(input.head.schema, input.draft.schema) ||
     changedPointers.length > 0

@@ -75,7 +75,7 @@ function comparedTablesOf(
       {
         head: sideOf(snapshot, head, 'head'),
         draft: sideOf(snapshot, draft, 'draft'),
-        pendingMigrations: pendingMigrationsOf(snapshot, draft.id),
+        pendingMigrations: pendingMigrationsOf(snapshot, [head.id, draft.id]),
       },
       kit.schemaRules,
     );
@@ -118,12 +118,17 @@ function sideOf(
     }
   }
 
-  return { schema: version.schema, history: version.history, tableIdentities };
+  return {
+    tableId: version.id,
+    schema: version.schema,
+    history: version.history,
+    tableIdentities,
+  };
 }
 
 function pendingMigrationsOf(
   snapshot: ChangesSnapshot,
-  tableId: string,
+  tableIds: readonly string[],
 ): Migration[] {
   const { head, draft } = snapshot.systemRows.migrations;
   const published = new Set(head.map((row) => row.versionId));
@@ -131,7 +136,7 @@ function pendingMigrationsOf(
   return draft
     .filter((row) => !published.has(row.versionId))
     .map((row) => row.data as unknown as Migration)
-    .filter((migration) => migration.tableId === tableId);
+    .filter((migration) => tableIds.includes(migration.tableId));
 }
 
 function changedRowsView(

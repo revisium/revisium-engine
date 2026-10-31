@@ -103,6 +103,53 @@ describe('committed versions guard', () => {
     );
   });
 
+  it('reports a committed revision that was turned into a Draft', async () => {
+    const draft = await givenCommittedProducts();
+    const headRevisionId = await draft.revisionId('head');
+
+    await kit.prisma.revision.update({
+      where: { id: headRevisionId },
+      data: { isHead: false, isDraft: true },
+    });
+
+    await expect(kit.guard.verify()).rejects.toThrow(
+      `committed revision ${headRevisionId} is no longer committed`,
+    );
+  });
+
+  it('reports a committed revision that disappeared together with its versions', async () => {
+    const draft = await givenCommittedProducts();
+    const headRevisionId = await draft.revisionId('head');
+    const tableVersionId = await draft.tableVersionId('head', PRODUCTS);
+    const { versionId: rowVersionId } = await draft.row('head', PRODUCTS, 'p1');
+
+    await kit.prisma.revision.delete({ where: { id: headRevisionId } });
+    await kit.prisma.table.delete({ where: { versionId: tableVersionId } });
+    await kit.prisma.row.delete({ where: { versionId: rowVersionId } });
+
+    const violations = await reportedViolations();
+
+    expect(violations).toContain(
+      `committed revision ${headRevisionId} disappeared`,
+    );
+    expect(violations).toContain(
+      `committed table version ${tableVersionId} disappeared`,
+    );
+    expect(violations).toContain(
+      `committed row version ${rowVersionId} disappeared`,
+    );
+  });
+
+  async function reportedViolations(): Promise<string> {
+    try {
+      await kit.guard.verify();
+    } catch (error) {
+      return (error as Error).message;
+    }
+
+    return '';
+  }
+
   function givenCommittedProducts(): Promise<ChangesScenario> {
     return ChangesScenario.committed(kit, {
       [PRODUCTS]: {

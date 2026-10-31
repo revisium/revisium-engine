@@ -49,10 +49,14 @@ export class ChangesScenario {
       await scenario.createRows(tableId, fixture.rows ?? {});
     }
 
-    await scenario.commitNatively();
-    await scenario.observeCommittedVersions();
+    await scenario.commit();
 
     return scenario;
+  }
+
+  public async commit(): Promise<void> {
+    await this.kit.draftApi.apiCreateRevision(this.branch);
+    await this.observeCommittedVersions();
   }
 
   public async createTable(tableId: string, schema: JsonSchema): Promise<void> {
@@ -261,11 +265,7 @@ export class ChangesScenario {
     return table.versionId;
   }
 
-  private draftRevisionId(): Promise<string> {
-    return this.revisionId('draft');
-  }
-
-  private async revisionId(side: RevisionSide): Promise<string> {
+  public async revisionId(side: RevisionSide): Promise<string> {
     const revision = await this.kit.prisma.revision.findFirstOrThrow({
       where: { branchId: this.branchId, ...revisionFlagOf(side) },
       select: { id: true },
@@ -274,8 +274,8 @@ export class ChangesScenario {
     return revision.id;
   }
 
-  private async commitNatively(): Promise<void> {
-    await this.kit.draftApi.apiCreateRevision(this.branch);
+  private draftRevisionId(): Promise<string> {
+    return this.revisionId('draft');
   }
 
   private async observeCommittedVersions(): Promise<void> {

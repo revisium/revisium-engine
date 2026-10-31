@@ -2,6 +2,7 @@ import { num, obj, str } from '@revisium/schema-toolkit/mocks';
 import {
   addField,
   removeField,
+  rename,
   replaceField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import {
@@ -45,6 +46,18 @@ describe('TableStructure: whether the structure differs', () => {
           pendingUpdate(addField('price', num())),
           pendingUpdate(removeField('price')),
         ],
+      },
+    },
+    {
+      name: 'the Draft renamed the table',
+      scenario: { head: products, draft: products, draftTableId: 'goods' },
+    },
+    {
+      name: 'a pending rename is attributed to the table, although it renamed the table back',
+      scenario: {
+        head: products,
+        draft: products,
+        pending: [rename('products', 'goods'), rename('goods', 'products')],
       },
     },
     {

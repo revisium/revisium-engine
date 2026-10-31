@@ -177,6 +177,25 @@ describe('ChangesSnapshotReader: changed rows', () => {
     });
   });
 
+  it('does not load a row of a renamed table that differs only in a stale schemaHash', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: {
+        schema: obj({ code: str(), category: str({ foreignKey: CATEGORIES }) }),
+        rows: { p1: { code: 'one', category: 'c1' } },
+      },
+    });
+    await draft.renameTable(CATEGORIES, 'groups');
+    await draft.commit();
+    await draft.renameTable(PRODUCTS, 'goods');
+    await draft.updateRow('goods', 'p1', { code: 'one', category: 'c1' });
+
+    const changes = await draft.readChangedRows(['goods']);
+
+    expect(changes.pairsOf('goods')).toEqual([]);
+    expect(changes.count).toBe(0);
+  });
+
   it('reads the changed rows of the given tables only', async () => {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: { schema: productSchema, rows: { p1: product('one', 1) } },

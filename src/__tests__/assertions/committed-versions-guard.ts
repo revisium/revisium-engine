@@ -1,8 +1,15 @@
-import { sql, type Sql } from 'src/engine-prisma-types';
+import { sql } from 'src/engine-prisma-types';
 import type { PrismaService } from 'src/infrastructure/database/prisma.service';
 
-interface CommittedVersion {
-  readonly subject: string;
+type SubjectKind = 'revision' | 'table version' | 'row version';
+
+interface Subject {
+  readonly kind: SubjectKind;
+  readonly id: string;
+}
+
+interface SubjectState extends Subject {
+  readonly committed: boolean;
   readonly mutable: boolean;
   readonly checksum: string;
 }
@@ -14,7 +21,7 @@ interface DuplicateRowId {
 
 export class CommittedVersionsGuard {
   private readonly branchIds = new Set<string>();
-  private readonly firstChecksums = new Map<string, string>();
+  private readonly firstObservations = new Map<string, SubjectState>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -23,11 +30,19 @@ export class CommittedVersionsGuard {
   }
 
   public async verify(): Promise<void> {
-    const violations: string[] = [];
+    const subjects = await this.subjectsToVerify();
+    const states = await this.readStates(subjects);
+    const duplicates = await this.readDuplicateRowIds(subjects);
+    const violations = [
+      ...this.disappearedSubjects(states),
+      ...states.flatMap((state) => this.violationsOf(state)),
+      ...duplicates.map(
+        ({ tableVersionId, rowId }) =>
+          `committed table version ${tableVersionId} holds two rows with id ${rowId}`,
+      ),
+    ];
 
-    for (const branchId of this.branchIds) {
-      violations.push(...(await this.violationsIn(branchId)));
-    }
+    this.rememberFirstObservations(states);
 
     expect(violations).toEqual([]);
   }
@@ -42,98 +57,127 @@ export class CommittedVersionsGuard {
 
   public forget(): void {
     this.branchIds.clear();
-    this.firstChecksums.clear();
+    this.firstObservations.clear();
   }
 
-  private async violationsIn(branchId: string): Promise<string[]> {
-    const versions = await this.readCommittedVersions(branchId);
-    const duplicates = await this.readDuplicateRowIds(branchId);
-    const violations = [
-      ...versions
-        .filter((version) => version.mutable)
-        .map((version) => `${version.subject} is mutable`),
-      ...versions
-        .filter((version) => this.changedSinceFirstObservation(version))
-        .map((version) => `${version.subject} changed`),
-      ...duplicates.map(
-        ({ tableVersionId, rowId }) =>
-          `committed table version ${tableVersionId} holds two rows with id ${rowId}`,
-      ),
-    ];
+  private async subjectsToVerify(): Promise<Subject[]> {
+    const subjects = new Map<string, Subject>(this.firstObservations);
 
-    this.rememberFirstObservations(versions);
+    for (const branchId of this.branchIds) {
+      for (const subject of await this.discoverCommittedSubjects(branchId)) {
+        subjects.set(subjectName(subject), subject);
+      }
+    }
+
+    return [...subjects.values()];
+  }
+
+  private disappearedSubjects(states: readonly SubjectState[]): string[] {
+    const present = new Set(states.map(subjectName));
+
+    return [...this.firstObservations.keys()]
+      .filter((name) => !present.has(name))
+      .map((name) => `${name} disappeared`);
+  }
+
+  private violationsOf(state: SubjectState): string[] {
+    const name = subjectName(state);
+    const first = this.firstObservations.get(name);
+    const violations: string[] = [];
+
+    if (!state.committed) {
+      violations.push(`${name} is no longer committed`);
+    }
+
+    if (state.mutable) {
+      violations.push(`${name} is mutable`);
+    }
+
+    if (first && first.checksum !== state.checksum) {
+      violations.push(`${name} changed`);
+    }
 
     return violations;
   }
 
-  private changedSinceFirstObservation(version: CommittedVersion): boolean {
-    const first = this.firstChecksums.get(version.subject);
+  private rememberFirstObservations(states: readonly SubjectState[]): void {
+    for (const state of states) {
+      const name = subjectName(state);
 
-    return first !== undefined && first !== version.checksum;
-  }
-
-  private rememberFirstObservations(versions: CommittedVersion[]): void {
-    for (const { subject, checksum } of versions) {
-      if (!this.firstChecksums.has(subject)) {
-        this.firstChecksums.set(subject, checksum);
+      if (!this.firstObservations.has(name)) {
+        this.firstObservations.set(name, state);
       }
     }
   }
 
-  private readCommittedVersions(branchId: string): Promise<CommittedVersion[]> {
-    return this.prisma.$queryRaw<CommittedVersion[]>(sql`
-      WITH ${committedLinks(branchId)}
-      SELECT 'table links of committed revision ' || r."id" AS "subject",
+  private discoverCommittedSubjects(branchId: string): Promise<Subject[]> {
+    return this.prisma.$queryRaw<Subject[]>(sql`
+      WITH committed_revisions AS (
+        SELECT "id" FROM "Revision"
+        WHERE "branchId" = ${branchId} AND NOT "isDraft"
+      ),
+      committed_tables AS (
+        SELECT DISTINCT rt."B" AS "versionId" FROM "_RevisionToTable" rt
+        WHERE rt."A" IN (SELECT "id" FROM committed_revisions)
+      )
+      SELECT 'revision' AS "kind", "id" FROM committed_revisions
+      UNION ALL
+      SELECT 'table version', "versionId" FROM committed_tables
+      UNION ALL
+      SELECT DISTINCT 'row version', rt."A" FROM "_RowToTable" rt
+      WHERE rt."B" IN (SELECT "versionId" FROM committed_tables)
+    `);
+  }
+
+  private readStates(subjects: readonly Subject[]): Promise<SubjectState[]> {
+    return this.prisma.$queryRaw<SubjectState[]>(sql`
+      SELECT 'revision' AS "kind", r."id", NOT r."isDraft" AS "committed",
              FALSE AS "mutable",
              md5(ARRAY(
                SELECT rt."B" FROM "_RevisionToTable" rt
                WHERE rt."A" = r."id" ORDER BY rt."B"
              )::text) AS "checksum"
-      FROM committed_revisions r
+      FROM "Revision" r
+      WHERE r."id" = ANY(${idsOf(subjects, 'revision')}::text[])
       UNION ALL
-      SELECT 'committed table version ' || t."versionId", NOT t."readonly",
+      SELECT 'table version', t."versionId", TRUE, NOT t."readonly",
              md5(jsonb_build_array(to_jsonb(t), ARRAY(
                SELECT rt."A" FROM "_RowToTable" rt
                WHERE rt."B" = t."versionId" ORDER BY rt."A"
              ))::text)
       FROM "Table" t
-      WHERE t."versionId" IN (SELECT "versionId" FROM committed_tables)
+      WHERE t."versionId" = ANY(${idsOf(subjects, 'table version')}::text[])
       UNION ALL
-      SELECT 'committed row version ' || r."versionId", NOT r."readonly",
+      SELECT 'row version', r."versionId", TRUE, NOT r."readonly",
              md5(jsonb_build_array(to_jsonb(r), ARRAY(
                SELECT fb."A" FROM "_FileBlobToRow" fb
                WHERE fb."B" = r."versionId" ORDER BY fb."A"
              ))::text)
       FROM "Row" r
-      WHERE r."versionId" IN (
-        SELECT rt."A" FROM "_RowToTable" rt
-        WHERE rt."B" IN (SELECT "versionId" FROM committed_tables)
-      )
+      WHERE r."versionId" = ANY(${idsOf(subjects, 'row version')}::text[])
     `);
   }
 
-  private readDuplicateRowIds(branchId: string): Promise<DuplicateRowId[]> {
+  private readDuplicateRowIds(
+    subjects: readonly Subject[],
+  ): Promise<DuplicateRowId[]> {
     return this.prisma.$queryRaw<DuplicateRowId[]>(sql`
-      WITH ${committedLinks(branchId)}
       SELECT rt."B" AS "tableVersionId", r."id" AS "rowId"
       FROM "_RowToTable" rt
       JOIN "Row" r ON r."versionId" = rt."A"
-      WHERE rt."B" IN (SELECT "versionId" FROM committed_tables)
+      WHERE rt."B" = ANY(${idsOf(subjects, 'table version')}::text[])
       GROUP BY rt."B", r."id"
       HAVING count(*) > 1
     `);
   }
 }
 
-function committedLinks(branchId: string): Sql {
-  return sql`
-    committed_revisions AS (
-      SELECT "id" FROM "Revision"
-      WHERE "branchId" = ${branchId} AND NOT "isDraft"
-    ),
-    committed_tables AS (
-      SELECT DISTINCT rt."B" AS "versionId" FROM "_RevisionToTable" rt
-      WHERE rt."A" IN (SELECT "id" FROM committed_revisions)
-    )
-  `;
+function subjectName({ kind, id }: Subject): string {
+  return `committed ${kind} ${id}`;
+}
+
+function idsOf(subjects: readonly Subject[], kind: SubjectKind): string[] {
+  return subjects
+    .filter((subject) => subject.kind === kind)
+    .map((subject) => subject.id);
 }

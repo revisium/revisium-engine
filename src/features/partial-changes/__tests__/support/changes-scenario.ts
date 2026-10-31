@@ -1,5 +1,6 @@
 import type { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import { createExpressImageFile } from 'src/__tests__/utils/file';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
@@ -9,6 +10,7 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
+import { type CatalogueView, readCatalogue } from './catalogue-reading';
 import {
   type ChangedRowsView,
   readChangedRows,
@@ -147,6 +149,23 @@ export class ChangesScenario {
     });
   }
 
+  public async uploadFile(
+    tableId: string,
+    rowId: string,
+    field: string,
+  ): Promise<void> {
+    const row = await this.row('draft', tableId, rowId);
+    const data = row.data as Record<string, { fileId: string }>;
+
+    await this.kit.draftApi.apiUploadFile({
+      revisionId: await this.draftRevisionId(),
+      tableId,
+      rowId,
+      fileId: data[field]?.fileId ?? '',
+      file: createExpressImageFile(),
+    });
+  }
+
   public async writeRowColumns(
     tableId: string,
     rowId: string,
@@ -215,6 +234,10 @@ export class ChangesScenario {
     tableIds: readonly string[],
   ): Promise<ChangedRowsView> {
     return readChangedRows(this.kit, this.branch, tableIds);
+  }
+
+  public readCatalogue(tableIds: readonly string[]): Promise<CatalogueView> {
+    return readCatalogue(this.kit, this.branch, tableIds);
   }
 
   public async readDraftRowDigest(tableId: string): Promise<string> {

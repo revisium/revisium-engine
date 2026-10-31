@@ -59,7 +59,7 @@ export function readChangedRows(
   });
 }
 
-function comparedTablesOf(
+export function comparedTablesOf(
   kit: PartialChangesTestKit,
   snapshot: ChangesSnapshot,
   tableIds: readonly string[],

@@ -325,21 +325,26 @@ describe('ForeignKeysService', () => {
       expect(excludingRemovalSet).toBe(0);
     });
 
-    it('should throw when cross-product of paths and values exceeds max conditions', async () => {
-      const tableVersionId = await createTableWithRows();
-      const manyPaths = Array.from({ length: 50 }, (_, i) => `$.field${i}`);
-      const manyValues = Array.from({ length: 21 }, (_, i) => `value${i}`);
+    it('should count rows when the cross-product of paths and values exceeds 1,000', async () => {
+      const tableVersionId = await createTableWithMultipleFields();
+      const manyPaths = [
+        '$.author',
+        ...Array.from({ length: 49 }, (_, i) => `$.field${i}`),
+      ];
+      const manyValues = [
+        ...Array.from({ length: 20 }, (_, i) => `value${i}`),
+        'jane',
+      ];
 
-      // 50 * 21 = 1050 > 1000 (MAX_CONDITIONS)
-      await expect(
-        transactionPrismaService.run(async () => {
-          return service.countRowsByPathsAndValuesInData(
-            tableVersionId,
-            manyPaths,
-            manyValues,
-          );
-        }),
-      ).rejects.toThrow('Too many conditions');
+      const count = await transactionPrismaService.run(async () => {
+        return service.countRowsByPathsAndValuesInData(
+          tableVersionId,
+          manyPaths,
+          manyValues,
+        );
+      });
+
+      expect(count).toBe(1);
     });
 
     it('should handle nested paths with multiple values', async () => {

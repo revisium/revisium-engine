@@ -24,6 +24,20 @@ import { RemoveRowsCommand } from 'src/features/draft/commands/impl/remove-rows.
 import { RemoveRowsHandlerReturnType } from 'src/features/draft/commands/types/remove-rows.handler.types';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
+import {
+  countDraftRows,
+  givenTableReferencingRow,
+  givenTablesReferencingRow,
+  givenTableWithRows,
+  type ReferencedTable,
+} from './support/references-scenario';
+
+const MANY_ROW_COUNT = 1001;
+const MANY_ROW_IDS = Array.from(
+  { length: MANY_ROW_COUNT },
+  (_, index) => `customer-${index}`,
+);
+const LAST_OF_MANY_ROW_IDS = `customer-${MANY_ROW_COUNT - 1}`;
 
 describe('RemoveRowsHandler', () => {
   let kit: DraftTestKit;
@@ -590,6 +604,71 @@ describe('RemoveRowsHandler', () => {
       expect(deletedTask).toBeNull();
       expect(remainingTask).not.toBeNull();
     });
+  });
+
+  describe('many referrers and rows', () => {
+    it('should throw when only a referrer table after the first 100 still references the row', async () => {
+      const customers = await givenTableWithRows(kit, {
+        tableId: 'customers',
+        rowIds: ['alice', 'bob'],
+      });
+      await givenTablesReferencingRow(kit, customers, {
+        tableCount: 100,
+        referencedRowId: 'bob',
+      });
+      await givenTableReferencingRow(kit, customers, {
+        tableId: 'referrer-zzz',
+        rowCount: 1,
+        referencedRowId: 'alice',
+      });
+
+      await expect(
+        runTransaction(removeRows(customers, ['alice'])),
+      ).rejects.toThrow('The row is related to other rows');
+    });
+
+    it('should remove more than 1,000 rows at once when no remaining row references them', async () => {
+      const customers = await givenTableWithRows(kit, {
+        tableId: 'customers',
+        rowIds: [...MANY_ROW_IDS, 'kept'],
+      });
+      await givenTableReferencingRow(kit, customers, {
+        tableId: 'orders',
+        rowCount: 1,
+        referencedRowId: 'kept',
+      });
+
+      await runTransaction(removeRows(customers, MANY_ROW_IDS));
+
+      expect(await countDraftRows(kit, customers)).toBe(1);
+    });
+
+    it('should throw when removing more than 1,000 rows at once and a remaining row references one of them', async () => {
+      const customers = await givenTableWithRows(kit, {
+        tableId: 'customers',
+        rowIds: MANY_ROW_IDS,
+      });
+      await givenTableReferencingRow(kit, customers, {
+        tableId: 'orders',
+        rowCount: 1,
+        referencedRowId: LAST_OF_MANY_ROW_IDS,
+      });
+
+      await expect(
+        runTransaction(removeRows(customers, MANY_ROW_IDS)),
+      ).rejects.toThrow('The row is related to other rows');
+    });
+
+    function removeRows(
+      table: ReferencedTable,
+      rowIds: string[],
+    ): RemoveRowsCommand {
+      return new RemoveRowsCommand({
+        revisionId: table.draftRevisionId,
+        tableId: table.tableId,
+        rowIds,
+      });
+    }
   });
 
   it('should keep draft-only table when all rows removed (not in head)', async () => {

@@ -7,6 +7,13 @@ import {
   RenameTableCommandReturnType,
 } from 'src/features/draft/commands/impl/rename-table.command';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import {
+  countDraftSchemasReferencing,
+  givenTablesReferencingRow,
+  givenTableWithRows,
+} from './support/references-scenario';
+
+const REFERRER_TABLE_COUNT = 105;
 
 describe('RenameTableHandler', () => {
   const nextTableId = 'nextTableId';
@@ -118,6 +125,40 @@ describe('RenameTableHandler', () => {
     });
     expect(newTable).not.toBeNull();
     expect(newTable?.id).toBe(nextTableId);
+  });
+
+  it('should rewrite every referrer schema when more than 100 tables reference the renamed table', async () => {
+    const customers = await givenTableWithRows(kit, {
+      tableId: 'customers',
+      rowIds: ['alice'],
+    });
+    await givenTablesReferencingRow(kit, customers, {
+      tableCount: REFERRER_TABLE_COUNT,
+      referencedRowId: 'alice',
+    });
+
+    await runTransaction(
+      new RenameTableCommand({
+        revisionId: customers.draftRevisionId,
+        tableId: 'customers',
+        nextTableId: 'clients',
+      }),
+    );
+
+    expect(
+      await countDraftSchemasReferencing(
+        kit,
+        customers.draftRevisionId,
+        'customers',
+      ),
+    ).toBe(0);
+    expect(
+      await countDraftSchemasReferencing(
+        kit,
+        customers.draftRevisionId,
+        'clients',
+      ),
+    ).toBe(REFERRER_TABLE_COUNT);
   });
 
   function runTransaction(

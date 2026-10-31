@@ -6,7 +6,7 @@ type CountResult = { count: string | number | bigint };
 
 const MAX_INPUT_LENGTH = 1000;
 const DEFAULT_QUERY_LIMIT = 100;
-const MAX_CONDITIONS = 1000;
+const ITERATION_PAGE_SIZE = 100;
 
 // Using parameterized queries with $queryRaw for security
 // https://www.prisma.io/docs/orm/prisma-client/queries/raw-database-access/raw-queries#dynamic-table-names-in-postgresql
@@ -69,9 +69,6 @@ export class ForeignKeysService {
     // Validate key for safety
     this.validateJsonKey(key, 'key');
 
-    // Build the JSON path with quoted key for safety and parameterized value
-    const path = `$.**."${key}" ? (@ == $val)`;
-
     return this.transaction.$queryRaw<Row[]>`
       SELECT *
       FROM "Row"
@@ -80,15 +77,24 @@ export class ForeignKeysService {
         FROM "_RowToTable"
         WHERE "B" = ${tableVersionId}
       )
-      AND jsonb_path_exists(
-        "data",
-        ${path}::jsonpath,
-        jsonb_build_object('val', to_jsonb(${value}::text))
-      )
+      AND ${this.keyValueCondition(key, value)}
       ORDER BY "id" ASC
       LIMIT ${limit}
       OFFSET ${offset};
     `;
+  }
+
+  async *iterateRowsByKeyValueInData(
+    tableVersionId: string,
+    key: string,
+    value: string,
+  ): AsyncGenerator<Row> {
+    this.validateJsonKey(key, 'key');
+
+    yield* this.iterateMatchingRows(
+      tableVersionId,
+      this.keyValueCondition(key, value),
+    );
   }
 
   async countRowsByKeyValueInData(
@@ -99,9 +105,6 @@ export class ForeignKeysService {
     // Validate key for safety
     this.validateJsonKey(key, 'key');
 
-    // Build the JSON path with quoted key for safety and parameterized value
-    const path = `$.**."${key}" ? (@ == $val)`;
-
     const result: CountResult[] = await this.transaction.$queryRaw`
         SELECT count(*)
         FROM "Row"
@@ -110,11 +113,7 @@ export class ForeignKeysService {
           FROM "_RowToTable"
           WHERE "B" = ${tableVersionId}
         )
-        AND jsonb_path_exists(
-          "data",
-          ${path}::jsonpath,
-          jsonb_build_object('val', to_jsonb(${value}::text))
-        );
+        AND ${this.keyValueCondition(key, value)};
       `;
 
     return Number((result[0] as { count: unknown }).count);
@@ -133,30 +132,34 @@ export class ForeignKeysService {
 
     jsonPaths.forEach((path) => this.validateJsonPath(path));
 
-    const conditions = join(
-      jsonPaths.map(
-        (path) => sql`
-          jsonb_path_exists(
-            "data",
-            ${`${path} ? (@ == $val)`}::jsonpath,
-            jsonb_build_object('val', to_jsonb(${value}::text))
-          )
-        `,
-      ),
-      ' OR ',
-    );
-
     return this.transaction.$queryRaw<Row[]>`
       SELECT *
       FROM "Row"
       WHERE "versionId" IN (
         SELECT "A" FROM "_RowToTable" WHERE "B" = ${tableVersionId}
       )
-      AND (${conditions})
+      AND (${this.pathsValueCondition(jsonPaths, value)})
       ORDER BY "id" ASC
       LIMIT ${limit}
       OFFSET ${offset};
     `;
+  }
+
+  async *iterateRowsByPathsAndValueInData(
+    tableVersionId: string,
+    jsonPaths: string[],
+    value: string,
+  ): AsyncGenerator<Row> {
+    if (jsonPaths.length === 0) {
+      return;
+    }
+
+    jsonPaths.forEach((path) => this.validateJsonPath(path));
+
+    yield* this.iterateMatchingRows(
+      tableVersionId,
+      this.pathsValueCondition(jsonPaths, value),
+    );
   }
 
   async countRowsByPathsAndValueInData(
@@ -170,26 +173,13 @@ export class ForeignKeysService {
 
     jsonPaths.forEach((path) => this.validateJsonPath(path));
 
-    const conditions = join(
-      jsonPaths.map(
-        (path) => sql`
-          jsonb_path_exists(
-            "data",
-            ${`${path} ? (@ == $val)`}::jsonpath,
-            jsonb_build_object('val', to_jsonb(${value}::text))
-          )
-        `,
-      ),
-      ' OR ',
-    );
-
     const result: CountResult[] = await this.transaction.$queryRaw`
         SELECT count(*)
         FROM "Row"
         WHERE "versionId" IN (
           SELECT "A" FROM "_RowToTable" WHERE "B" = ${tableVersionId}
         )
-        AND (${conditions});
+        AND (${this.pathsValueCondition(jsonPaths, value)});
       `;
 
     return Number((result[0] as { count: unknown }).count);
@@ -209,39 +199,7 @@ export class ForeignKeysService {
       return 0;
     }
 
-    const conditionCount = jsonPaths.length * values.length;
-    if (conditionCount > MAX_CONDITIONS) {
-      throw new Error(
-        `Too many conditions: ${conditionCount} exceeds maximum of ${MAX_CONDITIONS}`,
-      );
-    }
-
     jsonPaths.forEach((path) => this.validateJsonPath(path));
-
-    const allConditions: Sql[] = [];
-
-    for (const path of jsonPaths) {
-      for (const value of values) {
-        allConditions.push(
-          sql`
-            jsonb_path_exists(
-              "data",
-              ${`${path} ? (@ == $val)`}::jsonpath,
-              jsonb_build_object('val', to_jsonb(${value}::text))
-            )
-          `,
-        );
-      }
-    }
-
-    const conditions = join(allConditions, ' OR ');
-    const excludeClause =
-      excludeRowIds.length === 0
-        ? empty
-        : sql`AND "id" NOT IN (${join(
-            excludeRowIds.map((id) => sql`${id}`),
-            ', ',
-          )})`;
 
     const result: CountResult[] = await this.transaction.$queryRaw`
         SELECT count(*)
@@ -249,10 +207,95 @@ export class ForeignKeysService {
         WHERE "versionId" IN (
           SELECT "A" FROM "_RowToTable" WHERE "B" = ${tableVersionId}
         )
-        AND (${conditions})
-        ${excludeClause};
+        AND (${this.pathsValuesCondition(jsonPaths, values)})
+        AND "id" <> ALL(${excludeRowIds}::text[]);
       `;
 
     return Number((result[0] as { count: unknown }).count);
+  }
+
+  private async *iterateMatchingRows(
+    tableVersionId: string,
+    condition: Sql,
+  ): AsyncGenerator<Row> {
+    let afterRowId: string | undefined;
+    let page: Row[];
+
+    do {
+      page = await this.findPageOfMatchingRows(
+        tableVersionId,
+        condition,
+        afterRowId,
+      );
+      yield* page;
+      afterRowId = page.at(-1)?.id;
+    } while (page.length === ITERATION_PAGE_SIZE);
+  }
+
+  private findPageOfMatchingRows(
+    tableVersionId: string,
+    condition: Sql,
+    afterRowId: string | undefined,
+  ) {
+    return this.transaction.$queryRaw<Row[]>`
+      SELECT *
+      FROM "Row"
+      WHERE "versionId" IN (
+        SELECT "A" FROM "_RowToTable" WHERE "B" = ${tableVersionId}
+      )
+      AND (${condition})
+      ${this.rowIdAfterCondition(afterRowId)}
+      ORDER BY "id" ASC
+      LIMIT ${ITERATION_PAGE_SIZE};
+    `;
+  }
+
+  private rowIdAfterCondition(afterRowId: string | undefined): Sql {
+    if (afterRowId === undefined) {
+      return empty;
+    }
+
+    return sql`AND "id" > ${afterRowId}`;
+  }
+
+  private keyValueCondition(key: string, value: string): Sql {
+    return sql`
+      jsonb_path_exists(
+        "data",
+        ${`$.**."${key}" ? (@ == $val)`}::jsonpath,
+        jsonb_build_object('val', to_jsonb(${value}::text))
+      )
+    `;
+  }
+
+  private pathsValueCondition(jsonPaths: string[], value: string): Sql {
+    return join(
+      jsonPaths.map(
+        (path) => sql`
+          jsonb_path_exists(
+            "data",
+            ${`${path} ? (@ == $val)`}::jsonpath,
+            jsonb_build_object('val', to_jsonb(${value}::text))
+          )
+        `,
+      ),
+      ' OR ',
+    );
+  }
+
+  // Lax mode unwraps the $values array, so `@ == $values` holds when @ equals any of them.
+  private pathsValuesCondition(jsonPaths: string[], values: string[]): Sql {
+    return join(
+      jsonPaths.map(
+        (path) => sql`
+          jsonb_path_exists(
+            "data",
+            ${`${path} ? (@ == $values)`}::jsonpath,
+            jsonb_build_object('values', to_jsonb(${values}::text[]))
+          )
+        `,
+      ),
+      ' OR ',
+    );
   }
 }

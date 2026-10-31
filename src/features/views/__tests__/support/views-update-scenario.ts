@@ -65,7 +65,7 @@ export async function updateViewsWhileBranchCommits(
   const updateSettled = Promise.allSettled([update]);
 
   try {
-    await Promise.race([hold.reached, updateSettled]);
+    await expectUpdateHeldBeforeRowWrite(hold.reached, updateSettled);
 
     const committed = await kit.draftApiService.apiCreateRevision({
       projectId: draft.projectId,
@@ -77,6 +77,20 @@ export async function updateViewsWhileBranchCommits(
     hold.release();
     await updateSettled;
     hold.restore();
+  }
+}
+
+async function expectUpdateHeldBeforeRowWrite(
+  reached: Promise<void>,
+  updateSettled: Promise<unknown>,
+): Promise<void> {
+  const heldFirst = await Promise.race([
+    reached.then(() => true),
+    updateSettled.then(() => false),
+  ]);
+
+  if (!heldFirst) {
+    throw new Error('The views update settled before reaching its row write');
   }
 }
 

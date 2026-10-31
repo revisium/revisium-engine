@@ -1,4 +1,5 @@
 import type { Provider } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
@@ -13,9 +14,13 @@ export interface DatabaseServiceTestKit {
 
 export async function createDatabaseServiceTestKit(
   providers: Provider[],
+  settings: Record<string, string> = {},
 ): Promise<DatabaseServiceTestKit> {
   const module = await Test.createTestingModule({
-    imports: [DatabaseModule],
+    imports: [
+      ConfigModule.forRoot({ isGlobal: true, load: [() => settings] }),
+      DatabaseModule,
+    ],
     providers,
   }).compile();
 

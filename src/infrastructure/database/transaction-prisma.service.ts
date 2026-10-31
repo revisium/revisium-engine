@@ -7,8 +7,16 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomInt } from 'node:crypto';
+import { isSerializationFailure } from 'src/infrastructure/database/database-errors';
+import {
+  NumericSetting,
+  readNumericSetting,
+} from 'src/infrastructure/database/numeric-setting';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import {
+  RetryBackoff,
+  retryDelayMs,
+} from 'src/infrastructure/database/retry-backoff';
 import { TransactionPrismaClient } from 'src/features/share/types';
 
 export interface TransactionOptions {
@@ -43,10 +51,7 @@ const DEFAULT_SERIALIZABLE_OPTIONS: Required<TransactionOptions> = {
   },
 };
 
-interface SettingConfig {
-  envKey: string;
-  defaultValue: number;
-  minValue: number;
+interface SettingConfig extends NumericSetting {
   unit: string;
 }
 
@@ -82,9 +87,6 @@ const SETTINGS_CONFIG: Record<string, SettingConfig> = {
     unit: 'ms',
   },
 };
-
-const BACKOFF_BASE = 2;
-const JITTER_FACTOR = 0.5;
 
 @Injectable()
 export class TransactionPrismaService implements OnModuleInit {
@@ -127,29 +129,7 @@ export class TransactionPrismaService implements OnModuleInit {
       throw new Error(`Unknown transaction setting: ${settingName}`);
     }
 
-    const value = this.configService.get<string>(config.envKey);
-
-    if (!value) {
-      return config.defaultValue;
-    }
-
-    const parsed = Number.parseInt(value, 10);
-
-    if (Number.isNaN(parsed)) {
-      this.logger.warn(
-        `Invalid ${config.envKey}: "${value}" is not a number, using default ${config.defaultValue}`,
-      );
-      return config.defaultValue;
-    }
-
-    if (parsed < config.minValue) {
-      this.logger.warn(
-        `Invalid ${config.envKey}: ${parsed} is below minimum ${config.minValue}, using default ${config.defaultValue}`,
-      );
-      return config.defaultValue;
-    }
-
-    return parsed;
+    return readNumericSetting(this.configService, config, this.logger);
   }
 
   private logTransactionSettings() {
@@ -174,6 +154,16 @@ export class TransactionPrismaService implements OnModuleInit {
 
   public get serializableTimeoutMs(): number {
     return this.serializableOptions.timeout;
+  }
+
+  public get serializableMaxWaitMs(): number {
+    return this.serializableOptions.maxWait;
+  }
+
+  public get serializableRetryBackoff(): RetryBackoff {
+    const { baseDelayMs, maxDelayMs } = this.serializableOptions.retry;
+
+    return { baseDelayMs, maxDelayMs };
   }
 
   public getTransaction() {
@@ -225,12 +215,19 @@ export class TransactionPrismaService implements OnModuleInit {
     return this.run(handler, mergedOptions);
   }
 
+  public runInTransactionContext<T>(
+    $prisma: TransactionPrismaClient,
+    handler: () => Promise<T>,
+  ): Promise<T> {
+    return this.asyncLocalStorage.run({ $prisma }, handler);
+  }
+
   private executeTransaction<T>(
     handler: (...rest: unknown[]) => Promise<T>,
     options?: Omit<TransactionOptions, 'retry'>,
   ): Promise<T> {
     return this.prismaService.$transaction(async ($prisma) => {
-      return this.asyncLocalStorage.run({ $prisma }, handler);
+      return this.runInTransactionContext($prisma, handler);
     }, options);
   }
 
@@ -239,7 +236,7 @@ export class TransactionPrismaService implements OnModuleInit {
     prismaOptions: Omit<TransactionOptions, 'retry'>,
     retryOptions: NonNullable<TransactionOptions['retry']>,
   ): Promise<T> {
-    const { maxRetries, baseDelayMs, maxDelayMs } = retryOptions;
+    const { maxRetries } = retryOptions;
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -248,16 +245,12 @@ export class TransactionPrismaService implements OnModuleInit {
       } catch (error) {
         lastError = error as Error;
 
-        if (!this.isRetryableError(lastError)) {
+        if (!isSerializationFailure(lastError)) {
           throw error;
         }
 
         if (attempt < maxRetries - 1) {
-          const delay = this.calculateBackoffDelay(
-            attempt,
-            baseDelayMs,
-            maxDelayMs,
-          );
+          const delay = retryDelayMs(attempt, retryOptions);
           this.logger.debug(
             `Serialization failure (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms`,
           );
@@ -273,47 +266,6 @@ export class TransactionPrismaService implements OnModuleInit {
       lastError ||
       new Error('Max retries exceeded for serializable transaction')
     );
-  }
-
-  /**
-   * Check if an error is a retryable serialization failure.
-   *
-   * PostgreSQL error codes:
-   * - 40001: serialization_failure
-   * - 40P01: deadlock_detected
-   *
-   * Prisma error codes:
-   * - P2034: Transaction write conflict
-   */
-  private isRetryableError(error: Error): boolean {
-    const code = (error as { code?: string }).code || '';
-    const retryableCodes = ['40001', '40P01', 'P2034'];
-
-    if (retryableCodes.includes(code)) {
-      return true;
-    }
-
-    const message = error.message || '';
-    const retryableMessages = [
-      'could not serialize access',
-      'deadlock detected',
-      'TransactionWriteConflict',
-      'Please retry your transaction',
-    ];
-
-    return retryableMessages.some((pattern) => message.includes(pattern));
-  }
-
-  private calculateBackoffDelay(
-    attempt: number,
-    baseDelayMs: number,
-    maxDelayMs: number,
-  ): number {
-    const exponentialDelay = baseDelayMs * Math.pow(BACKOFF_BASE, attempt);
-    const cappedDelay = Math.min(exponentialDelay, maxDelayMs);
-    const maxJitter = Math.floor(cappedDelay * JITTER_FACTOR);
-    const jitter = maxJitter > 0 ? randomInt(maxJitter + 1) : 0;
-    return cappedDelay + jitter;
   }
 
   private sleep(ms: number): Promise<void> {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Sql, sql } from 'src/engine-prisma-types';
 import { BranchWriteFencedException } from 'src/infrastructure/database/branch-write-fenced.exception';
+import { sqlStateOf } from 'src/infrastructure/database/database-errors';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 // The wait and the admitted write share one transaction timeout: a writer that
@@ -9,10 +10,6 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 const SHARED_WAIT_PART_OF_TRANSACTION_TIMEOUT = 0.5;
 
 const LOCK_NOT_AVAILABLE = '55P03';
-
-interface RawQueryFailure {
-  meta?: { driverAdapterError?: { cause?: { originalCode?: string } } };
-}
 
 export function branchWriteFenceKey(branchId: string | Sql): Sql {
   return sql`hashtextextended(${branchId}, hashtext('branch-write-fence'))`;
@@ -66,7 +63,5 @@ function branchOfRevision(revisionId: string): Sql {
 }
 
 function isLockNotAvailable(error: unknown): boolean {
-  const cause = (error as RawQueryFailure).meta?.driverAdapterError?.cause;
-
-  return cause?.originalCode === LOCK_NOT_AVAILABLE;
+  return sqlStateOf(error) === LOCK_NOT_AVAILABLE;
 }

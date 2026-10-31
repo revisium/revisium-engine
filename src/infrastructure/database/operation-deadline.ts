@@ -1,4 +1,3 @@
-import { Logger } from '@nestjs/common';
 import { performance } from 'node:perf_hooks';
 import { TransactionPrismaClient } from 'src/features/share/types';
 import {
@@ -7,32 +6,30 @@ import {
   sqlStateOf,
 } from 'src/infrastructure/database/database-errors';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
 
-const PRISMA_TRANSACTION_EXPIRED = 'P2028';
+const PRISMA_TRANSACTION_CLOSED = 'P2028';
 const TRANSACTION_TIMEOUT_TERMINATION = '25P04';
 const QUERY_CANCELED = '57014';
 
 // PostgreSQL reads a timeout of 0 as "no timeout", so a passed deadline still sets the smallest one.
 const SMALLEST_TIMEOUT_MS = 1;
 
-const logger = new Logger('OperationDeadline');
+type Enforcement =
+  | { kind: 'transactionTimeout' }
+  | { kind: 'statementLimits'; transaction: TransactionPrismaClient };
 
-export class OperationDeadline {
+export interface DeadlineHandle {
+  checkpoint(): Promise<void>;
+}
+
+export class OperationDeadline implements DeadlineHandle {
   private readonly endsAt: number;
 
-  private transactionTimeoutArmed = false;
-
-  private watchdog?: NodeJS.Timeout;
-
-  private watchdogFired = false;
-
-  private cancellation?: Promise<void>;
+  private enforcement?: Enforcement;
 
   constructor(
     private readonly timeoutMs: number,
-    private readonly prismaService: PrismaService,
     private readonly transactionTimeoutSupport: TransactionTimeoutSupport,
   ) {
     this.endsAt = performance.now() + timeoutMs;
@@ -40,17 +37,25 @@ export class OperationDeadline {
 
   public async run<T>(
     $prisma: TransactionPrismaClient,
-    body: () => Promise<T>,
+    body: (deadline: DeadlineHandle) => Promise<T>,
   ): Promise<T> {
     await this.enforce($prisma);
 
-    const result = await this.watched(body);
+    const result = await body(this);
 
+    await this.checkpoint();
+
+    return result;
+  }
+
+  public async checkpoint(): Promise<void> {
     if (this.hasPassed()) {
       throw new OperationTimeoutException(this.timeoutMs);
     }
 
-    return result;
+    if (this.enforcement?.kind === 'statementLimits') {
+      await this.limitStatementsAndIdleTime(this.enforcement.transaction);
+    }
   }
 
   public failureOf(error: unknown): unknown {
@@ -68,8 +73,10 @@ export class OperationDeadline {
   private async enforce($prisma: TransactionPrismaClient): Promise<void> {
     if (await this.transactionTimeoutSupport.isSupportedOn($prisma)) {
       await this.armTransactionTimeout($prisma);
+      this.enforcement = { kind: 'transactionTimeout' };
     } else {
-      this.startWatchdog(await readBackendPid($prisma));
+      this.enforcement = { kind: 'statementLimits', transaction: $prisma };
+      await this.checkpoint();
     }
   }
 
@@ -78,47 +85,33 @@ export class OperationDeadline {
   ): Promise<void> {
     // A non-zero server or role default starts its timer at BEGIN; 0 stops it, so the next value starts a new one.
     await $prisma.$executeRaw`SELECT set_config('transaction_timeout', '0', true)`;
-    await $prisma.$executeRaw`SELECT set_config('transaction_timeout', ${String(this.remainingTimeoutMs())}, true)`;
-    this.transactionTimeoutArmed = true;
+    await $prisma.$executeRaw`SELECT set_config('transaction_timeout', ${this.remainingBudget()}, true)`;
   }
 
-  private startWatchdog(backendPid: number): void {
-    this.watchdog = setTimeout(() => {
-      this.watchdogFired = true;
-      this.cancellation = this.cancelBackend(backendPid);
-    }, this.remainingTimeoutMs());
-  }
+  private async limitStatementsAndIdleTime(
+    $prisma: TransactionPrismaClient,
+  ): Promise<void> {
+    const budget = this.remainingBudget();
 
-  private async watched<T>(body: () => Promise<T>): Promise<T> {
-    try {
-      return await body();
-    } finally {
-      clearTimeout(this.watchdog);
-      await this.cancellation;
-    }
-  }
-
-  private async cancelBackend(backendPid: number): Promise<void> {
-    try {
-      await this.prismaService
-        .$executeRaw`SELECT pg_cancel_backend(${backendPid}::int)`;
-    } catch (error) {
-      logger.warn(
-        `Could not cancel backend ${backendPid} at the operation deadline: ${String(error)}`,
-      );
-    }
+    await $prisma.$executeRaw`
+      SELECT set_config('statement_timeout', ${budget}, true),
+             set_config('idle_in_transaction_session_timeout', ${budget}, true)`;
   }
 
   private endedOperation(error: unknown): boolean {
-    const sqlState = sqlStateOf(error);
+    if (sqlStateOf(error) === TRANSACTION_TIMEOUT_TERMINATION) {
+      return true;
+    }
 
+    return this.hasPassed() && this.failedAtDeadline(error);
+  }
+
+  private failedAtDeadline(error: unknown): boolean {
     return (
-      errorCodeOf(error) === PRISMA_TRANSACTION_EXPIRED ||
-      sqlState === TRANSACTION_TIMEOUT_TERMINATION ||
-      (sqlState === QUERY_CANCELED && this.watchdogFired) ||
-      (this.transactionTimeoutArmed &&
-        this.hasPassed() &&
-        isConnectionLost(error))
+      errorCodeOf(error) === PRISMA_TRANSACTION_CLOSED ||
+      (this.enforcement?.kind === 'statementLimits' &&
+        sqlStateOf(error) === QUERY_CANCELED) ||
+      (this.enforcement !== undefined && isConnectionLost(error))
     );
   }
 
@@ -126,20 +119,9 @@ export class OperationDeadline {
     return performance.now() >= this.endsAt;
   }
 
-  private remainingTimeoutMs(): number {
-    return Math.max(
-      Math.ceil(this.endsAt - performance.now()),
-      SMALLEST_TIMEOUT_MS,
-    );
+  private remainingBudget(): string {
+    const remainingMs = Math.ceil(this.endsAt - performance.now());
+
+    return String(Math.max(remainingMs, SMALLEST_TIMEOUT_MS));
   }
-}
-
-async function readBackendPid(
-  $prisma: TransactionPrismaClient,
-): Promise<number> {
-  const [session] = await $prisma.$queryRaw<
-    [{ backendPid: number }]
-  >`SELECT pg_backend_pid() AS "backendPid"`;
-
-  return session.backendPid;
 }

@@ -8,7 +8,10 @@ import {
   NumericSetting,
   readNumericSetting,
 } from 'src/infrastructure/database/numeric-setting';
-import { OperationDeadline } from 'src/infrastructure/database/operation-deadline';
+import {
+  DeadlineHandle,
+  OperationDeadline,
+} from 'src/infrastructure/database/operation-deadline';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { retryDelayMs } from 'src/infrastructure/database/retry-backoff';
 import {
@@ -29,10 +32,14 @@ const OPERATION_TIMEOUT_MS: NumericSetting = {
   minValue: 1,
 };
 
-// The database ends an attempt at its deadline; Prisma's own timer only has to stay out of its way.
-const PRISMA_TIMEOUT_MARGIN_MS = 1_000;
+// The database and the deadline checkpoints end an attempt. Prisma's own timer rolls back from a detached callback,
+// and on a session the database has already ended that rollback fails as an unhandled rejection, so it stays far
+// beyond the deadline and fires only for an operation that never settles.
+const PRISMA_TIMEOUT_FACTOR = 10;
 
 type AttemptOptions = Omit<TransactionOptions, 'retry'>;
+
+type Operation<T> = (deadline: DeadlineHandle) => Promise<T>;
 
 @Injectable()
 export class OperationTransactionRunner {
@@ -60,7 +67,7 @@ export class OperationTransactionRunner {
     );
   }
 
-  public async runWrite<T>(planAndWrite: () => Promise<T>): Promise<T> {
+  public async runWrite<T>(planAndWrite: Operation<T>): Promise<T> {
     for (let attempt = 0; attempt < this.maxAttempts - 1; attempt++) {
       try {
         return await this.runWriteAttempt(planAndWrite);
@@ -76,13 +83,14 @@ export class OperationTransactionRunner {
     return this.runWriteAttempt(planAndWrite);
   }
 
-  public runPlanning<T>(plan: () => Promise<T>): Promise<T> {
-    return this.runAttempt(TransactionIsolationLevel.RepeatableRead, () =>
-      this.planReadOnly(plan),
+  public runPlanning<T>(plan: Operation<T>): Promise<T> {
+    return this.runAttempt(
+      TransactionIsolationLevel.RepeatableRead,
+      (deadline) => this.planReadOnly(plan, deadline),
     );
   }
 
-  private runWriteAttempt<T>(planAndWrite: () => Promise<T>): Promise<T> {
+  private runWriteAttempt<T>(planAndWrite: Operation<T>): Promise<T> {
     return this.runAttempt(
       TransactionIsolationLevel.Serializable,
       planAndWrite,
@@ -95,20 +103,22 @@ export class OperationTransactionRunner {
     );
   }
 
-  private async planReadOnly<T>(plan: () => Promise<T>): Promise<T> {
+  private async planReadOnly<T>(
+    plan: Operation<T>,
+    deadline: DeadlineHandle,
+  ): Promise<T> {
     await this.transactionService.getTransaction()
       .$executeRaw`SET TRANSACTION READ ONLY`;
 
-    return plan();
+    return plan(deadline);
   }
 
   private async runAttempt<T>(
     isolationLevel: TransactionIsolationLevel,
-    operation: () => Promise<T>,
+    operation: Operation<T>,
   ): Promise<T> {
     const deadline = new OperationDeadline(
       this.operationTimeoutMs,
-      this.prismaService,
       this.transactionTimeoutSupport,
     );
 
@@ -125,10 +135,12 @@ export class OperationTransactionRunner {
   private runBeforeDeadline<T>(
     $prisma: TransactionPrismaClient,
     deadline: OperationDeadline,
-    operation: () => Promise<T>,
+    operation: Operation<T>,
   ): Promise<T> {
-    return deadline.run($prisma, () =>
-      this.transactionService.runInTransactionContext($prisma, operation),
+    return deadline.run($prisma, (handle) =>
+      this.transactionService.runInTransactionContext($prisma, () =>
+        operation(handle),
+      ),
     );
   }
 
@@ -138,7 +150,7 @@ export class OperationTransactionRunner {
     return {
       isolationLevel,
       maxWait: this.transactionService.serializableMaxWaitMs,
-      timeout: this.operationTimeoutMs + PRISMA_TIMEOUT_MARGIN_MS,
+      timeout: PRISMA_TIMEOUT_FACTOR * this.operationTimeoutMs,
     };
   }
 }

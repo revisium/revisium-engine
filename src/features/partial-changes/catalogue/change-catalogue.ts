@@ -34,7 +34,10 @@ export function buildChangeCatalogue(source: CatalogueSource): ChangeCatalogue {
       pairs: source.changedRows.get(table.identity) ?? [],
     });
 
-    units.push(...rowUnits.units);
+    for (const unit of rowUnits.units) {
+      units.push(unit);
+    }
+
     rows.set(table.identity, rowUnits.rows);
   }
 

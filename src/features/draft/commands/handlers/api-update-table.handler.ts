@@ -30,6 +30,8 @@ export class ApiUpdateTableHandler implements ICommandHandler<
   ) {}
 
   async execute({ data }: ApiUpdateTableCommand) {
+    await this.migrationLockService.checkRevisionLock(data.revisionId);
+
     if (await this.shouldUseAsyncMigration(data.revisionId, data.tableId)) {
       return this.executeAsyncMigration(data);
     }
@@ -79,8 +81,6 @@ export class ApiUpdateTableHandler implements ICommandHandler<
   private async executeAsyncMigration(
     data: ApiUpdateTableCommand['data'],
   ): Promise<ApiUpdateTableHandlerReturnType> {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
-
     const { migrationId }: StartAsyncMigrationResult =
       await this.commandBus.execute(
         new StartAsyncMigrationCommand({

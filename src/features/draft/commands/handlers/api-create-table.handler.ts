@@ -5,7 +5,6 @@ import {
   QueryBus,
 } from '@nestjs/cqrs';
 import { GetBranchByIdQuery } from 'src/features/branch/quieries/impl';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ApiCreateTableCommand } from 'src/features/draft/commands/impl/api-create-table.command';
 import { CreateTableCommand } from 'src/features/draft/commands/impl/create-table.command';
 import { ApiCreateTableHandlerReturnType } from 'src/features/draft/commands/types/api-create-table.handler.types';
@@ -22,19 +21,19 @@ export class ApiCreateTableHandler implements ICommandHandler<
   constructor(
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
-    private readonly transactionService: TransactionPrismaService,
     private readonly shareCommands: ShareCommands,
     private readonly migrationLockService: MigrationLockService,
   ) {}
 
   async execute({ data }: ApiCreateTableCommand) {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const { branchId, tableVersionId }: CreateTableHandlerReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute<
-          CreateTableCommand,
-          CreateTableHandlerReturnType
-        >(new CreateTableCommand(data)),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () =>
+          this.commandBus.execute<
+            CreateTableCommand,
+            CreateTableHandlerReturnType
+          >(new CreateTableCommand(data)),
       );
 
     await this.shareCommands.notifyEndpoints({ revisionId: data.revisionId });

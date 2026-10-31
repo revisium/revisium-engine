@@ -13,7 +13,6 @@ import { UpdateRowsHandlerReturnType } from 'src/features/draft/commands/types/u
 import { RowApiService } from 'src/features/row/row-api.service';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { ShareCommands } from 'src/features/share/share.commands';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @CommandHandler(ApiUpdateRowCommand)
 export class ApiUpdateRowHandler
@@ -23,7 +22,6 @@ export class ApiUpdateRowHandler
   constructor(
     protected readonly commandBus: CommandBus,
     protected readonly queryBus: QueryBus,
-    protected readonly transactionService: TransactionPrismaService,
     protected readonly shareCommands: ShareCommands,
     protected readonly rowApi: RowApiService,
     protected readonly migrationLockService: MigrationLockService,
@@ -32,16 +30,17 @@ export class ApiUpdateRowHandler
   }
 
   async execute({ data }: ApiUpdateRowCommand) {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
     const result: UpdateRowsHandlerReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute(
-          new UpdateRowsCommand({
-            revisionId: data.revisionId,
-            tableId: data.tableId,
-            rows: [{ rowId: data.rowId, data: data.data }],
-          }),
-        ),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () =>
+          this.commandBus.execute(
+            new UpdateRowsCommand({
+              revisionId: data.revisionId,
+              tableId: data.tableId,
+              rows: [{ rowId: data.rowId, data: data.data }],
+            }),
+          ),
       );
 
     await this.tryToNotifyEndpoints({

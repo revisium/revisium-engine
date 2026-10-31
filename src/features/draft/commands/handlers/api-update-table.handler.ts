@@ -4,7 +4,6 @@ import {
   ICommandHandler,
   QueryBus,
 } from '@nestjs/cqrs';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { ApiUpdateTableCommand } from 'src/features/draft/commands/impl/api-update-table.command';
 import { UpdateTableCommand } from 'src/features/draft/commands/impl/update-table.command';
 import { ApiUpdateTableHandlerReturnType } from 'src/features/draft/commands/types/api-update-table.handler.types';
@@ -25,15 +24,12 @@ export class ApiUpdateTableHandler implements ICommandHandler<
   constructor(
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
-    private readonly transactionService: TransactionPrismaService,
     private readonly shareCommands: ShareCommands,
     private readonly migrationLockService: MigrationLockService,
     private readonly migrationService: MigrationService,
   ) {}
 
   async execute({ data }: ApiUpdateTableCommand) {
-    await this.migrationLockService.checkRevisionLock(data.revisionId);
-
     if (await this.shouldUseAsyncMigration(data.revisionId, data.tableId)) {
       return this.executeAsyncMigration(data);
     }
@@ -58,11 +54,13 @@ export class ApiUpdateTableHandler implements ICommandHandler<
       tableVersionId,
       previousTableVersionId,
     }: UpdateTableHandlerReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.commandBus.execute<
-          UpdateTableCommand,
-          UpdateTableHandlerReturnType
-        >(new UpdateTableCommand(data)),
+      await this.migrationLockService.runSerializableWithRevisionLockCheck(
+        data.revisionId,
+        async () =>
+          this.commandBus.execute<
+            UpdateTableCommand,
+            UpdateTableHandlerReturnType
+          >(new UpdateTableCommand(data)),
       );
 
     await this.shareCommands.notifyEndpoints({ revisionId: data.revisionId });
@@ -81,6 +79,8 @@ export class ApiUpdateTableHandler implements ICommandHandler<
   private async executeAsyncMigration(
     data: ApiUpdateTableCommand['data'],
   ): Promise<ApiUpdateTableHandlerReturnType> {
+    await this.migrationLockService.checkRevisionLock(data.revisionId);
+
     const { migrationId }: StartAsyncMigrationResult =
       await this.commandBus.execute(
         new StartAsyncMigrationCommand({

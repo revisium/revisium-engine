@@ -14,6 +14,29 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 export class MigrationLockService {
   constructor(private readonly transactionService: TransactionPrismaService) {}
 
+  runSerializableWithRevisionLockCheck<T>(
+    revisionId: string,
+    write: () => Promise<T>,
+  ): Promise<T> {
+    return this.transactionService.runSerializable(async () => {
+      await this.checkRevisionLock(revisionId);
+
+      return write();
+    });
+  }
+
+  runSerializableWithBranchLockCheck<T>(
+    projectId: string,
+    branchName: string,
+    write: () => Promise<T>,
+  ): Promise<T> {
+    return this.transactionService.runSerializable(async () => {
+      await this.checkBranchLock(projectId, branchName);
+
+      return write();
+    });
+  }
+
   async cancelBranchMigrations(
     projectId: string,
     branchName: string,

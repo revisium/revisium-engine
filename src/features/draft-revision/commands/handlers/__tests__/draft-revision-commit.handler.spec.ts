@@ -1,14 +1,23 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import { DraftRevisionCommitCommand } from 'src/features/draft-revision/commands/impl/draft-revision-commit.command';
+import { DraftRevisionCreateRowsCommand } from 'src/features/draft-revision/commands/impl/draft-revision-create-rows.command';
 import { DraftRevisionCreateTableCommand } from 'src/features/draft-revision/commands/impl/draft-revision-create-table.command';
-import { DraftRevisionCommitCommandReturnType } from 'src/features/draft-revision/commands/impl';
+import { DraftRevisionUpdateRowsCommand } from 'src/features/draft-revision/commands/impl/draft-revision-update-rows.command';
+import {
+  DraftRevisionCommitCommandReturnType,
+  DraftRevisionCreateRowsCommandReturnType,
+  DraftRevisionUpdateRowsCommandReturnType,
+} from 'src/features/draft-revision/commands/impl';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import {
   createDraftRevisionTestingModule,
+  givenCommittedTableWithRows,
   prepareDraftRevisionTest,
 } from './utils';
+
+const COMMITTED_ROW_COUNT = 1_000;
 
 describe('DraftRevisionCommitHandler', () => {
   let prismaService: PrismaService;
@@ -209,4 +218,141 @@ describe('DraftRevisionCommitHandler', () => {
       expect(newDraft?.tables).toHaveLength(0);
     });
   });
+
+  describe('readonly locking', () => {
+    it('should lock exactly the row versions the draft owns without rewriting committed ones', async () => {
+      const draft = await givenDraftChangingLargeCommittedTable();
+      const writesBeforeCommit = await snapshotRowVersionWrites(draft.branchId);
+
+      await runInTransaction(
+        new DraftRevisionCommitCommand({ branchId: draft.branchId }),
+      );
+
+      const writesAfterCommit = await snapshotRowVersionWrites(draft.branchId);
+      expect(
+        findRewrittenRowVersionIds(writesBeforeCommit, writesAfterCommit),
+      ).toEqual(draft.ownedRowVersionIds);
+      expect(await findMutableRowVersionIds(draft.branchId)).toEqual([]);
+    });
+  });
+
+  async function findMutableRowVersionIds(branchId: string): Promise<string[]> {
+    const rows = await prismaService.row.findMany({
+      where: {
+        readonly: false,
+        tables: { some: { revisions: { some: { branchId } } } },
+      },
+      select: { versionId: true },
+    });
+
+    return rows.map((row) => row.versionId);
+  }
+
+  async function snapshotRowVersionWrites(
+    branchId: string,
+  ): Promise<RowVersionWrites> {
+    const rows = await prismaService.$queryRaw<
+      { versionId: string; writingTransactionId: string }[]
+    >`
+      SELECT DISTINCT "Row"."versionId", "Row".xmin::text AS "writingTransactionId"
+      FROM "Row"
+      JOIN "_RowToTable" ON "_RowToTable"."A" = "Row"."versionId"
+      JOIN "_RevisionToTable" ON "_RevisionToTable"."B" = "_RowToTable"."B"
+      JOIN "Revision" ON "Revision"."id" = "_RevisionToTable"."A"
+      WHERE "Revision"."branchId" = ${branchId}
+    `;
+
+    return new Map(
+      rows.map((row) => [row.versionId, row.writingTransactionId]),
+    );
+  }
+
+  function findRewrittenRowVersionIds(
+    before: RowVersionWrites,
+    after: RowVersionWrites,
+  ): string[] {
+    return [...before]
+      .filter(
+        ([versionId, writingTransactionId]) =>
+          after.get(versionId) !== writingTransactionId,
+      )
+      .map(([versionId]) => versionId)
+      .sort();
+  }
+
+  async function givenDraftChangingLargeCommittedTable(): Promise<DraftChangingLargeCommittedTable> {
+    const { branchId, headRevisionId, draftRevisionId } =
+      await prepareDraftRevisionTest(prismaService);
+    await givenCommittedTableWithRows(prismaService, {
+      headRevisionId,
+      draftRevisionId,
+      tableId: 'large-table',
+      rowCount: COMMITTED_ROW_COUNT,
+    });
+
+    const updatedRowVersionIds = await updateRows(
+      draftRevisionId,
+      'large-table',
+      ['row-1', 'row-2', 'row-3'],
+    );
+    const createdRowVersionIds = await createTableWithRows(
+      draftRevisionId,
+      'new-table',
+      ['new-row-1', 'new-row-2'],
+    );
+
+    return {
+      branchId,
+      ownedRowVersionIds: [
+        ...updatedRowVersionIds,
+        ...createdRowVersionIds,
+      ].sort(),
+    };
+  }
+
+  async function updateRows(
+    revisionId: string,
+    tableId: string,
+    rowIds: string[],
+  ): Promise<string[]> {
+    const result: DraftRevisionUpdateRowsCommandReturnType =
+      await transactionService.run(() =>
+        commandBus.execute(
+          new DraftRevisionUpdateRowsCommand({
+            revisionId,
+            tableId,
+            rows: rowIds.map((rowId) => ({ rowId, data: { changed: true } })),
+          }),
+        ),
+      );
+
+    return result.updatedRows.map((row) => row.rowVersionId);
+  }
+
+  async function createTableWithRows(
+    revisionId: string,
+    tableId: string,
+    rowIds: string[],
+  ): Promise<string[]> {
+    await createChange(revisionId, tableId);
+    const result: DraftRevisionCreateRowsCommandReturnType =
+      await transactionService.run(() =>
+        commandBus.execute(
+          new DraftRevisionCreateRowsCommand({
+            revisionId,
+            tableId,
+            rows: rowIds.map((rowId) => ({ rowId, data: {} })),
+          }),
+        ),
+      );
+
+    return result.createdRows.map((row) => row.rowVersionId);
+  }
 });
+
+type RowVersionWrites = Map<string, string>;
+
+interface DraftChangingLargeCommittedTable {
+  branchId: string;
+  ownedRowVersionIds: string[];
+}

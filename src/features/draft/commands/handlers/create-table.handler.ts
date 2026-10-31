@@ -34,6 +34,7 @@ export class CreateTableHandler extends DraftHandler<
     const { revisionId, tableId, schema } = data;
 
     await this.draftTransactionalCommands.resolveDraftRevision(revisionId);
+    await this.draftTransactionalCommands.checkImportedMigrationId(revisionId);
 
     await this.draftTransactionalCommands.validateSchema(schema, tableId);
 

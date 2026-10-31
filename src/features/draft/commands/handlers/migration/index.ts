@@ -1,4 +1,5 @@
 import { ApplyMigrationsHandler } from 'src/features/draft/commands/handlers/migration/apply-migrations.handler';
+import { CheckImportedMigrationIdHandler } from 'src/features/draft/commands/handlers/migration/check-imported-migration-id.handler';
 import { CreateInitMigrationHandler } from 'src/features/draft/commands/handlers/migration/create-init-migration.handler';
 import { CreateRemoveMigrationHandler } from 'src/features/draft/commands/handlers/migration/create-remove-migration.handler';
 import { CreateRenameMigrationHandler } from 'src/features/draft/commands/handlers/migration/create-rename-migration.handler';
@@ -10,4 +11,5 @@ export const MIGRATION_COMMANDS = [
   CreateRenameMigrationHandler,
   CreateRemoveMigrationHandler,
   ApplyMigrationsHandler,
+  CheckImportedMigrationIdHandler,
 ];

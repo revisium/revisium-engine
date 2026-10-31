@@ -1,15 +1,23 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { nanoid } from 'nanoid';
-import { type InputJsonValue } from 'src/engine-prisma-types';
+import type { InputJsonValue, TableMigration } from 'src/engine-prisma-types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
-import { MigrationProgressService } from 'src/features/migration/services/migration-progress.service';
 import {
-  MigrationPhase,
+  MigrationTransitionService,
+  type MigrationLease,
+} from 'src/features/migration/services/migration-transition.service';
+import {
   MigrationStatus,
+  type MigrationStepResult,
 } from 'src/features/migration/types/migration.types';
+import {
+  decodeMigrationPayload,
+  encodeMigrationPayload,
+} from 'src/features/migration/migration-payload';
+import { PermanentMigrationFailure } from 'src/features/migration/exceptions/permanent-migration-failure';
+import { LeaseHeartbeat } from 'src/features/migration/services/lease-heartbeat';
 import {
   MIGRATION_DEFAULTS,
   MIGRATION_OPTIONS,
@@ -24,6 +32,8 @@ import { ViewsMigrationService } from 'src/features/share/views-migration.servic
 import { tableViewsSchema } from 'src/features/share/schema/table-views-schema';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
+
+type ClaimedRunResult = MigrationStepResult | 'retry';
 
 @Injectable()
 export class MigrationService {
@@ -41,7 +51,7 @@ export class MigrationService {
     private readonly jsonSchemaValidator: JsonSchemaValidatorService,
     private readonly viewsMigrationService: ViewsMigrationService,
     private readonly batchService: MigrationBatchService,
-    private readonly progressService: MigrationProgressService,
+    private readonly transitions: MigrationTransitionService,
     @Optional() @Inject(MIGRATION_OPTIONS) migrationOptions?: MigrationOptions,
   ) {
     this.options = {
@@ -144,7 +154,7 @@ export class MigrationService {
         revisionId: data.revisionId,
         tableId: data.tableId,
         sourceTableVersionId: data.sourceTableVersionId,
-        patches: data.patches as InputJsonValue,
+        patches: encodeMigrationPayload(data.patches),
         previousSchema: data.previousSchema,
         previousSchemaHash: data.previousSchemaHash,
         targetSchemaHash: data.targetSchemaHash,
@@ -158,206 +168,188 @@ export class MigrationService {
     return migration.id;
   }
 
-  async processMigration(migrationId: string): Promise<void> {
-    for (let attempt = 0; ; attempt++) {
-      const migration = await this.prisma.tableMigration.findUnique({
-        where: { id: migrationId },
-      });
-      if (!migration) {
-        return;
+  async processMigration(migrationId: string): Promise<MigrationStepResult> {
+    for (;;) {
+      const lease = await this.transitions.claim(migrationId);
+
+      if (!lease) {
+        return 'stopped';
       }
 
-      try {
-        await this.initPhase(migration);
-        await this.copyPhase(migration.id);
-        await this.validatePhase(migration.id);
-        await this.swapPhase(migration.id);
-        await this.cleanupPhase(migration.id);
-        return;
-      } catch (error) {
-        const shouldRetry = await this.handleMigrationFailure(
-          migrationId,
-          attempt,
-          error,
-        );
-        if (!shouldRetry) {
-          return;
-        }
+      const result = await this.runClaimedMigration(lease);
+
+      if (result !== 'retry') {
+        return result;
       }
     }
   }
 
-  private async handleMigrationFailure(
-    migrationId: string,
-    attempt: number,
+  private async runClaimedMigration(
+    lease: MigrationLease,
+  ): Promise<ClaimedRunResult> {
+    const heartbeat = new LeaseHeartbeat(
+      () => this.transitions.renew(lease),
+      this.options.heartbeatIntervalMs,
+      (error) => this.logHeartbeatFailure(lease, error),
+    );
+
+    try {
+      return await this.runSteps(lease);
+    } finally {
+      heartbeat.stop();
+      await this.transitions.release(lease);
+    }
+  }
+
+  private async runSteps(lease: MigrationLease): Promise<ClaimedRunResult> {
+    for (;;) {
+      const result = await this.runNextStep(lease);
+
+      if (result !== 'continue') {
+        return result;
+      }
+    }
+  }
+
+  private async runNextStep(lease: MigrationLease): Promise<ClaimedRunResult> {
+    const migration = await this.prisma.tableMigration.findUnique({
+      where: { id: lease.migrationId },
+    });
+
+    if (migration?.lockedBy !== lease.token) {
+      return 'stopped';
+    }
+
+    try {
+      return await this.runStep(lease, migration);
+    } catch (error) {
+      return this.handleStepFailure(lease, migration.status, error);
+    }
+  }
+
+  private runStep(
+    lease: MigrationLease,
+    migration: TableMigration,
+  ): Promise<MigrationStepResult> {
+    switch (migration.status) {
+      case MigrationStatus.PENDING:
+        return this.startCopy(lease, migration);
+      case MigrationStatus.COPYING:
+        return migration.copiedRows < migration.totalRows
+          ? this.copyNextBatch(lease, migration)
+          : this.startSwap(lease, migration);
+      case MigrationStatus.SWAPPING:
+        return this.swap(lease, migration);
+      default:
+        return Promise.resolve('stopped');
+    }
+  }
+
+  private async handleStepFailure(
+    lease: MigrationLease,
+    status: string,
     error: unknown,
-  ) {
-    const msg = error instanceof Error ? error.message : String(error);
-    const current = await this.prisma.tableMigration.findUnique({
-      where: { id: migrationId },
-    });
+  ): Promise<ClaimedRunResult> {
+    const message = error instanceof Error ? error.message : String(error);
 
-    if (!current || current.status === MigrationStatus.CANCELLED) {
-      return false;
+    if (error instanceof PermanentMigrationFailure) {
+      return this.failMigration(lease, status, message);
     }
 
-    if (current.retryCount < current.maxRetries) {
+    if (await this.transitions.retry(lease, status)) {
       this.logger.warn(
-        `Migration ${migrationId} attempt ${attempt + 1} failed: ${msg}`,
+        `Migration ${lease.migrationId} failed, retrying: ${message}`,
       );
-      await this.progressService.incrementRetry(migrationId);
-      return true;
+      return 'retry';
     }
 
-    this.logger.error(
-      `Migration ${migrationId} failed after ${attempt + 1} attempts: ${msg}`,
-      error instanceof Error ? error.stack : undefined,
+    return this.failMigration(lease, status, message);
+  }
+
+  private async failMigration(
+    lease: MigrationLease,
+    status: string,
+    message: string,
+  ): Promise<MigrationStepResult> {
+    if (!(await this.transitions.fail(lease, status, message))) {
+      return 'stopped';
+    }
+
+    this.logger.error(`Migration ${lease.migrationId} failed: ${message}`);
+    return 'failed';
+  }
+
+  private logHeartbeatFailure(lease: MigrationLease, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.logger.error(`Heartbeat failed for ${lease.migrationId}: ${message}`);
+  }
+
+  private async startCopy(
+    lease: MigrationLease,
+    migration: TableMigration,
+  ): Promise<MigrationStepResult> {
+    const started = await this.transitions.beginCopy(lease, migration);
+
+    return started ? 'continue' : 'stopped';
+  }
+
+  private async copyNextBatch(
+    lease: MigrationLease,
+    migration: TableMigration,
+  ): Promise<MigrationStepResult> {
+    const { patches } = decodeMigrationPayload(migration.patches);
+    const shadowTableVersionId = this.requireShadowTable(migration);
+    const rows = await this.batchService.loadBatchRows(
+      migration.sourceTableVersionId,
+      migration.lastCopiedRowId,
+      migration.batchSize,
     );
-    await this.progressService.setFailed(migrationId, msg);
-    return false;
-  }
+    const lastRow = rows.at(-1);
 
-  private async initPhase(migration: {
-    id: string;
-    tableId: string;
-    sourceTableVersionId: string;
-    shadowTableVersionId: string | null;
-  }): Promise<void> {
-    await this.progressService.setPhase(
-      migration.id,
-      MigrationPhase.COPYING,
-      MigrationStatus.COPYING,
+    if (!lastRow) {
+      throw new Error(
+        `Row count mismatch: expected ${migration.totalRows}, got ${migration.copiedRows}`,
+      );
+    }
+
+    const migratedRows = await this.batchService.migrateAndProcessBatch(
+      rows,
+      patches,
+      migration.previousSchema as unknown as JsonSchema,
+      migration.revisionId,
+      migration.tableId,
     );
-
-    if (migration.shadowTableVersionId) {
-      return;
-    }
-
-    const sourceTable = await this.prisma.table.findUniqueOrThrow({
-      where: { versionId: migration.sourceTableVersionId },
-    });
-
-    const shadowVersionId = nanoid();
-    await this.prisma.$transaction(async (tx) => {
-      await tx.table.create({
-        data: {
-          versionId: shadowVersionId,
-          createdId: sourceTable.createdId,
-          id: migration.tableId,
-          readonly: false,
-          system: false,
-        },
-      });
-
-      const result = await tx.tableMigration.updateMany({
-        where: {
-          id: migration.id,
-          shadowTableVersionId: null,
-        },
-        data: {
-          shadowTableVersionId: shadowVersionId,
-        },
-      });
-
-      if (result.count !== 1) {
-        throw new Error(
-          `Failed to claim shadow table for migration ${migration.id}`,
-        );
-      }
-    });
-  }
-
-  private async copyPhase(migrationId: string): Promise<void> {
-    let migration = await this.prisma.tableMigration.findUniqueOrThrow({
-      where: { id: migrationId },
-    });
-
-    const patches = migration.patches as unknown as JsonPatch[];
-    const previousSchema = migration.previousSchema as unknown as JsonSchema;
-    let lastCopiedRowId = migration.lastCopiedRowId;
-    let copiedRows = migration.copiedRows;
-    let currentBatch = migration.currentBatch;
-
-    while (copiedRows < migration.totalRows) {
-      if (await this.progressService.isCancelled(migrationId)) {
-        this.logger.log(`Migration ${migrationId} cancelled during copy`);
-        return;
-      }
-
-      const rows = await this.batchService.loadBatchRows(
-        migration.sourceTableVersionId,
-        lastCopiedRowId,
-        migration.batchSize,
-      );
-      if (rows.length === 0) {
-        break;
-      }
-
-      const processedRows = await this.batchService.migrateAndProcessBatch(
-        rows,
-        patches,
-        previousSchema,
-        migration.revisionId,
-        migration.tableId,
-      );
-
-      if (!migration.shadowTableVersionId) {
-        throw new Error(`Shadow table not set for migration ${migrationId}`);
-      }
-
-      const lastRow = rows.at(-1);
-      if (!lastRow) break;
-      const nextLastCopiedRowId = lastRow.id;
-      copiedRows += rows.length;
-      currentBatch += 1;
-      lastCopiedRowId = nextLastCopiedRowId;
-      const shadowTableVersionId = migration.shadowTableVersionId;
-
-      await this.prisma.$transaction(async (tx) => {
-        await this.batchService.insertBatchIntoShadow(
-          processedRows,
-          shadowTableVersionId,
-          migration.targetSchemaHash,
-          tx,
-        );
-
-        await this.progressService.updateProgress(
-          migrationId,
-          {
-            copiedRows,
-            lastCopiedRowId: nextLastCopiedRowId,
-            currentBatch,
-          },
-          tx,
-        );
-      });
-
-      migration = await this.prisma.tableMigration.findUniqueOrThrow({
-        where: { id: migrationId },
-      });
-    }
-  }
-
-  private async validatePhase(migrationId: string): Promise<void> {
-    if (await this.progressService.isCancelled(migrationId)) {
-      return;
-    }
-
-    await this.progressService.setPhase(migrationId, MigrationPhase.VALIDATING);
-
-    const migration = await this.prisma.tableMigration.findUniqueOrThrow({
-      where: { id: migrationId },
-    });
-
-    if (!migration.shadowTableVersionId) {
-      throw new Error(`Shadow table not set for migration ${migrationId}`);
-    }
-
-    const shadowRowCount = await this.prisma.row.count({
-      where: {
-        tables: { some: { versionId: migration.shadowTableVersionId } },
+    const written = await this.batchService.writeBatch(lease, {
+      shadowTableVersionId,
+      targetSchemaHash: migration.targetSchemaHash,
+      from: {
+        copiedRows: migration.copiedRows,
+        lastCopiedRowId: migration.lastCopiedRowId,
       },
+      to: {
+        copiedRows: migration.copiedRows + rows.length,
+        lastCopiedRowId: lastRow.id,
+      },
+      rows: migratedRows,
     });
+
+    return written ? 'continue' : 'stopped';
+  }
+
+  private async startSwap(
+    lease: MigrationLease,
+    migration: TableMigration,
+  ): Promise<MigrationStepResult> {
+    await this.verifyShadowRowCount(migration);
+    const begun = await this.transitions.beginSwap(lease);
+
+    return begun ? 'continue' : 'stopped';
+  }
+
+  private async verifyShadowRowCount(migration: TableMigration): Promise<void> {
+    const shadowRowCount = await this.countRows(
+      this.requireShadowTable(migration),
+    );
 
     if (shadowRowCount !== migration.totalRows) {
       throw new Error(
@@ -366,29 +358,27 @@ export class MigrationService {
     }
   }
 
-  private async swapPhase(migrationId: string): Promise<void> {
-    if (await this.progressService.isCancelled(migrationId)) {
-      return;
-    }
-
-    await this.progressService.setPhase(
-      migrationId,
-      MigrationPhase.SWAPPING,
-      MigrationStatus.SWAPPING,
-    );
-
-    const migration = await this.prisma.tableMigration.findUniqueOrThrow({
-      where: { id: migrationId },
-    });
-
+  private requireShadowTable(migration: TableMigration): string {
     if (!migration.shadowTableVersionId) {
-      throw new Error(`Shadow table not set for migration ${migrationId}`);
+      throw new Error(`Shadow table not set for migration ${migration.id}`);
     }
 
-    const shadowTableVersionId = migration.shadowTableVersionId;
+    return migration.shadowTableVersionId;
+  }
 
-    await this.transactionService.runSerializable(async () => {
+  private async swap(
+    lease: MigrationLease,
+    migration: TableMigration,
+  ): Promise<MigrationStepResult> {
+    const { patches } = decodeMigrationPayload(migration.patches);
+    const shadowTableVersionId = this.requireShadowTable(migration);
+
+    const swapped = await this.transactionService.runSerializable(async () => {
       const tx = this.transactionService.getTransaction();
+
+      if (!(await this.transitions.ownsSwap(lease, tx))) {
+        return false;
+      }
 
       await tx.table.update({
         where: { versionId: migration.sourceTableVersionId },
@@ -413,14 +403,19 @@ export class MigrationService {
         data: { hasChanges: true },
       });
 
-      await this.updateSchemaRowInTx(tx, migration);
-      await this.updateViewsRowInTx(tx, migration);
+      await this.updateSchemaRowInTx(tx, migration, patches);
+      await this.updateViewsRowInTx(tx, migration, patches);
+
+      return true;
     });
+
+    return swapped ? this.completeSwap(lease) : 'stopped';
   }
 
   private async updateSchemaRowInTx(
     tx: ReturnType<TransactionPrismaService['getTransaction']>,
-    migration: { revisionId: string; tableId: string; patches: unknown },
+    migration: { revisionId: string; tableId: string },
+    patches: JsonPatch[],
   ) {
     const schemaTable = await tx.table.findFirst({
       where: {
@@ -444,7 +439,7 @@ export class MigrationService {
 
     const currentSchema = schemaRow.data as unknown as JsonSchema;
     const st = new SchemaTable(currentSchema, this.jsonSchemaStore.refs);
-    st.applyPatches(migration.patches as JsonPatch[]);
+    st.applyPatches(patches);
     const targetSchema = st.getSchema();
 
     await tx.row.update({
@@ -463,8 +458,8 @@ export class MigrationService {
       revisionId: string;
       tableId: string;
       previousSchema: unknown;
-      patches: unknown;
     },
+    patches: JsonPatch[],
   ) {
     const viewsTable = await tx.table.findFirst({
       where: {
@@ -491,7 +486,7 @@ export class MigrationService {
     const migratedViewsData = this.viewsMigrationService.migrateViews(
       {
         viewsData: viewsRow.data as unknown as TableViewsData,
-        patches: migration.patches as JsonPatch[],
+        patches,
         previousSchema: migration.previousSchema as JsonSchema,
       },
       { revisionId: migration.revisionId, tableId: migration.tableId },
@@ -508,15 +503,14 @@ export class MigrationService {
     });
   }
 
-  private async cleanupPhase(migrationId: string): Promise<void> {
-    if (await this.progressService.isCancelled(migrationId)) {
-      return;
+  private async completeSwap(
+    lease: MigrationLease,
+  ): Promise<MigrationStepResult> {
+    if (!(await this.transitions.completeSwap(lease))) {
+      return 'stopped';
     }
 
-    await this.prisma.tableMigration.delete({
-      where: { id: migrationId },
-    });
-
-    this.logger.log(`Migration ${migrationId} completed successfully`);
+    this.logger.log(`Migration ${lease.migrationId} completed successfully`);
+    return 'completed';
   }
 }

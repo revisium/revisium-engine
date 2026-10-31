@@ -7,7 +7,7 @@ import { MigrationLockService } from 'src/features/migration/services/migration-
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { MigrationWorkerService } from 'src/features/migration/services/migration-worker.service';
 import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
-import { MigrationProgressService } from 'src/features/migration/services/migration-progress.service';
+import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MIGRATION_QUERY_HANDLERS } from 'src/features/migration/queries/handlers';
@@ -19,7 +19,7 @@ const SERVICES = [
   MigrationService,
   MigrationBatchService,
   MigrationWorkerService,
-  MigrationProgressService,
+  MigrationTransitionService,
   MigrationApiService,
   ...MIGRATION_QUERY_HANDLERS,
   ...MIGRATION_COMMAND_HANDLERS,

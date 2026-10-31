@@ -10,6 +10,11 @@ import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import type { TransactionPrismaClient } from 'src/features/share/types';
+import {
+  MigrationTransitionService,
+  type MigrationCheckpoint,
+  type MigrationLease,
+} from 'src/features/migration/services/migration-transition.service';
 import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import {
   JsonPatch,
@@ -17,12 +22,21 @@ import {
   JsonValue,
 } from '@revisium/schema-toolkit/types';
 
+export interface ShadowBatch {
+  shadowTableVersionId: string;
+  targetSchemaHash: string;
+  from: MigrationCheckpoint;
+  to: MigrationCheckpoint;
+  rows: Row[];
+}
+
 @Injectable()
 export class MigrationBatchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pluginService: PluginService,
     private readonly jsonSchemaStore: JsonSchemaStoreService,
+    private readonly transitions: MigrationTransitionService,
   ) {}
 
   async loadBatchRows(
@@ -79,6 +93,33 @@ export class MigrationBatchService {
     });
 
     return processedRows;
+  }
+
+  async writeBatch(
+    lease: MigrationLease,
+    batch: ShadowBatch,
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const advanced = await this.transitions.advanceCheckpoint(
+        lease,
+        batch.from,
+        batch.to,
+        transaction,
+      );
+
+      if (!advanced) {
+        return false;
+      }
+
+      await this.insertBatchIntoShadow(
+        batch.rows,
+        batch.shadowTableVersionId,
+        batch.targetSchemaHash,
+        transaction,
+      );
+
+      return true;
+    });
   }
 
   async insertBatchIntoShadow(

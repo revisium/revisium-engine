@@ -9,10 +9,11 @@ import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MigrationModule } from 'src/features/migration/migration.module';
-import { MigrationProgressService } from 'src/features/migration/services/migration-progress.service';
 import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { MigrationService } from 'src/features/migration/services/migration.service';
+import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
 import { RowModule } from 'src/features/row/row.module';
@@ -31,10 +32,10 @@ import { createStorageMock } from 'src/__tests__/kit/storage.mock';
 const DEFAULT_MIGRATION_THRESHOLD = 10;
 const DEFAULT_MIGRATION_BATCH_SIZE = 5;
 
-interface MigrationTestKitOptions {
-  threshold?: number;
-  batchSize?: number;
-}
+type MigrationTestKitOptions = Pick<
+  MigrationOptions,
+  'threshold' | 'batchSize' | 'workerMode' | 'lockTimeoutMs'
+>;
 
 export interface MigrationTestKit {
   module: TestingModule;
@@ -47,7 +48,7 @@ export interface MigrationTestKit {
   migrationBatchService: MigrationBatchService;
   migrationLockService: MigrationLockService;
   migrationService: MigrationService;
-  migrationProgressService: MigrationProgressService;
+  migrationTransitions: MigrationTransitionService;
   transactionService: TransactionPrismaService;
   close(): Promise<void>;
 }
@@ -78,6 +79,7 @@ export async function createMigrationTestKit(
     .useValue(createStorageMock())
     .overrideProvider(MIGRATION_OPTIONS)
     .useValue({
+      ...options,
       threshold: options.threshold ?? DEFAULT_MIGRATION_THRESHOLD,
       batchSize: options.batchSize ?? DEFAULT_MIGRATION_BATCH_SIZE,
     })
@@ -96,7 +98,7 @@ export async function createMigrationTestKit(
     migrationBatchService: module.get(MigrationBatchService),
     migrationLockService: module.get(MigrationLockService),
     migrationService: module.get(MigrationService),
-    migrationProgressService: module.get(MigrationProgressService),
+    migrationTransitions: module.get(MigrationTransitionService),
     transactionService: module.get(TransactionPrismaService),
     async close() {
       await module.close();

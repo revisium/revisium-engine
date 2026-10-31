@@ -31,10 +31,10 @@ Each item is delivered by its own pull requests, in this order.
 | Item | Priority | Status |
 | --- | --- | --- |
 | `applyMigrations` checks the migration id inside the migration's transaction | Must | In progress |
-| Migration lock checked inside every API writer's transaction, views writes included | Must | Not started |
-| Serializable views writes | Must | Not started |
+| Migration lock checked inside every API writer's transaction, views writes included | Must | In progress (views: #86) |
+| Serializable views writes | Must | Done (#86) |
 | Referrer rewrites and the row-removal guard without the 100 limits | Must | Not started |
-| Table copy-on-write by `INSERT … SELECT` | Must | Not started |
+| Table copy-on-write by `INSERT … SELECT` | Must | Done (#85) |
 | `applyMigrations` applies an `update` synchronously or waits for the async migration | Must | Not started |
 | Async migration fix (own design, a new version of async-row-migration) | Must | Not started |
 | Detection scan | Must | Not started |

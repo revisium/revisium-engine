@@ -8,6 +8,7 @@ export type RevisionSide = 'head' | 'draft';
 export interface AppliedUnits {
   readonly operation: ChangeOperation;
   readonly applied: ReadonlySet<string>;
+  readonly wholeDraft: boolean;
 }
 
 export type OtherSideColumn = 'publishedAt' | 'meta';
@@ -65,6 +66,10 @@ export class OutcomeRules {
     return new TableOutcomeRules(this, table);
   }
 
+  public get appliesWholeDraft(): boolean {
+    return this.choice.wholeDraft;
+  }
+
   public isApplied(key: string): boolean {
     return this.choice.applied.has(key);
   }
@@ -106,7 +111,7 @@ export class TableOutcomeRules {
 
   public tableOutcomeOf(rows: readonly RowWithOutcome[]): TableOutcome {
     if (this.unitKeys().length === 0) {
-      return 'unchanged';
+      return this.outcomeWithoutUnits();
     }
 
     if (rows.every((row) => this.keepsStructureSideLink(row))) {
@@ -122,6 +127,14 @@ export class TableOutcomeRules {
 
   public isRelinkCandidate(): boolean {
     return this.unitKeys().every((key) => this.rules.isApplied(key));
+  }
+
+  private outcomeWithoutUnits(): TableOutcome {
+    if (this.rules.appliesWholeDraft) {
+      return 'other';
+    }
+
+    return 'unchanged';
   }
 
   private otherSideExistenceOf(pair: RowPair): RowOutcome {

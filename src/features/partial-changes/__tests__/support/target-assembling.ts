@@ -11,7 +11,10 @@ import type {
   TargetRow,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
-import type { Selection } from 'src/features/partial-changes/selection/selection';
+import {
+  isWholeDraftSelection,
+  type Selection,
+} from 'src/features/partial-changes/selection/selection';
 import type { SelectionResolution } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
   ChangesBranch,
@@ -58,7 +61,11 @@ export function readAssembledTarget(
     );
     const plans = await kit.targetAssembler.assemble(
       { ...compared, catalogue },
-      { operation, applied: appliedUnitsOf(resolution) },
+      {
+        operation,
+        applied: appliedUnitsOf(resolution),
+        wholeDraft: isWholeDraftSelection(selection),
+      },
     );
 
     return targetView(compared.snapshot, plans);

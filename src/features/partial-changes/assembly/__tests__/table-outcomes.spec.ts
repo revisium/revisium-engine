@@ -138,24 +138,53 @@ describe('TargetAssembler: table outcomes in tables of one structure', () => {
     },
   );
 
-  it('marks a read table whose only Draft difference is a content-equal row version as a relink candidate', async () => {
-    const draft = await givenEditedCatalog();
-    await givenContentEqualCategory(draft);
+  it.each<{ operation: ChangeOperation; version: 'head' | 'draft' }>([
+    { operation: 'commit', version: 'head' },
+    { operation: 'revert', version: 'draft' },
+  ])(
+    'keeps the $version version of a read table whose only Draft difference is a content-equal row version, as a relink candidate, in a $operation',
+    async ({ operation, version }) => {
+      const draft = await givenEditedCatalog();
+      await givenContentEqualCategory(draft);
 
-    const target = await draft.assembleTarget('commit', {
-      tableData: [PRODUCTS],
-    });
+      const target = await draft.assembleTarget(operation, {
+        tableData: [PRODUCTS],
+      });
 
-    expect(target.tableOf(CATEGORIES)).toEqual({
-      outcome: 'unchanged',
-      version: 'head',
-      rows: [],
-      removedLinks: [],
-      addedLinks: [],
-      newRows: [],
-      relinkCandidate: true,
-    });
-  });
+      expect(target.tableOf(CATEGORIES)).toEqual({
+        outcome: 'unchanged',
+        version,
+        rows: [],
+        removedLinks: [],
+        addedLinks: [],
+        newRows: [],
+        relinkCandidate: true,
+      });
+    },
+  );
+
+  it.each<{ operation: ChangeOperation; version: 'head' | 'draft' }>([
+    { operation: 'commit', version: 'draft' },
+    { operation: 'revert', version: 'head' },
+  ])(
+    'links the $version version of a table whose only Draft difference is a content-equal row version when a $operation applies exactly { all: true }, as native does',
+    async ({ operation, version }) => {
+      const draft = await givenEditedCatalog();
+      await givenContentEqualCategory(draft);
+
+      const target = await draft.assembleTarget(operation, { all: true });
+
+      expect(target.tableOf(CATEGORIES)).toEqual({
+        outcome: 'other',
+        version,
+        rows: [],
+        removedLinks: [],
+        addedLinks: [],
+        newRows: [],
+        relinkCandidate: true,
+      });
+    },
+  );
 
   it('leaves an unread table out of the plan', async () => {
     const draft = await givenEditedCatalog();

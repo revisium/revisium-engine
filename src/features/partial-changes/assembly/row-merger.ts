@@ -98,14 +98,17 @@ function dataTakingOtherSidePaths({
   otherSide,
   fromOtherSide,
 }: RowMerge): JsonValue {
-  const data = structuredClone(structureSide.data);
+  let data: unknown = structuredClone(structureSide.data);
 
   for (const path of fromOtherSide.paths) {
     const pointer = JsonPointer.parse(path);
-    pointer.assignIn(data, structuredClone(pointer.valueIn(otherSide.data)));
+    data = pointer.assignIn(
+      data,
+      structuredClone(pointer.valueIn(otherSide.data)),
+    );
   }
 
-  return data;
+  return data as JsonValue;
 }
 
 function sideTakingColumn(merge: RowMerge, column: OtherSideColumn): Row {

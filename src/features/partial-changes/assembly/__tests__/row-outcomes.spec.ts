@@ -1,9 +1,18 @@
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import { num, numFormula, obj, ref, str } from '@revisium/schema-toolkit/mocks';
+import {
+  arr,
+  num,
+  numFormula,
+  obj,
+  ref,
+  str,
+} from '@revisium/schema-toolkit/mocks';
+import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
@@ -13,6 +22,7 @@ import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-o
 const PRODUCTS = 'products';
 const ARTICLES = 'articles';
 const ORDERS = 'orders';
+const VALUES = 'values';
 const RELEASE_DATE = '2030-01-01T00:00:00.000Z';
 
 const productSchema = obj({ title: str(), price: num() });
@@ -31,6 +41,7 @@ const orderSchema = obj({
 const product = (rowId: string) => ({ tableId: PRODUCTS, rowId });
 const titleOfP1 = { tableId: PRODUCTS, rowId: 'p1', path: '/title' };
 const priceOfO1 = { tableId: ORDERS, rowId: 'o1', path: '/price' };
+const rootOfR2 = { tableId: VALUES, rowId: 'r2', path: '' };
 
 describe('TargetAssembler: row outcomes in a table of one structure', () => {
   let kit: PartialChangesTestKit;
@@ -330,6 +341,73 @@ describe('TargetAssembler: row outcomes in a table of one structure', () => {
     },
   );
 
+  it.each<{
+    row: string;
+    operation: ChangeOperation;
+    schema: JsonSchema;
+    committed: InputJsonValue;
+    edited: InputJsonValue;
+    removedLinks: string[];
+    merged: { id: string; data: InputJsonValue };
+  }>([
+    {
+      row: 'a scalar',
+      operation: 'commit',
+      schema: str(),
+      committed: 'one',
+      edited: 'two',
+      removedLinks: ['head r1'],
+      merged: { id: 'r1', data: 'two' },
+    },
+    {
+      row: 'a scalar',
+      operation: 'revert',
+      schema: str(),
+      committed: 'one',
+      edited: 'two',
+      removedLinks: ['draft r2'],
+      merged: { id: 'r2', data: 'one' },
+    },
+    {
+      row: 'an array',
+      operation: 'commit',
+      schema: arr(str()),
+      committed: ['a', 'b'],
+      edited: ['a', 'c'],
+      removedLinks: ['head r1'],
+      merged: { id: 'r1', data: ['a', 'c'] },
+    },
+    {
+      row: 'an array',
+      operation: 'revert',
+      schema: arr(str()),
+      committed: ['a', 'b'],
+      edited: ['a', 'c'],
+      removedLinks: ['draft r2'],
+      merged: { id: 'r2', data: ['a', 'b'] },
+    },
+  ])(
+    'merges the root value of $row row independently of its rename in a $operation',
+    async ({ operation, schema, committed, edited, removedLinks, merged }) => {
+      const draft = await givenRenamedRowWithEditedValue(
+        schema,
+        committed,
+        edited,
+      );
+
+      const target = await draft.assembleTarget(operation, {
+        fields: [rootOfR2],
+      });
+
+      expect(target.tableOf(VALUES)).toMatchObject({
+        outcome: 'mixed',
+        removedLinks,
+        addedLinks: [],
+        newRows: [merged],
+      });
+    },
+  );
+
   it.each<{ operation: ChangeOperation; selection: Selection }>([
     { operation: 'commit', selection: { rows: [product('p3')] } },
     { operation: 'revert', selection: { rows: [product('p2')] } },
@@ -424,6 +502,21 @@ describe('TargetAssembler: row outcomes in a table of one structure', () => {
     });
     await draft.writeRowColumns(ARTICLES, 'a1', { schemaHash: 'foreign' });
     expectEveryDifferenceOwnedOnce(await draft.readCatalogue([ARTICLES]));
+
+    return draft;
+  }
+
+  async function givenRenamedRowWithEditedValue(
+    schema: JsonSchema,
+    committed: InputJsonValue,
+    edited: InputJsonValue,
+  ): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [VALUES]: { schema, rows: { r1: committed } },
+    });
+    await draft.renameRow(VALUES, 'r1', 'r2');
+    await draft.updateRow(VALUES, 'r2', edited);
+    expectEveryDifferenceOwnedOnce(await draft.readCatalogue([VALUES]));
 
     return draft;
   }

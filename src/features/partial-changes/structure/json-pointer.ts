@@ -44,15 +44,22 @@ export class JsonPointer {
     );
   }
 
-  public assignIn(data: unknown, value: unknown): void {
+  public assignIn(data: unknown, value: unknown): unknown {
     const name = this.segments.at(-1);
+
+    if (name === undefined) {
+      return value;
+    }
+
     const holder = new JsonPointer(this.segments.slice(0, -1)).valueIn(data);
 
-    if (name === undefined || !isObject(holder)) {
+    if (!isObject(holder)) {
       throw new Error(`No object holds "${this.toString()}"`);
     }
 
     holder[name] = value;
+
+    return data;
   }
 
   public toString(): string {

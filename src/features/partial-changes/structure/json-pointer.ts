@@ -6,13 +6,19 @@ export class JsonPointer {
 
   private constructor(public readonly segments: readonly string[]) {}
 
+  public static isValid(text: string): boolean {
+    return (
+      text === '' || (text.startsWith(SEPARATOR) && !INVALID_ESCAPE.test(text))
+    );
+  }
+
   public static parse(text: string): JsonPointer {
-    if (text === '') {
-      return JsonPointer.root;
+    if (!JsonPointer.isValid(text)) {
+      throw new Error(`Invalid JSON Pointer "${text}"`);
     }
 
-    if (!text.startsWith(SEPARATOR) || INVALID_ESCAPE.test(text)) {
-      throw new Error(`Invalid JSON Pointer "${text}"`);
+    if (text === '') {
+      return JsonPointer.root;
     }
 
     return new JsonPointer(

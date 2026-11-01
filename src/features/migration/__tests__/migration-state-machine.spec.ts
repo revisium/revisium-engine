@@ -1,3 +1,4 @@
+import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import { expectMigrationAbsent } from 'src/__tests__/assertions/migration';
 import {
   createMigrationTestKit,
@@ -5,6 +6,7 @@ import {
 } from 'src/__tests__/kit/create-migration-test-kit';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import type { TableMigration } from 'src/engine-prisma-types';
+import { decodeMigrationPayload } from 'src/features/migration/migration-payload';
 import type { MigrationCheckpoint } from 'src/features/migration/services/migration-transition.service';
 import {
   MigrationPhase,
@@ -628,16 +630,26 @@ describe('Async migration state machine', () => {
       from.lastCopiedRowId,
       BATCH_SIZE,
     );
+    const migrated = await kit.migrationBatchService.migrateAndProcessBatch(
+      rows,
+      decodeMigrationPayload(record.patches).patches,
+      record.previousSchema as unknown as JsonSchema,
+      record.revisionId,
+      record.tableId,
+    );
 
     return kit.migrationBatchService.writeBatch(owner.lease, {
+      revisionId: record.revisionId,
+      tableId: record.tableId,
       shadowTableVersionId: record.shadowTableVersionId ?? '',
+      targetSchema: migrated.targetSchema,
       targetSchemaHash: record.targetSchemaHash,
       from,
       to: {
         copiedRows: from.copiedRows + rows.length,
         lastCopiedRowId: rows.at(-1)?.id ?? null,
       },
-      rows,
+      rows: migrated.rows,
     });
   }
 

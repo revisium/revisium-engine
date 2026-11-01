@@ -5,6 +5,7 @@ import {
 } from '@revisium/schema-toolkit/types';
 import { observeCommittedVersions } from 'src/__tests__/assertions/migration';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
   prepareBranch,
   type BranchGraph,
@@ -63,6 +64,12 @@ export interface DraftWithTables {
   tables: DraftOwnedTable[];
 }
 
+export interface TableContents {
+  schema: JsonObjectSchema;
+  rows: InputJsonValue[];
+  views?: TableViewsData;
+}
+
 export interface StartedMigration extends DraftOwnedTable {
   migrationId: string;
   field: string;
@@ -95,16 +102,11 @@ export async function givenCommittedTable(
   kit: MigrationTestKit,
   { rowCount, views }: { rowCount: number; views?: TableViewsData },
 ): Promise<CommittedTable> {
-  const table = await givenDraftOwnedTable(kit, rowCount);
-
-  if (views) {
-    await kit.module.get(ViewsApiService).updateTableViews({
-      revisionId: table.revisionId,
-      tableId: table.tableId,
-      viewsData: views,
-    });
-  }
-
+  const table = await givenDraftOwnedTableWith(kit, {
+    schema: productSchema,
+    rows: rowsOf(productSchema, rowCount),
+    views,
+  });
   const { headRevisionId, draftRevisionId } = await commitDraft(kit, table);
 
   return { ...table, headRevisionId, revisionId: draftRevisionId };
@@ -216,16 +218,25 @@ export async function startAsyncUpdate(
   return { ...table, migrationId, field, patches };
 }
 
-export async function givenDraftOwnedTable(
+export function givenDraftOwnedTable(
   kit: MigrationTestKit,
   rowCount: number,
   schema: JsonObjectSchema = productSchema,
 ): Promise<DraftOwnedTable> {
+  return givenDraftOwnedTableWith(kit, {
+    schema,
+    rows: rowsOf(schema, rowCount),
+  });
+}
+
+export async function givenDraftOwnedTableWith(
+  kit: MigrationTestKit,
+  contents: TableContents,
+): Promise<DraftOwnedTable> {
   const branch = await prepareBranch(kit.prisma);
   const table = await addDraftOwnedTable(kit, branch, {
     tableId: TABLE_ID,
-    rowCount,
-    schema,
+    ...contents,
   });
   await observeCommittedVersions(kit, branch.branchId);
 
@@ -243,8 +254,8 @@ export async function givenDraftOwnedTables(
     tables.push(
       await addDraftOwnedTable(kit, branch, {
         tableId,
-        rowCount,
         schema: productSchema,
+        rows: rowsOf(productSchema, rowCount),
       }),
     );
   }
@@ -256,16 +267,9 @@ export async function givenDraftOwnedTables(
 async function addDraftOwnedTable(
   kit: MigrationTestKit,
   branch: BranchGraph,
-  {
-    tableId,
-    rowCount,
-    schema,
-  }: { tableId: string; rowCount: number; schema: JsonObjectSchema },
+  { tableId, schema, rows, views }: TableContents & { tableId: string },
 ): Promise<DraftOwnedTable> {
-  const rowIds = Array.from(
-    { length: rowCount },
-    (_, index) => `row-${String(index).padStart(ROW_ID_DIGITS, '0')}`,
-  );
+  const rowIds = rows.map((_, index) => rowIdOf(index));
 
   await kit.draftApi.apiCreateTable({
     revisionId: branch.draftRevisionId,
@@ -275,11 +279,18 @@ async function addDraftOwnedTable(
   await kit.draftApi.apiCreateRows({
     revisionId: branch.draftRevisionId,
     tableId,
-    rows: rowIds.map((rowId, index) => ({
-      rowId,
-      data: rowDataOf(schema, index),
-    })),
+    rows: rows.map((data, index) => ({ rowId: rowIdOf(index), data })),
+    // Restored rows may carry files that are already uploaded.
+    isRestore: true,
   });
+
+  if (views) {
+    await kit.module.get(ViewsApiService).updateTableViews({
+      revisionId: branch.draftRevisionId,
+      tableId,
+      viewsData: views,
+    });
+  }
 
   return {
     projectId: branch.projectId,
@@ -312,8 +323,14 @@ function productSchemaWith(field: string): JsonObjectSchema {
   };
 }
 
-function rowDataOf(schema: JsonObjectSchema, index: number) {
-  return Object.fromEntries(
-    Object.keys(schema.properties).map((field) => [field, index]),
+function rowIdOf(index: number): string {
+  return `row-${String(index).padStart(ROW_ID_DIGITS, '0')}`;
+}
+
+function rowsOf(schema: JsonObjectSchema, rowCount: number): InputJsonValue[] {
+  return Array.from({ length: rowCount }, (_, index) =>
+    Object.fromEntries(
+      Object.keys(schema.properties).map((field) => [field, index]),
+    ),
   );
 }

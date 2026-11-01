@@ -30,6 +30,7 @@ import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { createStorageMock } from 'src/__tests__/kit/storage.mock';
 import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
+import { transactionTimeoutSetting } from 'src/__tests__/kit/transaction-timeout-setting';
 import {
   ExplicitMigrationRecoveryScope,
   restrictMigrationRecovery,
@@ -46,7 +47,7 @@ type MigrationTestKitOptions = Pick<
   | 'pollIntervalMs'
   | 'lockTimeoutMs'
   | 'stallTimeoutMs'
-> & { recoveryScope?: string[] };
+> & { recoveryScope?: string[]; transactionTimeoutMs?: number };
 
 export interface MigrationTestKit {
   module: TestingModule;
@@ -68,6 +69,7 @@ export interface MigrationTestKit {
 
 export async function createMigrationTestKit({
   recoveryScope: recoveredMigrationIds,
+  transactionTimeoutMs,
   ...options
 }: MigrationTestKitOptions = {}): Promise<MigrationTestKit> {
   const recoveryScope = new ExplicitMigrationRecoveryScope(
@@ -75,7 +77,10 @@ export async function createMigrationTestKit({
   );
   const builder = Test.createTestingModule({
     imports: [
-      ConfigModule.forRoot({ isGlobal: true }),
+      ConfigModule.forRoot({
+        isGlobal: true,
+        load: transactionTimeoutSetting(transactionTimeoutMs),
+      }),
       DatabaseModule,
       CqrsModule,
       StorageModule.forRoot(),

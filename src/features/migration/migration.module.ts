@@ -3,6 +3,7 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
+import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { MigrationWorkerService } from 'src/features/migration/services/migration-worker.service';
@@ -43,7 +44,13 @@ export class MigrationModule {
   static forRoot(options?: MigrationOptions): DynamicModule {
     return {
       module: MigrationModule,
-      imports: [DatabaseModule, CqrsModule, ShareModule, PluginModule],
+      imports: [
+        DatabaseModule,
+        CqrsModule,
+        ShareModule,
+        PluginModule,
+        FileUsageModule,
+      ],
       providers: [
         {
           provide: MIGRATION_OPTIONS,

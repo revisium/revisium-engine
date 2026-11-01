@@ -2,10 +2,10 @@ import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { DraftRevisionCommitCommand } from 'src/features/draft-revision/commands/impl/draft-revision-commit.command';
 import { DraftRevisionCommitCommandReturnType } from 'src/features/draft-revision/commands/impl';
 import {
+  CommitTransition,
   DraftRevisionInternalService,
   DraftRevisionValidationService,
 } from 'src/features/draft-revision/services';
-import { IdService } from 'src/infrastructure/database/id.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @CommandHandler(DraftRevisionCommitCommand)
@@ -14,7 +14,7 @@ export class DraftRevisionCommitHandler implements ICommandHandler<DraftRevision
     private readonly transactionService: TransactionPrismaService,
     private readonly validationService: DraftRevisionValidationService,
     private readonly internalService: DraftRevisionInternalService,
-    private readonly idService: IdService,
+    private readonly transition: CommitTransition,
   ) {}
 
   private get transaction() {
@@ -36,13 +36,13 @@ export class DraftRevisionCommitHandler implements ICommandHandler<DraftRevision
     const tableVersionIds =
       await this.internalService.getRevisionTableVersionIds(draftRevision.id);
 
-    await this.updatePreviousHeadRevision(headRevision.id);
-    await this.updatePreviousDraftRevision(draftRevision.id, comment);
-    const nextDraftRevision = await this.createNextDraftRevision(
+    await this.transition.retireHead(headRevision.id);
+    await this.transition.promoteDraftToHead(draftRevision.id, comment);
+    const nextDraftRevisionId = await this.transition.openNextDraft({
       branchId,
-      draftRevision.id,
-      tableVersionIds,
-    );
+      parentRevisionId: draftRevision.id,
+      tables: tableVersionIds,
+    });
     await this.lockRowsAndTables(
       draftRevision.id,
       headRevision.id,
@@ -52,43 +52,8 @@ export class DraftRevisionCommitHandler implements ICommandHandler<DraftRevision
     return {
       previousHeadRevisionId: headRevision.id,
       previousDraftRevisionId: draftRevision.id,
-      nextDraftRevisionId: nextDraftRevision.id,
+      nextDraftRevisionId,
     };
-  }
-
-  private updatePreviousHeadRevision(revisionId: string): Promise<unknown> {
-    return this.transaction.revision.update({
-      where: { id: revisionId },
-      data: { isHead: false, isDraft: false, hasChanges: false },
-    });
-  }
-
-  private updatePreviousDraftRevision(
-    revisionId: string,
-    comment?: string,
-  ): Promise<unknown> {
-    return this.transaction.revision.update({
-      where: { id: revisionId },
-      data: { isHead: true, isDraft: false, hasChanges: false, comment },
-    });
-  }
-
-  private createNextDraftRevision(
-    branchId: string,
-    parentRevisionId: string,
-    tableVersionIds: { versionId: string }[],
-  ): Promise<{ id: string }> {
-    return this.transaction.revision.create({
-      data: {
-        id: this.idService.generate(),
-        isDraft: true,
-        hasChanges: false,
-        parent: { connect: { id: parentRevisionId } },
-        tables: { connect: tableVersionIds },
-        branch: { connect: { id: branchId } },
-      },
-      select: { id: true },
-    });
   }
 
   private async lockRowsAndTables(

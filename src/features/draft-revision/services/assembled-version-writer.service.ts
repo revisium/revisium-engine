@@ -14,6 +14,22 @@ export interface AssembledTableVersion {
   readonly newRowVersionIds: readonly string[];
 }
 
+export interface WrittenVersion {
+  readonly versionId?: string;
+  readonly newRowVersionIds: readonly string[];
+}
+
+interface VersionAccess {
+  readonly readonly: boolean;
+}
+
+const MUTABLE: VersionAccess = { readonly: false };
+const READONLY: VersionAccess = { readonly: true };
+
+export function linkedVersion(versionId: string | undefined): WrittenVersion {
+  return { versionId, newRowVersionIds: [] };
+}
+
 @Injectable()
 export class AssembledVersionWriter {
   constructor(
@@ -25,22 +41,18 @@ export class AssembledVersionWriter {
     return this.transactionService.getTransaction();
   }
 
-  public async createTableVersion(
+  public createTableVersion(
     sourceVersionId: string,
     changes: RowLinkChanges,
   ): Promise<AssembledTableVersion> {
-    const versionId = this.idService.generate();
+    return this.copyVersion(sourceVersionId, changes, MUTABLE);
+  }
 
-    await this.copyTableVersion(sourceVersionId, versionId);
-    await this.copyRowLinks(sourceVersionId, versionId, changes);
-
-    return {
-      versionId,
-      newRowVersionIds: await this.insertRowVersions(
-        versionId,
-        changes.newRows,
-      ),
-    };
+  public createReadonlyTableVersion(
+    sourceVersionId: string,
+    changes: RowLinkChanges,
+  ): Promise<AssembledTableVersion> {
+    return this.copyVersion(sourceVersionId, changes, READONLY);
   }
 
   public async editTableVersion(
@@ -55,6 +67,35 @@ export class AssembledVersionWriter {
       newRowVersionIds: await this.insertRowVersions(
         versionId,
         changes.newRows,
+        MUTABLE,
+      ),
+    };
+  }
+
+  public async lockLinkedIntoHead(
+    tableVersionId: string,
+    headVersionId: string | undefined,
+  ): Promise<void> {
+    await this.lockTableVersion(tableVersionId);
+    await this.lockRowsMissingIn(tableVersionId, headVersionId);
+  }
+
+  private async copyVersion(
+    sourceVersionId: string,
+    changes: RowLinkChanges,
+    access: VersionAccess,
+  ): Promise<AssembledTableVersion> {
+    const versionId = this.idService.generate();
+
+    await this.copyTableVersion(sourceVersionId, versionId, access);
+    await this.copyRowLinks(sourceVersionId, versionId, changes);
+
+    return {
+      versionId,
+      newRowVersionIds: await this.insertRowVersions(
+        versionId,
+        changes.newRows,
+        access,
       ),
     };
   }
@@ -62,10 +103,11 @@ export class AssembledVersionWriter {
   private async copyTableVersion(
     sourceVersionId: string,
     versionId: string,
+    { readonly }: VersionAccess,
   ): Promise<void> {
     const created = await this.transaction.$executeRaw(sql`
       INSERT INTO "Table" ("versionId", "createdId", "id", "readonly", "system", "createdAt")
-      SELECT ${versionId}, "createdId", "id", false, "system", "createdAt"
+      SELECT ${versionId}, "createdId", "id", ${readonly}, "system", "createdAt"
       FROM "Table"
       WHERE "versionId" = ${sourceVersionId}
     `);
@@ -125,16 +167,44 @@ export class AssembledVersionWriter {
     `);
   }
 
+  private async lockTableVersion(tableVersionId: string): Promise<void> {
+    await this.transaction.$executeRaw(sql`
+      UPDATE "Table" SET "readonly" = true
+      WHERE "versionId" = ${tableVersionId} AND "readonly" = false
+    `);
+  }
+
+  private async lockRowsMissingIn(
+    tableVersionId: string,
+    headVersionId: string | undefined,
+  ): Promise<void> {
+    await this.transaction.$executeRaw(sql`
+      UPDATE "Row" SET "readonly" = true
+      WHERE "readonly" = false
+        AND "versionId" = ANY(ARRAY(
+          SELECT link."A" FROM "_RowToTable" link
+          WHERE link."B" = ${tableVersionId}
+            AND NOT EXISTS (
+              SELECT 1 FROM "_RowToTable" head_link
+              WHERE head_link."B" = ${headVersionId ?? null} AND head_link."A" = link."A"
+            )
+        ))
+    `);
+  }
+
   private async insertRowVersions(
     tableVersionId: string,
     rows: readonly NewRowVersion[],
+    access: VersionAccess,
   ): Promise<string[]> {
     const versionIds: string[] = [];
 
     for (let start = 0; start < rows.length; start += NEW_ROWS_BATCH_SIZE) {
       const batch = rows.slice(start, start + NEW_ROWS_BATCH_SIZE);
 
-      versionIds.push(...(await this.insertRowBatch(tableVersionId, batch)));
+      versionIds.push(
+        ...(await this.insertRowBatch(tableVersionId, batch, access)),
+      );
     }
 
     return versionIds;
@@ -143,6 +213,7 @@ export class AssembledVersionWriter {
   private async insertRowBatch(
     tableVersionId: string,
     rows: readonly NewRowVersion[],
+    { readonly }: VersionAccess,
   ): Promise<string[]> {
     const versionIds = rows.map(() => this.idService.generate());
 
@@ -150,7 +221,7 @@ export class AssembledVersionWriter {
       WITH inserted AS (
         INSERT INTO "Row" ("versionId", "createdId", "id", "readonly", "data", "meta",
                            "hash", "schemaHash", "createdAt", "publishedAt")
-        SELECT v."versionId", v."createdId", v."id", false, v."data"::jsonb, v."meta"::jsonb,
+        SELECT v."versionId", v."createdId", v."id", ${readonly}, v."data"::jsonb, v."meta"::jsonb,
                v."hash", v."schemaHash", v."createdAt"::timestamp(3), v."publishedAt"::timestamp(3)
         FROM unnest(
           ${versionIds}::text[],

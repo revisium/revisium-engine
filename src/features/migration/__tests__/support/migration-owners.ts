@@ -1,7 +1,11 @@
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { createBarrier, type Barrier } from 'src/__tests__/utils/barrier';
-import type { MigrationLease } from 'src/features/migration/services/migration-transition.service';
+import type {
+  MigrationLease,
+  OwnershipEpoch,
+} from 'src/features/migration/services/migration-transition.service';
 import type { MigrationStepResult } from 'src/features/migration/types/migration.types';
+import type { SweepingProcess } from './migration-sweeps';
 
 export interface OwnerHold {
   barrier: Barrier;
@@ -19,31 +23,64 @@ export interface PausedOwner {
 
 const startedOwners: { holds: OwnerHold[]; result: Promise<unknown> }[] = [];
 
-export async function startOwnerUntil(
+export function startOwnerUntil(
   kit: MigrationTestKit,
   migrationId: string,
   hold: OwnerHold,
 ): Promise<PausedOwner> {
-  const result = kit.migrationService.processMigration(migrationId);
-  const holds = [hold];
-  startedOwners.push({ holds, result });
-  await hold.barrier.expectReachedBefore(result);
+  return pauseOwner(
+    kit,
+    migrationId,
+    kit.migrationService.processMigration(migrationId),
+    hold,
+  );
+}
 
-  return {
-    lease: await readLease(kit, migrationId),
-    async continueUntil(next) {
-      holds.push(next);
-      hold.barrier.release();
-      await next.barrier.expectReachedBefore(result);
-    },
-    resume() {
-      for (const held of holds) {
-        held.barrier.release();
-      }
+export async function takeOverUntil(
+  kit: MigrationTestKit,
+  migrationId: string,
+  hold: OwnerHold,
+): Promise<PausedOwner> {
+  const stalledOwner = await observeStalledSwap(kit, migrationId);
 
-      return result;
-    },
-  };
+  return pauseOwner(
+    kit,
+    migrationId,
+    kit.migrationService.takeOverStalledSwap(stalledOwner),
+    hold,
+  );
+}
+
+export async function sweptUntil(
+  process: SweepingProcess,
+  migrationId: string,
+  hold: OwnerHold,
+): Promise<PausedOwner> {
+  const { result } = await process.nextRunOf(migrationId);
+
+  return pauseOwner(process.kit, migrationId, result, hold);
+}
+
+export async function observeStalledSwap(
+  kit: MigrationTestKit,
+  migrationId: string,
+): Promise<OwnershipEpoch> {
+  const stalledOwner = await findStalledSwapOwner(kit, migrationId);
+
+  if (!stalledOwner) {
+    throw new Error(`No observer sees the swap of ${migrationId} stalled`);
+  }
+
+  return stalledOwner;
+}
+
+export async function findStalledSwapOwner(
+  kit: MigrationTestKit,
+  migrationId: string,
+): Promise<OwnershipEpoch | undefined> {
+  const stalledOwners = await kit.migrationTransitions.findStalledSwaps();
+
+  return stalledOwners.find((owner) => owner.migrationId === migrationId);
 }
 
 export async function releaseStartedOwners(): Promise<void> {
@@ -94,6 +131,25 @@ export function afterSwapBegins(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.migrationTransitions, 'beginSwap', 1, 'after');
 }
 
+export function afterTakeoverWins(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.migrationTransitions, 'takeOver', 1, 'after');
+}
+
+export function afterClaimableFound(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.migrationTransitions, 'findOldestClaimable', 1, 'after');
+}
+
+export function afterSwapTransactionCommits(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.transactionService, 'runSerializable', 1, 'after');
+}
+
+export function beforeSwapTransaction(
+  kit: MigrationTestKit,
+  attempt: number,
+): OwnerHold {
+  return holdCall(kit.transactionService, 'runSerializable', attempt, 'before');
+}
+
 export function insideSwapAfterItsRecordCheck(
   kit: MigrationTestKit,
 ): TransactionHold {
@@ -109,6 +165,33 @@ export function insideSwapAfterItsRecordCheck(
   );
 
   return { ...hold, backendPid: () => backendPid };
+}
+
+async function pauseOwner(
+  kit: MigrationTestKit,
+  migrationId: string,
+  result: Promise<MigrationStepResult>,
+  hold: OwnerHold,
+): Promise<PausedOwner> {
+  const holds = [hold];
+  startedOwners.push({ holds, result });
+  await hold.barrier.expectReachedBefore(result);
+
+  return {
+    lease: await readLease(kit, migrationId),
+    async continueUntil(next) {
+      holds.push(next);
+      hold.barrier.release();
+      await next.barrier.expectReachedBefore(result);
+    },
+    resume() {
+      for (const held of holds) {
+        held.barrier.release();
+      }
+
+      return result;
+    },
+  };
 }
 
 async function readBackendPid(kit: MigrationTestKit): Promise<number> {

@@ -8,6 +8,7 @@ import {
   MigrationStatus,
   MigrationPhase,
 } from 'src/features/migration/types/migration.types';
+import { encodeMigrationPayload } from 'src/features/migration/migration-payload';
 import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { givenDraftWithRows } from 'src/__tests__/fixtures/scenarios/given-draft-with-rows';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
@@ -95,7 +96,7 @@ describe('Migration bugs', () => {
           shadowTableVersionId: shadowVersionId,
           status: MigrationStatus.PENDING,
           phase: MigrationPhase.COPYING,
-          patches: [],
+          patches: encodeMigrationPayload([]),
           previousSchema: testSchema,
           previousSchemaHash: 'h1',
           targetSchemaHash: 'h2',

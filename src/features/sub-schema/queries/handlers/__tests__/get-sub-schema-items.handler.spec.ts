@@ -24,12 +24,14 @@ import { FileStatus } from 'src/features/plugin/file/consts';
 
 describe('GetSubSchemaItemsHandler', () => {
   let prismaService: PrismaService;
+  let closeTestingModule: () => Promise<void>;
   let queryBus: QueryBus;
   let transactionService: TransactionPrismaService;
   let draftApiService: DraftApiService;
 
   beforeAll(async () => {
     const result = await createSubSchemaTestingModule();
+    closeTestingModule = () => result.module.close();
     prismaService = result.prismaService;
     queryBus = result.queryBus;
     transactionService = result.transactionService;
@@ -37,7 +39,7 @@ describe('GetSubSchemaItemsHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await closeTestingModule();
   });
 
   function runQuery(

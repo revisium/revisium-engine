@@ -854,6 +854,7 @@ describe('UpdateTableViewsHandler', () => {
   }
 
   let prismaService: PrismaService;
+  let closeTestingModule: () => Promise<void>;
   let commandBus: CommandBus;
   let transactionService: TransactionPrismaService;
   let draftTransactionalCommands: DraftTransactionalCommands;
@@ -861,6 +862,7 @@ describe('UpdateTableViewsHandler', () => {
 
   beforeAll(async () => {
     const result = await createTestingModule();
+    closeTestingModule = () => result.close();
     prismaService = result.prismaService;
     commandBus = result.commandBus;
     transactionService = result.transactionService;
@@ -873,6 +875,6 @@ describe('UpdateTableViewsHandler', () => {
   });
 
   afterAll(async () => {
-    await prismaService.$disconnect();
+    await closeTestingModule();
   });
 });

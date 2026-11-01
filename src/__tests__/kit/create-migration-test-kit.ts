@@ -28,14 +28,24 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { createStorageMock } from 'src/__tests__/kit/storage.mock';
+import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
+import {
+  ExplicitMigrationRecoveryScope,
+  restrictMigrationRecovery,
+} from 'src/__tests__/kit/migration-recovery-scope';
 
 const DEFAULT_MIGRATION_THRESHOLD = 10;
 const DEFAULT_MIGRATION_BATCH_SIZE = 5;
 
 type MigrationTestKitOptions = Pick<
   MigrationOptions,
-  'threshold' | 'batchSize' | 'workerMode' | 'lockTimeoutMs'
->;
+  | 'threshold'
+  | 'batchSize'
+  | 'workerMode'
+  | 'pollIntervalMs'
+  | 'lockTimeoutMs'
+  | 'stallTimeoutMs'
+> & { recoveryScope?: string[] };
 
 export interface MigrationTestKit {
   module: TestingModule;
@@ -50,13 +60,18 @@ export interface MigrationTestKit {
   migrationService: MigrationService;
   migrationTransitions: MigrationTransitionService;
   transactionService: TransactionPrismaService;
+  recoveryScope: ExplicitMigrationRecoveryScope;
   close(): Promise<void>;
 }
 
-export async function createMigrationTestKit(
-  options: MigrationTestKitOptions = {},
-): Promise<MigrationTestKit> {
-  const module = await Test.createTestingModule({
+export async function createMigrationTestKit({
+  recoveryScope: recoveredMigrationIds,
+  ...options
+}: MigrationTestKitOptions = {}): Promise<MigrationTestKit> {
+  const recoveryScope = new ExplicitMigrationRecoveryScope(
+    recoveredMigrationIds,
+  );
+  const builder = Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true }),
       DatabaseModule,
@@ -79,11 +94,15 @@ export async function createMigrationTestKit(
     .useValue(createStorageMock())
     .overrideProvider(MIGRATION_OPTIONS)
     .useValue({
+      ...WITHOUT_RECURRING_SWEEP,
       ...options,
       threshold: options.threshold ?? DEFAULT_MIGRATION_THRESHOLD,
       batchSize: options.batchSize ?? DEFAULT_MIGRATION_BATCH_SIZE,
-    })
-    .compile();
+    });
+  const module = await restrictMigrationRecovery(
+    builder,
+    recoveryScope,
+  ).compile();
 
   await module.init();
 
@@ -100,6 +119,7 @@ export async function createMigrationTestKit(
     migrationService: module.get(MigrationService),
     migrationTransitions: module.get(MigrationTransitionService),
     transactionService: module.get(TransactionPrismaService),
+    recoveryScope,
     async close() {
       await module.close();
     },

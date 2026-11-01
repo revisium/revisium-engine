@@ -3,6 +3,7 @@ import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-k
 import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { AbortMigrationCommand } from 'src/features/migration/commands/impl/abort-migration.command';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
+import { encodeMigrationPayload } from 'src/features/migration/migration-payload';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 
 describe('AbortMigrationHandler', () => {
@@ -28,7 +29,7 @@ describe('AbortMigrationHandler', () => {
         sourceTableVersionId: 'source-v1',
         status: MigrationStatus.PENDING,
         phase: 'INIT',
-        patches: [],
+        patches: encodeMigrationPayload([]),
         previousSchema: {},
         previousSchemaHash: 'hash1',
         targetSchemaHash: 'hash2',
@@ -64,7 +65,7 @@ describe('AbortMigrationHandler', () => {
         sourceTableVersionId: 'source-v1',
         status: MigrationStatus.COPYING,
         phase: 'COPYING',
-        patches: [],
+        patches: encodeMigrationPayload([]),
         previousSchema: {},
         previousSchemaHash: 'hash1',
         targetSchemaHash: 'hash2',
@@ -101,7 +102,7 @@ describe('AbortMigrationHandler', () => {
         sourceTableVersionId: 'source-v1',
         status: MigrationStatus.SWAPPING,
         phase: 'SWAPPING',
-        patches: [],
+        patches: encodeMigrationPayload([]),
         previousSchema: {},
         previousSchemaHash: 'hash1',
         targetSchemaHash: 'hash2',

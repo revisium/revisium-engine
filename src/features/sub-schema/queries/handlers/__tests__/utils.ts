@@ -9,6 +9,8 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { MigrationModule } from 'src/features/migration/migration.module';
+import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
+import { restrictMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
 import { DraftModule } from 'src/features/draft/draft.module';
 import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { SUB_SCHEMA_QUERIES_HANDLERS } from 'src/features/sub-schema/queries/handlers';
@@ -112,7 +114,7 @@ export const createSubSchemaTestingModule = async () => {
     getPublicUrl: jest.fn((key: string) => `http://test-files/${key}`),
   };
 
-  const module: TestingModule = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true }),
       DatabaseModule,
@@ -121,7 +123,7 @@ export const createSubSchemaTestingModule = async () => {
       StorageModule.forRoot(),
       ShareModule,
       PluginModule,
-      MigrationModule.forRoot(),
+      MigrationModule.forRoot(WITHOUT_RECURRING_SWEEP),
       RevisionModule,
       BranchModule,
       TableModule,
@@ -138,8 +140,9 @@ export const createSubSchemaTestingModule = async () => {
     ],
   })
     .overrideProvider(STORAGE_SERVICE)
-    .useValue(mockStorage)
-    .compile();
+    .useValue(mockStorage);
+  const module: TestingModule =
+    await restrictMigrationRecovery(builder).compile();
 
   await module.init();
 

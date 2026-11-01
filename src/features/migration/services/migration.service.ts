@@ -7,6 +7,7 @@ import { MigrationBatchService } from 'src/features/migration/services/migration
 import {
   MigrationTransitionService,
   type MigrationLease,
+  type OwnershipEpoch,
 } from 'src/features/migration/services/migration-transition.service';
 import {
   MigrationStatus,
@@ -18,6 +19,7 @@ import {
 } from 'src/features/migration/migration-payload';
 import { PermanentMigrationFailure } from 'src/features/migration/exceptions/permanent-migration-failure';
 import { LeaseHeartbeat } from 'src/features/migration/services/lease-heartbeat';
+import { HeldMigrationLeases } from 'src/features/migration/services/held-migration-leases';
 import {
   MIGRATION_DEFAULTS,
   MIGRATION_OPTIONS,
@@ -52,6 +54,7 @@ export class MigrationService {
     private readonly viewsMigrationService: ViewsMigrationService,
     private readonly batchService: MigrationBatchService,
     private readonly transitions: MigrationTransitionService,
+    private readonly heldLeases: HeldMigrationLeases,
     @Optional() @Inject(MIGRATION_OPTIONS) migrationOptions?: MigrationOptions,
   ) {
     this.options = {
@@ -169,19 +172,39 @@ export class MigrationService {
   }
 
   async processMigration(migrationId: string): Promise<MigrationStepResult> {
-    for (;;) {
-      const lease = await this.transitions.claim(migrationId);
+    return this.runUntilSettled(await this.claim(migrationId));
+  }
 
-      if (!lease) {
-        return 'stopped';
-      }
+  async takeOverStalledSwap(
+    stalledOwner: OwnershipEpoch,
+  ): Promise<MigrationStepResult> {
+    return this.runUntilSettled(
+      await this.heldLeases.acquire(() =>
+        this.transitions.takeOver(stalledOwner),
+      ),
+    );
+  }
 
+  private claim(migrationId: string): Promise<MigrationLease | null> {
+    return this.heldLeases.acquire(() => this.transitions.claim(migrationId));
+  }
+
+  private async runUntilSettled(
+    firstLease: MigrationLease | null,
+  ): Promise<MigrationStepResult> {
+    let lease = firstLease;
+
+    while (lease) {
       const result = await this.runClaimedMigration(lease);
 
       if (result !== 'retry') {
         return result;
       }
+
+      lease = await this.claim(lease.migrationId);
     }
+
+    return 'stopped';
   }
 
   private async runClaimedMigration(
@@ -197,6 +220,7 @@ export class MigrationService {
       return await this.runSteps(lease);
     } finally {
       heartbeat.stop();
+      this.heldLeases.release(lease);
       await this.transitions.release(lease);
     }
   }
@@ -401,11 +425,28 @@ export class MigrationService {
 
       await this.updateSchemaRowInTx(tx, migration, patches);
       await this.updateViewsRowInTx(tx, migration, patches);
+      await this.deleteSwappedRecord(lease, tx);
 
       return true;
     });
 
-    return swapped ? this.completeSwap(lease) : 'stopped';
+    if (!swapped) {
+      return 'stopped';
+    }
+
+    this.logger.log(`Migration ${lease.migrationId} completed successfully`);
+    return 'completed';
+  }
+
+  private async deleteSwappedRecord(
+    lease: MigrationLease,
+    tx: TransactionPrismaClient,
+  ): Promise<void> {
+    if (!(await this.transitions.completeSwap(lease, tx))) {
+      throw new Error(
+        `Migration ${lease.migrationId} lost its record inside its own swap`,
+      );
+    }
   }
 
   private async updateSchemaRowInTx(
@@ -497,16 +538,5 @@ export class MigrationService {
         updatedAt: new Date(),
       },
     });
-  }
-
-  private async completeSwap(
-    lease: MigrationLease,
-  ): Promise<MigrationStepResult> {
-    if (!(await this.transitions.completeSwap(lease))) {
-      return 'stopped';
-    }
-
-    this.logger.log(`Migration ${lease.migrationId} completed successfully`);
-    return 'completed';
   }
 }

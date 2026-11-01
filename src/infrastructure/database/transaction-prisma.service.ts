@@ -166,6 +166,10 @@ export class TransactionPrismaService implements OnModuleInit {
     return { baseDelayMs, maxDelayMs };
   }
 
+  public get serializableMaxAttempts(): number {
+    return this.serializableOptions.retry.maxRetries;
+  }
+
   public getTransaction() {
     const transactionInCurrentContext = this.asyncLocalStorage.getStore();
 

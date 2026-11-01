@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import type { InputJsonValue } from 'src/engine-prisma-types';
+import { encodeMigrationPayload } from 'src/features/migration/migration-payload';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 
@@ -9,10 +10,13 @@ const LEASES_PER_EXPIRY = 2;
 export interface MigrationFixtureOptions {
   tableId?: string;
   phase?: string;
+  payload?: InputJsonValue;
+  sourceTableVersionId?: string;
   totalRows?: number;
   copiedRows?: number;
   shadowTableVersionId?: string;
   lockedBy?: string;
+  lockedAt?: Date;
   heartbeatAt?: Date;
   retryCount?: number;
 }
@@ -32,10 +36,10 @@ export function createMigrationRecord(
     data: {
       revisionId,
       tableId: options.tableId ?? 'products',
-      sourceTableVersionId: 'source-v1',
+      sourceTableVersionId: options.sourceTableVersionId ?? 'source-v1',
       status,
       phase: options.phase ?? status,
-      patches: [],
+      patches: options.payload ?? encodeMigrationPayload([]),
       previousSchema: {},
       previousSchemaHash: 'old',
       targetSchemaHash: TARGET_SCHEMA_HASH,
@@ -43,6 +47,7 @@ export function createMigrationRecord(
       copiedRows: options.copiedRows ?? 0,
       shadowTableVersionId: options.shadowTableVersionId,
       lockedBy: options.lockedBy,
+      lockedAt: options.lockedAt,
       heartbeatAt: options.heartbeatAt,
       retryCount: options.retryCount,
     },
@@ -104,18 +109,23 @@ export async function cancelKeepingOwner(
   });
 }
 
-export async function cancelAsStalled(
+export async function passTimeWithoutProgress(
   database: Pick<PrismaService, 'tableMigration'>,
   migrationId: string,
+  elapsedMs: number,
 ): Promise<void> {
+  const record = await database.tableMigration.findUniqueOrThrow({
+    where: { id: migrationId },
+  });
+
   await database.tableMigration.update({
     where: { id: migrationId },
     data: {
-      status: MigrationStatus.CANCELLED,
-      errorMessage: 'STALLED: no progress within the stall timeout',
-      completedAt: new Date(),
-      lockedBy: null,
-      lockedAt: null,
+      createdAt: new Date(record.createdAt.getTime() - elapsedMs),
+      startedAt: earlier(record.startedAt, elapsedMs),
+      lastProgressAt: earlier(record.lastProgressAt, elapsedMs),
+      lockedAt: earlier(record.lockedAt, elapsedMs),
+      heartbeatAt: record.lockedBy ? new Date() : record.heartbeatAt,
     },
   });
 }
@@ -129,4 +139,8 @@ export async function replacePayload(
     where: { id: migrationId },
     data: { patches: payload },
   });
+}
+
+function earlier(moment: Date | null, elapsedMs: number): Date | null {
+  return moment && new Date(moment.getTime() - elapsedMs);
 }

@@ -16,7 +16,6 @@ import { MigrationTransitions } from 'src/features/migration/services/migration-
 import { MigrationSwapService } from 'src/features/migration/services/migration-swap.service';
 import { SwapRecheckService } from 'src/features/migration/services/swap-recheck.service';
 import { LegacyMigrationDisposalService } from 'src/features/migration/services/legacy-migration-disposal.service';
-import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
 import { HeldMigrationLeases } from 'src/features/migration/services/held-migration-leases';
 import { MigrationDrivers } from 'src/features/migration/services/migration-drivers';
 import { MigrationImportService } from 'src/features/migration/services/migration-import.service';
@@ -45,7 +44,6 @@ const SERVICES = [
   MigrationSwapService,
   SwapRecheckService,
   LegacyMigrationDisposalService,
-  MigrationRecoveryScope,
   HeldMigrationLeases,
   MigrationDrivers,
   MigrationImportService,

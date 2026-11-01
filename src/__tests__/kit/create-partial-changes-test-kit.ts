@@ -41,7 +41,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
-import { restrictMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
+import { restrictedMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
 
 export interface PartialChangesTestKit {
   module: TestingModule;
@@ -85,6 +85,7 @@ export async function createPartialChangesTestKit({
       ShareModule,
       PluginModule,
       MigrationModule.forRoot(WITHOUT_RECURRING_SWEEP),
+      restrictedMigrationRecovery(),
       RevisionModule,
       BranchModule,
       TableModule,
@@ -104,7 +105,7 @@ export async function createPartialChangesTestKit({
     builder.overrideProvider(provide).useValue(useValue);
   }
 
-  const module = await restrictMigrationRecovery(builder).compile();
+  const module = await builder.compile();
 
   await module.init();
 

@@ -6,8 +6,7 @@ import {
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
-  LOADING_EVERY_TABLE,
-  loadedDraftVersionIds,
+  READING_EVERY_TABLE,
   readScopedCatalogue,
   type ScopedCatalogueView,
 } from '../../__tests__/support/scoped-reading';
@@ -87,13 +86,13 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
     );
   });
 
-  describe('the reference read of AS-74: the same affected tables, every table loaded', () => {
+  describe('the reference read of AS-74, which reads every table', () => {
     let referenceKit: PartialChangesTestKit;
 
     beforeAll(async () => {
       referenceKit = await createPartialChangesTestKit({
         settings: LIMITED_CHANGED_ROWS,
-        overrides: [LOADING_EVERY_TABLE],
+        overrides: [READING_EVERY_TABLE],
       });
     });
 
@@ -101,19 +100,16 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
       await referenceKit.close();
     });
 
-    it('loads the unrelated table, yet guards and builds the catalogue of the scoped read', async () => {
+    it('counts the changed rows of the unrelated table and refuses the field that the scoped read reads', async () => {
       const draft = await givenPriceEditNextToEditedLogs(kit);
-      const loads = jest.spyOn(referenceKit.snapshotReader, 'readChangedRows');
 
-      const scoped = await draft.readScopedCatalogue({ fields: [priceOfP1] });
       const reference = await readScopedCatalogue(referenceKit, draft.branch, {
         fields: [priceOfP1],
       });
 
-      expect(loadedDraftVersionIds(loads)).toContain(
-        await draft.tableVersionId('draft', LOGS),
+      expect(reference).toEqual(
+        refusedAsTooLarge({ changedRows: 1 + LOG_IDS.length, unreadTables: 0 }),
       );
-      expect(reference).toEqual(scoped);
     });
   });
 });

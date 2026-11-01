@@ -538,9 +538,8 @@ even while it is suspended; its later writes still match nothing. The sweep does
 drives, so deadlines and takeovers apply while a migration runs. A tick that fires while the previous sweep still runs
 is skipped. On shutdown the worker stops sweeping and waits for the migrations it drives.
 
-The sweep and the legacy disposal act on the records the `MigrationRecoveryScope` provider admits: every record in
-production. Test kits replace it with an explicit list of migration ids, empty by default, because the test database is
-shared.
+The sweep and the legacy disposal act on every record. Test kits share one database, so they provide the optional
+`MIGRATION_RECOVERY_TEST_SCOPE`, absent in production, with an explicit list of migration ids, empty by default.
 
 ### Inline (default)
 

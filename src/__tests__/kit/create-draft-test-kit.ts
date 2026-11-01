@@ -11,7 +11,7 @@ import { MigrationContextService } from 'src/features/draft/migration-context.se
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { MigrationModule } from 'src/features/migration/migration.module';
 import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
-import { restrictMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
+import { restrictedMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { PluginService } from 'src/features/plugin/plugin.service';
@@ -81,6 +81,7 @@ export async function createDraftTestKit(
         ...WITHOUT_RECURRING_SWEEP,
         ...options.migrationOptions,
       }),
+      restrictedMigrationRecovery(),
       RevisionModule,
       BranchModule,
       TableModule,
@@ -95,7 +96,7 @@ export async function createDraftTestKit(
     .overrideProvider(STORAGE_SERVICE)
     .useValue(createStorageMock());
   constrainConnectionPool(builder, options.connectionPoolSize);
-  const module = await restrictMigrationRecovery(builder).compile();
+  const module = await builder.compile();
 
   await module.init();
 

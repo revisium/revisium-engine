@@ -11,7 +11,10 @@ import {
   replaceSwapOwner,
   type MigrationLease,
 } from 'src/features/migration/services/migration-ownership';
-import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
+import {
+  MIGRATION_RECOVERY_TEST_SCOPE,
+  type MigrationRecoveryTestScope,
+} from 'src/features/migration/services/migration-recovery-test-scope';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
@@ -30,9 +33,11 @@ export class MigrationStallRecovery {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly recoveryScope: MigrationRecoveryScope,
     transactionService: TransactionPrismaService,
     @Optional() @Inject(MIGRATION_OPTIONS) options?: MigrationOptions,
+    @Optional()
+    @Inject(MIGRATION_RECOVERY_TEST_SCOPE)
+    private readonly testScope?: MigrationRecoveryTestScope,
   ) {
     this.stallTimeoutMs =
       options?.stallTimeoutMs ?? MIGRATION_DEFAULTS.stallTimeoutMs;
@@ -44,7 +49,7 @@ export class MigrationStallRecovery {
   }
 
   findStalledSwaps(): Promise<OwnershipEpoch[]> {
-    return this.findStalledSwapsWhere(inRecoveryScope(this.recoveryScope));
+    return this.findStalledSwapsWhere(inRecoveryScope(this.testScope));
   }
 
   async findStalledSwap(
@@ -71,7 +76,7 @@ export class MigrationStallRecovery {
   }
 
   cancelStalled(): Promise<number> {
-    return this.cancelStalledWhere(inRecoveryScope(this.recoveryScope));
+    return this.cancelStalledWhere(inRecoveryScope(this.testScope));
   }
 
   async cancelIfStalled(migrationId: string): Promise<boolean> {

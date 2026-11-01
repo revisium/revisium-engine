@@ -15,7 +15,6 @@ import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schem
 
 export interface TableScope {
   readonly affectedTables: readonly ComparedTable[];
-  readonly loadedTables: readonly ComparedTable[];
   readonly unreadTables: number;
 }
 
@@ -35,11 +34,7 @@ export class ReadScope {
       (table) => hasDifferentVersions(table) && !affected.has(table.identity),
     );
 
-    return {
-      affectedTables,
-      loadedTables: affectedTables,
-      unreadTables: unread.length,
-    };
+    return { affectedTables, unreadTables: unread.length };
   }
 
   private affectedTablesOf(

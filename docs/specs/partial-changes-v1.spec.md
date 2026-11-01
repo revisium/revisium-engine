@@ -746,20 +746,23 @@ Row checks:
 step, a table id that only another unit's pending migration provides, while the final schemas are consistent because a
 native rename rewrites its referrers. After every assembly the closure replays each resulting ledger (§6.9: commit →
 new Head and remaining Draft; revert → reverted Draft) and follows table ids through `init`, `rename` and `remove`. A
-step **depends** on a table id when it fails in a resulting ledger because of that id while the same step succeeds in
-the Draft ledger: it references the id (a foreign key of its schema) and the resulting ledger does not hold it at that
-step, or it takes the id (`init`, `rename`) and the resulting ledger already holds it. The **provider** is the structure unit
-(§10.1) of the Draft migration that last placed the referenced id (`init`, `rename` into it), or last vacated the taken
-id (`rename` away, `remove`), before that step.
+step of an `init` or `update` **depends** on a table id its schema references when, at that step, the id resolves to
+another lineage (the slot of the identity pass, named by its opening migration) in the resulting ledger than in the
+Draft ledger, or to none; a step of an `init` or `rename` depends on the id it takes when the resulting ledger already
+holds that id at that step and the Draft ledger does not. The dependency counts only when validation would report the
+step's lineage in that resulting ledger (§6.9): an inconsistency that the source role already has, with the same
+lineage and failure, and a lineage that validation leaves out (unledgered tables) add nothing. The **provider** is the
+structure unit (§10.1) of the Draft migration that last placed the referenced id (`init`, `rename` into it), or last
+vacated the taken id (`rename` away, `remove`), before that step.
 
 - The step belongs to an applied unit (it fails in the new Head) → the provider is required: `referencedTableMissing`
   for a referenced id, `idOccupied` for a taken id.
 - The step belongs to a unit that is not applied (it fails in the reverted or the remaining Draft) → the unit of the
   step is required: `referrerStillReferences` for a referenced id, `idOccupied` for a taken id.
 
-`because` names the migration and the table id. An excluded unit gives `requiredExcluded`. A step that fails in the
-Draft ledger too, or whose unit is not in the catalogue (a published migration, a refused table), adds nothing and is
-left to validation (`ledgerInconsistent`, §6.9). A step that fails only because a table it reads failed earlier is not
+`because` names the migration and the table id. An excluded unit gives `requiredExcluded`. A step whose unit is not in
+the catalogue (a published migration, a refused table), or whose provider is not, adds nothing and is left to
+validation (`ledgerInconsistent`, §6.9). A step that fails only because a table it reads failed earlier is not
 a dependency of its own: the closure follows the earlier step and checks again after adding its unit. Every
 requirement adds a unit, so the loop terminates; replays are cached per closure by ledger content, and a choice that
 applies no unit with pending migrations leaves every ledger as in its source and is not replayed. Examples, built
@@ -775,6 +778,9 @@ natively:
    Reverting the removal of `notes` requires reverting the table now named `products`, whose rename takes `notes`
    (`idOccupied`), and then the table now named `categories`. Committing the table now named `products` requires the
    removal of `notes`.
+4. `notes` created, `products` given a foreign key to `notes`, `notes` renamed to `memos` (which rewrote `products`),
+   another `notes` created. Committing both tables requires `products`: the remaining Draft would replay its `update`
+   after both creations and the rename, so its reference resolves to the other `notes`.
 
 ### 6.7 AssembleTarget
 
@@ -1410,10 +1416,12 @@ versions unchanged" (§14) holds in every scenario.
 - AS-42 A replica synced from Draft exports fails on a renumbered migration (recorded, unsupported).
 - AS-43 A renamed table referenced by another table requires the referrer's structure and the reverse; together they
   keep a replica in sync. A schema foreign key to a created table requires that table. Ledger dependencies (§6.6), for
-  the three examples in revert and commit: each required unit carries its selector, and `because` names the migration
+  the examples in revert and commit: each required unit carries its selector, and `because` names the migration
   and the table id; adding the selectors closes with nothing required; the revert applies and the Draft ledger replays
-  to its schemas; the new Head and remaining Draft ledgers of the commit replay; an excluded required unit →
-  `blocked` (`requiredExcluded`).
+  to its schemas; the new Head and remaining Draft ledgers of the commit replay (commits are checked at the target
+  level until structure commits apply); an excluded required unit → `blocked` (`requiredExcluded`). A reference behind
+  a failure the Draft ledger already has (SQL fixture of an unrecorded field moved natively) requires nothing, and the
+  revert applies.
 - AS-44 Structure revert of one of two tables → remaining Draft rows mapped back (Head values for changed fields of
   existing rows, Head defaults for created rows), the other table untouched, its migrations dropped, the remaining
   ledger replays; created table reverted with its rows; removed table restored.
@@ -1719,7 +1727,8 @@ Idempotency:
 Ledger dependencies:
 
 - §5.7, §6.6, §13.4, §14: the closure replays the resulting ledgers and requires, for a pending migration that needs a
-  table id at its own step, the unit that provides the id (commit) or the unit of the step (revert, remaining Draft);
+  table id at its own step, the unit that provides the id (commit) or the unit of the step (revert, remaining Draft); a
+  referenced id must resolve to the same lineage as in the Draft ledger, and what validation tolerates adds nothing;
   AS-43 covers it, and the AS-65 generator no longer avoids such steps.
 
 Listing:

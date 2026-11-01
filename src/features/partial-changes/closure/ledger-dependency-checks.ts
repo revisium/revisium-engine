@@ -15,21 +15,33 @@ import {
 } from 'src/features/partial-changes/closure/findings';
 import { TableIdTimeline } from 'src/features/partial-changes/closure/table-id-timeline';
 import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
-import { readTableIdsByStep } from 'src/features/partial-changes/validation/ledger-consistency';
+import {
+  LedgerConsistency,
+  lineageOf,
+  readTableIdsByStep,
+  type SourceInconsistencies,
+} from 'src/features/partial-changes/validation/ledger-consistency';
 import {
   type ResultingRole,
   resultingRolesOf,
   sourceRoleOf,
 } from 'src/features/partial-changes/validation/ledger-roles';
 import { ledgerOf } from 'src/features/share/ledger/migration-ledger';
+import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 
-type TableIdNeed = 'referenced' | 'taken';
+type TableIdDependency = 'missing' | 'anotherTable' | 'occupied';
 
-interface TableIdStep {
+interface DependentStep {
   readonly migration: Migration;
   readonly tableId: string;
-  readonly need: TableIdNeed;
+  readonly dependency: TableIdDependency;
+}
+
+interface ResultingLedger {
+  readonly replayed: ReplayedLedger;
+  readonly dependentSteps: readonly DependentStep[];
+  readonly lineagesByStep: ReadonlyMap<string, string>;
 }
 
 @Injectable()
@@ -45,10 +57,8 @@ class LedgerDependencyChecking implements TargetChecking {
   private readonly draftLedger: TableIdTimeline;
   private readonly owners: ReadonlyMap<string, string>;
   private readonly unitsWithPendingMigrations: ReadonlySet<string>;
-  private readonly dependentStepsByLedger = new Map<
-    string,
-    readonly TableIdStep[]
-  >();
+  private readonly resultingLedgers = new Map<string, ResultingLedger>();
+  private sourceInconsistencies?: SourceInconsistencies;
 
   constructor(
     private readonly source: CheckSource,
@@ -73,7 +83,7 @@ class LedgerDependencyChecking implements TargetChecking {
 
     return Promise.resolve(
       resultingRolesOf(this.source, choice).flatMap((role) =>
-        this.dependentStepsOf(role.ledger).flatMap((step) =>
+        this.reportedDependentStepsOf(role).flatMap((step) =>
           this.requirementsOf(step, role, rules),
         ),
       ),
@@ -86,43 +96,59 @@ class LedgerDependencyChecking implements TargetChecking {
     );
   }
 
-  private dependentStepsOf(
-    ledger: readonly Migration[],
-  ): readonly TableIdStep[] {
-    const key = JSON.stringify(ledger);
-    let steps = this.dependentStepsByLedger.get(key);
+  private reportedDependentStepsOf(role: ResultingRole): DependentStep[] {
+    const { replayed, dependentSteps, lineagesByStep } = this.resultingLedgerOf(
+      role.ledger,
+    );
+    const reported = new Set(
+      this.inconsistenciesOfSource()
+        .newInconsistenciesOf({ ...role, replayed })
+        .map(({ lineage }) => lineage),
+    );
 
-    if (!steps) {
-      steps = this.stepsFailingOnlyIn(ledger);
-      this.dependentStepsByLedger.set(key, steps);
+    return dependentSteps.filter(({ migration }) => {
+      const lineage = lineagesByStep.get(migration.id);
+
+      return lineage !== undefined && reported.has(lineage);
+    });
+  }
+
+  private inconsistenciesOfSource(): SourceInconsistencies {
+    this.sourceInconsistencies ??= new LedgerConsistency(
+      this.replayer,
+    ).sourceInconsistenciesOf(this.source.snapshot);
+
+    return this.sourceInconsistencies;
+  }
+
+  private resultingLedgerOf(ledger: readonly Migration[]): ResultingLedger {
+    const key = JSON.stringify(ledger);
+    let resulting = this.resultingLedgers.get(key);
+
+    if (!resulting) {
+      resulting = this.replayResultingLedger(ledger);
+      this.resultingLedgers.set(key, resulting);
     }
 
-    return steps;
+    return resulting;
   }
 
-  private stepsFailingOnlyIn(ledger: readonly Migration[]): TableIdStep[] {
-    const resulting = new TableIdTimeline(ledger);
+  private replayResultingLedger(ledger: readonly Migration[]): ResultingLedger {
+    const replayed = this.replayer.replay(ledger);
 
-    return [
-      ...this.referencesOf(ledger),
-      ...ledger.flatMap(tableIdTakenBy),
-    ].filter(
-      (step) => failsOn(resulting, step) && !failsOn(this.draftLedger, step),
-    );
-  }
-
-  private referencesOf(ledger: readonly Migration[]): TableIdStep[] {
-    const reads = readTableIdsByStep(this.replayer.replay(ledger));
-
-    return ledger.flatMap((migration) =>
-      (reads.get(migration.id) ?? []).map(
-        (tableId): TableIdStep => ({ migration, tableId, need: 'referenced' }),
-      ),
-    );
+    return {
+      replayed,
+      dependentSteps: new DependentSteps(
+        this.draftLedger,
+        new TableIdTimeline(ledger),
+        readTableIdsByStep(replayed),
+      ).of(ledger),
+      lineagesByStep: lineagesByStepOf(replayed),
+    };
   }
 
   private requirementsOf(
-    step: TableIdStep,
+    step: DependentStep,
     role: ResultingRole,
     rules: OutcomeRules,
   ): Finding[] {
@@ -145,7 +171,10 @@ class LedgerDependencyChecking implements TargetChecking {
     return [requiring(provider, reasonForProvider(step, role))];
   }
 
-  private providerOf({ migration, tableId }: TableIdStep): string | undefined {
+  private providerOf({
+    migration,
+    tableId,
+  }: DependentStep): string | undefined {
     const change = this.draftLedger.lastChangeBefore(migration, tableId);
 
     if (!change) {
@@ -153,6 +182,68 @@ class LedgerDependencyChecking implements TargetChecking {
     }
 
     return this.owners.get(change.migration.id);
+  }
+}
+
+class DependentSteps {
+  constructor(
+    private readonly draftLedger: TableIdTimeline,
+    private readonly resulting: TableIdTimeline,
+    private readonly reads: ReadonlyMap<string, readonly string[]>,
+  ) {}
+
+  public of(ledger: readonly Migration[]): DependentStep[] {
+    return ledger.flatMap((migration) => [
+      ...this.referencesOf(migration).flatMap((tableId) =>
+        this.referenceDependencyOf(migration, tableId),
+      ),
+      ...takenTableIdsOf(migration).flatMap((tableId) =>
+        this.takenIdDependencyOf(migration, tableId),
+      ),
+    ]);
+  }
+
+  private referencesOf(migration: Migration): readonly string[] {
+    if (migration.changeType !== 'init' && migration.changeType !== 'update') {
+      return [];
+    }
+
+    return this.reads.get(migration.id) ?? [];
+  }
+
+  private referenceDependencyOf(
+    migration: Migration,
+    tableId: string,
+  ): DependentStep[] {
+    const meant = this.draftLedger.lastChangeBefore(
+      migration,
+      tableId,
+    )?.lineage;
+    const found = this.resulting.lastChangeBefore(migration, tableId)?.lineage;
+
+    if (meant === undefined || found === meant) {
+      return [];
+    }
+
+    if (found === undefined) {
+      return [{ migration, tableId, dependency: 'missing' }];
+    }
+
+    return [{ migration, tableId, dependency: 'anotherTable' }];
+  }
+
+  private takenIdDependencyOf(
+    migration: Migration,
+    tableId: string,
+  ): DependentStep[] {
+    const heldInDraft = this.draftLedger.lastChangeBefore(migration, tableId);
+    const held = this.resulting.lastChangeBefore(migration, tableId);
+
+    if (heldInDraft?.lineage !== undefined || held?.lineage === undefined) {
+      return [];
+    }
+
+    return [{ migration, tableId, dependency: 'occupied' }];
   }
 }
 
@@ -176,35 +267,40 @@ function pendingMigrationOwnersOf({
   return migrationOwners;
 }
 
-function tableIdTakenBy(migration: Migration): TableIdStep[] {
+function lineagesByStepOf({ slots }: ReplayedLedger): Map<string, string> {
+  const lineages = new Map<string, string>();
+
+  for (const slot of slots) {
+    for (const { id } of slot.migrations) {
+      lineages.set(id, lineageOf(slot));
+    }
+  }
+
+  return lineages;
+}
+
+function takenTableIdsOf(migration: Migration): string[] {
   switch (migration.changeType) {
     case 'init':
-      return [{ migration, tableId: migration.tableId, need: 'taken' }];
+      return [migration.tableId];
     case 'rename':
-      return [{ migration, tableId: migration.nextTableId, need: 'taken' }];
+      return [migration.nextTableId];
     case 'update':
     case 'remove':
       return [];
   }
 }
 
-function failsOn(timeline: TableIdTimeline, step: TableIdStep): boolean {
-  return (
-    timeline.holdsBefore(step.migration, step.tableId) ===
-    (step.need === 'taken')
-  );
-}
-
-function reasonForStepUnit(step: TableIdStep, role: ResultingRole): Reason {
-  if (step.need === 'taken') {
+function reasonForStepUnit(step: DependentStep, role: ResultingRole): Reason {
+  if (step.dependency === 'occupied') {
     return idOccupiedOf(step, role);
   }
 
   return referenceOf(step, role, 'referrerStillReferences');
 }
 
-function reasonForProvider(step: TableIdStep, role: ResultingRole): Reason {
-  if (step.need === 'taken') {
+function reasonForProvider(step: DependentStep, role: ResultingRole): Reason {
+  if (step.dependency === 'occupied') {
     return idOccupiedOf(step, role);
   }
 
@@ -212,19 +308,30 @@ function reasonForProvider(step: TableIdStep, role: ResultingRole): Reason {
 }
 
 function referenceOf(
-  { migration, tableId }: TableIdStep,
+  { migration, tableId, dependency }: DependentStep,
   { name }: ResultingRole,
   code: 'referrerStillReferences' | 'referencedTableMissing',
 ): Reason {
   return {
     code,
     tableId: migration.tableId,
-    because: `${migrationOf(migration)} references the table ${tableId}, which the ${name} ledger does not hold at that step`,
+    because: `${migrationOf(migration)} references the table ${tableId}, ${whichIsReferenced(dependency, name)}`,
   };
 }
 
+function whichIsReferenced(
+  dependency: TableIdDependency,
+  roleName: string,
+): string {
+  if (dependency === 'anotherTable') {
+    return `which is another table in the ${roleName} ledger at that step`;
+  }
+
+  return `which the ${roleName} ledger does not hold at that step`;
+}
+
 function idOccupiedOf(
-  { migration, tableId }: TableIdStep,
+  { migration, tableId }: DependentStep,
   { name }: ResultingRole,
 ): Reason {
   return {

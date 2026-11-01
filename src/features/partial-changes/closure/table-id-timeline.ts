@@ -1,45 +1,54 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
+import { lineageOf } from 'src/features/partial-changes/validation/ledger-consistency';
+import { TableSlots } from 'src/features/share/ledger-replay/table-slots';
 
 export interface TableIdChange {
   readonly migration: Migration;
-  readonly holds: boolean;
+  readonly lineage?: string;
 }
 
 interface LedgerTableIdChange extends TableIdChange {
   readonly position: number;
 }
 
+const HALVES = 2;
+
 export class TableIdTimeline {
   private readonly positions = new Map<string, number>();
   private readonly changes = new Map<string, LedgerTableIdChange[]>();
 
   constructor(ledger: readonly Migration[]) {
+    const slots = new TableSlots([]);
+
     ledger.forEach((migration, position) => {
       this.positions.set(migration.id, position);
+      slots.follow(migration);
 
-      for (const [tableId, holds] of tableIdChangesOf(migration)) {
-        this.record(tableId, { migration, holds, position });
+      for (const tableId of tableIdsNamedBy(migration)) {
+        this.record(tableId, {
+          migration,
+          lineage: lineageHolding(slots, tableId),
+          position,
+        });
       }
     });
-  }
-
-  public holdsBefore(step: Migration, tableId: string): boolean {
-    return this.lastChangeBefore(step, tableId)?.holds ?? false;
   }
 
   public lastChangeBefore(
     step: Migration,
     tableId: string,
   ): TableIdChange | undefined {
-    const position = this.positionOf(step);
+    const changes = this.changes.get(tableId) ?? [];
 
-    return (this.changes.get(tableId) ?? [])
-      .filter((change) => change.position < position)
-      .at(-1);
+    return changes[lastIndexBefore(changes, this.positionOf(step))];
   }
 
   private record(tableId: string, change: LedgerTableIdChange): void {
     const changes = this.changes.get(tableId) ?? [];
+
+    if (changes.at(-1)?.lineage === change.lineage) {
+      return;
+    }
 
     changes.push(change);
     this.changes.set(tableId, changes);
@@ -56,18 +65,50 @@ export class TableIdTimeline {
   }
 }
 
-function tableIdChangesOf(migration: Migration): [string, boolean][] {
-  switch (migration.changeType) {
-    case 'init':
-      return [[migration.tableId, true]];
-    case 'rename':
-      return [
-        [migration.tableId, false],
-        [migration.nextTableId, true],
-      ];
-    case 'remove':
-      return [[migration.tableId, false]];
-    case 'update':
-      return [];
+function tableIdsNamedBy(migration: Migration): string[] {
+  if (migration.changeType === 'rename') {
+    return [migration.tableId, migration.nextTableId];
   }
+
+  return [migration.tableId];
+}
+
+function lineageHolding(
+  slots: TableSlots,
+  tableId: string,
+): string | undefined {
+  const slot = slots.currentSlot(tableId);
+
+  if (!slot) {
+    return undefined;
+  }
+
+  return lineageOf(slot);
+}
+
+function lastIndexBefore(
+  changes: readonly LedgerTableIdChange[],
+  position: number,
+): number {
+  let low = 0;
+  let high = changes.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / HALVES);
+
+    if (isBefore(changes[middle], position)) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return low - 1;
+}
+
+function isBefore(
+  change: LedgerTableIdChange | undefined,
+  position: number,
+): boolean {
+  return change !== undefined && change.position < position;
 }

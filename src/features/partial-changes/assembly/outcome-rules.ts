@@ -91,6 +91,10 @@ export class OutcomeRules {
     return this.baseSide;
   }
 
+  public takesEveryTableOf(side: RevisionSide): boolean {
+    return this.choice.wholeDraft && side === this.unitlessSide;
+  }
+
   public isApplied(key: string): boolean {
     return this.choice.applied.has(key);
   }

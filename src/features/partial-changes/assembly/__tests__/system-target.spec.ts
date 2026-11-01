@@ -148,6 +148,45 @@ describe('SystemTargetAssembler: system rows of the target', () => {
   });
 
   describe('a system table on one side only', () => {
+    it('links the empty shared-schema table the Draft alone holds into Head in a commit of exactly { all: true }, as native commit keeps it', async () => {
+      const draft = await givenEmptySharedSchemaTableInDraft();
+
+      const target = await draft.assembleTarget('commit', { all: true });
+
+      expect(target.systemTableOf(SystemTables.SharedSchemas)).toEqual({
+        outcome: 'base',
+        version: 'draft',
+        rows: [],
+        removedLinks: [],
+        addedLinks: [],
+        newRows: [],
+        relinkCandidate: true,
+      });
+    });
+
+    it.each<{ operation: ChangeOperation; selection: Selection }>([
+      { operation: 'revert', selection: { all: true } },
+      {
+        operation: 'commit',
+        selection: {
+          fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/code' }],
+        },
+      },
+    ])(
+      'plans no empty shared-schema table the Draft alone holds in a $operation of $selection',
+      async ({ operation, selection }) => {
+        const draft = await givenEmptySharedSchemaTableInDraft();
+
+        const target = await draft.assembleTarget(operation, selection);
+
+        expect(target.systemTableOf(SystemTables.SharedSchemas)).toMatchObject({
+          outcome: 'absent',
+          version: undefined,
+          rows: [],
+        });
+      },
+    );
+
     it('plans no views table in a revert of exactly { all: true }, as native revert leaves none', async () => {
       const draft = await givenViewsTableCreatedInDraft();
 
@@ -254,6 +293,23 @@ describe('SystemTargetAssembler: system rows of the target', () => {
     expect(await draft.hasTable('head', SystemTables.Views)).toBe(false);
     await draft.updateRow(PRODUCTS, 'p1', { code: 'uno', price: 1 });
     await draft.updateViews(PRODUCTS, tableViews('All', ['code']));
+
+    return draft;
+  }
+
+  async function givenEmptySharedSchemaTableInDraft(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { code: 'one', price: 1 } },
+      },
+    });
+    expect(await draft.hasTable('head', SystemTables.SharedSchemas)).toBe(
+      false,
+    );
+    await draft.createSharedSchema(ADDRESS, addressSchema);
+    await draft.removeSharedSchema(ADDRESS);
+    await draft.updateRow(PRODUCTS, 'p1', { code: 'uno', price: 1 });
 
     return draft;
   }

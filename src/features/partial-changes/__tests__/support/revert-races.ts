@@ -1,6 +1,5 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import { createBarrier, type Barrier } from 'src/__tests__/utils/barrier';
-import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
+import type { Barrier } from 'src/__tests__/utils/barrier';
 import {
   waitUntilQueuedBehindFence,
   waitUntilWrittenWithoutQueuing,
@@ -9,6 +8,7 @@ import type { RevertChangesResult } from 'src/features/partial-changes/commands/
 import { ChangePlanner } from 'src/features/partial-changes/planning/change-planner';
 import type { RevertOptions } from './change-reverting';
 import type { ChangesScenario } from './changes-scenario';
+import { TargetWriteHolds } from './target-write-holds';
 
 type Write = () => Promise<unknown>;
 
@@ -34,7 +34,7 @@ export async function revertWhileNativeWriteLands(
   nativeWrite: Write,
 ): Promise<RetriedRevert> {
   const plans = jest.spyOn(kit.module.get(ChangePlanner), 'plan');
-  const holds = new RevertWriteHolds(kit, 1);
+  const holds = TargetWriteHolds.ofReverts(kit, 1);
   const reverting = draft.revertChanges(options);
   const firstWrite = holds.barrierOf(1);
 
@@ -51,7 +51,7 @@ export async function revertOvertakenByAnotherRevert(
   draft: ChangesScenario,
   reverts: { overtaken: RevertOptions; overtaking: RevertOptions },
 ): Promise<OvertakenRevert> {
-  const holds = new RevertWriteHolds(kit, 1);
+  const holds = TargetWriteHolds.ofReverts(kit, 1);
   const overtakenReverting = draft.revertChanges(reverts.overtaken);
   const overtakenWrite = holds.barrierOf(1);
 
@@ -64,7 +64,7 @@ export async function revertOvertakenByAnotherRevert(
 
 // Each attempt is held after it planned and before it writes, under the fence it entered.
 export class HeldPartialRevert {
-  private readonly holds: RevertWriteHolds;
+  private readonly holds: TargetWriteHolds;
 
   private readonly result: Promise<RevertChangesResult>;
 
@@ -75,7 +75,7 @@ export class HeldPartialRevert {
     private readonly draft: ChangesScenario,
     options: RevertOptions,
   ) {
-    this.holds = new RevertWriteHolds(kit, Number.POSITIVE_INFINITY);
+    this.holds = TargetWriteHolds.ofReverts(kit, Number.POSITIVE_INFINITY);
     this.result = draft.revertChanges(options);
     this.result.catch(() => undefined);
   }
@@ -124,50 +124,5 @@ export class HeldPartialRevert {
 
   private get fenceDatabase() {
     return { prismaService: this.kit.prisma };
-  }
-}
-
-class RevertWriteHolds {
-  private readonly barriers = new Map<number, Barrier>();
-
-  private writesStarted = 0;
-
-  constructor(
-    kit: PartialChangesTestKit,
-    private heldWrites: number,
-  ) {
-    const api = kit.module.get(DraftRevisionTargetApiService);
-    const revertToTarget = api.revertToTarget.bind(api);
-
-    jest.spyOn(api, 'revertToTarget').mockImplementation(async (plan) => {
-      this.writesStarted += 1;
-
-      if (this.writesStarted <= this.heldWrites) {
-        await this.barrierOf(this.writesStarted).arrive();
-      }
-
-      return revertToTarget(plan);
-    });
-  }
-
-  public barrierOf(write: number): Barrier {
-    const existing = this.barriers.get(write);
-
-    if (existing) {
-      return existing;
-    }
-
-    const barrier = createBarrier(`Write ${write} of a partial revert`);
-    this.barriers.set(write, barrier);
-
-    return barrier;
-  }
-
-  public releaseAll(): void {
-    this.heldWrites = this.writesStarted;
-
-    for (const barrier of this.barriers.values()) {
-      barrier.release();
-    }
   }
 }

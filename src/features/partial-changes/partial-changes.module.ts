@@ -23,6 +23,7 @@ import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { ComparedSnapshotReader } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import { TargetValidator } from 'src/features/partial-changes/validation/target-validator';
+import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { ViewsModule } from 'src/features/views/views.module';
@@ -63,6 +64,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     TargetValidator,
     PlanFingerprint,
     ChangePlanner,
+    ChangeApplier,
     UnitListing,
     PartialChangesApiService,
     ...PARTIAL_CHANGES_QUERY_HANDLERS,

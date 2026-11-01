@@ -9,6 +9,7 @@ import { countSqlStatements } from 'src/__tests__/utils/sql-statements';
 import { type JsonValue, type Row, sql } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
+import { branchContentOf } from 'src/features/partial-changes/__tests__/support/branch-content';
 import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 import {
   addField,
@@ -35,8 +36,6 @@ const LARGE_TABLE_TIMEOUT_MS = 120_000;
 const productSchema = obj({ code: str(), price: num() });
 const categorySchema = obj({ title: str() });
 const documentSchema = obj({ title: str(), image: ref(SystemSchemaIds.File) });
-
-const ISO_TIMESTAMP = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g;
 
 const emptyFile = {
   status: '',
@@ -547,8 +546,8 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     const target = new CommitTarget(kit, written);
     await target.write(await target.wholeDraftPlan());
 
-    expect(await branchContentOf(written)).toEqual(
-      await branchContentOf(native),
+    expect(await branchContentOf(kit, written)).toEqual(
+      await branchContentOf(kit, native),
     );
   });
 
@@ -1029,41 +1028,6 @@ describe('DraftRevisionCommitToTargetHandler', () => {
 
     return row.fileBlobs.map((blob) => blob.id).sort();
   }
-
-  async function branchContentOf(
-    draft: ChangesScenario,
-  ): Promise<BranchContent> {
-    const head = await draft.revisionId('head');
-    const nextDraft = await draft.revisionId('draft');
-
-    return {
-      head: await revisionContentOf(head),
-      draft: await revisionContentOf(nextDraft),
-      draftHasChanges: (await revision(nextDraft)).hasChanges,
-    };
-  }
-
-  async function revisionContentOf(
-    revisionId: string,
-  ): Promise<TableContent[]> {
-    const tables = await kit.prisma.table.findMany({
-      where: { revisions: { some: { id: revisionId } } },
-      select: {
-        id: true,
-        system: true,
-        readonly: true,
-        rows: { orderBy: { id: 'asc' } },
-      },
-      orderBy: { id: 'asc' },
-    });
-
-    return tables.map((table) => ({
-      id: table.id,
-      system: table.system,
-      readonly: table.readonly,
-      rows: table.rows.map(rowContentOf),
-    }));
-  }
 });
 
 type RowWrites = Map<string, string>;
@@ -1076,36 +1040,6 @@ interface ReadonlyFlags {
 interface LockedVersions {
   readonly tables: readonly string[];
   readonly rows: readonly string[];
-}
-
-interface TableContent {
-  readonly id: string;
-  readonly system: boolean;
-  readonly readonly: boolean;
-  readonly rows: readonly JsonValue[];
-}
-
-interface BranchContent {
-  readonly head: readonly TableContent[];
-  readonly draft: readonly TableContent[];
-  readonly draftHasChanges: boolean;
-}
-
-// Twin branches differ only in when they were built: migration ids, schema history dates and publishedAt.
-function rowContentOf(row: Row): JsonValue {
-  return withoutTimestamps({
-    id: row.id,
-    data: row.data,
-    meta: row.meta,
-    schemaHash: row.schemaHash,
-    readonly: row.readonly,
-  });
-}
-
-function withoutTimestamps(content: JsonValue): JsonValue {
-  return JSON.parse(
-    JSON.stringify(content).replace(ISO_TIMESTAMP, 'timestamp'),
-  ) as JsonValue;
 }
 
 function previouslyMutable(

@@ -1,4 +1,5 @@
 import type {
+  CommitTargetWritePlan,
   RowLinkChanges,
   TableWriteOutcome,
   TableWritePlan,
@@ -21,7 +22,7 @@ export interface WritableTarget {
   readonly source: {
     readonly snapshot: Pick<
       ChangesSnapshot,
-      'headRevisionId' | 'draftRevisionId' | 'tables'
+      'branchId' | 'headRevisionId' | 'draftRevisionId' | 'tables'
     >;
   };
   readonly target: Pick<AssembledTarget, 'tables' | 'systemTables'>;
@@ -42,6 +43,19 @@ export function targetWritePlanOf({
       ),
       ...target.systemTables.map(systemTableWritePlanOf),
     ],
+  };
+}
+
+export function commitTargetWritePlanOf(
+  writable: WritableTarget,
+  comment?: string,
+): CommitTargetWritePlan {
+  assertCommitsNoStructure(writable.target.tables);
+
+  return {
+    ...targetWritePlanOf(writable),
+    branchId: writable.source.snapshot.branchId,
+    comment,
   };
 }
 
@@ -92,6 +106,18 @@ function rowLinkChangesOf({
     addedRowVersionIds: addedLinks,
     newRows,
   };
+}
+
+function assertCommitsNoStructure(tables: readonly TablePlan[]): void {
+  const committed = tables.find(
+    ({ structureSide }) => structureSide === 'draft',
+  );
+
+  if (committed) {
+    throw new Error(
+      `The commit takes the structure of table ${committed.identity} from the Draft, which is not written before delivery stage 3`,
+    );
+  }
 }
 
 function structureHasFileFields(

@@ -27,6 +27,7 @@ export type BlockerCode =
   | 'notSelectable'
   | 'requiredExcluded'
   | 'unmatchedSelector'
+  | 'tooLarge'
   | RefusalCode;
 
 export interface Reason {

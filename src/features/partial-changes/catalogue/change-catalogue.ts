@@ -31,11 +31,14 @@ export interface ChangeCatalogue {
   readonly refusedTables: readonly RefusedTable[];
 }
 
-export interface CatalogueSource {
+export interface ComparedSnapshot {
   readonly snapshot: ChangesSnapshot;
   readonly ledger: LedgerAttribution;
   readonly headSchema: HeadSchemaCheck;
   readonly tables: readonly ComparedTable[];
+}
+
+export interface CatalogueSource extends ComparedSnapshot {
   readonly changedRows: ChangedRows;
 }
 

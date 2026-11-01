@@ -44,9 +44,8 @@ export interface CatalogueView {
   structureOf(tableId: string): TableStructure;
 }
 
-export type CatalogueScope =
+type CatalogueScope =
   | { readonly kind: 'tables'; readonly tableIds: readonly string[] }
-  | { readonly kind: 'everyTable' }
   | { readonly kind: 'wholeDraft' };
 
 export function readCatalogue(
@@ -74,7 +73,7 @@ function readCatalogueIn(
   );
 }
 
-export async function buildCatalogueView(
+async function buildCatalogueView(
   kit: PartialChangesTestKit,
   branch: ChangesBranch,
   scope: CatalogueScope,

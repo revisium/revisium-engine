@@ -5,10 +5,11 @@ import {
   requireStructureOfCreatedOrRemoved,
 } from 'src/features/partial-changes/selection/created-or-removed-tables';
 import { FieldNormalisation } from 'src/features/partial-changes/selection/field-normalisation';
-import type {
-  RowRef,
-  SelectionItems,
-  TableRef,
+import {
+  type RowRef,
+  type SelectionItems,
+  type TableRef,
+  tableRefOf,
 } from 'src/features/partial-changes/selection/selection';
 import type {
   AddressedRow,
@@ -147,12 +148,4 @@ export class SelectorMatcher {
       this.units.unitsOfRow(row).filter(({ unit }) => unit.kind === kind),
     );
   }
-}
-
-function tableRefOf(selector: TableRef): Exclude<TableRef, string> {
-  if (typeof selector === 'string') {
-    return { tableId: selector };
-  }
-
-  return selector;
 }

@@ -40,7 +40,7 @@ export interface HeadSchemaCheckInput {
 
 export interface HeadSchemaCheck {
   readonly refusedTables: readonly RefusedTable[];
-  readonly refusedIdentities: ReadonlySet<string>;
+  readonly refusedTablesByIdentity: ReadonlyMap<string, RefusedTable>;
   readonly replayedHeadSchemas: ReadonlyMap<string, JsonSchema>;
 }
 
@@ -61,7 +61,9 @@ export function checkHeadSchema(
 
   return {
     refusedTables: refusals.map(({ table }) => table),
-    refusedIdentities: new Set(refusals.map(({ identity }) => identity)),
+    refusedTablesByIdentity: new Map(
+      refusals.map(({ identity, table }) => [identity, table]),
+    ),
     replayedHeadSchemas: replayedHeadSchemasOf(input.snapshot, headLedger),
   };
 }

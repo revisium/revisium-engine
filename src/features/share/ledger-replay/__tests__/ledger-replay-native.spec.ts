@@ -11,6 +11,10 @@ import {
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import {
+  isLedgered,
+  traceTableSlots,
+} from 'src/features/share/ledger-replay/table-slots';
+import {
   addField,
   init,
   remove,
@@ -22,6 +26,7 @@ import {
 import {
   givenNativeDraft,
   replayWithNativeRules,
+  type DraftSchemas,
   type NativeDraft,
 } from './support/native-draft';
 import { givenDraftAfterRandomTableOperations } from './support/random-table-operations';
@@ -189,15 +194,25 @@ describe('ledger replay of native table operations', () => {
   });
 
   async function expectLedgerToReplayToDraftSchemas(draft: NativeDraft) {
-    const replay = replayWithNativeRules(kit, await draft.readLedger());
+    const ledger = await draft.readLedger();
+    const draftSchemas = await draft.readSchemas();
+    const replay = replayWithNativeRules(kit, ledger);
 
+    expect(unledgeredTables(ledger, draftSchemas)).toEqual([]);
     expect(Object.fromEntries(replay.unreplayable)).toEqual({});
     expect(replay.unattributed).toEqual([]);
-    expect(schemaMismatches(replay.schemas, await draft.readSchemas())).toEqual(
-      [],
-    );
+    expect(schemaMismatches(replay.schemas, draftSchemas)).toEqual([]);
   }
 });
+
+function unledgeredTables(
+  ledger: readonly Migration[],
+  schemas: DraftSchemas,
+): string[] {
+  const slots = traceTableSlots(ledger);
+
+  return [...schemas.keys()].filter((tableId) => !isLedgered(slots, tableId));
+}
 
 function schemaMismatches(
   replayed: ReadonlyMap<string, JsonSchema>,

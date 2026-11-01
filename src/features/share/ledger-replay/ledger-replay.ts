@@ -14,6 +14,12 @@ import {
   type SchemaRefs,
   type SchemaValidator,
 } from './native-schema-rules';
+import {
+  ledgeredTableIdOf,
+  TableSlots,
+  type SlotStep,
+  type TableSlot,
+} from './table-slots';
 
 export interface LedgerReplayInput {
   ledger: readonly Migration[];
@@ -32,15 +38,27 @@ export interface UnattributedFailure extends ReplayFailure {
   tableId: string;
 }
 
+export interface ReplayedSlot extends TableSlot {
+  readonly schema?: JsonSchema;
+  readonly failure?: ReplayFailure;
+}
+
 export interface ReplayedLedger {
+  slots: readonly ReplayedSlot[];
   schemas: ReadonlyMap<string, JsonSchema>;
   unreplayable: ReadonlyMap<string, ReplayFailure>;
   unattributed: readonly UnattributedFailure[];
 }
 
-interface TableSlot {
-  schema: JsonSchema;
+interface SlotSchema {
+  schema?: JsonSchema;
   failure?: ReplayFailure;
+}
+
+interface CurrentTable {
+  tableId: string;
+  slot: TableSlot;
+  schema: JsonSchema;
 }
 
 export function replayLedger({
@@ -62,125 +80,151 @@ export function replayLedger({
 }
 
 class LedgerReplay {
-  private readonly slots: Map<string, TableSlot>;
+  private readonly tableSlots: TableSlots;
+  private readonly slotSchemas = new Map<TableSlot, SlotSchema>();
   private readonly unattributed: UnattributedFailure[] = [];
 
   constructor(
     private readonly rules: NativeSchemaRules,
     schemas: ReadonlyMap<string, JsonSchema>,
   ) {
-    this.slots = new Map(
-      [...schemas].map(([tableId, schema]) => [tableId, { schema }]),
-    );
+    this.tableSlots = new TableSlots(schemas.keys());
+
+    for (const [tableId, slot] of this.tableSlots.currentSlots()) {
+      this.slotSchemas.set(slot, { schema: schemas.get(tableId) });
+    }
   }
 
   public apply(migration: Migration): void {
+    const step = this.tableSlots.follow(migration);
+
     try {
-      this.applyStep(migration);
+      this.applyStep(migration, step);
     } catch (error) {
-      this.recordFailure(migration, failureOf(migration, messageOf(error)));
+      this.recordFailure(
+        migration,
+        step,
+        failureOf(migration, messageOf(error)),
+      );
     }
   }
 
   public result(): ReplayedLedger {
-    const schemas = new Map<string, JsonSchema>();
-    const unreplayable = new Map<string, ReplayFailure>();
+    const slots = this.tableSlots.all().map((slot) => this.replayedSlot(slot));
 
-    for (const [tableId, slot] of this.slots) {
-      if (slot.failure) {
-        unreplayable.set(tableId, slot.failure);
-      } else {
-        schemas.set(tableId, slot.schema);
-      }
-    }
-
-    return { schemas, unreplayable, unattributed: [...this.unattributed] };
+    return {
+      slots,
+      ...ledgeredTablesOf(slots),
+      unattributed: [...this.unattributed],
+    };
   }
 
-  private applyStep(migration: Migration): void {
+  private applyStep(migration: Migration, step: SlotStep): void {
     switch (migration.changeType) {
       case 'init':
-        return this.createTable(migration);
+        return this.createTable(migration, step);
       case 'update':
-        return this.updateTable(migration);
+        return this.updateTable(migration, step.slot);
       case 'rename':
-        return this.renameTable(migration);
+        return this.renameTable(migration, step);
       case 'remove':
-        return this.removeTable(migration);
+        return this.removeTable(migration, step.slot);
     }
   }
 
-  private createTable(migration: InitMigration): void {
+  private createTable(migration: InitMigration, step: SlotStep): void {
     const { tableId, schema } = migration;
     this.validateSchema(tableId, schema);
     this.ensureValidTableId(tableId);
-    this.ensureFree(tableId);
+    this.ensureFree(tableId, step.displaced);
     this.rules.ensureValidFieldNames([schema]);
 
-    const slot: TableSlot = { schema };
-    this.slots.set(tableId, slot);
-    this.taintIfDependent(tableId, slot, migration, [schema]);
+    this.slotSchemaOf(step.slot).schema = schema;
+    this.taintIfDependent(tableId, step.slot, migration, [schema]);
   }
 
-  private updateTable(migration: UpdateMigration): void {
+  private updateTable(migration: UpdateMigration, slot: TableSlot): void {
     const { tableId, patches } = migration;
     this.validatePatches(tableId, patches);
-    const slot = this.existingSlot(tableId);
-    const schema = this.rules.patchedSchema(slot.schema, patches);
+    const schema = this.rules.patchedSchema(
+      this.existingSchema(slot, tableId),
+      patches,
+    );
     this.validateSchema(tableId, schema);
     this.rules.ensureRecordableChange(schema, patches);
 
-    slot.schema = schema;
+    this.slotSchemaOf(slot).schema = schema;
     this.taintIfDependent(tableId, slot, migration, [
       ...patchValues(patches),
       schema,
     ]);
   }
 
-  private renameTable(migration: RenameMigration): void {
+  private renameTable(migration: RenameMigration, step: SlotStep): void {
     const { tableId, nextTableId } = migration;
-    const renamed = this.existingSlot(tableId);
+    this.existingSchema(step.slot, tableId);
     this.ensureValidTableId(nextTableId);
-    this.ensureFree(nextTableId);
-    const referrerSchemas = this.referrerSchemasAfterRename(
-      tableId,
-      nextTableId,
-    );
+    this.ensureFree(nextTableId, step.displaced);
+    const referrers = this.referrersAfterRename(tableId, nextTableId);
 
-    this.slots.delete(tableId);
-    this.slots.set(nextTableId, renamed);
-    for (const [referrer, schema] of referrerSchemas) {
-      referrer.schema = schema;
-
-      if (renamed.failure && referrer !== renamed) {
-        this.taint(
-          referrer,
-          failureOf(migration, dependsOnUnreplayable(nextTableId)),
-        );
-      }
+    this.taintAcrossRename(migration, step.slot, referrers);
+    for (const { slot, schema } of referrers) {
+      this.slotSchemaOf(slot).schema = schema;
     }
   }
 
-  private removeTable({ tableId }: RemoveMigration): void {
-    this.existingSlot(tableId);
+  private removeTable({ tableId }: RemoveMigration, slot: TableSlot): void {
+    this.existingSchema(slot, tableId);
     this.ensureNotReferenced(tableId);
-
-    this.slots.delete(tableId);
   }
 
-  private recordFailure(migration: Migration, failure: ReplayFailure): void {
-    const slot = this.slots.get(migration.tableId);
+  private recordFailure(
+    migration: Migration,
+    step: SlotStep,
+    failure: ReplayFailure,
+  ): void {
+    this.taint(step.slot, failure);
 
-    if (slot) {
-      this.taint(slot, failure);
-    } else {
+    if (!step.attributable) {
       this.unattributed.push({ tableId: migration.tableId, ...failure });
     }
   }
 
   private taint(slot: TableSlot, failure: ReplayFailure): void {
-    if (!slot.failure) {
-      slot.failure = failure;
+    const slotSchema = this.slotSchemaOf(slot);
+
+    if (!slotSchema.failure) {
+      slotSchema.failure = failure;
+    }
+  }
+
+  private taintAcrossRename(
+    migration: RenameMigration,
+    renamed: TableSlot,
+    referrers: CurrentTable[],
+  ): void {
+    const otherReferrers = referrers.filter(({ slot }) => slot !== renamed);
+    const unreplayableReferrer = otherReferrers.find(({ slot }) =>
+      this.isTainted(slot),
+    );
+
+    if (this.isTainted(renamed)) {
+      for (const { slot } of otherReferrers) {
+        this.taint(
+          slot,
+          failureOf(migration, dependsOnUnreplayable(migration.nextTableId)),
+        );
+      }
+    }
+
+    if (unreplayableReferrer) {
+      this.taint(
+        renamed,
+        failureOf(
+          migration,
+          dependsOnUnreplayable(unreplayableReferrer.tableId),
+        ),
+      );
     }
   }
 
@@ -192,7 +236,11 @@ class LedgerReplay {
   ): void {
     const unreplayableTarget = namedSchemas
       .flatMap((schema) => this.rules.foreignKeysOf(schema))
-      .find((target) => target !== tableId && this.slots.get(target)?.failure);
+      .find(
+        (target) =>
+          target !== tableId &&
+          this.isTainted(this.tableSlots.currentSlot(target)),
+      );
 
     if (unreplayableTarget) {
       this.taint(
@@ -215,13 +263,13 @@ class LedgerReplay {
     this.rules.ensureValidSchema(schema);
   }
 
-  private existingSlot(tableId: string): TableSlot {
-    const slot = this.slots.get(tableId);
-    if (!slot) {
+  private existingSchema(slot: TableSlot, tableId: string): JsonSchema {
+    const schema = this.schemaOf(slot);
+    if (!schema) {
       throw new Error(`Table "${tableId}" does not exist`);
     }
 
-    return slot;
+    return schema;
   }
 
   private ensureValidTableId(tableId: string): void {
@@ -232,13 +280,12 @@ class LedgerReplay {
     }
   }
 
-  private ensureFree(tableId: string): void {
-    const slot = this.slots.get(tableId);
-    if (!slot) {
+  private ensureFree(tableId: string, displaced: TableSlot | undefined): void {
+    if (!displaced) {
       return;
     }
 
-    if (slot.failure) {
+    if (this.isTainted(displaced)) {
       throw new Error(dependsOnUnreplayable(tableId));
     }
 
@@ -251,7 +298,9 @@ class LedgerReplay {
   ): void {
     const missingTarget = this.rules
       .foreignKeysOf(schema)
-      .find((target) => target !== tableId && !this.slots.has(target));
+      .find(
+        (target) => target !== tableId && !this.tableSlots.currentSlot(target),
+      );
 
     if (missingTarget) {
       throw new Error(`Foreign key target "${missingTarget}" does not exist`);
@@ -259,12 +308,9 @@ class LedgerReplay {
   }
 
   private ensureNotReferenced(tableId: string): void {
-    const referrerIds = [...this.slots]
-      .filter(
-        ([referrerId, slot]) =>
-          referrerId !== tableId && this.references(slot.schema, tableId),
-      )
-      .map(([referrerId]) => `"${referrerId}"`);
+    const referrerIds = this.currentTables()
+      .filter(({ schema }) => this.references(schema, tableId))
+      .map(({ tableId: referrerId }) => `"${referrerId}"`);
 
     if (referrerIds.length > 0) {
       throw new Error(
@@ -273,27 +319,91 @@ class LedgerReplay {
     }
   }
 
-  private referrerSchemasAfterRename(
+  private referrersAfterRename(
     tableId: string,
     nextTableId: string,
-  ): Map<TableSlot, JsonSchema> {
-    const referrerSchemas = new Map<TableSlot, JsonSchema>();
-
-    for (const slot of this.slots.values()) {
-      if (this.references(slot.schema, tableId)) {
-        referrerSchemas.set(
-          slot,
-          this.rules.renamedForeignKeys(slot.schema, tableId, nextTableId),
-        );
-      }
-    }
-
-    return referrerSchemas;
+  ): CurrentTable[] {
+    return this.currentTables()
+      .filter(({ schema }) => this.references(schema, tableId))
+      .map((referrer) => ({
+        ...referrer,
+        schema: this.rules.renamedForeignKeys(
+          referrer.schema,
+          tableId,
+          nextTableId,
+        ),
+      }));
   }
 
   private references(schema: JsonSchema, tableId: string): boolean {
     return this.rules.foreignKeysOf(schema).includes(tableId);
   }
+
+  private currentTables(): CurrentTable[] {
+    const currentTables: CurrentTable[] = [];
+
+    for (const [tableId, slot] of this.tableSlots.currentSlots()) {
+      const schema = this.schemaOf(slot);
+
+      if (schema) {
+        currentTables.push({ tableId, slot, schema });
+      }
+    }
+
+    return currentTables;
+  }
+
+  private schemaOf(slot: TableSlot): JsonSchema | undefined {
+    return this.slotSchemas.get(slot)?.schema;
+  }
+
+  private isTainted(slot: TableSlot | undefined): boolean {
+    return (
+      slot !== undefined && this.slotSchemas.get(slot)?.failure !== undefined
+    );
+  }
+
+  private slotSchemaOf(slot: TableSlot): SlotSchema {
+    let slotSchema = this.slotSchemas.get(slot);
+
+    if (!slotSchema) {
+      slotSchema = {};
+      this.slotSchemas.set(slot, slotSchema);
+    }
+
+    return slotSchema;
+  }
+
+  private replayedSlot(slot: TableSlot): ReplayedSlot {
+    const { schema, failure } = this.slotSchemas.get(slot) ?? {};
+
+    if (failure) {
+      return { ...slot, failure };
+    }
+
+    return { ...slot, schema };
+  }
+}
+
+function ledgeredTablesOf(slots: readonly ReplayedSlot[]) {
+  const schemas = new Map<string, JsonSchema>();
+  const unreplayable = new Map<string, ReplayFailure>();
+
+  for (const slot of slots) {
+    const tableId = ledgeredTableIdOf(slot);
+
+    if (tableId === undefined) {
+      continue;
+    }
+
+    if (slot.failure) {
+      unreplayable.set(tableId, slot.failure);
+    } else if (slot.schema) {
+      schemas.set(tableId, slot.schema);
+    }
+  }
+
+  return { schemas, unreplayable };
 }
 
 function failureOf(migration: Migration, error: string): ReplayFailure {

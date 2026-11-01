@@ -198,6 +198,19 @@ export class TargetTables {
     return holder;
   }
 
+  public refusalOfReference(
+    referrer: TargetTable,
+    tableId: string,
+  ): RefusedTable | undefined {
+    if (referrer.refusal) {
+      return referrer.refusal;
+    }
+
+    const meant = this.tableMeantBy(referrer, tableId);
+
+    return meant && this.refusalOf(meant);
+  }
+
   private targetTablesOf(pair: TablePair): TargetTable[] {
     const structureSide = this.rules.structureSideOf(
       this.lookup.tableUnitOf('structure', pair)?.key,
@@ -217,9 +230,13 @@ export class TargetTables {
         loaded,
         this.changedPointers.get(pair.identity) ?? [],
         this.rules.baseSide,
-        this.source.headSchema.refusedTablesByIdentity.get(pair.identity),
+        this.refusalOf(pair),
       ),
     ];
+  }
+
+  private refusalOf({ identity }: TablePair): RefusedTable | undefined {
+    return this.source.headSchema.refusedTablesByIdentity.get(identity);
   }
 }
 

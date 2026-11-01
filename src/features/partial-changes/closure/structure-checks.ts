@@ -144,7 +144,11 @@ class TargetStructureChecks {
     );
   }
 
-  private moveFromOccupiedId({ tableId, pair }: TargetTable): Finding {
+  private moveFromOccupiedId({ tableId, pair, refusal }: TargetTable): Finding {
+    if (refusal) {
+      return refusedBy(refusal);
+    }
+
     return requiringOrDangling(this.structureOf(pair), {
       code: 'idOccupied',
       tableId,
@@ -192,6 +196,12 @@ class TargetStructureChecks {
           `which exists only in ${this.names.other}`,
         ),
       });
+    }
+
+    const refusal = this.tables.refusalOfReference(referrer, tableId);
+
+    if (refusal) {
+      return refusedBy(refusal);
     }
 
     return blocking(

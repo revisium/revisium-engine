@@ -6,19 +6,18 @@ import {
   unrecordedStructureChangeOf,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { LedgerReplayRules } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import { distinctBlockers } from 'src/features/partial-changes/selection/selection-resolver';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { InvalidRows } from 'src/features/partial-changes/validation/invalid-rows';
 import { LedgerConsistency } from 'src/features/partial-changes/validation/ledger-consistency';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import {
   hasIntactPublishedPrefix,
   storesMigrationsUnderTheirIds,
 } from 'src/features/share/ledger/migration-ledger';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 
 export interface ValidatedTarget {
   readonly choice: AppliedUnits;
@@ -41,14 +40,9 @@ export class TargetValidator {
 
   constructor(
     private readonly dataValidator: JsonSchemaValidatorService,
-    schemaStore: JsonSchemaStoreService,
+    replayer: LedgerReplayer,
   ) {
-    const replayRules: LedgerReplayRules = {
-      refs: schemaStore.refs,
-      validator: dataValidator,
-    };
-
-    this.ledgerConsistency = new LedgerConsistency(replayRules);
+    this.ledgerConsistency = new LedgerConsistency(replayer);
   }
 
   // §6.9 step 5, uniqueness over whole target tables, is added here once

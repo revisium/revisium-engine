@@ -6,6 +6,7 @@ import type {
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import {
   type DraftTable,
   DraftRowsValidation,
@@ -13,7 +14,6 @@ import {
 } from './draft-rows-validation';
 import {
   RepairLedger,
-  type ReplayRules,
   type StoredLedgerReplays,
   storedLedgerReplayOf,
   type TableAssessment,
@@ -37,19 +37,18 @@ export class RepairPlanning {
     private readonly draftRows: DraftRowsValidation,
     private readonly schemaStore: JsonSchemaStoreService,
     private readonly validator: JsonSchemaValidatorService,
+    private readonly replayer: LedgerReplayer,
   ) {}
 
   public async plan(
     state: RepairState,
     { tableIds, storedReplays = {} }: RepairPlanningOptions = {},
   ): Promise<SchemaLedgerRepairPlan> {
-    const rules: ReplayRules = {
-      refs: this.schemaStore.refs,
-      validator: this.validator,
-    };
-    const ledger = new RepairLedger(state, rules, {
-      head: storedReplays.head ?? storedLedgerReplayOf(state.head, rules),
-      draft: storedReplays.draft ?? storedLedgerReplayOf(state.draft, rules),
+    const ledger = new RepairLedger(state, this.replayer, this.validator, {
+      head:
+        storedReplays.head ?? storedLedgerReplayOf(state.head, this.replayer),
+      draft:
+        storedReplays.draft ?? storedLedgerReplayOf(state.draft, this.replayer),
     });
     const assessments = assessmentsOf(
       ledger,
@@ -57,10 +56,11 @@ export class RepairPlanning {
     );
     const draftTables = validatedDraftTablesOf(state, assessments);
     const validatedRows = await this.validateDraftRows(state, draftTables);
-    const planned = new RepairPlanner(ledger, this.validator).plan(
-      assessments,
-      invalidRowsOf(validatedRows),
-    );
+    const planned = new RepairPlanner(
+      ledger,
+      this.validator,
+      this.schemaStore.refs,
+    ).plan(assessments, invalidRowsOf(validatedRows));
 
     return {
       headRevisionId: state.headRevisionId,

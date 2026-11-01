@@ -5,6 +5,7 @@ import type {
   RowBound,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { rowChangePredicate } from 'src/features/partial-changes/snapshot/row-change-predicate';
+import { rowLinkDiffCtes } from 'src/features/share/row-link-diff-sql';
 
 export interface ChangedRowPairIds {
   readonly identity: string;
@@ -14,12 +15,7 @@ export interface ChangedRowPairIds {
 
 export function changedRowPairsSql(table: ComparedTable): Sql {
   return sql`
-    WITH head_only AS MATERIALIZED (
-      ${rowLinksMissingIn(table.headVersionId, table.draftVersionId)}
-    ),
-    draft_only AS MATERIALIZED (
-      ${rowLinksMissingIn(table.draftVersionId, table.headVersionId)}
-    ),
+    WITH ${headAndDraftOnly(table)},
     h AS (
       SELECT r.* FROM "Row" r
       WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM head_only))
@@ -43,12 +39,7 @@ export function changedRowPairsFromSql(
   { from, rowLimit }: ChangedRowsKeyset,
 ): Sql {
   return sql`
-    WITH head_only AS MATERIALIZED (
-      ${rowLinksMissingIn(table.headVersionId, table.draftVersionId)}
-    ),
-    draft_only AS MATERIALIZED (
-      ${rowLinksMissingIn(table.draftVersionId, table.headVersionId)}
-    ),
+    WITH ${headAndDraftOnly(table)},
     head_keys AS (${rowKeysOf(raw('head_only'))}),
     draft_keys AS (${rowKeysOf(raw('draft_only'))}),
     candidates AS (
@@ -85,18 +76,14 @@ export function changedRowCountSql(table: ComparedTable): Sql {
   `;
 }
 
-function rowLinksMissingIn(
-  tableVersionId: string,
-  otherTableVersionId: string,
-): Sql {
-  return sql`
-    SELECT rt."A" AS "versionId" FROM "_RowToTable" rt
-    WHERE rt."B" = ${tableVersionId}
-      AND NOT EXISTS (
-        SELECT 1 FROM "_RowToTable" other
-        WHERE other."B" = ${otherTableVersionId} AND other."A" = rt."A"
-      )
-  `;
+function headAndDraftOnly({
+  headVersionId,
+  draftVersionId,
+}: ComparedTable): Sql {
+  return rowLinkDiffCtes(
+    { cte: 'head_only', tableVersionId: headVersionId },
+    { cte: 'draft_only', tableVersionId: draftVersionId },
+  );
 }
 
 function rowKeysOf(versions: Sql): Sql {

@@ -27,24 +27,17 @@ import {
   ComparedSnapshotReader,
   type ComparisonScope,
 } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
-import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
-import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 
 const PARTIAL_OPERATION: ComparisonScope = { wholeDraft: false };
 const NO_CHANGED_ROWS: ChangedRows = new Map();
 
 @Injectable()
 export class UnitListing {
-  private readonly headViews: HeadViewsMigration;
-
   constructor(
     private readonly comparedSnapshotReader: ComparedSnapshotReader,
     private readonly snapshotReader: ChangesSnapshotReader,
-    viewsMigration: ViewsMigrationService,
-    schemaRules: NativeSchemaRules,
-  ) {
-    this.headViews = new HeadViewsMigration(viewsMigration, schemaRules);
-  }
+    private readonly headViews: HeadViewsMigration,
+  ) {}
 
   public async listPage(request: ListingRequest): Promise<ListChangesResult> {
     const compared = await this.comparedSnapshotReader.readComparedSnapshot(

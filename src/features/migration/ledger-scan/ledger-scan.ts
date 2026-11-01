@@ -1,10 +1,7 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
 import type { Row } from 'src/engine-prisma-types';
-import type {
-  ReplayRules,
-  StoredLedgerReplays,
-} from 'src/features/migration/ledger-repair/repair-ledger';
+import type { StoredLedgerReplays } from 'src/features/migration/ledger-repair/repair-ledger';
 import {
   type RepairState,
   type RevisionLedger,
@@ -14,12 +11,15 @@ import type {
   MismatchedRowHash,
   SchemaLedgerScanStats,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
-import { ledgerOf } from 'src/features/share/ledger/migration-ledger';
 import {
-  replayLedger,
-  type ReplayedLedger,
-  type ReplayedSlot,
+  ledgerOf,
+  migrationsOf,
+} from 'src/features/share/ledger/migration-ledger';
+import type {
+  ReplayedLedger,
+  ReplayedSlot,
 } from 'src/features/share/ledger-replay/ledger-replay';
+import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
   type ReplayedCheck,
@@ -83,7 +83,7 @@ export class LedgerScan {
 
   constructor(
     private readonly reader: ScanReads,
-    private readonly rules: ReplayRules,
+    private readonly replayer: LedgerReplayer,
     private readonly recordTrail: boolean,
   ) {}
 
@@ -264,9 +264,7 @@ export class LedgerScan {
 
   private replayed(rows: Row[]): ScannedLedger {
     this.counts.ledgerReplays += 1;
-    const replay = replayLedger({
-      ledger: ledgerOf(rows).map(({ migration }) => migration),
-      ...this.rules,
+    const replay = this.replayer.replay(migrationsOf(ledgerOf(rows)), {
       recordTrail: this.recordTrail,
     });
     const currentSlots = new Map<string, ReplayedSlot>();

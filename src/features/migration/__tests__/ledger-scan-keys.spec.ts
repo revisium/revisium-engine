@@ -12,8 +12,7 @@ import type {
 } from 'src/features/migration/ledger-scan/scan-revision-reader';
 import {
   init,
-  refs,
-  validator,
+  replayer,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 
 const PRODUCTS = 'products';
@@ -28,7 +27,7 @@ describe('Ledger scan evaluation keys', () => {
         schemas: [schemaRow('row', productSchema)],
         'other-schemas': [schemaRow('x/row', productSchema)],
       }),
-      { refs, validator },
+      replayer,
       false,
     );
 

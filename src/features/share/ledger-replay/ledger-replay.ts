@@ -8,12 +8,7 @@ import type {
   UpdateMigration,
 } from '@revisium/schema-toolkit/types';
 import { findTableIdError } from 'src/features/share/utils/validateUrlLikeId/table-id-error';
-import {
-  NativeSchemaRules,
-  patchValues,
-  type SchemaRefs,
-  type SchemaValidator,
-} from './native-schema-rules';
+import { type NativeSchemaRules, patchValues } from './native-schema-rules';
 import {
   ledgeredTableIdOf,
   TableSlots,
@@ -23,8 +18,7 @@ import {
 
 export interface LedgerReplayInput {
   ledger: readonly Migration[];
-  refs: SchemaRefs;
-  validator: SchemaValidator;
+  rules: NativeSchemaRules;
   schemas?: ReadonlyMap<string, JsonSchema>;
   recordTrail?: boolean;
 }
@@ -78,16 +72,11 @@ interface CurrentTable {
 
 export function replayLedger({
   ledger,
-  refs,
-  validator,
+  rules,
   schemas = new Map(),
   recordTrail = false,
 }: LedgerReplayInput): ReplayedLedger {
-  const replay = new LedgerReplay(
-    new NativeSchemaRules(refs, validator),
-    schemas,
-    recordTrail,
-  );
+  const replay = new LedgerReplay(rules, schemas, recordTrail);
 
   for (const migration of ledger) {
     replay.apply(migration);

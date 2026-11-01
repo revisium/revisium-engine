@@ -15,6 +15,7 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
   refs,
+  replayer,
   validator,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
@@ -73,7 +74,7 @@ function givenEditedRows(rowCount: number): CatalogueSource {
     ledger,
     headSchema: checkHeadSchema(
       { snapshot, ledger, wholeDraft: true },
-      { refs, validator },
+      replayer,
     ),
     tables: [
       {

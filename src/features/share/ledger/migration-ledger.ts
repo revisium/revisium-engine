@@ -19,6 +19,10 @@ export function ledgerOf(rows: readonly Row[]): LedgerEntry[] {
     .map((row) => ({ row, migration: migrationOf(row) }));
 }
 
+export function migrationsOf(entries: readonly LedgerEntry[]): Migration[] {
+  return entries.map(({ migration }) => migration);
+}
+
 export function splitLedger(
   headRows: readonly Row[],
   draftRows: readonly Row[],

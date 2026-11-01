@@ -8,7 +8,10 @@ import {
 import { systemTableTargetsOf } from 'src/features/partial-changes/assembly/system-table-targets';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { ledgerOf } from 'src/features/share/ledger/migration-ledger';
+import {
+  ledgerOf,
+  migrationsOf,
+} from 'src/features/share/ledger/migration-ledger';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 
 export interface LedgerRole {
@@ -31,7 +34,7 @@ export function sourceRoleOf(
   side: RevisionSide,
 ): LedgerRole {
   return {
-    ledger: migrationsOf(systemRows.migrations[side]),
+    ledger: migrationsOf(ledgerOf(systemRows.migrations[side])),
     schemaRows: systemRows.schemas[side],
   };
 }
@@ -46,7 +49,7 @@ export function resultingRolesOf(
     return [
       {
         name: 'reverted Draft',
-        ledger: migrationsOf(target.migrations),
+        ledger: migrationsOf(ledgerOf(target.migrations)),
         schemaRows: target.schemas,
         keepsInconsistenciesOf: ['draft', 'head'],
       },
@@ -58,7 +61,7 @@ export function resultingRolesOf(
   return [
     {
       name: 'new Head',
-      ledger: migrationsOf(target.migrations),
+      ledger: migrationsOf(ledgerOf(target.migrations)),
       schemaRows: target.schemas,
       keepsInconsistenciesOf: ['head'],
     },
@@ -95,14 +98,10 @@ function remainingDraftLedgerOf(
   // published one, so the replay needs that order, not the new ids.
   return [
     ...migrationsOf(
-      draftRows.filter(({ versionId }) => published.has(versionId)),
+      ledgerOf(draftRows.filter(({ versionId }) => published.has(versionId))),
     ),
     ...migrationsOf(
-      draftRows.filter(({ versionId }) => !published.has(versionId)),
+      ledgerOf(draftRows.filter(({ versionId }) => !published.has(versionId))),
     ),
   ];
-}
-
-function migrationsOf(rows: readonly Row[]): Migration[] {
-  return ledgerOf(rows).map(({ migration }) => migration);
 }

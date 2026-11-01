@@ -8,7 +8,6 @@ import {
 import {
   checkHeadSchema,
   type HeadSchemaCheck,
-  type LedgerReplayRules,
 } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import type {
@@ -21,8 +20,7 @@ import {
   analyzeTableStructure,
   type TableSide,
 } from 'src/features/partial-changes/structure/table-structure';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 
 export interface ComparisonScope {
@@ -33,16 +31,11 @@ type RevisionSide = 'head' | 'draft';
 
 @Injectable()
 export class ComparedSnapshotReader {
-  private readonly replayRules: LedgerReplayRules;
-
   constructor(
     private readonly snapshotReader: ChangesSnapshotReader,
     private readonly schemaRules: NativeSchemaRules,
-    schemaStore: JsonSchemaStoreService,
-    validator: JsonSchemaValidatorService,
-  ) {
-    this.replayRules = { refs: schemaStore.refs, validator };
-  }
+    private readonly replayer: LedgerReplayer,
+  ) {}
 
   public async readComparedSnapshot(
     branch: ChangesBranch,
@@ -52,7 +45,7 @@ export class ComparedSnapshotReader {
     const ledger = attributeLedger(snapshot);
     const headSchema = checkHeadSchema(
       { snapshot, ledger, wholeDraft },
-      this.replayRules,
+      this.replayer,
     );
 
     return {

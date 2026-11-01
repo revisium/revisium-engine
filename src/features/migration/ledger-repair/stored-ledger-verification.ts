@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { DraftLedger } from './draft-ledger';
 import { storedLedgerReplayOf } from './repair-ledger';
@@ -17,7 +17,7 @@ import {
 export class StoredLedgerVerification {
   constructor(
     private readonly stateReader: RepairStateReader,
-    private readonly schemaStore: JsonSchemaStoreService,
+    private readonly replayer: LedgerReplayer,
     private readonly validator: JsonSchemaValidatorService,
   ) {}
 
@@ -95,10 +95,7 @@ export class StoredLedgerVerification {
   }
 
   private replayOf(state: RepairState): ReplayedLedger {
-    return storedLedgerReplayOf(state.draft, {
-      refs: this.schemaStore.refs,
-      validator: this.validator,
-    });
+    return storedLedgerReplayOf(state.draft, this.replayer);
   }
 }
 

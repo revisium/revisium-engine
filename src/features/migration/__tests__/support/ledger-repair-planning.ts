@@ -167,7 +167,7 @@ export function migratedRowOf(
   row: JsonValue,
   patches: readonly JsonPatch[],
 ): JsonValue | undefined {
-  const table = new SchemaTable(schema, kit.replayRules.refs);
+  const table = new SchemaTable(schema, kit.schemaRefs);
   table.addRow('row', row);
   table.applyPatches([...patches]);
 

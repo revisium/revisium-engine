@@ -6,9 +6,7 @@ import type {
 import objectHash from 'object-hash';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { RevisionsApiService } from 'src/features/revision/revisions-api.service';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import { replayLedger } from 'src/features/share/ledger-replay/ledger-replay';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 
@@ -189,11 +187,9 @@ export async function expectLedgerToReplaySchema(
   kit: MigrationTestKit,
   table: TableInRevision,
 ): Promise<void> {
-  const replay = replayLedger({
-    ledger: await readLedger(kit, table.revisionId),
-    refs: kit.module.get(JsonSchemaStoreService).refs,
-    validator: kit.module.get(JsonSchemaValidatorService),
-  });
+  const replay = kit.module
+    .get(LedgerReplayer)
+    .replay(await readLedger(kit, table.revisionId));
 
   expect(replay.schemas.get(table.tableId)).toEqual(
     await readSchema(kit, table),

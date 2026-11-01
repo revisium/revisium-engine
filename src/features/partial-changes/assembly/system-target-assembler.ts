@@ -24,9 +24,7 @@ import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogu
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import type { SystemTableRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import type { SystemTables } from 'src/features/share/system-tables.consts';
-import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import type { TableViewsData } from 'src/features/views/types';
 import { HashService } from 'src/infrastructure/database/hash.service';
 
@@ -49,15 +47,10 @@ interface DesiredRows {
 
 @Injectable()
 export class SystemTargetAssembler {
-  private readonly headViews: HeadViewsMigration;
-
   constructor(
     private readonly hashService: HashService,
-    viewsMigration: ViewsMigrationService,
-    schemaRules: NativeSchemaRules,
-  ) {
-    this.headViews = new HeadViewsMigration(viewsMigration, schemaRules);
-  }
+    private readonly headViews: HeadViewsMigration,
+  ) {}
 
   public assemble(
     source: AssemblySource,

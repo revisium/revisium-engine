@@ -3,6 +3,7 @@ import {
   COMPARED_ROW_COLUMNS,
   COMPARED_TABLE_COLUMNS,
 } from 'src/features/share/compared-columns';
+import { rowLinkDiffCtes } from 'src/features/share/row-link-diff-sql';
 
 export interface TableVersionContentDiff {
   readonly differs: boolean;
@@ -13,12 +14,7 @@ export function tableVersionContentDiffSql(
   toTableVersionId: string,
 ): Sql {
   return sql`
-    WITH from_only AS MATERIALIZED (
-      ${rowLinksMissingIn(fromTableVersionId, toTableVersionId)}
-    ),
-    to_only AS MATERIALIZED (
-      ${rowLinksMissingIn(toTableVersionId, fromTableVersionId)}
-    ),
+    WITH ${fromAndToOnly(fromTableVersionId, toTableVersionId)},
     f AS (
       SELECT r.* FROM "Row" r
       WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM from_only))
@@ -41,18 +37,14 @@ export function tableVersionContentDiffSql(
   `;
 }
 
-function rowLinksMissingIn(
-  tableVersionId: string,
-  otherTableVersionId: string,
+function fromAndToOnly(
+  fromTableVersionId: string,
+  toTableVersionId: string,
 ): Sql {
-  return sql`
-    SELECT link."A" AS "versionId" FROM "_RowToTable" link
-    WHERE link."B" = ${tableVersionId}
-      AND NOT EXISTS (
-        SELECT 1 FROM "_RowToTable" other
-        WHERE other."B" = ${otherTableVersionId} AND other."A" = link."A"
-      )
-  `;
+  return rowLinkDiffCtes(
+    { cte: 'from_only', tableVersionId: fromTableVersionId },
+    { cte: 'to_only', tableVersionId: toTableVersionId },
+  );
 }
 
 function columnsDiffer(columns: readonly string[]): Sql {

@@ -6,10 +6,7 @@ import type {
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import { publicIdsOf } from 'src/features/partial-changes/catalogue/public-id-groups';
-import {
-  isUnledgered,
-  type LedgerReplayRules,
-} from 'src/features/partial-changes/head-schema/head-schema-check';
+import { isUnledgered } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
@@ -18,11 +15,11 @@ import {
   resultingRolesOf,
   sourceRoleOf,
 } from 'src/features/partial-changes/validation/ledger-roles';
-import {
-  replayLedger,
-  type ReplayedLedger,
-  type ReplayedSlot,
+import type {
+  ReplayedLedger,
+  ReplayedSlot,
 } from 'src/features/share/ledger-replay/ledger-replay';
+import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import { ledgeredTableIdOf } from 'src/features/share/ledger-replay/table-slots';
 
@@ -55,7 +52,7 @@ type ExistingInconsistencies = Readonly<
 >;
 
 export class LedgerConsistency {
-  constructor(private readonly rules: LedgerReplayRules) {}
+  constructor(private readonly replayer: LedgerReplayer) {}
 
   public blockersOf(
     source: AssemblySource,
@@ -79,7 +76,7 @@ export class LedgerConsistency {
   private replayOf(role: LedgerRole): ReplayedRole {
     return {
       ...role,
-      replayed: replayLedger({ ledger: role.ledger, ...this.rules }),
+      replayed: this.replayer.replay(role.ledger),
     };
   }
 }

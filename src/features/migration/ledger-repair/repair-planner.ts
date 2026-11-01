@@ -3,6 +3,7 @@ import type {
   PlannedTableRepair,
   RenumberedMigration,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import type { SchemaRefs } from 'src/features/share/ledger-replay/native-schema-rules';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
   type RepairCandidate,
@@ -25,6 +26,7 @@ export class RepairPlanner {
   constructor(
     private readonly ledger: RepairLedger,
     private readonly historyValidator: HistoryPatchesValidator,
+    private readonly refs: SchemaRefs,
   ) {}
 
   public plan(
@@ -77,7 +79,12 @@ export class RepairPlanner {
       return { decided: { tableId, outcome: 'alreadyRepaired' } };
     }
 
-    const patch = repairPatchOf(this.ledger, tableId, this.historyValidator);
+    const patch = repairPatchOf(
+      this.ledger,
+      tableId,
+      this.historyValidator,
+      this.refs,
+    );
 
     if (!patch) {
       return { decided: { tableId, outcome: 'patchNotReproducible' } };

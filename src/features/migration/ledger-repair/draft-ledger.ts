@@ -1,6 +1,7 @@
 import {
   hasIntactPublishedPrefix,
   type LedgerEntry,
+  migrationsOf,
   splitLedger,
   storesMigrationsUnderTheirIds,
 } from 'src/features/share/ledger/migration-ledger';
@@ -33,7 +34,7 @@ export class DraftLedger {
     this.published = published;
     this.pending = pending;
     this.attributedSlots = attributePendingLedger(
-      pending.map(({ migration }) => migration),
+      migrationsOf(pending),
       state.head.tableVersionIds.keys(),
       state.draft.tableVersionIds,
     );

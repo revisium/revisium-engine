@@ -15,7 +15,6 @@ import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { MigrationModule } from 'src/features/migration/migration.module';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
-import type { LedgerReplayRules } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { PartialChangesApiService } from 'src/features/partial-changes/partial-changes-api.service';
 import { PartialChangesModule } from 'src/features/partial-changes/partial-changes.module';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
@@ -27,8 +26,10 @@ import { PluginModule } from 'src/features/plugin/plugin.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
 import { RowModule } from 'src/features/row/row.module';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
+import {
+  NativeSchemaRules,
+  type SchemaRefs,
+} from 'src/features/share/ledger-replay/native-schema-rules';
 import { ShareModule } from 'src/features/share/share.module';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import { TableModule } from 'src/features/table/table.module';
@@ -60,7 +61,7 @@ export interface PartialChangesTestKit {
   targetValidator: TargetValidator;
   planFingerprint: PlanFingerprint;
   schemaRules: NativeSchemaRules;
-  replayRules: LedgerReplayRules;
+  schemaRefs: SchemaRefs;
   viewsMigration: ViewsMigrationService;
   guard: CommittedVersionsGuard;
   close(): Promise<void>;
@@ -108,10 +109,6 @@ export async function createPartialChangesTestKit({
   await module.init();
 
   const prisma = module.get(PrismaService);
-  const replayRules: LedgerReplayRules = {
-    refs: module.get(JsonSchemaStoreService).refs,
-    validator: module.get(JsonSchemaValidatorService),
-  };
 
   return {
     module,
@@ -131,7 +128,7 @@ export async function createPartialChangesTestKit({
     targetValidator: module.get(TargetValidator),
     planFingerprint: module.get(PlanFingerprint),
     schemaRules: module.get(NativeSchemaRules),
-    replayRules,
+    schemaRefs: module.get(JsonSchemaStoreService).refs,
     viewsMigration: module.get(ViewsMigrationService),
     guard: new CommittedVersionsGuard(prisma),
     async close() {

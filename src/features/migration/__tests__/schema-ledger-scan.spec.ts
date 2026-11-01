@@ -9,6 +9,7 @@ import type {
   RowDiagnostics,
   ScanSchemaLedgerData,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
+import type * as LedgerReplayModule from 'src/features/share/ledger-replay/ledger-replay';
 import {
   ChangesScenario,
   type TableFixture,
@@ -21,6 +22,7 @@ import {
 import {
   branchContentsOf,
   givenActiveMigration,
+  initAt,
   planRepair,
   writeRowWithoutValidation,
 } from './support/ledger-repair-planning';
@@ -32,13 +34,26 @@ import {
   findingAt,
   findingOf,
   findingsOf,
+  isStoredLedgerReplay,
+  ledgerReplaysDuring,
   pendingMigrationOf,
+  removeSchemaRow,
+  removeSchemaTable,
   scanBranch,
   scanLedgers,
   scanProject,
   scanProjectPages,
+  storedHeadLedgerOf,
   transactionModesDuring,
 } from './support/ledger-scan';
+
+jest.mock('src/features/share/ledger-replay/ledger-replay', () => {
+  const actual: typeof LedgerReplayModule = jest.requireActual(
+    'src/features/share/ledger-replay/ledger-replay',
+  );
+
+  return { ...actual, replayLedger: jest.fn(actual.replayLedger) };
+});
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
@@ -46,6 +61,7 @@ const GOODS = 'goods';
 const TAGS = 'tags';
 const LABELS = 'labels';
 const NOTES = 'notes';
+const LATER_MIGRATION_ID = '2999-01-01T00:00:00.000Z';
 const COLOR = 'color';
 const SHADE = 'shade';
 
@@ -91,6 +107,11 @@ interface ShapeCase {
   readonly shape: DamageShape;
 }
 
+interface HeadCounterpartCase {
+  readonly head: string;
+  readonly given: () => Promise<ChangesScenario>;
+}
+
 interface InvalidRequestCase {
   readonly request: string;
   readonly data: ScanSchemaLedgerData;
@@ -130,6 +151,25 @@ describe('Schema ledger scan', () => {
       const draft = await ChangesScenario.committedWithoutLedger(kit, {
         [CATEGORIES]: categories,
       });
+
+      const scan = await scanBranch(kit, draft);
+
+      const unledgered = {
+        code: 'unledgeredTable',
+        tableId: CATEGORIES,
+        detail: { reason: 'noMigrationTable' },
+      } as const;
+      expect(scan.findings).toEqual([
+        await findingAt(draft, 'head', unledgered),
+        await findingAt(draft, 'draft', unledgered),
+      ]);
+    });
+
+    it('reports a table of a branch with neither a schema table nor a migration table as unledgered', async () => {
+      const draft = await ChangesScenario.committedWithoutLedger(kit, {
+        [CATEGORIES]: categories,
+      });
+      await removeSchemaTable(kit, draft);
 
       const scan = await scanBranch(kit, draft);
 
@@ -223,6 +263,21 @@ describe('Schema ledger scan', () => {
       },
     );
 
+    it('reports a ledgered Head table without a schema row as damaged with an unknown shape', async () => {
+      const draft = await givenCommittedCatalog();
+      await removeSchemaRow(kit, draft, PRODUCTS);
+
+      const scan = await scanBranch(kit, draft);
+
+      expect(scan.findings).toEqual([
+        await findingAt(draft, 'head', {
+          code: 'damagedTable',
+          tableId: PRODUCTS,
+          detail: { shape: 'unknown', repair: 'needsDraftStructureRevert' },
+        }),
+      ]);
+    });
+
     it('reports a Draft whose own schema row an async migration rewrote as Draft-only damage', async () => {
       const draft = await givenDraftOnlyDamage();
 
@@ -236,6 +291,28 @@ describe('Schema ledger scan', () => {
         }),
       ]);
     });
+
+    it.each<HeadCounterpartCase>([
+      {
+        head: 'unreplayable',
+        given: givenUnreplayableHeadAndDraftWithoutTheFailingUpdate,
+      },
+      {
+        head: 'unledgered',
+        given: givenUnledgeredHeadAndDraftWithAnInit,
+      },
+    ])(
+      'leaves a failing Draft table out of Draft-only damage while its Head table is $head',
+      async ({ given }) => {
+        const draft = await given();
+
+        const scan = await scanBranch(kit, draft);
+
+        expect(
+          findingsOf(scan, PRODUCTS).filter(({ role }) => role === 'draft'),
+        ).toEqual([]);
+      },
+    );
 
     it('reports an earlier revision whose ledger does not reproduce its schema as damaged history', async () => {
       const draft = await givenPublishedInPlaceMigration();
@@ -297,6 +374,22 @@ describe('Schema ledger scan', () => {
         [PRODUCTS, 'repaired'],
         [TAGS, 'rowsNeedMigration'],
       ]);
+    });
+
+    it('replays a stored ledger that ten damaged branches share once and plans their repairs on that replay', async () => {
+      const draft = await givenTenDamagedBranchesSharingOneLedger();
+      const storedLedger = await storedHeadLedgerOf(draft);
+
+      const { result: scan, replays } = await ledgerReplaysDuring(() =>
+        scanProject(kit, draft),
+      );
+
+      const storedReplays = replays.filter((replay) =>
+        isStoredLedgerReplay(replay, storedLedger),
+      );
+      expect(storedReplays).toHaveLength(1);
+      expect(scan.stats).toMatchObject({ branches: 10, ledgerReplays: 1 });
+      expect(replays.length).toBeGreaterThan(storedReplays.length);
     });
 
     it('defers the repair of a damaged Head table while an async migration is active on the branch', async () => {
@@ -475,6 +568,39 @@ describe('Schema ledger scan', () => {
     const draft = await givenCommittedCatalog();
     await draft.updateTable(PRODUCTS, addWeight);
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenUnreplayableHeadAndDraftWithoutTheFailingUpdate(): Promise<ChangesScenario> {
+    const draft = await givenPublishedInPlaceMigration();
+    await draft.updateTable(PRODUCTS, [moveField(COLOR, SHADE)]);
+    await draft.commit();
+    await draft.dropFromDraftLedger('update', PRODUCTS);
+
+    return draft;
+  }
+
+  async function givenUnledgeredHeadAndDraftWithAnInit(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: categories,
+    });
+    await draft.createTable(PRODUCTS, productSchema);
+    await dropPendingMigration(kit, draft, 'init', PRODUCTS);
+    await draft.commit();
+    await draft.recordPendingMigration(
+      initAt(LATER_MIGRATION_ID, PRODUCTS, obj({ code: str() })),
+    );
+
+    return draft;
+  }
+
+  async function givenTenDamagedBranchesSharingOneLedger(): Promise<ChangesScenario> {
+    const draft = await givenUnpublishedInPlaceMigration();
+
+    for (let branch = 1; branch < 10; branch++) {
+      await createBranchFromHead(kit, draft, `branch-${branch}`);
+    }
 
     return draft;
   }

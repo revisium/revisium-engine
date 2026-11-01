@@ -11,7 +11,6 @@ import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import type { RowHashCount } from './scan-revision-reader';
 
 export interface SchemaRow {
-  readonly tableId: string;
   readonly versionId: string;
   readonly hash: string;
   readonly schema: JsonSchema;
@@ -19,9 +18,14 @@ export interface SchemaRow {
 
 export type SchemaCheck =
   | { readonly kind: 'unledgered'; readonly detail: UnledgeredDetail }
-  | { readonly kind: 'unreplayable'; readonly failure: ReplayFailure }
+  | {
+      readonly kind: 'unreplayable';
+      readonly lineage: string;
+      readonly failure: ReplayFailure;
+    }
   | {
       readonly kind: 'replayed';
+      readonly lineage: string;
       readonly slot: ReplayedSlot;
       readonly passes: boolean;
     };
@@ -30,13 +34,14 @@ export type ReplayedCheck = Extract<SchemaCheck, { kind: 'replayed' }>;
 
 export function schemaCheckOf(
   currentSlots: ReadonlyMap<string, ReplayedSlot> | undefined,
-  schemaRow: SchemaRow,
+  tableId: string,
+  schemaRow: SchemaRow | undefined,
 ): SchemaCheck {
   if (!currentSlots) {
     return { kind: 'unledgered', detail: { reason: 'noMigrationTable' } };
   }
 
-  const slot = currentSlots.get(schemaRow.tableId);
+  const slot = currentSlots.get(tableId);
 
   if (!slot) {
     return { kind: 'unledgered', detail: { reason: 'noLineage' } };
@@ -49,16 +54,30 @@ export function schemaCheckOf(
     };
   }
 
+  const lineage = slot.migrations[0]?.id ?? '';
+
   if (slot.failure) {
-    return { kind: 'unreplayable', failure: slot.failure };
+    return { kind: 'unreplayable', lineage, failure: slot.failure };
   }
 
   return {
     kind: 'replayed',
+    lineage,
     slot,
-    passes:
-      slot.schema !== undefined && schemasEqual(slot.schema, schemaRow.schema),
+    passes: reproducesSchemaRow(slot, schemaRow),
   };
+}
+
+export function lineageOf(check: SchemaCheck): string | undefined {
+  if (check.kind === 'unledgered') {
+    return undefined;
+  }
+
+  return check.lineage;
+}
+
+export function passesSchemaCheck(check: SchemaCheck): boolean {
+  return check.kind === 'replayed' && check.passes;
 }
 
 export function damageShapeOf(
@@ -81,4 +100,15 @@ export function damageShapeOf(
   }
 
   return 'unknown';
+}
+
+function reproducesSchemaRow(
+  { schema }: ReplayedSlot,
+  schemaRow: SchemaRow | undefined,
+): boolean {
+  return (
+    schema !== undefined &&
+    schemaRow !== undefined &&
+    schemasEqual(schema, schemaRow.schema)
+  );
 }

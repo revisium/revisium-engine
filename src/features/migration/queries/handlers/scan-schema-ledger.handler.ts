@@ -110,9 +110,12 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
       return 'deferred';
     }
 
-    const plan = await this.repairPlanning.plan(
-      await scan.repairStateOf(revisions, head, draft),
+    const { state, storedReplays } = await scan.repairInputOf(
+      revisions,
+      head,
+      draft,
     );
+    const plan = await this.repairPlanning.plan(state, { storedReplays });
 
     return new Map(
       plan.tables.map(({ tableId, outcome }) => [tableId, outcome]),

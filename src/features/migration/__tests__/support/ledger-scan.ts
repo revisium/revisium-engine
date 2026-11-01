@@ -1,3 +1,4 @@
+import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { Migration } from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { BranchApiService } from 'src/features/branch/branch-api.service';
@@ -11,8 +12,14 @@ import type {
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
 import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 import type { RevisionSide } from 'src/features/partial-changes/__tests__/support/snapshot-reading';
+import {
+  type LedgerReplayInput,
+  replayLedger,
+} from 'src/features/share/ledger-replay/ledger-replay';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TransactionPrismaClient } from 'src/features/share/types';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
+import { sql } from 'src/engine-prisma-types';
 
 export type ScanOptions = Omit<
   ScanSchemaLedgerData,
@@ -20,6 +27,11 @@ export type ScanOptions = Omit<
 >;
 
 export type ExpectedFinding = FindingContent & { readonly tableId: string };
+
+export interface ObservedReplays<T> {
+  readonly result: T;
+  readonly replays: readonly LedgerReplayInput[];
+}
 
 export interface TransactionMode {
   readonly readOnly: string;
@@ -212,4 +224,74 @@ async function transactionModeOf(
   }
 
   return mode;
+}
+
+export async function removeSchemaRow(
+  kit: PartialChangesTestKit,
+  draft: ChangesScenario,
+  tableId: string,
+): Promise<void> {
+  const schemaTableVersionId = await draft.tableVersionId(
+    'head',
+    SystemTables.Schema,
+  );
+  const schemaRow = await draft.row('head', SystemTables.Schema, tableId);
+
+  await kit.prisma.$executeRaw(sql`
+    DELETE FROM "_RowToTable"
+    WHERE "A" = ${schemaRow.versionId} AND "B" = ${schemaTableVersionId}
+  `);
+  await acceptDamagedCommittedVersions(kit, draft);
+}
+
+export async function removeSchemaTable(
+  kit: PartialChangesTestKit,
+  draft: ChangesScenario,
+): Promise<void> {
+  const schemaTableVersionId = await draft.tableVersionId(
+    'head',
+    SystemTables.Schema,
+  );
+
+  await kit.prisma.$executeRaw(sql`
+    DELETE FROM "_RevisionToTable" WHERE "B" = ${schemaTableVersionId}
+  `);
+  await acceptDamagedCommittedVersions(kit, draft);
+}
+
+export async function storedHeadLedgerOf(
+  draft: ChangesScenario,
+): Promise<Migration[]> {
+  const { migrations } = (await draft.readSnapshot()).systemRows;
+
+  return migrations.head
+    .map(({ data }) => data as unknown as Migration)
+    .sort((left, right) => compareCodePoints(left.id, right.id));
+}
+
+export async function ledgerReplaysDuring<T>(
+  action: () => Promise<T>,
+): Promise<ObservedReplays<T>> {
+  const replay = jest.mocked(replayLedger);
+  replay.mockClear();
+
+  const result = await action();
+
+  return { result, replays: replay.mock.calls.map(([input]) => input) };
+}
+
+export function isStoredLedgerReplay(
+  { ledger, schemas }: LedgerReplayInput,
+  storedLedger: readonly Migration[],
+): boolean {
+  return schemas === undefined && deepEqual(ledger, storedLedger);
+}
+
+async function acceptDamagedCommittedVersions(
+  kit: PartialChangesTestKit,
+  draft: ChangesScenario,
+): Promise<void> {
+  kit.guard.forget();
+  kit.guard.track(draft.branchId);
+  await kit.guard.verify();
 }

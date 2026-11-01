@@ -1,7 +1,10 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
 import type { Row } from 'src/engine-prisma-types';
-import type { ReplayRules } from 'src/features/migration/ledger-repair/repair-ledger';
+import type {
+  ReplayRules,
+  StoredLedgerReplays,
+} from 'src/features/migration/ledger-repair/repair-ledger';
 import {
   type RepairState,
   type RevisionLedger,
@@ -11,6 +14,7 @@ import type { SchemaLedgerScanStats } from 'src/features/migration/queries/impl/
 import { ledgerOf } from 'src/features/share/ledger/migration-ledger';
 import {
   replayLedger,
+  type ReplayedLedger,
   type ReplayedSlot,
 } from 'src/features/share/ledger-replay/ledger-replay';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
@@ -28,22 +32,31 @@ import type {
 
 const HEAD_AND_DRAFT_REVISIONS = 2;
 
+export type ScanReads = Pick<
+  ScanRevisionReader,
+  'readTableRows' | 'readRowHashes'
+>;
+
 export interface ScannedTable {
   readonly tableId: string;
   readonly tableVersionId: string;
-  readonly schemaRow: SchemaRow;
+  readonly schemaRow?: SchemaRow;
   readonly check: SchemaCheck;
   readonly schemaEvaluation: string;
 }
 
+export interface RepairInput {
+  readonly state: RepairState;
+  readonly storedReplays: Partial<StoredLedgerReplays>;
+}
+
 interface ScannedLedger {
   readonly rows: readonly Row[];
+  readonly replay: ReplayedLedger;
   readonly currentSlots: ReadonlyMap<string, ReplayedSlot>;
 }
 
 type ScanCounts = { -readonly [Key in keyof SchemaLedgerScanStats]: number };
-
-type CachedRead = 'ledgerReplays' | 'schemaTableReads' | 'rowHashReads';
 
 export class LedgerScan {
   private readonly ledgers = new Map<string, ScannedLedger>();
@@ -61,7 +74,7 @@ export class LedgerScan {
   };
 
   constructor(
-    private readonly reader: ScanRevisionReader,
+    private readonly reader: ScanReads,
     private readonly rules: ReplayRules,
   ) {}
 
@@ -81,34 +94,31 @@ export class LedgerScan {
     }
 
     const schemaRows = schemaRowsOf(await this.schemaTableRowsOf(revision));
-    const ledgerVersionId = revision.migrationTableVersionId ?? '';
     const ledger = await this.scannedLedgerOf(revision);
-    const tables: ScannedTable[] = [];
 
-    for (const [tableId, tableVersionId] of sortedByKey(
-      revision.tableVersionIds,
-    )) {
-      const schemaRow = schemaRows.get(tableId);
+    return sortedByKey(revision.tableVersionIds).map(
+      ([tableId, tableVersionId]) => {
+        const schemaRow = schemaRows.get(tableId);
+        const schemaEvaluation = evaluationKeyOf(
+          revision.migrationTableVersionId,
+          tableId,
+          schemaRow?.versionId,
+        );
 
-      if (schemaRow) {
-        const schemaEvaluation = `${ledgerVersionId}/${schemaRow.versionId}`;
-
-        tables.push({
+        return {
           tableId,
           tableVersionId,
           schemaRow,
-          check: this.checkSchema(schemaEvaluation, ledger, schemaRow),
+          check: this.checkSchema(schemaEvaluation, ledger, tableId, schemaRow),
           schemaEvaluation,
-        });
-      }
-    }
-
-    return tables;
+        };
+      },
+    );
   }
 
   public async rowHashesOf(tableVersionId: string): Promise<RowHashCount[]> {
-    return this.cached(this.rowHashes, tableVersionId, 'rowHashReads', () =>
-      this.reader.readRowHashes(tableVersionId),
+    return this.cached(this.rowHashes, tableVersionId, () =>
+      this.readRowHashes(tableVersionId),
     );
   }
 
@@ -123,24 +133,29 @@ export class LedgerScan {
     return hash;
   }
 
-  public async repairStateOf(
+  public async repairInputOf(
     { headRevisionId, draftRevisionId }: BranchRevisions,
     head: RevisionTables,
     draft: RevisionTables,
-  ): Promise<RepairState> {
+  ): Promise<RepairInput> {
+    const headLedger = await this.scannedLedgerOf(head);
+    const draftLedger = await this.scannedLedgerOf(draft);
+
     return {
-      headRevisionId,
-      draftRevisionId,
-      head: await this.revisionLedgerOf(head),
-      draft: await this.revisionLedgerOf(draft),
+      state: {
+        headRevisionId,
+        draftRevisionId,
+        head: await this.revisionLedgerOf(head, headLedger),
+        draft: await this.revisionLedgerOf(draft, draftLedger),
+      },
+      storedReplays: { head: headLedger?.replay, draft: draftLedger?.replay },
     };
   }
 
   private async revisionLedgerOf(
     revision: RevisionTables,
+    ledger: ScannedLedger | undefined,
   ): Promise<RevisionLedger> {
-    const ledger = await this.scannedLedgerOf(revision);
-
     return revisionLedgerOf(
       revision.tableVersionIds,
       await this.schemaTableRowsOf(revision),
@@ -151,12 +166,13 @@ export class LedgerScan {
   private checkSchema(
     schemaEvaluation: string,
     ledger: ScannedLedger | undefined,
-    schemaRow: SchemaRow,
+    tableId: string,
+    schemaRow: SchemaRow | undefined,
   ): SchemaCheck {
     let check = this.schemaChecks.get(schemaEvaluation);
 
     if (!check) {
-      check = schemaCheckOf(ledger?.currentSlots, schemaRow);
+      check = schemaCheckOf(ledger?.currentSlots, tableId, schemaRow);
       this.schemaChecks.set(schemaEvaluation, check);
       this.counts.schemaChecks += 1;
     }
@@ -171,11 +187,8 @@ export class LedgerScan {
       return [];
     }
 
-    return this.cached(
-      this.schemaTables,
-      schemaTableVersionId,
-      'schemaTableReads',
-      () => this.reader.readTableRows(schemaTableVersionId),
+    return this.cached(this.schemaTables, schemaTableVersionId, () =>
+      this.readSchemaTable(schemaTableVersionId),
     );
   }
 
@@ -186,16 +199,25 @@ export class LedgerScan {
       return undefined;
     }
 
-    return this.cached(
-      this.ledgers,
-      migrationTableVersionId,
-      'ledgerReplays',
-      async () =>
-        this.replayed(await this.reader.readTableRows(migrationTableVersionId)),
+    return this.cached(this.ledgers, migrationTableVersionId, async () =>
+      this.replayed(await this.reader.readTableRows(migrationTableVersionId)),
     );
   }
 
+  private readSchemaTable(schemaTableVersionId: string): Promise<Row[]> {
+    this.counts.schemaTableReads += 1;
+
+    return this.reader.readTableRows(schemaTableVersionId);
+  }
+
+  private readRowHashes(tableVersionId: string): Promise<RowHashCount[]> {
+    this.counts.rowHashReads += 1;
+
+    return this.reader.readRowHashes(tableVersionId);
+  }
+
   private replayed(rows: Row[]): ScannedLedger {
+    this.counts.ledgerReplays += 1;
     const replay = replayLedger({
       ledger: ledgerOf(rows).map(({ migration }) => migration),
       ...this.rules,
@@ -208,13 +230,12 @@ export class LedgerScan {
       }
     }
 
-    return { rows, currentSlots };
+    return { rows, replay, currentSlots };
   }
 
   private async cached<T>(
     cache: Map<string, T>,
     key: string,
-    countedAs: CachedRead,
     read: () => Promise<T>,
   ): Promise<T> {
     const cachedValue = cache.get(key);
@@ -225,7 +246,6 @@ export class LedgerScan {
 
     const value = await read();
     cache.set(key, value);
-    this.counts[countedAs] += 1;
 
     return value;
   }
@@ -236,7 +256,6 @@ function schemaRowsOf(rows: readonly Row[]): Map<string, SchemaRow> {
     rows.map((row) => [
       row.id,
       {
-        tableId: row.id,
         versionId: row.versionId,
         hash: row.hash,
         schema: row.data as unknown as JsonSchema,
@@ -247,4 +266,8 @@ function schemaRowsOf(rows: readonly Row[]): Map<string, SchemaRow> {
 
 function sortedByKey(entries: ReadonlyMap<string, string>): [string, string][] {
   return [...entries].sort(([left], [right]) => compareCodePoints(left, right));
+}
+
+export function evaluationKeyOf(...parts: (string | undefined)[]): string {
+  return JSON.stringify(parts);
 }

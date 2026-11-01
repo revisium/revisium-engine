@@ -6,13 +6,27 @@ import type {
   SchemaLedgerFinding,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
 import type { ScannedBranch } from './branch-page-reader';
-import type { LedgerScan, ScannedTable } from './ledger-scan';
-import { damageShapeOf, type ReplayedCheck } from './schema-checks';
+import {
+  evaluationKeyOf,
+  type LedgerScan,
+  type ScannedTable,
+} from './ledger-scan';
+import {
+  damageShapeOf,
+  lineageOf,
+  passesSchemaCheck,
+  type ReplayedCheck,
+} from './schema-checks';
 import type { RevisionTables } from './scan-revision-reader';
 
 export type HeadRepairs = ReadonlyMap<string, RepairOutcome> | 'deferred';
 
 const HISTORY_DAMAGE: FindingContent = { code: 'damagedHistory', detail: {} };
+
+const DRAFT_ONLY_DAMAGE: FindingContent = {
+  code: 'draftOnlyDamage',
+  detail: {},
+};
 
 type DamageFinding = (
   table: ScannedTable,
@@ -26,7 +40,6 @@ interface CollectedFinding {
 
 export class BranchScan {
   private readonly findings = new Map<string, CollectedFinding>();
-  private readonly damagedHeadLineages = new Set<string>();
 
   constructor(
     private readonly branch: ScannedBranch,
@@ -45,11 +58,13 @@ export class BranchScan {
     draft: RevisionTables,
     repairs: HeadRepairs,
   ): Promise<void> {
+    const headTables = await this.scan.tablesOf(head);
+
     await this.addRevision(head, 'head', (table, check) =>
       this.headDamageOf(table, check, repairs),
     );
-    await this.addRevision(draft, 'draft', (_table, check) =>
-      this.draftDamageOf(check),
+    await this.addRevision(draft, 'draft', (table, check) =>
+      draftDamageOf(headTables, table, check),
     );
   }
 
@@ -97,8 +112,6 @@ export class BranchScan {
     check: ReplayedCheck,
     repairs: HeadRepairs,
   ): Promise<FindingContent> {
-    this.damagedHeadLineages.add(lineageOf(check));
-
     return {
       code: 'damagedTable',
       detail: {
@@ -108,18 +121,14 @@ export class BranchScan {
     };
   }
 
-  private draftDamageOf(check: ReplayedCheck): FindingContent | undefined {
-    if (this.damagedHeadLineages.has(lineageOf(check))) {
-      return undefined;
-    }
-
-    return { code: 'draftOnlyDamage', detail: {} };
-  }
-
   private async shapeOf(
     table: ScannedTable,
     { slot }: ReplayedCheck,
   ): Promise<DamageShape> {
+    if (!table.schemaRow) {
+      return 'unknown';
+    }
+
     const replayedHash = slot.schema
       ? this.scan.hashOf(slot.schema)
       : undefined;
@@ -137,7 +146,7 @@ export class BranchScan {
     { tableId, schemaEvaluation }: ScannedTable,
     content: FindingContent,
   ): void {
-    const key = [role, content.code, tableId, schemaEvaluation].join('\n');
+    const key = evaluationKeyOf(role, content.code, tableId, schemaEvaluation);
     const collected = this.findings.get(key);
 
     if (collected) {
@@ -159,8 +168,37 @@ export class BranchScan {
   }
 }
 
-function lineageOf({ slot }: ReplayedCheck): string {
-  return slot.migrations[0]?.id ?? '';
+function draftDamageOf(
+  headTables: readonly ScannedTable[],
+  table: ScannedTable,
+  check: ReplayedCheck,
+): FindingContent | undefined {
+  const headTable = headCounterpartOf(headTables, table.tableId, check.lineage);
+
+  if (headTable && !passesSchemaCheck(headTable.check)) {
+    return undefined;
+  }
+
+  return DRAFT_ONLY_DAMAGE;
+}
+
+function headCounterpartOf(
+  headTables: readonly ScannedTable[],
+  tableId: string,
+  lineage: string,
+): ScannedTable | undefined {
+  const sameLineage = headTables.find(
+    (headTable) => lineageOf(headTable.check) === lineage,
+  );
+
+  if (sameLineage) {
+    return sameLineage;
+  }
+
+  return headTables.find(
+    (headTable) =>
+      headTable.tableId === tableId && lineageOf(headTable.check) === undefined,
+  );
 }
 
 function repairOf(

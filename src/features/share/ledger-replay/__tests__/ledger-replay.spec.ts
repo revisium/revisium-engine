@@ -26,6 +26,7 @@ import {
   schemasOf,
   slotOf,
   tableRead,
+  tracedReplayOf,
   unattributedFailure,
   unattributedOf,
   unreplayableOf,
@@ -484,7 +485,6 @@ describe('replayLedger', () => {
           migrations: [initCategories, renameCategories],
           currentTableId: 'groups',
           schema: categorySchema,
-          trail: [ownStep(initCategories, categorySchema)],
         },
         {
           tableIds: ['tags'],
@@ -494,7 +494,6 @@ describe('replayLedger', () => {
             failingTagsUpdate,
             'Not found "missing" in "/properties"',
           ),
-          trail: [ownStep(initTags, tagSchema)],
         },
       ]);
     });
@@ -811,12 +810,20 @@ describe('replayLedger', () => {
   });
 
   describe('trail', () => {
+    it('records no trail unless the caller asks for it', () => {
+      const initCategories = init('categories', categorySchema);
+
+      const replay = replayOf(initCategories, rename('categories', 'groups'));
+
+      expect(slotOf(replay, initCategories)?.trail).toBeUndefined();
+    });
+
     it('traces the schema after each own step and each rewrite by the rename of a referenced table', () => {
       const initProducts = init('products', productSchema);
       const addPrice = update('products', [addField('price', num())]);
       const renameCategories = rename('categories', 'groups');
 
-      const replay = replayOf(
+      const replay = tracedReplayOf(
         init('categories', categorySchema),
         initProducts,
         addPrice,
@@ -840,7 +847,7 @@ describe('replayLedger', () => {
       const initNodes = init('nodes', nodeSchema);
       const renameNodes = rename('nodes', 'tree');
 
-      const replay = replayOf(initNodes, renameNodes);
+      const replay = tracedReplayOf(initNodes, renameNodes);
 
       expect(slotOf(replay, initNodes)?.trail).toEqual([
         ownStep(initNodes, nodeSchema),
@@ -854,7 +861,7 @@ describe('replayLedger', () => {
     it('leaves a failed step out of the trail', () => {
       const initCategories = init('categories', categorySchema);
 
-      const replay = replayOf(
+      const replay = tracedReplayOf(
         initCategories,
         update('categories', [removeField('missing')]),
       );

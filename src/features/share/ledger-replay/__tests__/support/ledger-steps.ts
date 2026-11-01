@@ -79,6 +79,10 @@ export function replayOf(...ledger: Migration[]): ReplayedLedger {
   return replayLedger({ ledger, refs, validator });
 }
 
+export function tracedReplayOf(...ledger: Migration[]): ReplayedLedger {
+  return replayLedger({ ledger, refs, validator, recordTrail: true });
+}
+
 export function schemasOf(replay: ReplayedLedger) {
   return Object.fromEntries(replay.schemas);
 }

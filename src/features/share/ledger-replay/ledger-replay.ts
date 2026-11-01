@@ -26,6 +26,7 @@ export interface LedgerReplayInput {
   refs: SchemaRefs;
   validator: SchemaValidator;
   schemas?: ReadonlyMap<string, JsonSchema>;
+  recordTrail?: boolean;
 }
 
 export interface ReplayFailure {
@@ -53,7 +54,7 @@ export interface SchemaTrailStep {
 export interface ReplayedSlot extends TableSlot {
   readonly schema?: JsonSchema;
   readonly failure?: ReplayFailure;
-  readonly trail: readonly SchemaTrailStep[];
+  readonly trail?: readonly SchemaTrailStep[];
 }
 
 export interface ReplayedLedger {
@@ -67,7 +68,6 @@ export interface ReplayedLedger {
 interface SlotSchema {
   schema?: JsonSchema;
   failure?: ReplayFailure;
-  trail: SchemaTrailStep[];
 }
 
 interface CurrentTable {
@@ -81,10 +81,12 @@ export function replayLedger({
   refs,
   validator,
   schemas = new Map(),
+  recordTrail = false,
 }: LedgerReplayInput): ReplayedLedger {
   const replay = new LedgerReplay(
     new NativeSchemaRules(refs, validator),
     schemas,
+    recordTrail,
   );
 
   for (const migration of ledger) {
@@ -99,15 +101,21 @@ class LedgerReplay {
   private readonly slotSchemas = new Map<TableSlot, SlotSchema>();
   private readonly unattributed: UnattributedFailure[] = [];
   private readonly reads: TableRead[] = [];
+  private readonly trails?: Map<TableSlot, SchemaTrailStep[]>;
 
   constructor(
     private readonly rules: NativeSchemaRules,
     schemas: ReadonlyMap<string, JsonSchema>,
+    recordTrail: boolean,
   ) {
     this.tableSlots = new TableSlots(schemas.keys());
 
     for (const [tableId, slot] of this.tableSlots.currentSlots()) {
-      this.slotSchemas.set(slot, { schema: schemas.get(tableId), trail: [] });
+      this.slotSchemas.set(slot, { schema: schemas.get(tableId) });
+    }
+
+    if (recordTrail) {
+      this.trails = new Map();
     }
   }
 
@@ -210,9 +218,18 @@ class LedgerReplay {
     cause: SchemaTrailStep['cause'],
     schema: JsonSchema,
   ): void {
-    const slotSchema = this.slotSchemaOf(slot);
-    slotSchema.schema = schema;
-    slotSchema.trail.push({ migrationId: migration.id, cause, schema });
+    this.slotSchemaOf(slot).schema = schema;
+    this.recordTrailStep(slot, { migrationId: migration.id, cause, schema });
+  }
+
+  private recordTrailStep(slot: TableSlot, step: SchemaTrailStep): void {
+    if (!this.trails) {
+      return;
+    }
+
+    const trail = this.trails.get(slot) ?? [];
+    trail.push(step);
+    this.trails.set(slot, trail);
   }
 
   private recordFailure(
@@ -433,7 +450,7 @@ class LedgerReplay {
     let slotSchema = this.slotSchemas.get(slot);
 
     if (!slotSchema) {
-      slotSchema = { trail: [] };
+      slotSchema = {};
       this.slotSchemas.set(slot, slotSchema);
     }
 
@@ -441,13 +458,22 @@ class LedgerReplay {
   }
 
   private replayedSlot(slot: TableSlot): ReplayedSlot {
-    const { schema, failure, trail = [] } = this.slotSchemas.get(slot) ?? {};
+    const { schema, failure } = this.slotSchemas.get(slot) ?? {};
+    const trail = this.trailOf(slot);
 
     if (failure) {
-      return { ...slot, failure, trail: [...trail] };
+      return { ...slot, failure, trail };
     }
 
-    return { ...slot, schema, trail: [...trail] };
+    return { ...slot, schema, trail };
+  }
+
+  private trailOf(slot: TableSlot): SchemaTrailStep[] | undefined {
+    if (!this.trails) {
+      return undefined;
+    }
+
+    return [...(this.trails.get(slot) ?? [])];
   }
 }
 

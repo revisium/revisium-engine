@@ -593,6 +593,7 @@ describe('Async migration recovery', () => {
     await releaseStartedOwners();
     await closeRestartedProcesses();
     jest.restoreAllMocks();
+    await kit.guard.verifyAndForget();
   });
 
   afterAll(async () => {

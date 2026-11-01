@@ -8,6 +8,8 @@ import {
 
 const FENCE_HOLDER_TIMEOUT_MS = 10_000;
 
+type FenceDatabase = Pick<DraftTestKit, 'prismaService'>;
+
 export interface WriteQueuedBehindFence<T> {
   writing: Promise<T>;
   releaseFence(): Promise<void>;
@@ -36,7 +38,7 @@ export async function writeWhileBranchIsFenced<T>(
 }
 
 export async function queueWriteBehindBranchFence<T>(
-  kit: DraftTestKit,
+  kit: FenceDatabase,
   branchId: string,
   write: () => Promise<T>,
 ): Promise<WriteQueuedBehindFence<T>> {
@@ -106,7 +108,10 @@ export function watchFenceEntries(kit: DraftTestKit) {
   return jest.spyOn(fenceOf(kit), 'enterSharedForRevision');
 }
 
-async function holdBranchFenceExclusively(kit: DraftTestKit, branchId: string) {
+async function holdBranchFenceExclusively(
+  kit: FenceDatabase,
+  branchId: string,
+) {
   const barrier = createBarrier('The exclusive fence holder');
   const holding = kit.prismaService.$transaction(
     async (transaction) => {
@@ -127,7 +132,7 @@ async function holdBranchFenceExclusively(kit: DraftTestKit, branchId: string) {
 }
 
 async function waitUntilQueuedBehindFence(
-  kit: DraftTestKit,
+  kit: FenceDatabase,
   branchId: string,
   writing: Promise<unknown>,
 ): Promise<void> {
@@ -147,7 +152,7 @@ async function waitUntilQueuedBehindFence(
 }
 
 async function hasWriterQueuedBehindFence(
-  kit: DraftTestKit,
+  kit: FenceDatabase,
   branchId: string,
 ): Promise<boolean> {
   const waitingRequests = await kit.prismaService.$queryRaw<unknown[]>`

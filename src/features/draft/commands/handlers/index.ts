@@ -28,6 +28,7 @@ import { RevertChangesHandler } from 'src/features/draft/commands/handlers/rever
 import { InternalCreateRowHandler } from 'src/features/draft/commands/handlers/transactional/internal-create-row.handler';
 import { InternalRenameRowHandler } from 'src/features/draft/commands/handlers/transactional/internal-rename-row.handler';
 import { InternalUpdateRowHandler } from 'src/features/draft/commands/handlers/transactional/internal-update-row.handler';
+import { MigrateTableViewsHandler } from 'src/features/draft/commands/handlers/transactional/migrate-table-views.handler';
 import { RenameSchemaHandler } from 'src/features/draft/commands/handlers/transactional/rename-schema.handler';
 import { ResolveDraftRevisionHandler } from 'src/features/draft/commands/handlers/transactional/resolve-draft-revision.handler';
 import { UpdateSchemaHandler } from 'src/features/draft/commands/handlers/transactional/update-schema.handler';
@@ -74,6 +75,7 @@ export const DRAFT_COMMANDS_HANDLERS = [
   InternalUpdateRowHandler,
   InternalRenameRowHandler,
   UpdateSchemaHandler,
+  MigrateTableViewsHandler,
   RenameSchemaHandler,
   UploadFileHandler,
   ApiUploadFileHandler,

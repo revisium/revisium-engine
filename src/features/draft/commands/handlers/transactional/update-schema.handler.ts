@@ -57,11 +57,12 @@ export class UpdateSchemaHandler extends DraftHandler<
     this.validateFieldNamesInSchema(patches);
 
     await this.updateRowInSchemaTable(input, nextHistoryPatches);
-    if (!input.skipCreatingMigration) {
-      await this.createUpdateMigration(input);
+
+    if (input.skipCreatingMigration) {
+      return false;
     }
 
-    return true;
+    return this.createUpdateMigration(input);
   }
 
   private getCurrentHistoryPatches(data: UpdateSchemaCommand['data']) {
@@ -135,6 +136,7 @@ export class UpdateSchemaHandler extends DraftHandler<
         tableId: data.tableId,
         schema: data.schema,
         patches: data.patches,
+        migrationId: data.migrationId,
       }),
     );
   }

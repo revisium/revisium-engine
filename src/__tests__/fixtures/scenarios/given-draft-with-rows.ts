@@ -20,6 +20,7 @@ interface GivenDraftWithRowsOptions {
 }
 
 export interface DraftWithRowsScenario {
+  branchId: string;
   draftRevisionId: string;
   headRevisionId: string;
   tableId: string;
@@ -62,6 +63,7 @@ export async function givenDraftWithRows({
   }
 
   return {
+    branchId: branch.branchId,
     draftRevisionId: branch.draftRevisionId,
     headRevisionId: branch.headRevisionId,
     tableId: table.tableId,

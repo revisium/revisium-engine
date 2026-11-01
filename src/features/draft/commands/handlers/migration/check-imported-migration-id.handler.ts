@@ -20,8 +20,10 @@ export class CheckImportedMigrationIdHandler implements ICommandHandler<CheckImp
     return this.transactionService.getTransactionOrPrisma();
   }
 
-  async execute({ revisionId }: CheckImportedMigrationIdCommand) {
-    const migrationId = this.migrationContextService.migrationId;
+  async execute(command: CheckImportedMigrationIdCommand) {
+    const { revisionId } = command;
+    const migrationId =
+      command.migrationId ?? this.migrationContextService.migrationId;
 
     if (migrationId === undefined) {
       return;

@@ -2,6 +2,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule } from '@nestjs/config';
 import { CommandBus, CqrsModule } from '@nestjs/cqrs';
 import { Test, TestingModule } from '@nestjs/testing';
+import { CommittedVersionsGuard } from 'src/__tests__/assertions/committed-versions-guard';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
 import { DraftModule } from 'src/features/draft/draft.module';
@@ -61,6 +62,7 @@ export interface MigrationTestKit {
   migrationTransitions: MigrationTransitionService;
   transactionService: TransactionPrismaService;
   recoveryScope: ExplicitMigrationRecoveryScope;
+  guard: CommittedVersionsGuard;
   close(): Promise<void>;
 }
 
@@ -106,9 +108,11 @@ export async function createMigrationTestKit({
 
   await module.init();
 
+  const prisma = module.get(PrismaService);
+
   return {
     module,
-    prisma: module.get(PrismaService),
+    prisma,
     draftApi: module.get(DraftApiService),
     commandBus: module.get(CommandBus),
     rowApi: module.get(RowApiService),
@@ -120,6 +124,7 @@ export async function createMigrationTestKit({
     migrationTransitions: module.get(MigrationTransitionService),
     transactionService: module.get(TransactionPrismaService),
     recoveryScope,
+    guard: new CommittedVersionsGuard(prisma),
     async close() {
       await module.close();
     },

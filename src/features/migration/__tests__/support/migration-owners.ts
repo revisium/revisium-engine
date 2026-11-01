@@ -5,6 +5,7 @@ import type {
   OwnershipEpoch,
 } from 'src/features/migration/services/migration-transition.service';
 import type { MigrationStepResult } from 'src/features/migration/types/migration.types';
+import type { ObservedImports } from './migration-imports';
 import type { SweepingProcess } from './migration-sweeps';
 
 export interface OwnerHold {
@@ -73,6 +74,16 @@ export async function sweptUntil(
   const { result } = await process.nextRunOf(migrationId);
 
   return pauseOwner(process.kit, migrationId, result, hold);
+}
+
+export async function drivenByImportUntil(
+  imports: ObservedImports,
+  importing: Promise<unknown>,
+  hold: OwnerHold,
+): Promise<PausedOwner> {
+  const { migrationId, result } = await imports.nextDriverWhile(importing);
+
+  return pauseOwner(imports.kit, migrationId, result, hold);
 }
 
 export async function startAbortUntil(

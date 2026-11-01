@@ -1,8 +1,12 @@
+import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import {
   JsonSchemaTypeName,
   type JsonObjectSchema,
   type JsonPatch,
+  type Migration,
+  type UpdateMigration,
 } from '@revisium/schema-toolkit/types';
+import objectHash from 'object-hash';
 import { observeCommittedVersions } from 'src/__tests__/assertions/migration';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import type { InputJsonValue } from 'src/engine-prisma-types';
@@ -14,7 +18,6 @@ import type { ApplyMigrationResult } from 'src/features/draft/commands/impl/migr
 import { MigrationContextService } from 'src/features/draft/migration-context.service';
 import { ViewsApiService } from 'src/features/views/views-api.service';
 import type { TableViewsData } from 'src/features/views/types';
-import { asyncUpdateOf } from './migration-database';
 
 const TABLE_ID = 'products';
 const ROW_ID_DIGITS = 3;
@@ -73,6 +76,11 @@ export interface TableContents {
 export interface StartedMigration extends DraftOwnedTable {
   migrationId: string;
   field: string;
+  patches: JsonPatch[];
+}
+
+export interface ImportedUpdate {
+  migrationId: string;
   patches: JsonPatch[];
 }
 
@@ -135,19 +143,43 @@ export function importFieldAddition(
   table: DraftOwnedTable,
   { field, migrationId }: { field: string; migrationId: string },
 ): Promise<ApplyMigrationResult[]> {
-  const patches = fieldAdditionOf(field);
+  return importMigrations(
+    kit,
+    table,
+    importedUpdatesOf(table, [
+      { migrationId, patches: fieldAdditionOf(field) },
+    ]),
+  );
+}
 
+export function importMigrations(
+  kit: MigrationTestKit,
+  table: Pick<DraftOwnedTable, 'revisionId'>,
+  migrations: Migration[],
+): Promise<ApplyMigrationResult[]> {
   return kit.draftApi.applyMigrations({
     revisionId: table.revisionId,
-    migrations: [
-      {
-        changeType: 'update',
-        id: migrationId,
-        tableId: table.tableId,
-        hash: asyncUpdateOf(productSchema, patches).targetSchemaHash,
-        patches,
-      },
-    ],
+    migrations,
+  });
+}
+
+export function importedUpdatesOf(
+  table: Pick<DraftOwnedTable, 'tableId'>,
+  updates: ImportedUpdate[],
+  schema: JsonObjectSchema = productSchema,
+): UpdateMigration[] {
+  const target = new SchemaTable(schema);
+
+  return updates.map(({ migrationId, patches }) => {
+    target.applyPatches(patches);
+
+    return {
+      changeType: 'update',
+      id: migrationId,
+      tableId: table.tableId,
+      hash: objectHash(target.getSchema()),
+      patches,
+    };
   });
 }
 
@@ -166,9 +198,7 @@ export function startFieldRename(
   table: DraftOwnedTable,
   { from, to }: { from: string; to: string },
 ): Promise<StartedMigration> {
-  return startAsyncUpdate(kit, table, to, [
-    { op: 'move', from: `/properties/${from}`, path: `/properties/${to}` },
-  ]);
+  return startAsyncUpdate(kit, table, to, fieldRenameOf({ from, to }));
 }
 
 export async function commitDraft(
@@ -309,6 +339,18 @@ export function fieldAdditionOf(field: string): JsonPatch[] {
       path: `/properties/${field}`,
       value: { type: JsonSchemaTypeName.Number, default: 0 },
     },
+  ];
+}
+
+export function fieldRenameOf({
+  from,
+  to,
+}: {
+  from: string;
+  to: string;
+}): JsonPatch[] {
+  return [
+    { op: 'move', from: `/properties/${from}`, path: `/properties/${to}` },
   ];
 }
 

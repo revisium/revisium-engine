@@ -1,14 +1,18 @@
+import type { Migration } from '@revisium/schema-toolkit/types';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
   prepareBranch,
   type BranchGraph,
 } from 'src/__tests__/utils/prepareProject';
 import { commitDraft, findRevisionId } from './migration-scenario';
-import { readLedger, readSchema } from './revision-records';
+import { readLedger, readRows, readSchema } from './revision-records';
 
 export interface HeadSyncedReplica {
   syncWith(sourceHeadRevisionId: string): Promise<void>;
+  syncRowsWith(sourceHeadRevisionId: string, tableId: string): Promise<void>;
   readHeadSchema(tableId: string): Promise<unknown>;
+  readHeadLedger(): Promise<Migration[]>;
 }
 
 export async function givenHeadSyncedReplica(
@@ -50,8 +54,30 @@ function headSyncedReplica(
       await commitDraft(kit, branch);
     },
 
+    async syncRowsWith(sourceHeadRevisionId, tableId) {
+      const rows = await readRows(kit, {
+        revisionId: sourceHeadRevisionId,
+        tableId,
+      });
+
+      await kit.draftApi.apiCreateRows({
+        revisionId: await findRevisionId(kit, branch.branchId, 'isDraft'),
+        tableId,
+        rows: rows.map(({ id, data }) => ({
+          rowId: id,
+          data: data as InputJsonValue,
+        })),
+        isRestore: true,
+      });
+      await commitDraft(kit, branch);
+    },
+
     async readHeadSchema(tableId) {
       return readSchema(kit, { revisionId: await headRevisionId(), tableId });
+    },
+
+    async readHeadLedger() {
+      return readLedger(kit, await headRevisionId());
     },
   };
 }

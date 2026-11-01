@@ -54,6 +54,16 @@ export function ledgerMigrationIdOf(
     : undefined;
 }
 
+export function carriesLedgerMigrationId(
+  payload: unknown,
+  ledgerMigrationId: string,
+): boolean {
+  return (
+    isPayloadEnvelope(payload) &&
+    payload.ledgerMigrationId === ledgerMigrationId
+  );
+}
+
 function isPayloadEnvelope(payload: unknown): payload is PayloadEnvelope {
   if (typeof payload !== 'object' || payload === null) {
     return false;

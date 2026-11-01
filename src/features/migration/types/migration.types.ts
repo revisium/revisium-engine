@@ -28,6 +28,10 @@ export const ACTIVE_MIGRATION_STATUSES: MigrationStatus[] = [
   MigrationStatus.SWAPPING,
 ];
 
+export function isActiveMigrationStatus(status: string): boolean {
+  return ACTIVE_MIGRATION_STATUSES.some((active) => active === status);
+}
+
 export type MigrationStepResult =
   | 'continue'
   | 'completed'

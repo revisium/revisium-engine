@@ -3,6 +3,7 @@ import { FileUsageIntegrationService } from 'src/features/file-usage/services/fi
 
 const MS_PER_SECOND = 1000;
 const FAILED_AFTER_REGISTRATION = 'Connection lost after the file registration';
+const BATCH_WRITE_LOST = 'Connection lost before the batch write';
 
 export function failRightAfterFileRegistration(
   kit: MigrationTestKit,
@@ -22,6 +23,25 @@ export function failRightAfterFileRegistration(
         throw new Error(FAILED_AFTER_REGISTRATION);
       }
     });
+}
+
+export function loseConnectionAtBatchWrite(
+  kit: MigrationTestKit,
+  writeNumber: number,
+): void {
+  const batchService = kit.migrationBatchService;
+  const writeBatch = batchService.writeBatch.bind(batchService);
+  let writes = 0;
+
+  jest.spyOn(batchService, 'writeBatch').mockImplementation((...args) => {
+    writes += 1;
+
+    if (writes === writeNumber) {
+      return Promise.reject(new Error(BATCH_WRITE_LOST));
+    }
+
+    return writeBatch(...args);
+  });
 }
 
 export function slowDownFirstBatchTransaction(

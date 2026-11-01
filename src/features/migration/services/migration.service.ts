@@ -164,6 +164,20 @@ export class MigrationService {
     return this.runUntilSettled(await this.claim(migrationId));
   }
 
+  async processUntilReleased(
+    migrationId: string,
+  ): Promise<MigrationStepResult> {
+    const lease = await this.claim(migrationId);
+
+    if (!lease) {
+      return 'stopped';
+    }
+
+    const result = await this.runClaimedMigration(lease);
+
+    return result === 'retry' ? 'stopped' : result;
+  }
+
   async takeOverStalledSwap(
     stalledOwner: OwnershipEpoch,
   ): Promise<MigrationStepResult> {

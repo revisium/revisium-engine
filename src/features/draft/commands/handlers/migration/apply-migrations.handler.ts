@@ -10,8 +10,13 @@ import {
 import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { MigrationContextService } from 'src/features/draft/migration-context.service';
+import {
+  MigrationImportService,
+  type EndedMigration,
+} from 'src/features/migration/services/migration-import.service';
+import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import { Migration } from '@revisium/schema-toolkit/types';
+import { Migration, UpdateMigration } from '@revisium/schema-toolkit/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -29,6 +34,7 @@ export class ApplyMigrationsHandler implements ICommandHandler<
     protected readonly draftApiService: DraftApiService,
     protected readonly draftTransactionalCommands: DraftTransactionalCommands,
     protected readonly migrationContextService: MigrationContextService,
+    protected readonly migrationImport: MigrationImportService,
   ) {}
 
   async execute({ data }: ApplyMigrationsCommand) {
@@ -84,19 +90,91 @@ export class ApplyMigrationsHandler implements ICommandHandler<
     migration: Migration,
   ): Promise<ApplyMigrationResult> {
     try {
-      await this.checkIdBeforeChange(revisionId);
+      await this.checkImportedId(revisionId);
+
+      if (migration.changeType === 'update') {
+        return await this.applyUpdate(revisionId, migration);
+      }
+
       await this.changeTable(revisionId, migration);
 
-      return {
-        id: migration.id,
-        status: 'applied',
-      };
+      return appliedResult(migration.id);
     } catch (error) {
       return this.unappliedResult(migration.id, error);
     }
   }
 
-  private checkIdBeforeChange(revisionId: string) {
+  private async applyUpdate(
+    revisionId: string,
+    migration: UpdateMigration,
+  ): Promise<ApplyMigrationResult> {
+    const asyncMigrationId = await this.joinOrUpdateTable(
+      revisionId,
+      migration,
+    );
+
+    if (asyncMigrationId === undefined) {
+      return appliedResult(migration.id);
+    }
+
+    const ended = await this.migrationImport.driveUntilEnded(asyncMigrationId);
+
+    return this.asyncUpdateResult(revisionId, migration.id, ended);
+  }
+
+  private async joinOrUpdateTable(
+    revisionId: string,
+    migration: UpdateMigration,
+  ): Promise<string | undefined> {
+    const activeImport = await this.migrationImport.findActiveImport(
+      revisionId,
+      migration.id,
+    );
+
+    if (activeImport !== undefined) {
+      return activeImport;
+    }
+
+    const { migrationId } = await this.draftApiService.apiUpdateTable({
+      revisionId,
+      tableId: migration.tableId,
+      patches: migration.patches,
+    });
+
+    return migrationId;
+  }
+
+  private async asyncUpdateResult(
+    revisionId: string,
+    id: string,
+    ended: EndedMigration | null,
+  ): Promise<ApplyMigrationResult> {
+    if (await this.isRecordedInDraftLedger(revisionId)) {
+      return appliedResult(id);
+    }
+
+    return {
+      id,
+      status: 'failed',
+      error: unrecordedFailureOf(ended),
+    };
+  }
+
+  private async isRecordedInDraftLedger(revisionId: string): Promise<boolean> {
+    try {
+      await this.checkImportedId(revisionId);
+
+      return false;
+    } catch (error) {
+      if (error instanceof MigrationAlreadyAppliedException) {
+        return true;
+      }
+
+      throw error;
+    }
+  }
+
+  private checkImportedId(revisionId: string) {
     // Table changes, the async start among them, repeat this check in their
     // transaction. RepeatableRead gives both lookups one snapshot.
     return this.transactionService.run(
@@ -130,12 +208,6 @@ export class ApplyMigrationsHandler implements ICommandHandler<
         tableId: migration.tableId,
         schema: migration.schema,
       });
-    } else if (migration.changeType === 'update') {
-      await this.draftApiService.apiUpdateTable({
-        revisionId,
-        tableId: migration.tableId,
-        patches: migration.patches,
-      });
     } else if (migration.changeType === 'rename') {
       await this.draftApiService.apiRenameTable({
         revisionId,
@@ -149,4 +221,20 @@ export class ApplyMigrationsHandler implements ICommandHandler<
       });
     }
   }
+}
+
+function appliedResult(id: string): ApplyMigrationResult {
+  return { id, status: 'applied' };
+}
+
+function unrecordedFailureOf(ended: EndedMigration | null): string {
+  if (ended?.status === MigrationStatus.FAILED) {
+    return ended.errorMessage ?? MigrationStatus.FAILED;
+  }
+
+  if (ended?.errorMessage) {
+    return `${MigrationStatus.CANCELLED}: ${ended.errorMessage}`;
+  }
+
+  return MigrationStatus.CANCELLED;
 }

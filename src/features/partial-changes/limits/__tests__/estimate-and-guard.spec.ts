@@ -6,7 +6,13 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
-import type { FieldRef } from 'src/features/partial-changes/selection/selection';
+import type {
+  FieldRef,
+  Selection,
+} from 'src/features/partial-changes/selection/selection';
+import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { SystemTables } from 'src/features/share/system-tables.consts';
+import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const MAX_MIXED_TABLE_LINKS = 3;
@@ -45,6 +51,12 @@ const emptyFile = {
   height: 0,
 };
 
+const SCHEMA_HASH_OF_P1_AND_TITLE_OF_P2: Selection = {
+  rowColumns: [{ tableId: PRODUCTS, rowId: 'p1' }],
+  fields: [{ tableId: PRODUCTS, rowId: 'p2', path: '/title' }],
+};
+const FIVE_IDS = ['1', '2', '3', '4', '5'];
+
 const titleOf = (tableId: string, rowId: string): FieldRef => ({
   tableId,
   rowId,
@@ -76,10 +88,10 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
     linksCopied: number;
     linksAdded: number;
   }>([
-    { operation: 'commit', linksCopied: 4, linksAdded: 2 },
+    { operation: 'commit', linksCopied: 5, linksAdded: 2 },
     { operation: 'revert', linksCopied: 0, linksAdded: 1 },
   ])(
-    'counts the changed and merged rows and the links of a mixed table in a $operation, an in-place revert copying no link',
+    'counts the changed and merged rows and the links of a mixed table in a $operation, a merged row as a copied link and an in-place revert copying no link',
     async ({ operation, linksCopied, linksAdded }) => {
       const draft = await givenFiveProductsWithEdits(kit);
 
@@ -111,7 +123,29 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
       changedRows: 2,
       mergedRows: 2,
       perRowWorkRows: 2,
-      mixedTables: [{ tableId: ORDERS, linksCopied: 0, linksAdded: 2 }],
+      mixedTables: [{ tableId: ORDERS, linksCopied: 2, linksAdded: 2 }],
+    });
+  });
+
+  it('counts the link of a merge that collapses to the structure-side version as copied, as the assembly keeps it', async () => {
+    const draft = await givenRowColumnsEditNextToFieldEdit(kit);
+
+    const closure = await draft.closeDependencies(
+      'commit',
+      SCHEMA_HASH_OF_P1_AND_TITLE_OF_P2,
+    );
+    const target = await draft.assembleTarget(
+      'commit',
+      SCHEMA_HASH_OF_P1_AND_TITLE_OF_P2,
+    );
+
+    expect(closure.estimate.mixedTables).toEqual([
+      { tableId: PRODUCTS, linksCopied: 4, linksAdded: 2 },
+    ]);
+    expect(target.tableOf(PRODUCTS)).toMatchObject({
+      removedLinks: ['head p2'],
+      addedLinks: ['draft p2'],
+      newRows: [],
     });
   });
 
@@ -163,12 +197,81 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
             code: 'tooLarge',
             tableId: PRODUCTS,
             message:
-              'Assembling products copies 4 row links; the limit for one table is 3',
+              'Assembling products copies up to 5 row links; the limit for one table is 3',
           },
         ],
       });
       expect(assembling).not.toHaveBeenCalled();
     });
+
+    it('refuses before any assembly when a merge that may collapse leaves the copied links above the limit', async () => {
+      const draft = await givenRowColumnsEditNextToFieldEdit(limitedKit);
+      const assembling = jest.spyOn(limitedKit.targetAssembler, 'assemble');
+
+      const closure = await draft.closeDependencies(
+        'commit',
+        SCHEMA_HASH_OF_P1_AND_TITLE_OF_P2,
+      );
+
+      expect(closure).toMatchObject({
+        kind: 'tooLarge',
+        blockers: [
+          {
+            code: 'tooLarge',
+            tableId: PRODUCTS,
+            message:
+              'Assembling products copies up to 4 row links; the limit for one table is 3',
+          },
+        ],
+      });
+      expect(assembling).not.toHaveBeenCalled();
+    });
+
+    it.each<{
+      tables: string;
+      given: (kit: PartialChangesTestKit) => Promise<ChangesScenario>;
+      selection: Selection;
+      blockers: { tableId: SystemTables; message: string }[];
+    }>([
+      {
+        tables: 'the shared schemas',
+        given: givenFiveSharedSchemasWithTwoEdited,
+        selection: { sharedSchemas: ['s1'] },
+        blockers: [tooLargeSystemTable(SystemTables.SharedSchemas, 4)],
+      },
+      {
+        tables: 'the views',
+        given: givenFiveTableViewsWithTwoEdited,
+        selection: { views: ['t1'] },
+        blockers: [tooLargeSystemTable(SystemTables.Views, 4)],
+      },
+      {
+        tables: 'the schemas and the migrations',
+        given: givenFiveTablesWithTwoStructuresEdited,
+        selection: { tables: ['t1'] },
+        blockers: [
+          tooLargeSystemTable(SystemTables.Schema, 4),
+          tooLargeSystemTable(SystemTables.Migration, 5),
+        ],
+      },
+    ])(
+      'refuses before any assembly when a partial selection would copy more links of $tables than the limit',
+      async ({ given, selection, blockers }) => {
+        const draft = await given(limitedKit);
+        const assembling = jest.spyOn(limitedKit.targetAssembler, 'assemble');
+
+        const closure = await draft.closeDependencies('commit', selection);
+
+        expect(closure).toMatchObject({
+          kind: 'tooLarge',
+          blockers: blockers.map((blocker) => ({
+            code: 'tooLarge',
+            ...blocker,
+          })),
+        });
+        expect(assembling).not.toHaveBeenCalled();
+      },
+    );
 
     it('assembles an in-place revert of the same table, which copies no link', async () => {
       const draft = await givenFiveProductsWithEdits(limitedKit);
@@ -282,6 +385,96 @@ async function givenTwoEditedDocuments(
   }
 
   return draft;
+}
+
+async function givenRowColumnsEditNextToFieldEdit(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [PRODUCTS]: {
+      schema: productSchema,
+      rows: rowsOf(['p1', 'p2', 'p3', 'p4', 'p5'], (rowId) => ({
+        title: rowId,
+        price: 10,
+      })),
+    },
+  });
+  await draft.updateRow(PRODUCTS, 'p1', { title: 'renamed', price: 10 });
+  await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: 'edited' });
+  await draft.updateRow(PRODUCTS, 'p2', { title: 'renamed', price: 10 });
+
+  return draft;
+}
+
+async function givenFiveSharedSchemasWithTwoEdited(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [PRODUCTS]: { schema: productSchema },
+  });
+
+  for (const id of FIVE_IDS) {
+    await draft.createSharedSchema(`s${id}`, obj({ title: str() }));
+  }
+
+  await draft.commit();
+  await draft.updateSharedSchema('s1', obj({ title: str(), note: str() }));
+  await draft.updateSharedSchema('s2', obj({ title: str(), note: str() }));
+
+  return draft;
+}
+
+async function givenFiveTableViewsWithTwoEdited(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await givenFiveTables(kit);
+
+  for (const id of FIVE_IDS) {
+    await draft.updateViews(`t${id}`, tableViews('All'));
+  }
+
+  await draft.commit();
+  await draft.updateViews('t1', tableViews('Renamed'));
+  await draft.updateViews('t2', tableViews('Renamed'));
+
+  return draft;
+}
+
+async function givenFiveTablesWithTwoStructuresEdited(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await givenFiveTables(kit);
+  await draft.updateTable('t1', [addField('note', str())]);
+  await draft.updateTable('t2', [addField('note', str())]);
+
+  return draft;
+}
+
+function givenFiveTables(kit: PartialChangesTestKit): Promise<ChangesScenario> {
+  return ChangesScenario.committed(
+    kit,
+    Object.fromEntries(
+      FIVE_IDS.map((id) => [`t${id}`, { schema: obj({ title: str() }) }]),
+    ),
+  );
+}
+
+function tableViews(name: string): TableViewsData {
+  return {
+    version: 1,
+    defaultViewId: 'default',
+    views: [{ id: 'default', name, columns: [{ field: 'data.title' }] }],
+  };
+}
+
+function tooLargeSystemTable(
+  tableId: SystemTables,
+  linksCopied: number,
+): { tableId: SystemTables; message: string } {
+  return {
+    tableId,
+    message: `Assembling ${tableId} copies up to ${linksCopied} row links; the limit for one table is 3`,
+  };
 }
 
 function rowsOf(

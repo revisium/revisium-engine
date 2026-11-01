@@ -18,6 +18,8 @@ export type Finding =
 
 export type Site = Pick<Reason, 'tableId' | 'rowId' | 'path'>;
 
+export const TARGET_CHECKS = Symbol('TARGET_CHECKS');
+
 export interface TargetCheck {
   findingsOf(
     source: AssemblySource,

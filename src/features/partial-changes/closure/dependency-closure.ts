@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type {
   AppliedUnits,
   ChangeOperation,
@@ -10,6 +10,7 @@ import {
 import {
   danglingInSource,
   type Finding,
+  TARGET_CHECKS,
   type TargetCheck,
 } from 'src/features/partial-changes/closure/findings';
 import {
@@ -75,6 +76,7 @@ export class DependencyClosure {
   constructor(
     private readonly estimator: OperationEstimator,
     private readonly assembler: TargetAssembler,
+    @Inject(TARGET_CHECKS) private readonly checks: readonly TargetCheck[],
   ) {}
 
   public close(
@@ -88,7 +90,7 @@ export class DependencyClosure {
       {
         estimation: this.estimator.estimationOf(source),
         assembler: this.assembler,
-        checks: [],
+        checks: this.checks,
       },
     ).close();
   }

@@ -19,6 +19,11 @@ import {
   tableRulesOf,
   versionOn,
 } from 'src/features/partial-changes/assembly/read-tables';
+import {
+  type SystemTableTarget,
+  systemTableOutcomeOf,
+  systemTableTargetsOf,
+} from 'src/features/partial-changes/assembly/system-table-targets';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { estimateTooLarge } from 'src/features/partial-changes/limits/too-large-blockers';
@@ -61,6 +66,10 @@ interface PlannedTable {
 }
 
 const CONVERTED_ROWS: ReadonlySet<RowOutcomeKind> = new Set(['merge', 'move']);
+const ROWS_LEAVING_STRUCTURE_SIDE: ReadonlySet<RowOutcomeKind> = new Set([
+  'absent',
+  'otherSide',
+]);
 const ROWS_LINKED_FROM_OTHER_SIDE: ReadonlySet<RowOutcomeKind> = new Set([
   'otherSide',
   'merge',
@@ -119,7 +128,7 @@ export class OperationEstimation {
       changedRows: this.source.changedRows,
       mergedRows: convertedRowsIn(mixed),
       perRowWorkRows: convertedRowsIn(mixed.filter(needsPerRowWork)),
-      mixedTables,
+      mixedTables: [...mixedTables, ...this.mixedSystemTables(rules)],
     };
   }
 
@@ -144,12 +153,19 @@ export class OperationEstimation {
       return 0;
     }
 
-    const replaced = rows.filter(
+    const leaving = rows.filter(
       ({ pair, kind }) =>
-        kind !== 'structureSide' && pair[structureSide] !== undefined,
+        ROWS_LEAVING_STRUCTURE_SIDE.has(kind) &&
+        pair[structureSide] !== undefined,
     );
 
-    return (await this.rowLinksOf(version.versionId)) - replaced.length;
+    return (await this.rowLinksOf(version.versionId)) - leaving.length;
+  }
+
+  private mixedSystemTables(rules: OutcomeRules): MixedTableEstimate[] {
+    return systemTableTargetsOf(this.source, rules)
+      .filter(mayBeMixed)
+      .map((target) => systemTableEstimateOf(target, rules.operation));
   }
 
   private async rowLinksOf(tableVersionId: string): Promise<number> {
@@ -187,6 +203,50 @@ function convertedRowsIn(tables: readonly PlannedTable[]): number {
       count + rows.filter(({ kind }) => CONVERTED_ROWS.has(kind)).length,
     0,
   );
+}
+
+function mayBeMixed(target: SystemTableTarget): boolean {
+  const outcome = systemTableOutcomeOf(
+    target,
+    target.versions,
+    target.rewrites.length > 0,
+  );
+
+  return outcome === 'mixed';
+}
+
+function systemTableEstimateOf(
+  target: SystemTableTarget,
+  operation: ChangeOperation,
+): MixedTableEstimate {
+  const { tableId, rows, linkSide, versions, rewrites } = target;
+  const linkedIds = new Set(rows[linkSide].map(({ versionId }) => versionId));
+
+  return {
+    tableId,
+    linksCopied: systemLinksCopied(target, operation),
+    linksAdded:
+      versions.filter(({ versionId }) => !linkedIds.has(versionId)).length +
+      rewrites.length,
+  };
+}
+
+function systemLinksCopied(
+  { rows, linkSide, versions, rewrites }: SystemTableTarget,
+  operation: ChangeOperation,
+): number {
+  if (editsDraftInPlace(operation, linkSide)) {
+    return 0;
+  }
+
+  const possiblyKept = new Set(
+    [...versions, ...rewrites.map(({ source }) => source)].map(
+      ({ versionId }) => versionId,
+    ),
+  );
+
+  return rows[linkSide].filter(({ versionId }) => possiblyKept.has(versionId))
+    .length;
 }
 
 function needsPerRowWork({ version }: PlannedTable): boolean {

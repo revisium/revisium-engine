@@ -22,7 +22,7 @@ export function estimateTooLarge(
       ({ tableId, linksCopied }): PlanBlocker => ({
         code: 'tooLarge',
         tableId,
-        message: `Assembling ${tableId} copies ${linksCopied} row links; the limit for one table is ${maxMixedTableLinks}`,
+        message: `Assembling ${tableId} copies up to ${linksCopied} row links; the limit for one table is ${maxMixedTableLinks}`,
       }),
     );
 

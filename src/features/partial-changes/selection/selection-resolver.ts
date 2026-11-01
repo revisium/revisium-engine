@@ -142,7 +142,7 @@ class SelectionResolver {
   }
 }
 
-function requiredExcluded(
+export function requiredExcluded(
   { key, unit }: CatalogueUnit,
   reason: Reason,
 ): PlanBlocker {
@@ -167,7 +167,9 @@ function addressOf({ tableId, rowId, path }: Unit): string {
   return `${tableId}/${rowId}${path ?? ''}`;
 }
 
-function distinctBlockers(blockers: readonly PlanBlocker[]): PlanBlocker[] {
+export function distinctBlockers(
+  blockers: readonly PlanBlocker[],
+): PlanBlocker[] {
   const distinct = new Map<string, PlanBlocker>();
 
   for (const blocker of blockers) {

@@ -88,6 +88,14 @@ export class ChangesSnapshotReader {
     return rows.map(({ id }) => id);
   }
 
+  public async countRowLinks(tableVersionId: string): Promise<number> {
+    const [result] = await this.transaction.$queryRaw<{ count: number }[]>(sql`
+      SELECT count(*)::int AS "count" FROM "_RowToTable" WHERE "B" = ${tableVersionId}
+    `);
+
+    return result?.count ?? 0;
+  }
+
   public async readRowDigest(tableVersionId: string): Promise<string> {
     const [result] = await this.transaction.$queryRaw<{ digest: string }[]>(
       rowDigestSql(tableVersionId),

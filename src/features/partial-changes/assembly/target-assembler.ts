@@ -11,8 +11,14 @@ import {
   type RowOutcome,
   type TableOutcome,
   type TableOutcomeRules,
-  type TableUnits,
 } from 'src/features/partial-changes/assembly/outcome-rules';
+import {
+  publicIdOf,
+  type ReadTable,
+  readTablesOf,
+  tableRulesOf,
+  versionOn,
+} from 'src/features/partial-changes/assembly/read-tables';
 import {
   type DraftStructureMigration,
   type MergedRow,
@@ -38,7 +44,6 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { SchemaLeaves } from 'src/features/partial-changes/structure/schema-leaves';
-import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 
 export interface AssemblySource {
   readonly snapshot: ChangesSnapshot;
@@ -83,23 +88,6 @@ interface AssembledTable {
   readonly plan: TablePlan;
   readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly DeferredValues[];
-}
-
-interface Version {
-  readonly id: string;
-}
-
-interface VersionPair<T extends Version> {
-  readonly identity: string;
-  readonly head?: T;
-  readonly draft?: T;
-}
-
-interface ReadTable {
-  readonly pair: TablePair;
-  readonly structure: TableStructure;
-  readonly units: TableUnits;
-  readonly rows: readonly CatalogueRow[];
 }
 
 interface ReadTableContext {
@@ -154,7 +142,7 @@ class TargetAssembly {
   public async assembleUserTables(): Promise<AssembledTable[]> {
     const assembled: AssembledTable[] = [];
 
-    for (const table of this.readTables()) {
+    for (const table of readTablesOf(this.source, this.lookup)) {
       assembled.push(await this.assembleReadTable(table));
     }
 
@@ -162,10 +150,7 @@ class TargetAssembly {
   }
 
   private assembleReadTable(table: ReadTable): Promise<AssembledTable> {
-    const rules = this.rules.forTable({
-      units: table.units,
-      structureDiffers: table.structure.differs,
-    });
+    const rules = tableRulesOf(this.rules, table);
 
     return new ReadTableAssembly(table, rules, {
       operation: this.rules.operation,
@@ -223,28 +208,6 @@ class TargetAssembly {
     }
 
     return draftRevisionId;
-  }
-
-  private unitsOf(pair: TablePair): TableUnits {
-    return {
-      structure: this.lookup.tableUnitOf('structure', pair)?.key,
-      rows: this.lookup.rowLevelUnitsOf(pair).map(({ key }) => key),
-    };
-  }
-
-  private readTables(): ReadTable[] {
-    const { snapshot, tables, catalogue } = this.source;
-
-    return [...catalogue.rows].map(([identity, rows]) => {
-      const pair = requiredOf(snapshot.tables, identity);
-
-      return {
-        pair,
-        structure: requiredOf(tables, identity).structure,
-        units: this.unitsOf(pair),
-        rows,
-      };
-    });
   }
 }
 
@@ -548,36 +511,6 @@ function versionIdsOn(pair: RowPair, side: RevisionSide): string[] {
   return [version.versionId];
 }
 
-function versionOn<T extends Version>(
-  pair: VersionPair<T>,
-  side: RevisionSide,
-): T {
-  const version = pair[side];
-
-  if (!version) {
-    throw new Error(`${publicIdOf(pair)} has no ${side} version`);
-  }
-
-  return version;
-}
-
 function isOnBothSides({ head, draft }: TablePair): boolean {
   return head !== undefined && draft !== undefined;
-}
-
-function publicIdOf({ identity, head, draft }: VersionPair<Version>): string {
-  return draft?.id ?? head?.id ?? identity;
-}
-
-function requiredOf<T extends { readonly identity: string }>(
-  items: readonly T[],
-  identity: string,
-): T {
-  const item = items.find((candidate) => candidate.identity === identity);
-
-  if (!item) {
-    throw new Error(`Table ${identity} is not in the compared snapshot`);
-  }
-
-  return item;
 }

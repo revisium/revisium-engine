@@ -9,13 +9,13 @@ import {
 import {
   AssembledTableVersion,
   AssembledVersionWriter,
+  DraftFollowsHead,
   DraftRevisionInternalService,
   linkedVersion,
   NewRowFileReferences,
   WrittenTable,
   WrittenVersion,
 } from 'src/features/draft-revision/services';
-import { DiffService } from 'src/features/share/diff.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @CommandHandler(DraftRevisionRevertToTargetCommand)
@@ -27,7 +27,7 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
     private readonly transactionService: TransactionPrismaService,
     private readonly versionWriter: AssembledVersionWriter,
     private readonly internalService: DraftRevisionInternalService,
-    private readonly diffService: DiffService,
+    private readonly draftFollowsHead: DraftFollowsHead,
     private readonly fileReferences: NewRowFileReferences,
   ) {}
 
@@ -113,27 +113,17 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
     plan: TableWritePlan,
     written: WrittenVersion,
   ): Promise<WrittenVersion> {
-    const { headVersionId } = plan;
-    const writtenVersionId = written.versionId;
+    const versionId = await this.draftFollowsHead.versionToLink(
+      plan,
+      written.versionId,
+      plan.headVersionId,
+    );
 
-    if (
-      !plan.relinkCandidate ||
-      headVersionId === undefined ||
-      writtenVersionId === undefined
-    ) {
+    if (versionId === written.versionId) {
       return written;
     }
 
-    const differs = await this.diffService.hasTableVersionContentDiffs({
-      fromTableVersionId: headVersionId,
-      toTableVersionId: writtenVersionId,
-    });
-
-    if (differs) {
-      return written;
-    }
-
-    return linkedVersion(headVersionId);
+    return linkedVersion(versionId);
   }
 
   private async relinkDraftTables(

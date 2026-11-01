@@ -1,12 +1,13 @@
 import objectHash from 'object-hash';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue, Row, Table } from 'src/engine-prisma-types';
-import type {
-  NewRowVersion,
-  RevisionSide,
-  RowLinkChanges,
-  TableWriteOutcome,
-  TableWritePlan,
+import {
+  type NewRowVersion,
+  oppositeOf,
+  type RevisionSide,
+  type RowLinkChanges,
+  type TableWriteOutcome,
+  type TableWritePlan,
 } from 'src/features/draft-revision/commands/impl';
 import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 
@@ -157,20 +158,15 @@ function versionIdsOf(row: Row | undefined): string[] {
   return [row.versionId];
 }
 
-function requiredRow(rows: ReadonlyMap<string, Row>, rowId: string): Row {
+export function requiredRow(
+  rows: ReadonlyMap<string, Row>,
+  rowId: string,
+): Row {
   const row = rows.get(rowId);
 
   if (!row) {
-    throw new Error(`Row ${rowId} is not on the other side`);
+    throw new Error(`Row ${rowId} is not in the table version`);
   }
 
   return row;
-}
-
-function oppositeOf(side: RevisionSide): RevisionSide {
-  if (side === 'head') {
-    return 'draft';
-  }
-
-  return 'head';
 }

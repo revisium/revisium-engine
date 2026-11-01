@@ -7,6 +7,7 @@ import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft
 import {
   AssembledVersionWriter,
   CommitTransition,
+  DraftFollowsHead,
   DraftRevisionInternalService,
   DraftRevisionValidationService,
   NewRowFileReferences,
@@ -32,6 +33,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     DraftRevisionValidationService,
     AssembledVersionWriter,
     CommitTransition,
+    DraftFollowsHead,
     NewRowFileReferences,
     ...DRAFT_REVISION_COMMANDS_HANDLERS,
   ],

@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
+import { versionRefsOf } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import { DraftRevisionInternalService } from 'src/features/draft-revision/services/draft-revision-internal.service';
 import { IdService } from 'src/infrastructure/database/id.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 export interface TableVersionRef {
   readonly versionId: string;
+}
+
+export interface TableLinkReplacement {
+  readonly replacedVersionId?: string;
+  readonly versionId?: string;
 }
 
 export interface NextDraft {
@@ -17,10 +24,28 @@ export class CommitTransition {
   constructor(
     private readonly transactionService: TransactionPrismaService,
     private readonly idService: IdService,
+    private readonly internalService: DraftRevisionInternalService,
   ) {}
 
   private get transaction() {
     return this.transactionService.getTransaction();
+  }
+
+  public async relinkedTablesOf(
+    revisionId: string,
+    replacements: readonly TableLinkReplacement[],
+  ): Promise<TableVersionRef[]> {
+    const linked =
+      await this.internalService.getRevisionTableVersionIds(revisionId);
+    const replaced = new Set(
+      replacements.map(({ replacedVersionId }) => replacedVersionId),
+    );
+    const kept = linked.filter(({ versionId }) => !replaced.has(versionId));
+    const linkedInstead = replacements.flatMap(({ versionId }) =>
+      versionRefsOf(versionId),
+    );
+
+    return [...kept, ...linkedInstead];
   }
 
   public async retireHead(revisionId: string): Promise<void> {
@@ -33,10 +58,17 @@ export class CommitTransition {
   public async promoteDraftToHead(
     revisionId: string,
     comment?: string,
+    tables?: readonly TableVersionRef[],
   ): Promise<void> {
     await this.transaction.revision.update({
       where: { id: revisionId },
-      data: { isHead: true, isDraft: false, hasChanges: false, comment },
+      data: {
+        isHead: true,
+        isDraft: false,
+        hasChanges: false,
+        comment,
+        tables: tableLinksReplacedBy(tables),
+      },
     });
   }
 
@@ -59,4 +91,14 @@ export class CommitTransition {
 
     return id;
   }
+}
+
+function tableLinksReplacedBy(
+  tables: readonly TableVersionRef[] | undefined,
+): { set: TableVersionRef[] } | undefined {
+  if (tables === undefined) {
+    return undefined;
+  }
+
+  return { set: [...tables] };
 }

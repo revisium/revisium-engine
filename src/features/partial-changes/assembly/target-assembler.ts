@@ -28,6 +28,7 @@ import type {
   TablePair,
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { SchemaLeaves } from 'src/features/partial-changes/structure/schema-leaves';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 
@@ -310,6 +311,10 @@ class ReadTableAssembly {
       versionOn(row.pair, this.rules.otherSide),
     );
 
+    if (rows.length === 0) {
+      return [];
+    }
+
     if (this.rules.structureSide === 'head') {
       return rowMerger.mapIntoHeadStructure(
         rows,
@@ -356,7 +361,7 @@ class ReadTableAssembly {
       return [];
     }
 
-    const paths = changedDraftFieldsOf(this.table);
+    const paths = changedFieldsOf(this.table);
 
     return this.rowsMoving().flatMap(({ row }) =>
       deferredValuesOf(row, paths, structureKey),
@@ -450,17 +455,23 @@ function equalsVersionOn(
   return version !== undefined && !differInContent(newVersion, version);
 }
 
-function changedDraftFieldsOf({ pair, structure }: ReadTable): string[] {
-  const unchanged = new Set(
-    structure.unchangedLeaves.map(({ pointer }) => pointer.toString()),
-  );
+function changedFieldsOf({ pair, structure }: ReadTable): string[] {
+  const schemas = [
+    SchemaLeaves.of(versionOn(pair, 'head').schema),
+    SchemaLeaves.of(versionOn(pair, 'draft').schema),
+  ];
 
-  return SchemaLeaves.of(versionOn(pair, 'draft').schema)
-    .all.filter(
-      ({ pointer, kind }) =>
-        kind !== 'computed' && !unchanged.has(pointer.toString()),
+  return structure.changedPointers
+    .filter((pointer) =>
+      schemas.some((leaves) => hasInputLeafAt(leaves, pointer)),
     )
-    .map(({ pointer }) => pointer.toString());
+    .map((pointer) => pointer.toString());
+}
+
+function hasInputLeafAt(leaves: SchemaLeaves, pointer: JsonPointer): boolean {
+  const leaf = leaves.at(pointer);
+
+  return leaf !== undefined && leaf.kind !== 'computed';
 }
 
 function deferredValuesOf(

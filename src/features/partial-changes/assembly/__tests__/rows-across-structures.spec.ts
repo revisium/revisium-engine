@@ -6,13 +6,20 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
+import type { JsonPatch } from '@revisium/schema-toolkit/types';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
   addField,
+  moveField,
+  removeField,
   replaceField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
-import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
+import {
+  completeAsyncMigrationInPlace,
+  recordLedgerRepair,
+} from '../../__tests__/support/head-schema-damage';
 
 const PRODUCTS = 'products';
 const ORDERS = 'orders';
@@ -75,6 +82,56 @@ describe('TargetAssembler: rows moving between structures', () => {
         structure: { kind: 'structure', tableId: PRODUCTS },
       },
     ]);
+  });
+
+  it.each<{
+    change: string;
+    patches: JsonPatch[];
+    created: InputJsonValue;
+    paths: string[];
+  }>([
+    {
+      change: 'a removed field',
+      patches: [removeField('price')],
+      created: { title: 'three' },
+      paths: ['/price'],
+    },
+    {
+      change: 'a renamed field',
+      patches: [moveField('title', 'name')],
+      created: { price: 30, name: 'three' },
+      paths: ['/name', '/title'],
+    },
+  ])(
+    'defers $change of a created row committed without its structure',
+    async ({ patches, created, paths }) => {
+      const draft = await givenProductsWithCreatedRowAfter(patches, created);
+
+      const target = await draft.assembleTarget('commit', {
+        rows: [product('p3')],
+      });
+
+      expect(target.deferred).toEqual([
+        {
+          unit: { kind: 'rowCreate', tableId: PRODUCTS, rowId: 'p3' },
+          paths,
+          structure: { kind: 'structure', tableId: PRODUCTS },
+        },
+      ]);
+    },
+  );
+
+  it('defers no computed field of a created row committed without its structure', async () => {
+    const draft = await givenProductsWithCreatedRowAfter(
+      [addField('doubled', numFormula('price * 2'))],
+      { title: 'three', price: 30, doubled: 0 },
+    );
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p3')],
+    });
+
+    expect(target.deferred).toEqual([]);
   });
 
   it('defers nothing when a created row is committed with its structure', async () => {
@@ -181,6 +238,18 @@ describe('TargetAssembler: rows moving between structures', () => {
     ]);
   });
 
+  it('commits exactly { all: true } on a repaired damaged table without migrating a Head row', async () => {
+    const draft = await givenRepairedDamagedTable();
+
+    const target = await draft.assembleTarget('commit', { all: true });
+
+    expect(target.blockers).toEqual([]);
+    expect(target.tableOf(PRODUCTS)).toMatchObject({
+      outcome: 'base',
+      version: 'draft',
+    });
+  });
+
   describe('a Draft structure that its history does not record', () => {
     it('blocks a commit of the structure', async () => {
       const draft = await givenUnrecordedDraftStructure();
@@ -230,6 +299,40 @@ describe('TargetAssembler: rows moving between structures', () => {
       p3: { title: 'three', price: 30, color: 'blue' },
     });
     expectEveryDifferenceOwnedOnce(await draft.readCatalogue([PRODUCTS]));
+
+    return draft;
+  }
+
+  async function givenProductsWithCreatedRowAfter(
+    patches: JsonPatch[],
+    created: InputJsonValue,
+  ): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', price: 10 } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, patches);
+    await draft.createRows(PRODUCTS, { p3: created });
+    expectEveryDifferenceOwnedOnce(await draft.readCatalogue([PRODUCTS]));
+
+    return draft;
+  }
+
+  async function givenRepairedDamagedTable(): Promise<ChangesScenario> {
+    const addColor = [addField('color', str())];
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', price: 10 } },
+      },
+    });
+    await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+    await recordLedgerRepair(draft, PRODUCTS, addColor);
+    expect(
+      (await draft.readWholeDraftCatalogue()).structureOf(PRODUCTS),
+    ).toMatchObject({ recorded: true });
 
     return draft;
   }

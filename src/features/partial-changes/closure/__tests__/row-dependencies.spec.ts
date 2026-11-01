@@ -1,4 +1,4 @@
-import { obj, str } from '@revisium/schema-toolkit/mocks';
+import { arr, obj, str } from '@revisium/schema-toolkit/mocks';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -16,6 +16,7 @@ import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
 const BRANDS = 'brands';
+const SHELVES = 'shelves';
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({
@@ -23,7 +24,18 @@ const productSchema = obj({
   category: str({ foreignKey: CATEGORIES }),
 });
 
+const shelfSchema = obj({
+  title: str(),
+  categories: arr(str({ foreignKey: CATEGORIES })),
+});
+
 const category = (rowId: string): RowRef => ({ tableId: CATEGORIES, rowId });
+const product = (rowId: string): RowRef => ({ tableId: PRODUCTS, rowId });
+const categoriesOfS1: FieldRef = {
+  tableId: SHELVES,
+  rowId: 's1',
+  path: '/categories',
+};
 const categoryOf = (rowId: string): FieldRef => ({
   tableId: PRODUCTS,
   rowId,
@@ -40,6 +52,7 @@ describe('DependencyClosure: references and ids of rows', () => {
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
     await kit.guard.verifyAndForget();
   });
 
@@ -181,7 +194,142 @@ describe('DependencyClosure: references and ids of rows', () => {
     );
   });
 
+  describe('a referrer whose other-side value still holds the reference', () => {
+    it.each<{
+      operation: ChangeOperation;
+      selection: Selection;
+      provider: Record<string, unknown>;
+      side: string;
+    }>([
+      {
+        operation: 'commit',
+        selection: {
+          renames: [category('c2')],
+          exclude: { rows: [product('p1')] },
+        },
+        provider: {
+          kind: 'rowCreate',
+          tableId: CATEGORIES,
+          rowId: 'c1',
+          selector: { rows: [category('c1')] },
+        },
+        side: 'the Draft',
+      },
+      {
+        operation: 'revert',
+        selection: {
+          rows: [category('c1')],
+          exclude: { rows: [product('p1')] },
+        },
+        provider: {
+          kind: 'rowRename',
+          tableId: CATEGORIES,
+          rowId: 'c2',
+          previousRowId: 'c1',
+          selector: { renames: [category('c2')] },
+        },
+        side: 'Head',
+      },
+    ])(
+      'requires the row the reference needs, not the excluded replacement that references it as well, in a $operation',
+      async ({ operation, selection, provider, side }) => {
+        const draft = await givenRenamedCategoryAndReplacedProduct(kit);
+
+        const closure = await draft.closeDependencies(operation, selection);
+
+        expect(closure.required).toEqual([
+          {
+            unit: provider,
+            reason: {
+              code: 'referencedRowMissing',
+              tableId: PRODUCTS,
+              rowId: 'p1',
+              path: '/category',
+              because: `products/p1/category references categories/c1, which exists only in ${side}`,
+            },
+          },
+        ]);
+        expect(closure.blockers).toEqual([]);
+      },
+    );
+
+    it('requires the referenced row, not the excluded atomic array whose other side holds it as well', async () => {
+      const draft = await givenShelfOfRenamedCategory(kit, ['c2', 'c1']);
+
+      const closure = await draft.closeDependencies('commit', {
+        renames: [category('c2')],
+        exclude: { fields: [categoriesOfS1] },
+      });
+
+      expect(closure.required).toEqual([
+        {
+          unit: {
+            kind: 'rowCreate',
+            tableId: CATEGORIES,
+            rowId: 'c1',
+            selector: { rows: [category('c1')] },
+          },
+          reason: {
+            code: 'referencedRowMissing',
+            tableId: SHELVES,
+            rowId: 's1',
+            path: '/categories/0',
+            because:
+              'shelves/s1/categories/0 references categories/c1, which exists only in the Draft',
+          },
+        },
+      ]);
+      expect(closure.blockers).toEqual([]);
+    });
+
+    it('requires the atomic array whose other side drops the reference', async () => {
+      const draft = await givenShelfOfRenamedCategory(kit, ['c2']);
+
+      const closure = await draft.closeDependencies('commit', {
+        renames: [category('c2')],
+      });
+
+      expect(closure.required).toEqual([
+        {
+          unit: {
+            kind: 'field',
+            ...categoriesOfS1,
+            selector: { fields: [categoriesOfS1] },
+          },
+          reason: {
+            code: 'referrerStillReferences',
+            tableId: SHELVES,
+            rowId: 's1',
+            path: '/categories/0',
+            because:
+              'shelves/s1/categories/0 references categories/c1, which the new Head no longer contains',
+          },
+        },
+      ]);
+    });
+  });
+
   describe('an unchanged row that references an id the target loses', () => {
+    it('reads the unchanged referrers of a rename chain once, not on every pass', async () => {
+      const draft = await givenShiftedCategoriesUnderUnchangedReferrers(kit);
+      const referrerReads = jest.spyOn(
+        kit.snapshotReader,
+        'readFirstReferrers',
+      );
+
+      const closure = await draft.closeDependencies('commit', {
+        renames: [category('c5')],
+      });
+
+      expect(closure.required.map(({ unit }) => unit)).toMatchObject([
+        { kind: 'rowRename', rowId: 'c2', previousRowId: 'c1' },
+        { kind: 'rowRename', rowId: 'c3', previousRowId: 'c2' },
+        { kind: 'rowRename', rowId: 'c4', previousRowId: 'c3' },
+      ]);
+      expect(closure.blockers).toEqual([]);
+      expect(referrerReads).toHaveBeenCalledTimes(1);
+    });
+
     it('requires the rename that gives the lost id back, then the referrer edit that rename needs', async () => {
       const draft = await givenRenameChainUnderUnchangedReferrer(kit);
 
@@ -227,30 +375,46 @@ describe('DependencyClosure: references and ids of rows', () => {
       expect(closure.blockers).toEqual([]);
     });
 
-    it('blocks a committed deletion that an unchanged row still references as danglingInSource', async () => {
-      const draft = await givenCategoryDeletedUnderUnchangedReferrer(kit);
+    it.each([
+      { deleted: 1, read: 'an indexed lookup' },
+      { deleted: 101, read: 'one scan, past the ids of an indexed lookup' },
+    ])(
+      'blocks committed deletions that an unchanged row still references as danglingInSource, read by $read',
+      async ({ deleted }) => {
+        const categoryIds = idsOf('c', deleted);
+        const draft = await givenCategoriesDeletedUnderUnchangedReferrer(
+          kit,
+          categoryIds,
+        );
+        const referrerReads = jest.spyOn(
+          kit.snapshotReader,
+          'readFirstReferrers',
+        );
 
-      const closure = await draft.closeDependencies('commit', {
-        rows: [category('c1')],
-      });
+        const closure = await draft.closeDependencies('commit', {
+          rows: categoryIds.map(category),
+        });
 
-      expect(closure.required).toEqual([]);
-      expect(closure.blockers).toEqual([
-        {
-          code: 'danglingInSource',
-          tableId: PRODUCTS,
-          rowId: 'p1',
-          message:
-            'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
-          unit: {
-            kind: 'rowDelete',
-            tableId: CATEGORIES,
-            rowId: 'c1',
-            selector: { rows: [category('c1')] },
+        expect(closure.required).toEqual([]);
+        expect(closure.blockers).toEqual([
+          {
+            code: 'danglingInSource',
+            tableId: PRODUCTS,
+            rowId: 'p1',
+            message:
+              'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
+            unit: {
+              kind: 'rowDelete',
+              tableId: CATEGORIES,
+              rowId: 'c1',
+              selector: { rows: [category('c1')] },
+            },
           },
-        },
-      ]);
-    });
+        ]);
+        expect(referrerReads).toHaveBeenCalledTimes(1);
+        expect(referrerReads.mock.calls[0]?.[1].rowIds).toHaveLength(deleted);
+      },
+    );
   });
 
   it('blocks a committed value that references a row of neither revision as danglingInSource', async () => {
@@ -494,11 +658,70 @@ async function givenRenameChainUnderUnchangedReferrer(
   return draft;
 }
 
-async function givenCategoryDeletedUnderUnchangedReferrer(
+async function givenRenamedCategoryAndReplacedProduct(
   kit: PartialChangesTestKit,
 ): Promise<ChangesScenario> {
   const draft = await givenCatalogue(kit, ['c1'], { p1: 'c1' });
-  await draft.removeReferencedRow(CATEGORIES, 'c1');
+  await draft.renameRow(CATEGORIES, 'c1', 'c2');
+  await draft.createRows(CATEGORIES, { c1: { title: 'new c1' } });
+  await draft.removeRow(PRODUCTS, 'p1');
+  await draft.createRows(PRODUCTS, {
+    p1: { title: 'new p1', category: 'c1' },
+  });
+
+  return draft;
+}
+
+async function givenShelfOfRenamedCategory(
+  kit: PartialChangesTestKit,
+  draftCategories: readonly string[],
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'c1' } } },
+    [SHELVES]: {
+      schema: shelfSchema,
+      rows: { s1: { title: 's1', categories: ['c1'] } },
+    },
+  });
+  await draft.renameRow(CATEGORIES, 'c1', 'c2');
+  await draft.createRows(CATEGORIES, { c1: { title: 'new c1' } });
+  await draft.updateRow(SHELVES, 's1', {
+    title: 's1',
+    categories: [...draftCategories],
+  });
+
+  return draft;
+}
+
+async function givenShiftedCategoriesUnderUnchangedReferrers(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await givenCatalogue(kit, ['c1', 'c2', 'c3', 'c4'], {
+    q2: 'c2',
+    q3: 'c3',
+    q4: 'c4',
+  });
+
+  for (const index of [4, 3, 2, 1]) {
+    await draft.renameRow(CATEGORIES, `c${index}`, `c${index + 1}`);
+  }
+
+  for (const index of [2, 3, 4]) {
+    await draft.updateRow(PRODUCTS, `q${index}`, {
+      title: `q${index}`,
+      category: `c${index}`,
+    });
+  }
+
+  return draft;
+}
+
+async function givenCategoriesDeletedUnderUnchangedReferrer(
+  kit: PartialChangesTestKit,
+  categoryIds: readonly string[],
+): Promise<ChangesScenario> {
+  const draft = await givenCatalogue(kit, categoryIds, { p1: 'c1' });
+  await draft.removeReferencedRows(CATEGORIES, categoryIds);
 
   await expect(draft.row('draft', CATEGORIES, 'c1')).rejects.toThrow();
   await expect(draft.row('draft', PRODUCTS, 'p1')).resolves.toMatchObject({
@@ -506,6 +729,10 @@ async function givenCategoryDeletedUnderUnchangedReferrer(
   });
 
   return draft;
+}
+
+function idsOf(prefix: string, count: number): string[] {
+  return Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`);
 }
 
 async function givenProductReferencingMissingCategory(

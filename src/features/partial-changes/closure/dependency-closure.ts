@@ -12,6 +12,7 @@ import {
   type Finding,
   TARGET_CHECKS,
   type TargetCheck,
+  type TargetChecking,
 } from 'src/features/partial-changes/closure/findings';
 import {
   type Estimate,
@@ -68,7 +69,7 @@ export type DependencyClosureResult =
 interface ClosureSteps {
   readonly estimation: OperationEstimation;
   readonly assembler: TargetAssembler;
-  readonly checks: readonly TargetCheck[];
+  readonly checks: readonly TargetChecking[];
 }
 
 @Injectable()
@@ -90,7 +91,7 @@ export class DependencyClosure {
       {
         estimation: this.estimator.estimationOf(source),
         assembler: this.assembler,
-        checks: this.checks,
+        checks: this.checks.map((check) => check.checkingOf(source)),
       },
     ).close();
   }
@@ -158,7 +159,7 @@ class SelectionClosure {
     const findings: Finding[] = [];
 
     for (const check of this.steps.checks) {
-      findings.push(...(await check.findingsOf(this.source, target, choice)));
+      findings.push(...(await check.findingsOf(target, choice)));
     }
 
     return findings;

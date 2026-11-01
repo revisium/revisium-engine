@@ -201,15 +201,15 @@ export class ChangesScenario {
     });
   }
 
-  public async removeReferencedRow(
+  public async removeReferencedRows(
     tableId: string,
-    rowId: string,
+    rowIds: readonly string[],
   ): Promise<void> {
     await this.writeBelowNativeValidation((revisionId) =>
       this.kit.draftRevisionApi.removeRows({
         revisionId,
         tableId,
-        rowIds: [rowId],
+        rowIds: [...rowIds],
       }),
     );
   }

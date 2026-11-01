@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { sql, type Row } from 'src/engine-prisma-types';
+import { empty, type Row, type Sql, sql } from 'src/engine-prisma-types';
 import {
   changedRowCountSql,
   type ChangedRowPairIds,
@@ -25,6 +25,8 @@ import {
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+
+const MAX_IDS_FOR_INDEXED_LOOKUP = 100;
 
 export interface ReferrerQuery {
   readonly jsonPath: string;
@@ -113,10 +115,11 @@ export class ChangesSnapshotReader {
   ): Promise<FirstReferrer[]> {
     return this.transaction.$queryRaw<FirstReferrer[]>(sql`
       SELECT v.value #>> '{}' AS "referencedId", min(r."id" COLLATE "C") AS "rowId"
-      FROM "_RowToTable" rt
-      JOIN "Row" r ON r."versionId" = rt."A"
+      FROM "Row" r
+      JOIN "_RowToTable" rt ON rt."A" = r."versionId"
       CROSS JOIN LATERAL jsonb_path_query(r."data", ${jsonPath}::jsonpath) AS v(value)
       WHERE rt."B" = ${tableVersionId}
+        ${indexedReferenceFilter(jsonPath, rowIds)}
         AND jsonb_typeof(v.value) = 'string'
         AND v.value #>> '{}' = ANY(${[...rowIds]}::text[])
         AND r."createdId" <> ALL(${[...exceptRows]}::text[])
@@ -239,6 +242,20 @@ export class ChangesSnapshotReader {
       where: { tables: { some: { versionId: table.versionId } } },
     });
   }
+}
+
+function indexedReferenceFilter(
+  jsonPath: string,
+  rowIds: readonly string[],
+): Sql {
+  if (rowIds.length > MAX_IDS_FOR_INDEXED_LOOKUP) {
+    return empty;
+  }
+
+  const equalities = rowIds.map((rowId) => `@ == ${JSON.stringify(rowId)}`);
+  const referencing = `${jsonPath} ? (${equalities.join(' || ')})`;
+
+  return sql`AND r."data" @? ${referencing}::jsonpath`;
 }
 
 function versionIdsOf(pair: ChangedRowPairIds): string[] {

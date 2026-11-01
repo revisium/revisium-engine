@@ -39,7 +39,7 @@ export class TargetTable {
     public readonly pair: TablePair,
     public readonly version: TableVersion,
     public readonly heldRows: readonly HeldRow[],
-    loaded: readonly CatalogueRow[],
+    private readonly loaded: readonly CatalogueRow[],
     private readonly baseSide: RevisionSide,
   ) {
     this.tableId = version.id;
@@ -70,6 +70,25 @@ export class TargetTable {
 
   public lostIds(): string[] {
     return [...this.byBaseId.keys()].filter((id) => !this.holds(id));
+  }
+
+  public losableIds(): string[] {
+    return [...this.byBaseId]
+      .filter(([, row]) => idUnitOf(row) !== undefined)
+      .map(([id]) => id);
+  }
+
+  public versionsBroughtBy(unitKey: string, row: CatalogueRow): Row[] {
+    const otherSide = oppositeOf(this.baseSide);
+    const rows = this.loaded.filter(
+      (candidate) => candidate === row || candidate.existence === unitKey,
+    );
+
+    return rows.flatMap(({ pair }) => {
+      const version = pair[otherSide];
+
+      return version ? [version] : [];
+    });
   }
 
   public providerOf(id: string): string | undefined {

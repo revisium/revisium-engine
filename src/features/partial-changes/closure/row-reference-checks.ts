@@ -17,7 +17,9 @@ import {
   type Finding,
   requiring,
   type TargetCheck,
+  type TargetChecking,
 } from 'src/features/partial-changes/closure/findings';
+import { LostIdReferrers } from 'src/features/partial-changes/closure/lost-id-referrers';
 import {
   type HeldRow,
   idUnitOf,
@@ -29,10 +31,8 @@ import type {
   Reason,
   RequiredReasonCode,
 } from 'src/features/partial-changes/selection/selection-resolution';
-import {
-  ChangesSnapshotReader,
-  type FirstReferrer,
-} from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
+import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { getForeignKeyReferences } from 'src/features/share/foreign-key-references';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
@@ -58,6 +58,18 @@ interface ReferrerScan {
   readonly jsonPath: string;
 }
 
+interface Covering {
+  readonly unitKey: string;
+  readonly leaf: JsonPointer;
+}
+
+interface OperationContext {
+  readonly source: AssemblySource;
+  readonly snapshotReader: ChangesSnapshotReader;
+  readonly schemaStore: JsonSchemaStoreService;
+  readonly referrers: LostIdReferrers;
+}
+
 const SIDE_NAMES: Readonly<Record<ChangeOperation, SideNames>> = {
   commit: { target: 'new Head', other: 'the Draft' },
   revert: { target: 'reverted Draft', other: 'Head' },
@@ -70,20 +82,27 @@ export class RowReferenceChecks implements TargetCheck {
     private readonly schemaStore: JsonSchemaStoreService,
   ) {}
 
+  public checkingOf(source: AssemblySource): TargetChecking {
+    return new RowReferenceChecking({
+      source,
+      snapshotReader: this.snapshotReader,
+      schemaStore: this.schemaStore,
+      referrers: new LostIdReferrers(this.snapshotReader),
+    });
+  }
+}
+
+class RowReferenceChecking implements TargetChecking {
+  constructor(private readonly context: OperationContext) {}
+
   public findingsOf(
-    source: AssemblySource,
     target: AssembledTarget,
     choice: AppliedUnits,
   ): Promise<Finding[]> {
     const rules = new OutcomeRules(choice);
+    const tables = new TargetTables(this.context.source, target, rules);
 
-    return new TargetRowChecks(
-      source,
-      new TargetTables(source, target, rules),
-      rules,
-      this.snapshotReader,
-      this.schemaStore,
-    ).findings();
+    return new TargetRowChecks(this.context, tables, rules).findings();
   }
 }
 
@@ -93,13 +112,11 @@ class TargetRowChecks {
   private readonly schemas = new Map<TargetTable, JsonSchemaStore>();
 
   constructor(
-    private readonly source: AssemblySource,
+    private readonly context: OperationContext,
     private readonly tables: TargetTables,
     private readonly rules: OutcomeRules,
-    private readonly snapshotReader: ChangesSnapshotReader,
-    private readonly schemaStore: JsonSchemaStoreService,
   ) {
-    this.lookup = new CatalogueLookup(source.catalogue);
+    this.lookup = new CatalogueLookup(context.source.catalogue);
     this.names = SIDE_NAMES[rules.operation];
   }
 
@@ -207,7 +224,7 @@ class TargetRowChecks {
     }
 
     for (const [table, rowIds] of untouched) {
-      const ids = await this.snapshotReader.readExistingRowIds(
+      const ids = await this.context.snapshotReader.readExistingRowIds(
         table.version.versionId,
         [...rowIds],
       );
@@ -220,7 +237,7 @@ class TargetRowChecks {
 
   private restoreReference(reference: Reference): Finding {
     const structure = this.unappliedStructureHolding(reference);
-    const covering = coveringUnitOf(reference.held.row, reference.pointer);
+    const covering = coveringOf(reference.held.row, reference.pointer);
     const { target } = this.names;
 
     if (structure !== undefined) {
@@ -234,9 +251,9 @@ class TargetRowChecks {
       );
     }
 
-    if (covering !== undefined && !this.rules.isApplied(covering)) {
+    if (covering && this.removesReference(covering, reference)) {
       return requiring(
-        covering,
+        covering.unitKey,
         reasonOf(
           reference,
           'referrerStillReferences',
@@ -245,7 +262,38 @@ class TargetRowChecks {
       );
     }
 
-    return this.bringReferencedRow(reference, covering);
+    return this.bringReferencedRow(reference, this.appliedUnitOf(covering));
+  }
+
+  private removesReference(
+    { unitKey, leaf }: Covering,
+    { referrer, held, referenced, rowId }: Reference,
+  ): boolean {
+    if (this.rules.isApplied(unitKey)) {
+      return false;
+    }
+
+    const schema = this.schemaOf(referrer);
+
+    return referrer
+      .versionsBroughtBy(unitKey, held.row)
+      .every(
+        ({ data }) =>
+          !getForeignKeyReferences(schema, data as JsonValue).some(
+            (brought) =>
+              brought.tableId === referenced.tableId &&
+              brought.rowId === rowId &&
+              leaf.isAtOrAbove(JsonPointer.parse(brought.legacyPath)),
+          ),
+      );
+  }
+
+  private appliedUnitOf(covering: Covering | undefined): string | undefined {
+    if (!covering || !this.rules.isApplied(covering.unitKey)) {
+      return undefined;
+    }
+
+    return covering.unitKey;
   }
 
   private bringReferencedRow(
@@ -299,7 +347,7 @@ class TargetRowChecks {
   }
 
   private isChangedField({ pair }: TargetTable, pointer: JsonPointer): boolean {
-    const compared = this.source.tables.find(
+    const compared = this.context.source.tables.find(
       ({ identity }) => identity === pair.identity,
     );
 
@@ -314,17 +362,18 @@ class TargetRowChecks {
     const findings: Finding[] = [];
 
     for (const scan of this.referrerScans()) {
-      const referrers = await this.snapshotReader.readFirstReferrers(
-        scan.referrer.version.versionId,
-        {
-          jsonPath: scan.jsonPath,
-          rowIds: scan.lostIds,
-          exceptRows: scan.referrer.loadedIdentities,
-        },
+      const referrers = await this.context.referrers.referrersOf(
+        scan.referrer,
+        scan.jsonPath,
+        scan.losing,
       );
 
-      for (const found of referrers) {
-        findings.push(this.restoreLostId(scan, found));
+      for (const lostId of scan.lostIds) {
+        const rowId = referrers.get(lostId);
+
+        if (rowId !== undefined) {
+          findings.push(this.restoreLostId(scan, lostId, rowId));
+        }
       }
     }
 
@@ -337,7 +386,7 @@ class TargetRowChecks {
     );
 
     return this.tables.all.flatMap((losing) => {
-      const lostIds = losing.lostIds();
+      const lostIds = losing.lostIds().sort(compareCodePoints);
 
       if (lostIds.length === 0) {
         return [];
@@ -353,7 +402,8 @@ class TargetRowChecks {
 
   private restoreLostId(
     { losing, referrer }: ReferrerScan,
-    { referencedId, rowId }: FirstReferrer,
+    referencedId: string,
+    rowId: string,
   ): Finding {
     const reason: Reason = {
       code: 'referencedRowMissing',
@@ -376,7 +426,7 @@ class TargetRowChecks {
       return cached;
     }
 
-    const schema = this.schemaStore.create(table.version.schema);
+    const schema = this.context.schemaStore.create(table.version.schema);
     this.schemas.set(table, schema);
 
     return schema;
@@ -411,17 +461,19 @@ function reasonOf(
   };
 }
 
-function coveringUnitOf(
+function coveringOf(
   { existence, leaves }: CatalogueRow,
   path: JsonPointer,
-): string | undefined {
+): Covering | undefined {
   if (existence !== undefined) {
-    return existence;
+    return { unitKey: existence, leaf: JsonPointer.root };
   }
 
   for (const [pointer, owner] of leaves) {
-    if (JsonPointer.parse(pointer).isAtOrAbove(path)) {
-      return owner;
+    const leaf = JsonPointer.parse(pointer);
+
+    if (leaf.isAtOrAbove(path)) {
+      return { unitKey: owner, leaf };
     }
   }
 

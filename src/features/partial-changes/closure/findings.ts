@@ -21,11 +21,11 @@ export type Site = Pick<Reason, 'tableId' | 'rowId' | 'path'>;
 export const TARGET_CHECKS = Symbol('TARGET_CHECKS');
 
 export interface TargetCheck {
-  findingsOf(
-    source: AssemblySource,
-    target: AssembledTarget,
-    choice: AppliedUnits,
-  ): Promise<Finding[]>;
+  checkingOf(source: AssemblySource): TargetChecking;
+}
+
+export interface TargetChecking {
+  findingsOf(target: AssembledTarget, choice: AppliedUnits): Promise<Finding[]>;
 }
 
 export function requiring(unitKey: string, reason: Reason): Finding {

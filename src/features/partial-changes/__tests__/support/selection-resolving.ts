@@ -1,6 +1,7 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
+import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
 import {
   isWholeDraftSelection,
   type Selection,
@@ -16,10 +17,10 @@ import type { ChangesBranch } from 'src/features/partial-changes/snapshot/change
 import {
   type AddressedUnit,
   addressedUnitOf,
-  type CatalogueView,
-  readCatalogueOfEveryTable,
-  readWholeDraftCatalogue,
+  buildCatalogueView,
+  type CatalogueScope,
 } from './catalogue-reading';
+import { readInPlanningTransaction } from './snapshot-reading';
 
 export interface RequiredUnitView {
   readonly unit: AddressedUnit;
@@ -38,32 +39,35 @@ export interface ResolutionView {
   readonly unmatched: UnmatchedSelection;
 }
 
-export async function readSelectionResolution(
+export function readSelectionResolution(
   kit: PartialChangesTestKit,
   branch: ChangesBranch,
   selection: Selection,
 ): Promise<ResolutionView> {
-  const view = await readCatalogueResolving(kit, branch, selection);
-  const resolution = resolveSelection(selection, {
-    snapshot: view.snapshot,
-    headSchema: view.headSchema,
-    tables: view.tables,
-    catalogue: view.catalogue,
-  });
+  return readInPlanningTransaction(kit, async () => {
+    const view = await buildCatalogueView(kit, branch, scopeOf(selection));
+    const resolution = resolveSelection(selection, {
+      snapshot: view.snapshot,
+      headSchema: view.headSchema,
+      tables: view.tables,
+      catalogue: view.catalogue,
+      addressedRows: await readAddressedRows(
+        kit.snapshotReader,
+        view.snapshot,
+        selection,
+      ),
+    });
 
-  return resolutionView(view.catalogue, resolution);
+    return resolutionView(view.catalogue, resolution);
+  });
 }
 
-function readCatalogueResolving(
-  kit: PartialChangesTestKit,
-  branch: ChangesBranch,
-  selection: Selection,
-): Promise<CatalogueView> {
+function scopeOf(selection: Selection): CatalogueScope {
   if (isWholeDraftSelection(selection)) {
-    return readWholeDraftCatalogue(kit, branch);
+    return { kind: 'wholeDraft' };
   }
 
-  return readCatalogueOfEveryTable(kit, branch);
+  return { kind: 'everyTable' };
 }
 
 function resolutionView(

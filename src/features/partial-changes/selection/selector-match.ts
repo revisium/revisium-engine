@@ -1,5 +1,9 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type {
+  RefusalCode,
+  RefusedTable,
+} from 'src/features/partial-changes/head-schema/head-schema-check';
+import type {
   ItemKind,
   ItemSelector,
   SelectionItems,
@@ -26,6 +30,11 @@ export const NO_MATCH: SelectorMatch = {
   blockers: [],
 };
 
+const REFUSAL_REASONS: Readonly<Record<RefusalCode, string>> = {
+  headSchemaInconsistent: 'its Head schema does not match its Head ledger',
+  unledgeredTable: 'it has no intact ledger lineage',
+};
+
 export function selecting(units: readonly CatalogueUnit[]): SelectorMatch {
   return { ...NO_MATCH, selected: units.map(({ key }) => key) };
 }
@@ -47,6 +56,24 @@ export function requiring(
 
 export function blocking(blockers: readonly PlanBlocker[]): SelectorMatch {
   return { ...NO_MATCH, blockers };
+}
+
+export function refusing(
+  refusals: readonly RefusedTable[],
+): SelectorMatch | undefined {
+  if (refusals.length === 0) {
+    return undefined;
+  }
+
+  return blocking(refusals.map(refusalBlocker));
+}
+
+export function refusalBlocker({ tableId, code }: RefusedTable): PlanBlocker {
+  return {
+    code,
+    tableId,
+    message: `${tableId} is refused: ${REFUSAL_REASONS[code]}`,
+  };
 }
 
 export function combined(

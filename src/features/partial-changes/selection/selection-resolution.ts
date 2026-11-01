@@ -1,5 +1,22 @@
-import type { RefusalCode } from 'src/features/partial-changes/head-schema/head-schema-check';
+import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
+import type {
+  HeadSchemaCheck,
+  RefusalCode,
+} from 'src/features/partial-changes/head-schema/head-schema-check';
+import type { AddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
 import type { SelectionItems } from 'src/features/partial-changes/selection/selection';
+import type {
+  ChangesSnapshot,
+  ComparedTable,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
+
+export interface SelectionSource {
+  readonly snapshot: ChangesSnapshot;
+  readonly headSchema: HeadSchemaCheck;
+  readonly tables: readonly ComparedTable[];
+  readonly catalogue: ChangeCatalogue;
+  readonly addressedRows: AddressedRows;
+}
 
 export type RequiredReasonCode =
   | 'structureBoundData'

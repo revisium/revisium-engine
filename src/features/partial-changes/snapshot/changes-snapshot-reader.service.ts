@@ -72,6 +72,21 @@ export class ChangesSnapshotReader {
     return changedRows;
   }
 
+  public async readExistingRowIds(
+    tableVersionId: string,
+    rowIds: readonly string[],
+  ): Promise<string[]> {
+    const rows = await this.transaction.row.findMany({
+      where: {
+        id: { in: [...rowIds] },
+        tables: { some: { versionId: tableVersionId } },
+      },
+      select: { id: true },
+    });
+
+    return rows.map(({ id }) => id);
+  }
+
   public async readRowDigest(tableVersionId: string): Promise<string> {
     const [result] = await this.transaction.$queryRaw<{ digest: string }[]>(
       rowDigestSql(tableVersionId),

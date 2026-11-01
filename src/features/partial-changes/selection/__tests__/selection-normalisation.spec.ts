@@ -13,10 +13,16 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
-import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import {
+  addField,
+  replaceField,
+} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
-import type { RequiredUnitView } from '../../__tests__/support/selection-resolving';
+import type {
+  BlockerView,
+  RequiredUnitView,
+} from '../../__tests__/support/selection-resolving';
 
 const PRODUCTS = 'products';
 const CATEGORIES = 'categories';
@@ -53,6 +59,8 @@ const addDepthToSize: JsonPatch = {
   value: num(),
 };
 const addNotes = addField('notes', arr(str()));
+const addDoubled = addField('doubled', numFormula('price * 2'));
+const triplePriceInTotal = replaceField('total', numFormula('price * 3'));
 
 describe('SelectionResolver: normalisation', () => {
   let kit: PartialChangesTestKit;
@@ -296,6 +304,125 @@ describe('SelectionResolver: normalisation', () => {
     },
   );
 
+  it('requires the structure unit for a changed field of a row whose values differ only in changed fields', async () => {
+    const draft = await givenChangedFieldsNextToAnEditedWidth();
+
+    const resolution = await draft.resolveSelection({
+      fields: [{ tableId: PRODUCTS, rowId: 'p2', path: '/size/depth' }],
+    });
+
+    expect(resolution.selected).toEqual([]);
+    expect(resolution.required).toEqual([
+      {
+        unit: { kind: 'structure', tableId: PRODUCTS },
+        reason: {
+          code: 'structureBoundData',
+          tableId: PRODUCTS,
+          rowId: 'p2',
+          path: '/size/depth',
+          because:
+            'products/p2/size/depth touches a new or changed field; its values belong to the structure of products',
+        },
+      },
+    ]);
+  });
+
+  it.each<{
+    row: string;
+    given: () => Promise<ChangesScenario>;
+    selection: Selection;
+  }>([
+    {
+      row: "a row of a created table addressed with side: 'head'",
+      given: givenCreatedTags,
+      selection: { rows: [{ tableId: TAGS, rowId: 't1', side: 'head' }] },
+    },
+    {
+      row: 'a missing row of a created table',
+      given: givenCreatedTags,
+      selection: { rows: [{ tableId: TAGS, rowId: 't9' }] },
+    },
+    {
+      row: 'a field of a missing row of a created table',
+      given: givenCreatedTags,
+      selection: { fields: [{ tableId: TAGS, rowId: 't9', path: '/label' }] },
+    },
+    {
+      row: 'a missing row of a removed table',
+      given: givenRemovedCategories,
+      selection: { rows: [{ tableId: CATEGORIES, rowId: 'c9' }] },
+    },
+    {
+      row: 'a changed field of a missing row',
+      given: givenChangedFieldsNextToAnEditedWidth,
+      selection: {
+        fields: [{ tableId: PRODUCTS, rowId: 'p9', path: '/size/depth' }],
+      },
+    },
+  ])(
+    'leaves $row unmatched instead of requiring the structure unit',
+    async ({ given, selection }) => {
+      const draft = await given();
+
+      const resolution = await draft.resolveSelection(selection);
+
+      expect(resolution).toEqual({
+        selected: [],
+        excluded: [],
+        required: [],
+        blockers: [],
+        unmatched: selection,
+      });
+    },
+  );
+
+  it.each([
+    { formula: 'an added', patch: addDoubled, path: '/doubled' },
+    { formula: 'a modified', patch: triplePriceInTotal, path: '/total' },
+  ])(
+    'blocks a pointer to $formula formula field as not selectable',
+    async ({ patch, path }) => {
+      const draft = await givenCommittedCatalog();
+      await draft.updateTable(PRODUCTS, [patch]);
+
+      const resolution = await draft.resolveSelection({
+        fields: [{ tableId: PRODUCTS, rowId: 'p1', path }],
+      });
+
+      expect(resolution).toEqual({
+        selected: [],
+        excluded: [],
+        required: [],
+        blockers: [notSelectableOfP1(path)],
+        unmatched: {},
+      });
+    },
+  );
+
+  it.each([
+    { formula: 'an added', patch: addDoubled, path: '/doubled' },
+    { formula: 'a modified', patch: triplePriceInTotal, path: '/total' },
+  ])(
+    'blocks an excluded pointer to $formula formula field as not selectable without excluding the structure',
+    async ({ patch, path }) => {
+      const draft = await givenCommittedCatalog();
+      await draft.updateTable(PRODUCTS, [patch]);
+
+      const resolution = await draft.resolveSelection({
+        tables: [PRODUCTS],
+        exclude: { fields: [{ tableId: PRODUCTS, rowId: 'p1', path }] },
+      });
+
+      expect(resolution).toEqual({
+        selected: [{ kind: 'structure', tableId: PRODUCTS }],
+        excluded: [],
+        required: [],
+        blockers: [notSelectableOfP1(path)],
+        unmatched: {},
+      });
+    },
+  );
+
   it('blocks a pointer to a computed value as not selectable', async () => {
     const draft = await givenCommittedCatalog();
     await draft.updateRow(PRODUCTS, 'p1', { ...product('one'), price: 5 });
@@ -308,16 +435,7 @@ describe('SelectionResolver: normalisation', () => {
       selected: [],
       excluded: [],
       required: [],
-      blockers: [
-        {
-          code: 'notSelectable',
-          tableId: PRODUCTS,
-          rowId: 'p1',
-          path: '/total',
-          message:
-            'products/p1/total is a computed value that follows its inputs',
-        },
-      ],
+      blockers: [notSelectableOfP1('/total')],
       unmatched: {},
     });
   });
@@ -369,6 +487,20 @@ describe('SelectionResolver: normalisation', () => {
     return draft;
   }
 
+  async function givenCreatedTags(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await createTagsWithRow(draft);
+
+    return draft;
+  }
+
+  async function givenRemovedCategories(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.removeTable(CATEGORIES);
+
+    return draft;
+  }
+
   async function createTagsWithRow(draft: ChangesScenario): Promise<void> {
     await draft.createTable(TAGS, tagSchema);
     await draft.createRows(TAGS, { t1: { label: 'one' } });
@@ -387,4 +519,14 @@ function product(code: string) {
 
 function fieldOfP1(path: string): AddressedUnit {
   return { kind: 'field', tableId: PRODUCTS, rowId: 'p1', path };
+}
+
+function notSelectableOfP1(path: string): BlockerView {
+  return {
+    code: 'notSelectable',
+    tableId: PRODUCTS,
+    rowId: 'p1',
+    path,
+    message: `products/p1${path} is a computed value that follows its inputs`,
+  };
 }

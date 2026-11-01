@@ -14,6 +14,7 @@ import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-re
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { ListChangesResult } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
   ChangesBranch,
@@ -34,6 +35,7 @@ import {
   type ListingOptions,
   type PageWithReads,
 } from './change-listing';
+import { previewChanges, type PreviewOptions } from './change-preview';
 import { type ClosureView, readClosedDependencies } from './dependency-closing';
 import { type PlanVariant, readPlanFingerprint } from './plan-fingerprinting';
 import {
@@ -495,6 +497,12 @@ export class ChangesScenario {
     options: ListingOptions,
   ): Promise<PageWithReads[]> {
     return listEveryPageWithReads(this.kit, this.branch, options);
+  }
+
+  public previewChanges(
+    options: PreviewOptions,
+  ): Promise<PreviewChangesResult> {
+    return previewChanges(this.kit, this.branch, options);
   }
 
   public assembleTarget(

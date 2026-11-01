@@ -131,6 +131,14 @@ export function afterSwapBegins(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.migrationTransitions, 'beginSwap', 1, 'after');
 }
 
+export function afterTakeoverWins(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.migrationTransitions, 'takeOver', 1, 'after');
+}
+
+export function afterClaimableFound(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.migrationTransitions, 'findOldestClaimable', 1, 'after');
+}
+
 export function afterSwapTransactionCommits(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.transactionService, 'runSerializable', 1, 'after');
 }

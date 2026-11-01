@@ -23,8 +23,10 @@ import {
   type MigrationFixtureOptions,
 } from './support/migration-database';
 import {
+  afterClaimableFound,
   afterSwapBegins,
   afterSwapTransactionCommits,
+  afterTakeoverWins,
   beforeBatchWrite,
   beforeCopyStarts,
   beforeSwapTransaction,
@@ -354,6 +356,63 @@ describe('Async migration recovery', () => {
   });
 
   describe('scheduling of a sweeping process', () => {
+    it('claims no abandoned migration while a takeover it started is still acquiring its lease', async () => {
+      const stalled = await givenMigration();
+      await startOwnerUntil(kit, stalled.migrationId, afterSwapBegins(kit));
+      await passTimeWithoutProgress(
+        kit.prisma,
+        stalled.migrationId,
+        pastSwapBound(),
+      );
+      const abandoned = await givenMigration();
+      const sweeping = await startSweepingProcess('polling', [
+        stalled.migrationId,
+        abandoned.migrationId,
+      ]);
+
+      const replacement = await sweptUntil(
+        sweeping,
+        stalled.migrationId,
+        afterTakeoverWins(sweeping.kit),
+      );
+      await sweeping.sweepsCompleted(1);
+      await expectMigrationState(abandoned, {
+        status: MigrationStatus.PENDING,
+        lockedBy: null,
+      });
+
+      const abandonedRun = sweeping.nextRunOf(abandoned.migrationId);
+      await expect(replacement.resume()).resolves.toBe('completed');
+      await expect((await abandonedRun).result).resolves.toBe('completed');
+      await expectMigrationAbsent(kit, stalled.revisionId, stalled.tableId);
+    });
+
+    it('claims no abandoned migration when it starts driving another one while it looks for one', async () => {
+      const abandoned = await givenMigration();
+      const driven = await givenMigration();
+      const sweeping = await startSweepingProcess('polling', [
+        abandoned.migrationId,
+      ]);
+      const discovery = afterClaimableFound(sweeping.kit);
+      await discovery.barrier.expectReachedBefore(sweeping.sweepsCompleted(1));
+
+      const drivenOwner = await startOwnerUntil(
+        sweeping.kit,
+        driven.migrationId,
+        beforeCopyStarts(sweeping.kit),
+      );
+      discovery.barrier.release();
+      await sweeping.sweepsCompleted(1);
+      await expectMigrationState(abandoned, {
+        status: MigrationStatus.PENDING,
+        lockedBy: null,
+      });
+
+      const abandonedRun = sweeping.nextRunOf(abandoned.migrationId);
+      await expect(drivenOwner.resume()).resolves.toBe('completed');
+      await expect((await abandonedRun).result).resolves.toBe('completed');
+    });
+
     it('claims and completes the next migration once the record of its suspended driver is cancelled', async () => {
       const suspended = await givenMigration();
       const sweeping = await startSweepingProcess('polling', [

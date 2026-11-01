@@ -244,8 +244,10 @@ function driveWithoutEnd({
   migrationService,
   heldLeases,
 }: ReturnType<typeof createWorker>): void {
-  migrationService.processMigration.mockImplementation((migrationId) => {
-    heldLeases.hold({ migrationId, token: `${migrationId}-owner` });
+  migrationService.processMigration.mockImplementation(async (migrationId) => {
+    await heldLeases.acquire(() =>
+      Promise.resolve({ migrationId, token: `${migrationId}-owner` }),
+    );
 
     return deferred<string>().promise;
   });

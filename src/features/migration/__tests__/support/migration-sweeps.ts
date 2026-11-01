@@ -25,15 +25,28 @@ export function observeSweepingProcess(kit: MigrationTestKit): SweepingProcess {
 function observeRuns(kit: MigrationTestKit) {
   const service = kit.migrationService;
   const processMigration = service.processMigration.bind(service);
+  const takeOverStalledSwap = service.takeOverStalledSwap.bind(service);
   const awaitedRuns = new Map<string, (run: StartedRun) => void>();
-
-  jest.spyOn(service, 'processMigration').mockImplementation((migrationId) => {
-    const result = processMigration(migrationId);
+  const started = (
+    migrationId: string,
+    result: Promise<MigrationStepResult>,
+  ) => {
     awaitedRuns.get(migrationId)?.({ result });
     awaitedRuns.delete(migrationId);
 
     return result;
-  });
+  };
+
+  jest
+    .spyOn(service, 'processMigration')
+    .mockImplementation((migrationId) =>
+      started(migrationId, processMigration(migrationId)),
+    );
+  jest
+    .spyOn(service, 'takeOverStalledSwap')
+    .mockImplementation((stalledOwner) =>
+      started(stalledOwner.migrationId, takeOverStalledSwap(stalledOwner)),
+    );
 
   return {
     next(migrationId: string): Promise<StartedRun> {

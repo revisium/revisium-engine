@@ -134,7 +134,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
 
     const migrationId = await this.transitions.findOldestClaimable();
 
-    if (migrationId) {
+    if (migrationId && this.heldLeases.isEmpty) {
       this.drive(migrationId, () =>
         this.migrationService.processMigration(migrationId),
       );
@@ -149,7 +149,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
       this.heldLeases.release(lost);
     }
 
-    return owned.length > 0;
+    return !this.heldLeases.isEmpty;
   }
 
   private drive(migrationId: string, run: () => Promise<MigrationStepResult>) {

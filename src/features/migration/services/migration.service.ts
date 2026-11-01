@@ -172,13 +172,21 @@ export class MigrationService {
   }
 
   async processMigration(migrationId: string): Promise<MigrationStepResult> {
-    return this.runUntilSettled(await this.transitions.claim(migrationId));
+    return this.runUntilSettled(await this.claim(migrationId));
   }
 
   async takeOverStalledSwap(
     stalledOwner: OwnershipEpoch,
   ): Promise<MigrationStepResult> {
-    return this.runUntilSettled(await this.transitions.takeOver(stalledOwner));
+    return this.runUntilSettled(
+      await this.heldLeases.acquire(() =>
+        this.transitions.takeOver(stalledOwner),
+      ),
+    );
+  }
+
+  private claim(migrationId: string): Promise<MigrationLease | null> {
+    return this.heldLeases.acquire(() => this.transitions.claim(migrationId));
   }
 
   private async runUntilSettled(
@@ -193,7 +201,7 @@ export class MigrationService {
         return result;
       }
 
-      lease = await this.transitions.claim(lease.migrationId);
+      lease = await this.claim(lease.migrationId);
     }
 
     return 'stopped';
@@ -202,7 +210,6 @@ export class MigrationService {
   private async runClaimedMigration(
     lease: MigrationLease,
   ): Promise<ClaimedRunResult> {
-    this.heldLeases.hold(lease);
     const heartbeat = new LeaseHeartbeat(
       () => this.transitions.renew(lease),
       this.options.heartbeatIntervalMs,

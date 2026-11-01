@@ -5,7 +5,10 @@ import type {
 } from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { createExpressImageFile } from 'src/__tests__/utils/file';
-import { prepareBranch } from 'src/__tests__/utils/prepareProject';
+import {
+  type BranchGraph,
+  prepareBranch,
+} from 'src/__tests__/utils/prepareProject';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import type {
@@ -15,7 +18,11 @@ import type {
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
-import { type CatalogueView, readCatalogue } from './catalogue-reading';
+import {
+  type CatalogueView,
+  readCatalogue,
+  readWholeDraftCatalogue,
+} from './catalogue-reading';
 import {
   type ChangedRowsView,
   readChangedRows,
@@ -44,7 +51,30 @@ export class ChangesScenario {
     kit: PartialChangesTestKit,
     tables: Readonly<Record<string, TableFixture>>,
   ): Promise<ChangesScenario> {
-    const { projectId, branchName, branchId } = await prepareBranch(kit.prisma);
+    return ChangesScenario.committedOn(
+      kit,
+      await prepareBranch(kit.prisma),
+      tables,
+    );
+  }
+
+  public static async committedWithoutLedger(
+    kit: PartialChangesTestKit,
+    tables: Readonly<Record<string, TableFixture>>,
+  ): Promise<ChangesScenario> {
+    const graph = await prepareBranch(kit.prisma);
+    await kit.prisma.table.delete({
+      where: { versionId: graph.migrationTableVersionId },
+    });
+
+    return ChangesScenario.committedOn(kit, graph, tables);
+  }
+
+  private static async committedOn(
+    kit: PartialChangesTestKit,
+    { projectId, branchName, branchId }: BranchGraph,
+    tables: Readonly<Record<string, TableFixture>>,
+  ): Promise<ChangesScenario> {
     const scenario = new ChangesScenario(
       kit,
       { projectId, branchName },
@@ -210,7 +240,8 @@ export class ChangesScenario {
     id: string,
     schema: JsonSchema,
   ): Promise<void> {
-    const hasSharedSchemas = await this.hasDraftTable(
+    const hasSharedSchemas = await this.hasTable(
+      'draft',
       SystemTables.SharedSchemas,
     );
 
@@ -283,6 +314,21 @@ export class ChangesScenario {
     );
   }
 
+  public async removeInitMigrationOf(tableId: string): Promise<void> {
+    const revisionId = await this.draftRevisionId();
+    const initMigration = await this.initMigrationOf(tableId);
+
+    await this.kit.draftWriteAdmission.runSerializableRevisionWrite(
+      revisionId,
+      () =>
+        this.kit.draftRevisionApi.removeRows({
+          revisionId,
+          tableId: SystemTables.Migration,
+          rowIds: [initMigration.id],
+        }),
+    );
+  }
+
   public async rewriteSchemaHistory(
     tableId: string,
     history: readonly HistoryPatches[],
@@ -308,6 +354,10 @@ export class ChangesScenario {
     return readCatalogue(this.kit, this.branch, tableIds);
   }
 
+  public readWholeDraftCatalogue(): Promise<CatalogueView> {
+    return readWholeDraftCatalogue(this.kit, this.branch);
+  }
+
   public async readDraftRowDigest(tableId: string): Promise<string> {
     const tableVersionId = await this.tableVersionId('draft', tableId);
 
@@ -324,6 +374,18 @@ export class ChangesScenario {
     const draft = await this.row('draft', tableId, rowId);
 
     return head.versionId !== draft.versionId;
+  }
+
+  public async hasTable(side: RevisionSide, tableId: string): Promise<boolean> {
+    const table = await this.kit.prisma.table.findFirst({
+      where: {
+        id: tableId,
+        revisions: { some: { id: await this.revisionId(side) } },
+      },
+      select: { versionId: true },
+    });
+
+    return table !== null;
   }
 
   public async row(
@@ -380,16 +442,30 @@ export class ChangesScenario {
     );
   }
 
-  private async hasDraftTable(tableId: string): Promise<boolean> {
-    const table = await this.kit.prisma.table.findFirst({
-      where: {
-        id: tableId,
-        revisions: { some: { id: await this.draftRevisionId() } },
-      },
-      select: { versionId: true },
+  private async initMigrationOf(tableId: string): Promise<Migration> {
+    const ledger = await this.draftLedger();
+    const initMigration = ledger.find(
+      (migration) =>
+        migration.changeType === 'init' && migration.tableId === tableId,
+    );
+
+    if (!initMigration) {
+      throw new Error(`The Draft ledger has no init of ${tableId}`);
+    }
+
+    return initMigration;
+  }
+
+  private async draftLedger(): Promise<Migration[]> {
+    const ledgerTableVersionId = await this.tableVersionId(
+      'draft',
+      SystemTables.Migration,
+    );
+    const rows = await this.kit.prisma.row.findMany({
+      where: { tables: { some: { versionId: ledgerTableVersionId } } },
     });
 
-    return table !== null;
+    return rows.map(({ data }) => data as unknown as Migration);
   }
 
   private async observeCommittedVersions(): Promise<void> {

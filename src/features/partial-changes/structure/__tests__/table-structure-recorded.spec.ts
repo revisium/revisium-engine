@@ -15,6 +15,7 @@ import {
 
 const createdProducts = obj({ code: str() });
 const pricedProducts = obj({ code: str(), price: num() });
+const stockedProducts = obj({ code: str(), stock: num() });
 const referrer = obj({ category: str({ foreignKey: 'categories' }) });
 
 const historyWithPrice = [
@@ -94,6 +95,23 @@ describe('TableStructure: pending history and recorded structure', () => {
         ],
       },
     },
+    {
+      name: 'the Head schema row gives the Draft schema although the Head ledger replays to another schema',
+      scenario: {
+        head: pricedProducts,
+        replayedHead: createdProducts,
+        draft: pricedProducts,
+      },
+    },
+    {
+      name: 'the pending history replayed from the schema the Head ledger replays to gives the Draft schema',
+      scenario: {
+        head: pricedProducts,
+        replayedHead: createdProducts,
+        draft: pricedProducts,
+        pending: [pendingUpdate(addField('price', num()))],
+      },
+    },
   ])('records the Draft structure when $name', ({ scenario }) => {
     expect(analyzeStructure(scenario).recorded).toBe(true);
   });
@@ -118,6 +136,14 @@ describe('TableStructure: pending history and recorded structure', () => {
         draft: pricedProducts,
         headHistory: historyWithPrice,
         draftHistory: [createdWith(createdProducts)],
+      },
+    },
+    {
+      name: 'neither the Head schema row nor the schema the Head ledger replays to leads to the Draft schema',
+      scenario: {
+        head: pricedProducts,
+        replayedHead: createdProducts,
+        draft: stockedProducts,
       },
     },
   ])('finds the Draft structure unrecorded when $name', ({ scenario }) => {

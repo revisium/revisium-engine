@@ -12,6 +12,7 @@ import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admis
 import { DraftModule } from 'src/features/draft/draft.module';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { MigrationModule } from 'src/features/migration/migration.module';
+import type { LedgerReplayRules } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { PartialChangesModule } from 'src/features/partial-changes/partial-changes.module';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { PluginModule } from 'src/features/plugin/plugin.module';
@@ -44,6 +45,7 @@ export interface PartialChangesTestKit {
   viewsApi: ViewsApiService;
   snapshotReader: ChangesSnapshotReader;
   schemaRules: NativeSchemaRules;
+  replayRules: LedgerReplayRules;
   viewsMigration: ViewsMigrationService;
   guard: CommittedVersionsGuard;
   close(): Promise<void>;
@@ -78,6 +80,10 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
   await module.init();
 
   const prisma = module.get(PrismaService);
+  const replayRules: LedgerReplayRules = {
+    refs: module.get(JsonSchemaStoreService).refs,
+    validator: module.get(JsonSchemaValidatorService),
+  };
 
   return {
     module,
@@ -89,10 +95,8 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
     draftWriteAdmission: module.get(DraftWriteAdmissionService),
     viewsApi: module.get(ViewsApiService),
     snapshotReader: module.get(ChangesSnapshotReader),
-    schemaRules: new NativeSchemaRules(
-      module.get(JsonSchemaStoreService).refs,
-      module.get(JsonSchemaValidatorService),
-    ),
+    schemaRules: new NativeSchemaRules(replayRules.refs, replayRules.validator),
+    replayRules,
     viewsMigration: module.get(ViewsMigrationService),
     guard: new CommittedVersionsGuard(prisma),
     async close() {

@@ -28,6 +28,7 @@ const nativeSchemaRules = new NativeSchemaRules(refs, validator);
 
 export interface StructureScenario {
   readonly head: JsonSchema;
+  readonly replayedHead?: JsonSchema;
   readonly draft: JsonSchema;
   readonly draftTableId?: string;
   readonly pending?: readonly Migration[];
@@ -60,6 +61,7 @@ export function analyzeStructure(scenario: StructureScenario): TableStructure {
         tableIdentities: identitiesOf(scenario.draftTables),
       },
       pendingMigrations: pending,
+      replayedHeadSchema: scenario.replayedHead,
     },
     nativeSchemaRules,
   );

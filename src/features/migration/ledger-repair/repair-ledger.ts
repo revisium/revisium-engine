@@ -18,6 +18,7 @@ import {
 } from 'src/features/share/ledger-replay/ledger-replay';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
+import { lastPublishedBoundsOf, type MigrationBounds } from './repair-ids';
 import type { RepairState, RevisionLedger } from './repair-state-reader';
 
 export type ReplayRules = Pick<LedgerReplayInput, 'refs' | 'validator'>;
@@ -34,10 +35,11 @@ const NEEDS_DRAFT_STRUCTURE_REVERT: TableAssessment = {
 };
 
 export class RepairLedger {
+  public readonly published: readonly Migration[];
+  public readonly pending: readonly Migration[];
+  public readonly lastPublished: MigrationBounds;
   public readonly damagedTableIds: readonly string[];
-  private readonly published: readonly Migration[];
-  private readonly pending: readonly Migration[];
-  private readonly passingDraftTableIds: ReadonlySet<string>;
+  public readonly passingDraftTableIds: ReadonlySet<string>;
   private readonly headReplay: ReplayedLedger;
   private readonly headSchemaBaseline: ReplayedLedger;
   private readonly attributedSlots: readonly AttributedSlot[];
@@ -53,6 +55,7 @@ export class RepairLedger {
     );
     this.published = migrationsOf(published);
     this.pending = migrationsOf(pending);
+    this.lastPublished = lastPublishedBoundsOf(published);
     this.headReplay = this.replay(this.published);
     this.damagedTableIds = [...state.head.tableVersionIds.keys()].filter(
       (tableId) =>
@@ -84,6 +87,10 @@ export class RepairLedger {
       );
   }
 
+  public replay(ledger: readonly Migration[]): ReplayedLedger {
+    return replayLedger({ ledger, ...this.rules });
+  }
+
   public assess(tableId: string): TableAssessment {
     if (!isLedgered(this.headReplay.slots, tableId)) {
       return { outcome: 'unledgered' };
@@ -106,19 +113,15 @@ export class RepairLedger {
     return this.baselineOf(draftTableId);
   }
 
-  private replay(ledger: readonly Migration[]): ReplayedLedger {
-    return replayLedger({ ledger, ...this.rules });
-  }
-
-  private replayedSchemaOf(tableId: string): JsonSchema | undefined {
+  public replayedSchemaOf(tableId: string): JsonSchema | undefined {
     return this.headReplay.schemas.get(tableId);
   }
 
-  private headSchemaOf(tableId: string): JsonSchema | undefined {
+  public headSchemaOf(tableId: string): JsonSchema | undefined {
     return this.state.head.schemas.get(tableId)?.schema;
   }
 
-  private reproducesDraftSchema(
+  public reproducesDraftSchema(
     replay: ReplayedLedger,
     draftTableId: string,
   ): boolean {

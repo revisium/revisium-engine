@@ -52,6 +52,10 @@ export interface ComparedTable {
   readonly structure: TableStructure;
 }
 
+export function hasDifferentVersions(table: ComparedTable): boolean {
+  return table.headVersionId !== table.draftVersionId;
+}
+
 export interface RowPair {
   readonly identity: string;
   readonly head?: Row;

@@ -5,15 +5,16 @@ import {
   type ChangedRowPairIds,
   changedRowPairsSql,
 } from 'src/features/partial-changes/snapshot/changed-row-pairs-sql';
-import type {
-  BranchRevisions,
-  ChangedRows,
-  ChangesBranch,
-  ChangesSnapshot,
-  ComparedTable,
-  RevisionRows,
-  RowPair,
-  SystemRows,
+import {
+  type BranchRevisions,
+  type ChangedRows,
+  type ChangesBranch,
+  type ChangesSnapshot,
+  type ComparedTable,
+  hasDifferentVersions,
+  type RevisionRows,
+  type RowPair,
+  type SystemRows,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { rowDigestSql } from 'src/features/partial-changes/snapshot/row-digest-sql';
 import {
@@ -197,10 +198,6 @@ export class ChangesSnapshotReader {
       where: { tables: { some: { versionId: table.versionId } } },
     });
   }
-}
-
-function hasDifferentVersions(table: ComparedTable): boolean {
-  return table.headVersionId !== table.draftVersionId;
 }
 
 function versionIdsOf(pair: ChangedRowPairIds): string[] {

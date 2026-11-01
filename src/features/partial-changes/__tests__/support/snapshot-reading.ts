@@ -1,5 +1,6 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
+import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
 import {
   attributeLedger,
   type LedgerAttribution,
@@ -36,13 +37,6 @@ export interface ChangedRowsView {
 }
 
 export type RevisionSide = 'head' | 'draft';
-
-export interface ComparedSnapshot {
-  readonly snapshot: ChangesSnapshot;
-  readonly ledger: LedgerAttribution;
-  readonly headSchema: HeadSchemaCheck;
-  readonly tables: readonly ComparedTable[];
-}
 
 export interface OperationScope {
   readonly wholeDraft: boolean;
@@ -206,7 +200,7 @@ function changedRowsView(
   };
 }
 
-function tableIdOf(snapshot: ChangesSnapshot, identity: string): string {
+export function tableIdOf(snapshot: ChangesSnapshot, identity: string): string {
   const pair = snapshot.tables.find((table) => table.identity === identity);
   const tableId = pair?.draft?.id ?? pair?.head?.id;
 

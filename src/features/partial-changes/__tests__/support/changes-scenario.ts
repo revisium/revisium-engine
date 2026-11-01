@@ -25,6 +25,10 @@ import {
   readWholeDraftCatalogue,
 } from './catalogue-reading';
 import {
+  readScopedCatalogue,
+  type ScopedCatalogueView,
+} from './scoped-reading';
+import {
   readSelectionResolution,
   type ResolutionView,
 } from './selection-resolving';
@@ -364,6 +368,12 @@ export class ChangesScenario {
 
   public readWholeDraftCatalogue(): Promise<CatalogueView> {
     return readWholeDraftCatalogue(this.kit, this.branch);
+  }
+
+  public readScopedCatalogue(
+    selection: Selection,
+  ): Promise<ScopedCatalogueView> {
+    return readScopedCatalogue(this.kit, this.branch, selection);
   }
 
   public resolveSelection(selection: Selection): Promise<ResolutionView> {

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { CommandBus, CqrsModule } from '@nestjs/cqrs';
 import { Test, TestingModule } from '@nestjs/testing';
 import { CommittedVersionsGuard } from 'src/__tests__/assertions/committed-versions-guard';
+import type { ProviderOverride } from 'src/__tests__/kit/create-database-service-test-kit';
 import { createStorageMock } from 'src/__tests__/kit/storage.mock';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
@@ -14,6 +15,7 @@ import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { MigrationModule } from 'src/features/migration/migration.module';
 import type { LedgerReplayRules } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { PartialChangesModule } from 'src/features/partial-changes/partial-changes.module';
+import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
@@ -44,6 +46,7 @@ export interface PartialChangesTestKit {
   draftWriteAdmission: DraftWriteAdmissionService;
   viewsApi: ViewsApiService;
   snapshotReader: ChangesSnapshotReader;
+  scopedCatalogueReader: ScopedCatalogueReader;
   schemaRules: NativeSchemaRules;
   replayRules: LedgerReplayRules;
   viewsMigration: ViewsMigrationService;
@@ -51,10 +54,18 @@ export interface PartialChangesTestKit {
   close(): Promise<void>;
 }
 
-export async function createPartialChangesTestKit(): Promise<PartialChangesTestKit> {
+export interface PartialChangesTestKitOptions {
+  readonly settings?: Record<string, string>;
+  readonly overrides?: readonly ProviderOverride[];
+}
+
+export async function createPartialChangesTestKit({
+  settings = {},
+  overrides = [],
+}: PartialChangesTestKitOptions = {}): Promise<PartialChangesTestKit> {
   const builder = Test.createTestingModule({
     imports: [
-      ConfigModule.forRoot({ isGlobal: true }),
+      ConfigModule.forRoot({ isGlobal: true, load: [() => settings] }),
       DatabaseModule,
       CqrsModule,
       StorageModule.forRoot(),
@@ -75,6 +86,11 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
   })
     .overrideProvider(STORAGE_SERVICE)
     .useValue(createStorageMock());
+
+  for (const { provide, useValue } of overrides) {
+    builder.overrideProvider(provide).useValue(useValue);
+  }
+
   const module = await restrictMigrationRecovery(builder).compile();
 
   await module.init();
@@ -95,7 +111,8 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
     draftWriteAdmission: module.get(DraftWriteAdmissionService),
     viewsApi: module.get(ViewsApiService),
     snapshotReader: module.get(ChangesSnapshotReader),
-    schemaRules: new NativeSchemaRules(replayRules.refs, replayRules.validator),
+    scopedCatalogueReader: module.get(ScopedCatalogueReader),
+    schemaRules: module.get(NativeSchemaRules),
     replayRules,
     viewsMigration: module.get(ViewsMigrationService),
     guard: new CommittedVersionsGuard(prisma),

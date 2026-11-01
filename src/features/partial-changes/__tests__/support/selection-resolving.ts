@@ -1,11 +1,11 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
+import type {
+  ChangeCatalogue,
+  ComparedSnapshot,
+} from 'src/features/partial-changes/catalogue/change-catalogue';
 import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
-import {
-  isWholeDraftSelection,
-  type Selection,
-} from 'src/features/partial-changes/selection/selection';
+import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
   PlanBlocker,
   Reason,
@@ -14,12 +14,8 @@ import type {
 } from 'src/features/partial-changes/selection/selection-resolution';
 import { resolveSelection } from 'src/features/partial-changes/selection/selection-resolver';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import {
-  type AddressedUnit,
-  addressedUnitOf,
-  buildCatalogueView,
-  type CatalogueScope,
-} from './catalogue-reading';
+import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
+import { readComparedSnapshotFor } from './scoped-reading';
 import { readInPlanningTransaction } from './snapshot-reading';
 
 export interface RequiredUnitView {
@@ -45,29 +41,37 @@ export function readSelectionResolution(
   selection: Selection,
 ): Promise<ResolutionView> {
   return readInPlanningTransaction(kit, async () => {
-    const view = await buildCatalogueView(kit, branch, scopeOf(selection));
+    const compared = await readComparedSnapshotFor(kit, branch, selection);
+    const catalogue = await readCatalogueOfSelection(kit, compared, selection);
     const resolution = resolveSelection(selection, {
-      snapshot: view.snapshot,
-      headSchema: view.headSchema,
-      tables: view.tables,
-      catalogue: view.catalogue,
+      ...compared,
+      catalogue,
       addressedRows: await readAddressedRows(
         kit.snapshotReader,
-        view.snapshot,
+        compared.snapshot,
         selection,
       ),
     });
 
-    return resolutionView(view.catalogue, resolution);
+    return resolutionView(catalogue, resolution);
   });
 }
 
-function scopeOf(selection: Selection): CatalogueScope {
-  if (isWholeDraftSelection(selection)) {
-    return { kind: 'wholeDraft' };
+async function readCatalogueOfSelection(
+  kit: PartialChangesTestKit,
+  compared: ComparedSnapshot,
+  selection: Selection,
+): Promise<ChangeCatalogue> {
+  const scoped = await kit.scopedCatalogueReader.readCatalogue(
+    compared,
+    selection,
+  );
+
+  if (scoped.kind === 'tooLarge') {
+    throw new Error(`The read was refused: ${scoped.blocker.message}`);
   }
 
-  return { kind: 'everyTable' };
+  return scoped.catalogue;
 }
 
 function resolutionView(

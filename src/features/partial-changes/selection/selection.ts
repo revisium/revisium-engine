@@ -40,6 +40,14 @@ export type ItemSelector<K extends ItemKind> = NonNullable<
 
 const WHOLE_DRAFT_KEY = 'all';
 
+export function tableRefOf(selector: TableRef): Exclude<TableRef, string> {
+  if (typeof selector === 'string') {
+    return { tableId: selector };
+  }
+
+  return selector;
+}
+
 export function isWholeDraftSelection(selection: Selection): boolean {
   return (
     selection.all === true &&

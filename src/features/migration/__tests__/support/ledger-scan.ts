@@ -1,11 +1,14 @@
 import { deepEqual } from '@revisium/schema-toolkit/lib';
-import type { Migration } from '@revisium/schema-toolkit/types';
+import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
+import objectHash from 'object-hash';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import { rowHashReasonOf } from 'src/features/migration/ledger-scan/schema-checks';
 import { BranchApiService } from 'src/features/branch/branch-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import type {
   FindingContent,
   FindingRole,
+  MismatchedRowHash,
   ScanSchemaLedgerData,
   SchemaLedgerFinding,
   SchemaLedgerScan,
@@ -31,6 +34,11 @@ export type ExpectedFinding = FindingContent & { readonly tableId: string };
 export interface ObservedReplays<T> {
   readonly result: T;
   readonly replays: readonly LedgerReplayInput[];
+}
+
+export interface ObservedClassifications<T> {
+  readonly result: T;
+  readonly classifications: number;
 }
 
 export interface TransactionMode {
@@ -117,6 +125,53 @@ export function damagedTableRepairsOf(
 
     return [[finding.tableId, finding.detail.repair]];
   });
+}
+
+export function sortedByHash(
+  rowHashes: MismatchedRowHash[],
+): MismatchedRowHash[] {
+  return [...rowHashes].sort((left, right) =>
+    compareCodePoints(left.hash, right.hash),
+  );
+}
+
+export function hashOf(schema: JsonSchema): string {
+  return objectHash(schema);
+}
+
+export async function schemaRowHashOf(
+  draft: ChangesScenario,
+  side: RevisionSide,
+  tableId: string,
+): Promise<string> {
+  const row = await draft.row(side, SystemTables.Schema, tableId);
+
+  return row.hash;
+}
+
+export async function rowSchemaHashOf(
+  draft: ChangesScenario,
+  tableId: string,
+  rowId: string,
+): Promise<string> {
+  const row = await draft.row('draft', tableId, rowId);
+
+  return row.schemaHash;
+}
+
+export async function userTableVersionCountOf(
+  kit: PartialChangesTestKit,
+  draft: ChangesScenario,
+): Promise<number> {
+  const [{ count }] = await kit.prisma.$queryRaw<[{ count: number }]>(sql`
+    SELECT count(DISTINCT t."versionId")::int AS "count"
+    FROM "Revision" r
+    JOIN "_RevisionToTable" rt ON rt."A" = r."id"
+    JOIN "Table" t ON t."versionId" = rt."B"
+    WHERE r."branchId" = ${draft.branchId} AND NOT t."system"
+  `);
+
+  return count;
 }
 
 export async function committedRevisionIds(
@@ -278,6 +333,17 @@ export async function ledgerReplaysDuring<T>(
   const result = await action();
 
   return { result, replays: replay.mock.calls.map(([input]) => input) };
+}
+
+export async function rowHashClassificationsDuring<T>(
+  action: () => Promise<T>,
+): Promise<ObservedClassifications<T>> {
+  const classify = jest.mocked(rowHashReasonOf);
+  classify.mockClear();
+
+  const result = await action();
+
+  return { result, classifications: classify.mock.calls.length };
 }
 
 export function isStoredLedgerReplay(

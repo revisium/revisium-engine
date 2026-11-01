@@ -1,6 +1,7 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type {
   DamageShape,
+  RowHashReason,
   UnledgeredDetail,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
 import type {
@@ -31,6 +32,8 @@ export type SchemaCheck =
     };
 
 export type ReplayedCheck = Extract<SchemaCheck, { kind: 'replayed' }>;
+
+export type SchemaHashing = (schema: JsonSchema) => string;
 
 export function schemaCheckOf(
   currentSlots: ReadonlyMap<string, ReplayedSlot> | undefined,
@@ -100,6 +103,33 @@ export function damageShapeOf(
   }
 
   return 'unknown';
+}
+
+export function rowHashReasonOf(
+  hash: string,
+  { slot, passes }: ReplayedCheck,
+  hashOf: SchemaHashing,
+): RowHashReason {
+  if (!passes && slot.schema !== undefined && hash === hashOf(slot.schema)) {
+    return 'unmigratedByAsync';
+  }
+
+  const trail = slot.trail ?? [];
+  const lastIndex = trail.map((step) => hashOf(step.schema)).lastIndexOf(hash);
+
+  if (lastIndex < 0) {
+    return 'unknownHash';
+  }
+
+  const ownStepFollows = trail
+    .slice(lastIndex + 1)
+    .some(({ cause }) => cause === 'ownStep');
+
+  if (ownStepFollows) {
+    return 'unmigratedRows';
+  }
+
+  return 'renamedReference';
 }
 
 function reproducesSchemaRow(

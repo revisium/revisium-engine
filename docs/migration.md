@@ -394,18 +394,22 @@ validated row references a digest of its row ids.
   a malformed `cursor` or `limit`, or an unknown `rowDiagnostics` fails with a validation error. There are no retries:
   a failed call is repeated from its cursor.
 - **Reading.** Per branch, one `READ ONLY` RepeatableRead transaction reads the Head and Draft, their table links and
-  system rows, the row hashes of damaged Head tables, and plans repairs on the scan's replays of the stored Head and
+  system rows, the row hashes of their tables (of damaged Head tables only with `rowDiagnostics: 'none'`), and plans
+  repairs on the scan's replays of the stored Head and
   Draft ledgers. Earlier revisions are committed and are read afterwards without a transaction. The scan writes
   nothing.
 - **Evaluation.** Each user table linked by every revision of the branch, in the role `head`, `draft` or `history`.
   The revision's ledger is replayed with the shared ledger replay; the identity pass decides whether the table is
   ledgered (a table created as `A` and renamed to `B` by recorded migrations is ledgered), whether or not the table
   has a schema row, and predicate (b) compares the replayed schema with the schema row; a ledgered table without a
-  schema row fails (b). Per call, each migration-table version is replayed once (repair planning reuses that replay
-  and replays only its own hypothetical ledgers), each schema-table version is read once, (b) runs once per
-  migration-table version, table id and schema row version, and one `GROUP BY "schemaHash"` statement runs per table
-  version; `stats` counts branches, revisions, replays, schema-table reads, (b) checks and row-hash reads as they
-  happen. A finding lists every revision of the branch that shares its evaluation.
+  schema row fails (b). Predicate (a) compares the rows' `schemaHash` with the schema row's `hash` where
+  `rowDiagnostics` selects: `none`, `headAndDraft` (default) or `all` (every revision). Per call, each migration-table
+  version is replayed once (repair planning reuses that replay and replays only its own hypothetical ledgers), each
+  schema-table version is read once, (b) runs once per migration-table version, table id and schema row version, one
+  `GROUP BY "schemaHash"` statement runs per table version, (a) runs once per table version and schema row hash, and
+  its row hashes are classified once per migration-table version, table version and schema row hash; `stats` counts
+  branches, revisions, replays, schema-table reads, (b) checks and row-hash reads as they happen. A finding lists
+  every revision of the branch that shares its evaluation.
 
 | Code | Role | When; `detail` |
 | --- | --- | --- |
@@ -414,10 +418,12 @@ validated row references a digest of its row ids.
 | `damagedTable` | `head` | Fails (b); `shape` from the Head rows' hashes: `unpublished` (some rows carry the replayed schema's hash, none the schema row's), `published` (every row carries the schema row's hash), else `unknown` (no rows, mixed or other hashes, or no schema row); `repair`: the planner's outcome for the table when every damaged Head table of the branch is planned together (as `planSchemaLedgerRepair` without `tableIds`), or `deferred` while an async migration is active in the Draft. |
 | `draftOnlyDamage` | `draft` | Fails (b) while its Head counterpart passes (b), or the table has no Head counterpart. The counterpart is the Head table of the same lineage (the same opening migration), or, for a Head table without a lineage, the Head table of the same id. A counterpart that is damaged, unreplayable or unledgered has its own Head finding, which covers the table: the Draft then gets no (b) finding. |
 | `damagedHistory` | `history` | An earlier revision fails (b). |
+| `rowSchemaHashMismatch` | per `rowDiagnostics` | Predicate (a) fails; `schemaHash` and, per row hash, `rowCount` and the first matching `reason`: `unmigratedByAsync` (the table fails (b) and the hash is the replayed schema's), `renamedReference` (the hash is in the slot's trail and only referrer rewrites follow it), `unmigratedRows` (an own step follows it), `unknownHash` (not in the trail, for example `''`). |
 
-An unledgered or unreplayable table gets only that finding. Predicate (a) and its finding `rowSchemaHashMismatch` come
-next: `rowDiagnostics` (`none`, `headAndDraft` by default, or `all`) is accepted and validated, but no
-`rowSchemaHashMismatch` is produced yet.
+An unledgered or unreplayable table gets only that finding; a ledgered table can get a damage finding and a
+`rowSchemaHashMismatch`. A table without a schema row has no hash to compare, so (a) does not run for it. When (a)
+runs, the scan replays ledgers with their trail, the schema after each step of a slot with its cause (an own step or
+a referrer rewrite), and hashes it for the reasons above; with `rowDiagnostics: 'none'` no trail is kept.
 
 ### Read consistency during migration
 

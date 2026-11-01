@@ -29,6 +29,7 @@ import {
 import {
   type SystemTablePlan,
   SystemTargetAssembler,
+  type TargetViews,
 } from 'src/features/partial-changes/assembly/system-target-assembler';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
@@ -80,6 +81,7 @@ export interface DeferredValues {
 export interface AssembledTarget {
   readonly tables: readonly TablePlan[];
   readonly systemTables: readonly SystemTablePlan[];
+  readonly views: readonly TargetViews[];
   readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly DeferredValues[];
 }
@@ -122,6 +124,7 @@ export class TargetAssembler {
     return {
       tables: tables.map(({ plan }) => plan),
       systemTables: await this.systemTargetAssembler.assemble(source, rules),
+      views: this.systemTargetAssembler.viewsOf(source, rules),
       blockers: tables.flatMap(({ blockers }) => blockers),
       deferred: tables.flatMap(({ deferred }) => deferred),
     };

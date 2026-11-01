@@ -24,12 +24,15 @@ export type RequiredReasonCode =
   | 'atomicValue'
   | 'referencedRowMissing'
   | 'referrerStillReferences'
-  | 'idOccupied';
+  | 'idOccupied'
+  | 'referencedTableMissing'
+  | 'viewsDoNotFitStructure';
 
 export type BlockerCode =
   | 'notSelectable'
   | 'requiredExcluded'
   | 'danglingInSource'
+  | 'invalidViews'
   | 'unmatchedSelector'
   | 'tooLarge'
   | 'unrecordedStructureChange'

@@ -16,16 +16,14 @@ import {
   type SystemTableTarget,
   systemTableOutcomeOf,
   systemTableTargetsOf,
-  type ViewsRewrite,
+  type TableViews,
+  tableViewsOf,
 } from 'src/features/partial-changes/assembly/system-table-targets';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import type {
-  SystemTableRows,
-  TablePair,
-} from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { SystemTableRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import type { SystemTables } from 'src/features/share/system-tables.consts';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
@@ -38,6 +36,10 @@ export interface SystemTablePlan extends LinkChanges {
   readonly linkSide: RevisionSide;
   readonly versionId?: string;
   readonly relinkCandidate: boolean;
+}
+
+export interface TargetViews extends TableViews {
+  readonly document: TableViewsData;
 }
 
 interface DesiredRows {
@@ -61,12 +63,23 @@ export class SystemTargetAssembler {
     source: AssemblySource,
     rules: OutcomeRules,
   ): Promise<SystemTablePlan[]> {
+    return this.assemblyOf(source, rules).planSystemTables();
+  }
+
+  public viewsOf(source: AssemblySource, rules: OutcomeRules): TargetViews[] {
+    return this.assemblyOf(source, rules).targetViews();
+  }
+
+  private assemblyOf(
+    source: AssemblySource,
+    rules: OutcomeRules,
+  ): SystemTargetAssembly {
     return new SystemTargetAssembly(
       source,
       rules,
       this.headViews,
       this.hashService,
-    ).planSystemTables();
+    );
   }
 }
 
@@ -92,6 +105,13 @@ class SystemTargetAssembly {
     return plans;
   }
 
+  public targetViews(): TargetViews[] {
+    return tableViewsOf(this.source, this.rules).map((views) => ({
+      ...views,
+      document: this.documentOf(views),
+    }));
+  }
+
   private async desiredRowsOf({
     versions,
     rewrites,
@@ -108,13 +128,9 @@ class SystemTargetAssembly {
     };
   }
 
-  private async rewrittenViewsOf({
-    source,
-    tableId,
-    pair,
-    viewsSide,
-  }: ViewsRewrite): Promise<DesiredRows> {
-    const document = this.viewsDocumentOn(pair, viewsSide, source);
+  private async rewrittenViewsOf(rewrite: TableViews): Promise<DesiredRows> {
+    const { source, tableId } = rewrite;
+    const document = this.documentOf(rewrite);
 
     if (source.id === tableId && deepEqual(source.data, document)) {
       return { versions: [source], newRows: [] };
@@ -134,14 +150,15 @@ class SystemTargetAssembly {
     return { versions: [], newRows: [newRow] };
   }
 
-  private viewsDocumentOn(
-    pair: TablePair,
-    viewsSide: RevisionSide,
-    views: Row,
-  ): TableViewsData {
-    const document = views.data as unknown as TableViewsData;
+  private documentOf({
+    pair,
+    structureSide,
+    viewsSide,
+    source,
+  }: TableViews): TableViewsData {
+    const document = source.data as unknown as TableViewsData;
 
-    if (viewsSide === 'draft' || !pair.head) {
+    if (viewsSide === structureSide || viewsSide === 'draft' || !pair.head) {
       return document;
     }
 

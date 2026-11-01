@@ -5,6 +5,7 @@ import { TargetAssembler } from 'src/features/partial-changes/assembly/target-as
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import { TARGET_CHECKS } from 'src/features/partial-changes/closure/findings';
 import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-reference-checks';
+import { StructureChecks } from 'src/features/partial-changes/closure/structure-checks';
 import { OperationEstimator } from 'src/features/partial-changes/limits/operation-estimator';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
@@ -15,10 +16,11 @@ import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.ser
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { ShareModule } from 'src/features/share/share.module';
+import { ViewsModule } from 'src/features/views/views.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 
 @Module({
-  imports: [DatabaseModule, ShareModule, PluginModule],
+  imports: [DatabaseModule, ShareModule, PluginModule, ViewsModule],
   providers: [
     ChangesSnapshotReader,
     {
@@ -36,11 +38,15 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     SystemTargetAssembler,
     TargetAssembler,
     OperationEstimator,
+    StructureChecks,
     RowReferenceChecks,
     {
       provide: TARGET_CHECKS,
-      useFactory: (rowChecks: RowReferenceChecks) => [rowChecks],
-      inject: [RowReferenceChecks],
+      useFactory: (
+        structureChecks: StructureChecks,
+        rowChecks: RowReferenceChecks,
+      ) => [structureChecks, rowChecks],
+      inject: [StructureChecks, RowReferenceChecks],
     },
     DependencyClosure,
   ],

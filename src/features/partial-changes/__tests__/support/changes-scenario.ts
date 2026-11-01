@@ -280,6 +280,21 @@ export class ChangesScenario {
     });
   }
 
+  public async writeInvalidViews(
+    tableId: string,
+    viewsData: TableViewsData,
+  ): Promise<void> {
+    await this.writeBelowNativeValidation((revisionId) =>
+      this.kit.draftRevisionApi.updateRows({
+        revisionId,
+        tableId: SystemTables.Views,
+        rows: [
+          { rowId: tableId, data: viewsData as unknown as InputJsonValue },
+        ],
+      }),
+    );
+  }
+
   public async createSharedSchema(
     id: string,
     schema: JsonSchema,

@@ -12,10 +12,12 @@ import type {
   TargetRow,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import type {
   TablePair,
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
 export interface HeldRow {
   readonly row: CatalogueRow;
@@ -29,6 +31,7 @@ export interface IdCollision {
 }
 
 export class TargetTable {
+  public readonly version: TableVersion;
   public readonly tableId: string;
   public readonly loadedIdentities: readonly string[];
   private readonly holdersById = new Map<string, HeldRow[]>();
@@ -37,12 +40,14 @@ export class TargetTable {
 
   constructor(
     public readonly pair: TablePair,
-    public readonly version: TableVersion,
+    public readonly structureSide: RevisionSide,
     public readonly heldRows: readonly HeldRow[],
     private readonly loaded: readonly CatalogueRow[],
+    private readonly changedPointers: readonly JsonPointer[],
     private readonly baseSide: RevisionSide,
   ) {
-    this.tableId = version.id;
+    this.version = versionOn(pair, structureSide);
+    this.tableId = this.version.id;
     this.loadedIdentities = loaded.map(({ pair }) => pair.identity);
     this.byBaseId = rowsByIdOn(loaded, baseSide);
     this.byOtherId = rowsByIdOn(loaded, oppositeOf(baseSide));
@@ -60,6 +65,22 @@ export class TargetTable {
 
   public touches(id: string): boolean {
     return this.byBaseId.has(id) || this.byOtherId.has(id);
+  }
+
+  public touchedIds(): string[] {
+    return [...new Set([...this.byBaseId.keys(), ...this.byOtherId.keys()])];
+  }
+
+  public keepsBaseId(): boolean {
+    return this.pair[this.baseSide]?.id === this.tableId;
+  }
+
+  public takesOtherSideStructure(): boolean {
+    return this.structureSide !== this.baseSide;
+  }
+
+  public isChangedField(pointer: JsonPointer): boolean {
+    return this.changedPointers.some((changed) => changed.isAtOrAbove(pointer));
   }
 
   public collisions(): IdCollision[] {
@@ -115,27 +136,87 @@ export class TargetTable {
 export class TargetTables {
   public readonly all: readonly TargetTable[];
   private readonly byTableId: ReadonlyMap<string, TargetTable>;
+  private readonly identities: ReadonlySet<string>;
+  private readonly pairsById: Readonly<
+    Record<RevisionSide, ReadonlyMap<string, TablePair>>
+  >;
+  private readonly plans: ReadonlyMap<string, TablePlan>;
+  private readonly changedPointers: ReadonlyMap<string, readonly JsonPointer[]>;
 
   constructor(
-    source: AssemblySource,
+    private readonly source: AssemblySource,
     target: AssembledTarget,
-    rules: OutcomeRules,
+    private readonly rules: OutcomeRules,
+    private readonly lookup: CatalogueLookup,
   ) {
-    const plans = new Map(target.tables.map((plan) => [plan.identity, plan]));
-
+    this.plans = new Map(target.tables.map((plan) => [plan.identity, plan]));
+    this.changedPointers = new Map(
+      source.tables.map(({ identity, structure }) => [
+        identity,
+        structure.changedPointers,
+      ]),
+    );
     this.all = source.snapshot.tables.flatMap((pair) =>
-      targetTablesOf(
-        pair,
-        plans.get(pair.identity),
-        source.catalogue.rows.get(pair.identity) ?? [],
-        rules.baseSide,
-      ),
+      this.targetTablesOf(pair),
     );
     this.byTableId = new Map(this.all.map((table) => [table.tableId, table]));
+    this.identities = new Set(this.all.map(({ pair }) => pair.identity));
+    this.pairsById = {
+      head: pairsByIdOn(source.snapshot.tables, 'head'),
+      draft: pairsByIdOn(source.snapshot.tables, 'draft'),
+    };
   }
 
   public named(tableId: string): TargetTable | undefined {
     return this.byTableId.get(tableId);
+  }
+
+  public contains({ identity }: TablePair): boolean {
+    return this.identities.has(identity);
+  }
+
+  public tableMeantBy(
+    referrer: TargetTable,
+    tableId: string,
+  ): TablePair | undefined {
+    return this.pairsById[referrer.structureSide].get(tableId);
+  }
+
+  public referencedBy(
+    referrer: TargetTable,
+    tableId: string,
+  ): TargetTable | undefined {
+    const holder = this.named(tableId);
+    const meant = this.tableMeantBy(referrer, tableId);
+
+    if (meant !== undefined && holder?.pair.identity !== meant.identity) {
+      return undefined;
+    }
+
+    return holder;
+  }
+
+  private targetTablesOf(pair: TablePair): TargetTable[] {
+    const structureSide = this.rules.structureSideOf(
+      this.lookup.tableUnitOf('structure', pair)?.key,
+    );
+
+    if (!pair[structureSide]) {
+      return [];
+    }
+
+    const loaded = this.source.catalogue.rows.get(pair.identity) ?? [];
+
+    return [
+      new TargetTable(
+        pair,
+        structureSide,
+        heldRowsOf(this.plans.get(pair.identity), loaded, structureSide),
+        loaded,
+        this.changedPointers.get(pair.identity) ?? [],
+        this.rules.baseSide,
+      ),
+    ];
   }
 }
 
@@ -144,30 +225,6 @@ export function idUnitOf({
   existence,
 }: CatalogueRow): string | undefined {
   return columns.get('id') ?? existence;
-}
-
-function targetTablesOf(
-  pair: TablePair,
-  plan: TablePlan | undefined,
-  loaded: readonly CatalogueRow[],
-  baseSide: RevisionSide,
-): TargetTable[] {
-  const structureSide = plan?.structureSide ?? baseSide;
-  const version = pair[structureSide];
-
-  if (!version) {
-    return [];
-  }
-
-  return [
-    new TargetTable(
-      pair,
-      version,
-      heldRowsOf(plan, loaded, structureSide),
-      loaded,
-      baseSide,
-    ),
-  ];
 }
 
 function heldRowsOf(
@@ -203,6 +260,23 @@ function targetVersionOf(
     case 'merge':
       return targetRow.merged;
   }
+}
+
+function pairsByIdOn(
+  pairs: readonly TablePair[],
+  side: RevisionSide,
+): ReadonlyMap<string, TablePair> {
+  const byId = new Map<string, TablePair>();
+
+  for (const pair of pairs) {
+    const version = pair[side];
+
+    if (version) {
+      byId.set(version.id, pair);
+    }
+  }
+
+  return byId;
 }
 
 function rowsByIdOn(

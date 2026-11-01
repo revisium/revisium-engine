@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import type { JsonSchemaStore } from '@revisium/schema-toolkit/model';
 import type { JsonValue } from '@revisium/schema-toolkit/types';
 import {
   type AppliedUnits,
-  type ChangeOperation,
   OutcomeRules,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type {
@@ -16,10 +14,17 @@ import {
   danglingInSource,
   type Finding,
   requiring,
+  requiringOrDangling,
+  type SideNames,
+  sideNamesOf,
   type TargetCheck,
   type TargetChecking,
 } from 'src/features/partial-changes/closure/findings';
 import { LostIdReferrers } from 'src/features/partial-changes/closure/lost-id-referrers';
+import {
+  type ForeignKeyLeaf,
+  TableSchemas,
+} from 'src/features/partial-changes/closure/table-schemas';
 import {
   type HeldRow,
   idUnitOf,
@@ -36,12 +41,6 @@ import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer
 import { getForeignKeyReferences } from 'src/features/share/foreign-key-references';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-import { getForeignKeyJsonPaths } from 'src/features/share/utils/get-foreign-key-json-paths';
-
-interface SideNames {
-  readonly target: string;
-  readonly other: string;
-}
 
 interface Reference {
   readonly referrer: TargetTable;
@@ -55,7 +54,7 @@ interface ReferrerScan {
   readonly losing: TargetTable;
   readonly lostIds: readonly string[];
   readonly referrer: TargetTable;
-  readonly jsonPath: string;
+  readonly leaf: ForeignKeyLeaf;
 }
 
 interface Covering {
@@ -65,15 +64,11 @@ interface Covering {
 
 interface OperationContext {
   readonly source: AssemblySource;
+  readonly lookup: CatalogueLookup;
   readonly snapshotReader: ChangesSnapshotReader;
-  readonly schemaStore: JsonSchemaStoreService;
+  readonly schemas: TableSchemas;
   readonly referrers: LostIdReferrers;
 }
-
-const SIDE_NAMES: Readonly<Record<ChangeOperation, SideNames>> = {
-  commit: { target: 'new Head', other: 'the Draft' },
-  revert: { target: 'reverted Draft', other: 'Head' },
-};
 
 @Injectable()
 export class RowReferenceChecks implements TargetCheck {
@@ -85,8 +80,9 @@ export class RowReferenceChecks implements TargetCheck {
   public checkingOf(source: AssemblySource): TargetChecking {
     return new RowReferenceChecking({
       source,
+      lookup: new CatalogueLookup(source.catalogue),
       snapshotReader: this.snapshotReader,
-      schemaStore: this.schemaStore,
+      schemas: new TableSchemas(this.schemaStore),
       referrers: new LostIdReferrers(this.snapshotReader),
     });
   }
@@ -100,24 +96,26 @@ class RowReferenceChecking implements TargetChecking {
     choice: AppliedUnits,
   ): Promise<Finding[]> {
     const rules = new OutcomeRules(choice);
-    const tables = new TargetTables(this.context.source, target, rules);
+    const tables = new TargetTables(
+      this.context.source,
+      target,
+      rules,
+      this.context.lookup,
+    );
 
     return new TargetRowChecks(this.context, tables, rules).findings();
   }
 }
 
 class TargetRowChecks {
-  private readonly lookup: CatalogueLookup;
   private readonly names: SideNames;
-  private readonly schemas = new Map<TargetTable, JsonSchemaStore>();
 
   constructor(
     private readonly context: OperationContext,
     private readonly tables: TargetTables,
     private readonly rules: OutcomeRules,
   ) {
-    this.lookup = new CatalogueLookup(context.source.catalogue);
-    this.names = SIDE_NAMES[rules.operation];
+    this.names = sideNamesOf(rules.operation);
   }
 
   public async findings(): Promise<Finding[]> {
@@ -154,7 +152,7 @@ class TargetRowChecks {
     row: CatalogueRow,
     rowId: string,
   ): Finding {
-    return this.requiringOrDangling(idUnitOf(row), {
+    return requiringOrDangling(idUnitOf(row), {
       code: 'idOccupied',
       tableId,
       rowId,
@@ -176,12 +174,12 @@ class TargetRowChecks {
       return [];
     }
 
-    const schema = this.schemaOf(referrer);
+    const schema = this.context.schemas.storeOf(referrer.version);
 
     return referrer.heldRows.flatMap((held) =>
       getForeignKeyReferences(schema, held.data as JsonValue).flatMap(
         ({ tableId, rowId, legacyPath }) => {
-          const referenced = this.tables.named(tableId);
+          const referenced = this.tables.referencedBy(referrer, tableId);
 
           if (!referenced) {
             return [];
@@ -236,7 +234,10 @@ class TargetRowChecks {
   }
 
   private restoreReference(reference: Reference): Finding {
-    const structure = this.unappliedStructureHolding(reference);
+    const structure = this.unappliedStructureHolding(
+      reference.referrer,
+      reference.pointer,
+    );
     const covering = coveringOf(reference.held.row, reference.pointer);
     const { target } = this.names;
 
@@ -273,7 +274,7 @@ class TargetRowChecks {
       return false;
     }
 
-    const schema = this.schemaOf(referrer);
+    const schema = this.context.schemas.storeOf(referrer.version);
 
     return referrer
       .versionsBroughtBy(unitKey, held.row)
@@ -329,33 +330,24 @@ class TargetRowChecks {
     );
   }
 
-  private unappliedStructureHolding({
-    referrer,
-    pointer,
-  }: Reference): string | undefined {
-    const structure = this.lookup.tableUnitOf('structure', referrer.pair)?.key;
+  private unappliedStructureHolding(
+    referrer: TargetTable,
+    pointer: JsonPointer,
+  ): string | undefined {
+    const structure = this.context.lookup.tableUnitOf(
+      'structure',
+      referrer.pair,
+    )?.key;
 
     if (
       structure === undefined ||
       this.rules.isApplied(structure) ||
-      !this.isChangedField(referrer, pointer)
+      !referrer.isChangedField(pointer)
     ) {
       return undefined;
     }
 
     return structure;
-  }
-
-  private isChangedField({ pair }: TargetTable, pointer: JsonPointer): boolean {
-    const compared = this.context.source.tables.find(
-      ({ identity }) => identity === pair.identity,
-    );
-
-    return (
-      compared?.structure.changedPointers.some((changed) =>
-        changed.isAtOrAbove(pointer),
-      ) ?? false
-    );
   }
 
   private async unchangedReferrersOfLostIds(): Promise<Finding[]> {
@@ -364,7 +356,7 @@ class TargetRowChecks {
     for (const scan of this.referrerScans()) {
       const referrers = await this.context.referrers.referrersOf(
         scan.referrer,
-        scan.jsonPath,
+        scan.leaf.jsonPath,
         scan.losing,
       );
 
@@ -392,19 +384,38 @@ class TargetRowChecks {
         return [];
       }
 
-      return referrers.flatMap((referrer) =>
-        getForeignKeyJsonPaths(this.schemaOf(referrer), losing.tableId).map(
-          (jsonPath) => ({ losing, lostIds, referrer, jsonPath }),
-        ),
-      );
+      return referrers
+        .filter((referrer) => this.referencesLosing(referrer, losing))
+        .flatMap((referrer) =>
+          this.context.schemas
+            .foreignKeyLeavesOf(referrer.version, losing.tableId)
+            .map((leaf) => ({ losing, lostIds, referrer, leaf })),
+        );
     });
   }
 
+  private referencesLosing(
+    referrer: TargetTable,
+    losing: TargetTable,
+  ): boolean {
+    return this.tables.referencedBy(referrer, losing.tableId) === losing;
+  }
+
   private restoreLostId(
-    { losing, referrer }: ReferrerScan,
+    scan: ReferrerScan,
     referencedId: string,
     rowId: string,
   ): Finding {
+    const { losing, referrer, leaf } = scan;
+    const structure = this.unappliedStructureHolding(referrer, leaf.pointer);
+
+    if (structure !== undefined) {
+      return requiring(
+        structure,
+        this.structureBoundReasonOf(scan, referencedId, rowId),
+      );
+    }
+
     const reason: Reason = {
       code: 'referencedRowMissing',
       tableId: referrer.tableId,
@@ -412,36 +423,27 @@ class TargetRowChecks {
       because: `${referrer.tableId}/${rowId} references ${losing.tableId}/${referencedId}, which the ${this.names.target} loses`,
     };
 
-    return this.requiringOrDangling(
+    return requiringOrDangling(
       losing.providerOf(referencedId),
       reason,
       losing.unitLosing(referencedId),
     );
   }
 
-  private schemaOf(table: TargetTable): JsonSchemaStore {
-    const cached = this.schemas.get(table);
+  private structureBoundReasonOf(
+    { losing, referrer, leaf }: ReferrerScan,
+    referencedId: string,
+    rowId: string,
+  ): Reason {
+    const path = leaf.pointer.toString();
 
-    if (cached) {
-      return cached;
-    }
-
-    const schema = this.context.schemaStore.create(table.version.schema);
-    this.schemas.set(table, schema);
-
-    return schema;
-  }
-
-  private requiringOrDangling(
-    unitKey: string | undefined,
-    reason: Reason,
-    culprit?: string,
-  ): Finding {
-    if (unitKey !== undefined) {
-      return requiring(unitKey, reason);
-    }
-
-    return blocking(danglingInSource(reason.because, reason, culprit));
+    return {
+      code: 'structureBoundData',
+      tableId: referrer.tableId,
+      rowId,
+      path,
+      because: `${referrer.tableId}/${rowId}${path} references ${losing.tableId}/${referencedId}, which the ${this.names.target} loses; the value follows the structure of ${referrer.tableId}`,
+    };
   }
 }
 

@@ -19,11 +19,12 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 
-export interface ViewsRewrite {
-  readonly source: Row;
-  readonly tableId: string;
+export interface TableViews {
   readonly pair: TablePair;
+  readonly tableId: string;
+  readonly structureSide: RevisionSide;
   readonly viewsSide: RevisionSide;
+  readonly source: Row;
 }
 
 export interface SystemTableTarget {
@@ -31,22 +32,22 @@ export interface SystemTableTarget {
   readonly rows: SystemTableRows;
   readonly linkSide: RevisionSide;
   readonly versions: readonly Row[];
-  readonly rewrites: readonly ViewsRewrite[];
+  readonly rewrites: readonly TableViews[];
   readonly ownerKinds: readonly UnitKind[];
 }
-
-interface ViewsOfTable {
-  readonly versions: readonly Row[];
-  readonly rewrites: readonly ViewsRewrite[];
-}
-
-const NO_VIEWS: ViewsOfTable = { versions: [], rewrites: [] };
 
 export function systemTableTargetsOf(
   source: AssemblySource,
   rules: OutcomeRules,
 ): SystemTableTarget[] {
   return new SystemTableTargets(source, rules).targets();
+}
+
+export function tableViewsOf(
+  source: AssemblySource,
+  rules: OutcomeRules,
+): TableViews[] {
+  return new SystemTableTargets(source, rules).tableViews();
 }
 
 export function systemTableOutcomeOf(
@@ -104,6 +105,12 @@ class SystemTableTargets {
     ].filter(({ rows }) => existsOnEitherSide(rows));
   }
 
+  public tableViews(): TableViews[] {
+    return this.source.snapshot.tables.flatMap((pair) =>
+      this.tableViewsOf(pair),
+    );
+  }
+
   private rowsFollowingOwners(
     tableId: SystemTables,
     rows: SystemTableRows,
@@ -126,19 +133,19 @@ class SystemTableTargets {
   }
 
   private viewsTarget(rows: SystemTableRows): SystemTableTarget {
-    const views = this.source.snapshot.tables.map((pair) => this.viewsOf(pair));
+    const views = this.tableViews();
 
     return {
       tableId: SystemTables.Views,
       rows,
       linkSide: this.linkSideOf(rows),
-      versions: views.flatMap(({ versions }) => versions),
-      rewrites: views.flatMap(({ rewrites }) => rewrites),
+      versions: views.filter(followsStructure).map(({ source }) => source),
+      rewrites: views.filter((table) => !followsStructure(table)),
       ownerKinds: ['structure', 'views'],
     };
   }
 
-  private viewsOf(pair: TablePair): ViewsOfTable {
+  private tableViewsOf(pair: TablePair): TableViews[] {
     const structureSide = this.sideTakenFor(
       this.lookup.tableUnitOf('structure', pair)?.key,
     );
@@ -147,17 +154,10 @@ class SystemTableTargets {
     const source = this.tables.viewsRowsOf(pair)[viewsSide];
 
     if (!table || !source) {
-      return NO_VIEWS;
+      return [];
     }
 
-    if (viewsSide === structureSide) {
-      return { versions: [source], rewrites: [] };
-    }
-
-    return {
-      versions: [],
-      rewrites: [{ source, tableId: table.id, pair, viewsSide }],
-    };
+    return [{ pair, tableId: table.id, structureSide, viewsSide, source }];
   }
 
   private viewsSideOf(
@@ -207,6 +207,10 @@ function ownersByVersionId(
   }
 
   return owners;
+}
+
+function followsStructure({ structureSide, viewsSide }: TableViews): boolean {
+  return viewsSide === structureSide;
 }
 
 function holdsExactly(rows: readonly Row[], versions: readonly Row[]): boolean {

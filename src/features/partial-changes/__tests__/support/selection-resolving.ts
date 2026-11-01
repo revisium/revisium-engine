@@ -132,7 +132,7 @@ function reasonOf(
   return reason;
 }
 
-function blockerView(
+export function blockerView(
   catalogue: ChangeCatalogue,
   { unitKey, ...blocker }: PlanBlocker,
 ): BlockerView {
@@ -143,7 +143,10 @@ function blockerView(
   return { ...blocker, unit: addressedUnitOf(unitKeyed(catalogue, unitKey)) };
 }
 
-function unitKeyed(catalogue: ChangeCatalogue, key: string): CatalogueUnit {
+export function unitKeyed(
+  catalogue: ChangeCatalogue,
+  key: string,
+): CatalogueUnit {
   const unit = catalogue.units.find((candidate) => candidate.key === key);
 
   if (!unit) {

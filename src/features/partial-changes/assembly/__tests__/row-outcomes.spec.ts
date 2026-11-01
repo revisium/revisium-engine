@@ -408,20 +408,6 @@ describe('TargetAssembler: row outcomes in a table of one structure', () => {
     },
   );
 
-  it.each<{ operation: ChangeOperation; selection: Selection }>([
-    { operation: 'commit', selection: { rows: [product('p3')] } },
-    { operation: 'revert', selection: { rows: [product('p2')] } },
-  ])(
-    'refuses to move a row between structures in a $operation',
-    async ({ operation, selection }) => {
-      const draft = await givenProductsWithStructureChange();
-
-      await expect(draft.assembleTarget(operation, selection)).rejects.toThrow(
-        /between structures/,
-      );
-    },
-  );
-
   async function givenEditedProducts(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: {

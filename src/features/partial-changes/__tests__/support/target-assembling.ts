@@ -7,9 +7,12 @@ import {
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
 import type {
+  AssembledTarget,
+  DeferredValues,
   TablePlan,
   TargetRow,
 } from 'src/features/partial-changes/assembly/target-assembler';
+import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
 import {
   isWholeDraftSelection,
@@ -20,7 +23,13 @@ import type {
   ChangesBranch,
   ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { readResolvedSelection } from './selection-resolving';
+import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
+import {
+  type BlockerView,
+  blockerView,
+  readResolvedSelection,
+  unitKeyed,
+} from './selection-resolving';
 import {
   pairIdsOf,
   readInPlanningTransaction,
@@ -34,7 +43,7 @@ export type RowTargetView = RowPairIds & { readonly target: RowTarget };
 
 export interface TablePlanView {
   readonly outcome: TableOutcome;
-  readonly version: RevisionSide;
+  readonly version?: RevisionSide;
   readonly rows: readonly RowTargetView[];
   readonly removedLinks: readonly string[];
   readonly addedLinks: readonly string[];
@@ -42,8 +51,16 @@ export interface TablePlanView {
   readonly relinkCandidate: boolean;
 }
 
+export interface DeferredView {
+  readonly unit: AddressedUnit;
+  readonly paths: readonly string[];
+  readonly structure: AddressedUnit;
+}
+
 export interface TargetView {
   readonly tableIds: readonly string[];
+  readonly blockers: readonly BlockerView[];
+  readonly deferred: readonly DeferredView[];
   tableOf(tableId: string): TablePlanView | undefined;
 }
 
@@ -59,7 +76,7 @@ export function readAssembledTarget(
       branch,
       selection,
     );
-    const plans = await kit.targetAssembler.assemble(
+    const target = await kit.targetAssembler.assemble(
       { ...compared, catalogue },
       {
         operation,
@@ -68,7 +85,7 @@ export function readAssembledTarget(
       },
     );
 
-    return targetView(compared.snapshot, plans);
+    return targetView(compared.snapshot, catalogue, target);
   });
 }
 
@@ -84,10 +101,11 @@ function appliedUnitsOf(resolution: SelectionResolution): Set<string> {
 
 function targetView(
   snapshot: ChangesSnapshot,
-  plans: readonly TablePlan[],
+  catalogue: ChangeCatalogue,
+  target: AssembledTarget,
 ): TargetView {
   const views = new Map(
-    plans.map((plan) => [
+    target.tables.map((plan) => [
       tableIdOf(snapshot, plan.identity),
       new TablePlanDescription(snapshot, plan).view(),
     ]),
@@ -95,7 +113,22 @@ function targetView(
 
   return {
     tableIds: [...views.keys()].sort(compareCodePoints),
+    blockers: target.blockers.map((blocker) => blockerView(catalogue, blocker)),
+    deferred: target.deferred.map((deferred) =>
+      deferredView(catalogue, deferred),
+    ),
     tableOf: (tableId) => views.get(tableId),
+  };
+}
+
+function deferredView(
+  catalogue: ChangeCatalogue,
+  { unitKey, paths, structureKey }: DeferredValues,
+): DeferredView {
+  return {
+    unit: addressedUnitOf(unitKeyed(catalogue, unitKey)),
+    paths,
+    structure: addressedUnitOf(unitKeyed(catalogue, structureKey)),
   };
 }
 
@@ -124,25 +157,32 @@ class TablePlanDescription {
         ),
       removedLinks: this.versionNamesOf(plan.removedLinks),
       addedLinks: this.versionNamesOf(plan.addedLinks),
-      newRows: plan.newRows,
+      newRows: [...plan.newRows].sort((left, right) =>
+        compareCodePoints(left.id, right.id),
+      ),
       relinkCandidate: plan.relinkCandidate,
     };
   }
 
-  private sideOfLinkedVersion(): RevisionSide {
+  private sideOfLinkedVersion(): RevisionSide | undefined {
+    const { versionId } = this.plan;
     const pair = this.snapshot.tables.find(
       ({ identity }) => identity === this.plan.identity,
     );
 
-    if (pair?.head?.versionId === this.plan.versionId) {
+    if (versionId === undefined) {
+      return undefined;
+    }
+
+    if (pair?.head?.versionId === versionId) {
       return 'head';
     }
 
-    if (pair?.draft?.versionId === this.plan.versionId) {
+    if (pair?.draft?.versionId === versionId) {
       return 'draft';
     }
 
-    throw new Error(`The plan links an unknown version ${this.plan.versionId}`);
+    throw new Error(`The plan links an unknown version ${versionId}`);
   }
 
   private rowView(row: TargetRow): RowTargetView {

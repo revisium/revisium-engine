@@ -1,6 +1,28 @@
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 
 const MS_PER_SECOND = 1000;
+const FAILED_AFTER_REGISTRATION = 'Connection lost after the file registration';
+
+export function failRightAfterFileRegistration(
+  kit: MigrationTestKit,
+  registrationNumber: number,
+): void {
+  const fileUsage = kit.module.get(FileUsageIntegrationService);
+  const register = fileUsage.registerReferencesForRows.bind(fileUsage);
+  let registrations = 0;
+
+  jest
+    .spyOn(fileUsage, 'registerReferencesForRows')
+    .mockImplementation(async (data) => {
+      await register(data);
+      registrations += 1;
+
+      if (registrations === registrationNumber) {
+        throw new Error(FAILED_AFTER_REGISTRATION);
+      }
+    });
+}
 
 export function slowDownFirstBatchTransaction(
   kit: MigrationTestKit,

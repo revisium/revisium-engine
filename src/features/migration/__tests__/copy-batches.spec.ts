@@ -19,15 +19,23 @@ import {
 } from 'src/features/migration/types/migration.types';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 import {
+  failRightAfterFileRegistration,
   recordBatchWriteFailures,
   slowDownFirstBatchTransaction,
 } from './support/batch-faults';
 import {
+  countFileLinks,
   expectRowsToLinkTheirFiles,
   readFileStates,
+  readLinkedFilesOfTableVersion,
   readProjectFileBytes,
   uploadedFileOf,
 } from './support/file-references';
+import {
+  beforeRetry,
+  releaseStartedOwners,
+  startOwnerUntil,
+} from './support/migration-owners';
 import {
   givenDraftOwnedTableWith,
   givenStartedFieldAddition,
@@ -36,7 +44,7 @@ import {
   type DraftOwnedTable,
   type StartedMigration,
 } from './support/migration-scenario';
-import { readDraftTableVersionId } from './support/revision-records';
+import { readDraftTableVersionId, readRows } from './support/revision-records';
 
 const BATCH_SIZE = 5;
 const ROW_COUNT = 3 * BATCH_SIZE;
@@ -138,6 +146,53 @@ describe('Async migration copy batches', () => {
     );
   });
 
+  it('a failure right after a batch registers its files rolls back its checkpoint, shadow rows and blob links together, and the retry copies the batch once', async () => {
+    const table = await givenDraftOwnedTableWith(kit, tableWithFiles());
+    const projectBytes = await readProjectFileBytes(kit, table.projectId);
+    const migration = await startFieldAddition(kit, table, FIELD);
+    failRightAfterFileRegistration(kit, 2);
+
+    const owner = await startOwnerUntil(
+      kit,
+      migration.migrationId,
+      beforeRetry(kit),
+    );
+
+    const { sourceTableVersionId, shadowTableVersionId } =
+      await expectMigrationState(migration, {
+        status: MigrationStatus.COPYING,
+        copiedRows: BATCH_SIZE,
+        lastCopiedRowId: table.rowIds[BATCH_SIZE - 1],
+        currentBatch: 1,
+        retryCount: 0,
+      });
+    const sourceFiles = await readLinkedFilesOfTableVersion(
+      kit,
+      sourceTableVersionId,
+    );
+    await expect(
+      readLinkedFilesOfTableVersion(kit, shadowTableVersionId),
+    ).resolves.toEqual(sourceFiles.slice(0, BATCH_SIZE));
+    await expect(countFileLinks(kit, table.projectId)).resolves.toBe(
+      ROW_COUNT + BATCH_SIZE,
+    );
+    await expect(readProjectFileBytes(kit, table.projectId)).resolves.toBe(
+      projectBytes,
+    );
+
+    await expect(owner.resume()).resolves.toBe('completed');
+
+    const migratedRows = await readRows(kit, table);
+    expect(migratedRows.map((row) => row.id)).toEqual(table.rowIds);
+    await expectRowsToLinkTheirFiles(kit, table, FILE_FIELD);
+    await expect(countFileLinks(kit, table.projectId)).resolves.toBe(
+      2 * ROW_COUNT,
+    );
+    await expect(readProjectFileBytes(kit, table.projectId)).resolves.toBe(
+      projectBytes,
+    );
+  });
+
   describe('the batch transaction', () => {
     it("runs under TRANSACTION_TIMEOUT, not Prisma's 5 s default: a batch slower than it times out and the copy resumes", async () => {
       const migration = await givenStartedFieldAddition(shortTimeoutKit, {
@@ -199,6 +254,7 @@ describe('Async migration copy batches', () => {
   });
 
   afterEach(async () => {
+    await releaseStartedOwners();
     jest.restoreAllMocks();
     await kit.guard.verifyAndForget();
     await synchronousKit.guard.verifyAndForget();
@@ -241,12 +297,14 @@ describe('Async migration copy batches', () => {
   async function expectMigrationState(
     migration: StartedMigration,
     expected: Partial<TableMigration>,
-  ): Promise<void> {
+  ): Promise<TableMigration> {
     const record = await kit.prisma.tableMigration.findUniqueOrThrow({
       where: { id: migration.migrationId },
     });
 
     expect(record).toMatchObject(expected);
+
+    return record;
   }
 });
 

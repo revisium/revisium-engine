@@ -47,6 +47,41 @@ export async function expectRowsToLinkTheirFiles(
   );
 }
 
+export async function readLinkedFilesOfTableVersion(
+  kit: MigrationTestKit,
+  tableVersionId: string | null,
+): Promise<{ rowId: string; files: string[] }[]> {
+  if (!tableVersionId) {
+    return [];
+  }
+
+  const rows = await kit.prisma.row.findMany({
+    where: { tables: { some: { versionId: tableVersionId } } },
+    orderBy: { id: 'asc' },
+    select: {
+      id: true,
+      fileBlobs: { orderBy: { hash: 'asc' }, select: { hash: true } },
+    },
+  });
+
+  return rows.map((row) => ({
+    rowId: row.id,
+    files: row.fileBlobs.map(({ hash }) => hash),
+  }));
+}
+
+export async function countFileLinks(
+  kit: MigrationTestKit,
+  projectId: string,
+): Promise<number> {
+  const blobs = await kit.prisma.fileBlob.findMany({
+    where: { projectId },
+    select: { _count: { select: { rows: true } } },
+  });
+
+  return blobs.reduce((links, blob) => links + blob._count.rows, 0);
+}
+
 export function readProjectFileBytes(
   kit: MigrationTestKit,
   projectId: string,

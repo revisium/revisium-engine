@@ -675,6 +675,38 @@ describe('replayLedger', () => {
       );
     });
 
+    it('makes a renamed table unreplayable when its rename rewrites an unreplayable referrer', () => {
+      const renameCategories = rename('categories', 'groups');
+
+      const replay = replayOf(
+        init('categories', categorySchema),
+        init('products', productSchema),
+        update('products', [removeField('missing')]),
+        renameCategories,
+      );
+
+      expect(unreplayableOf(replay).groups).toEqual(
+        failure(renameCategories, 'Depends on unreplayable table "products"'),
+      );
+      expect(schemasOf(replay)).toEqual({});
+    });
+
+    it('keeps the earlier failure of a renamed table whose rename rewrites an unreplayable referrer', () => {
+      const firstFailure = failingUpdate();
+
+      const replay = replayOf(
+        init('categories', categorySchema),
+        init('products', productSchema),
+        update('products', [removeField('missing')]),
+        firstFailure,
+        rename('categories', 'groups'),
+      );
+
+      expect(unreplayableOf(replay).groups).toEqual(
+        failure(firstFailure, 'Not found "missing" in "/properties"'),
+      );
+    });
+
     it('refuses to remove a table that an unreplayable table still references', () => {
       const failingProductsUpdate = update('products', [
         removeField('missing'),
@@ -715,19 +747,20 @@ describe('replayLedger', () => {
     });
 
     it('rewrites the references of an unreplayable referrer when the table it names is renamed', () => {
-      const removeGroups = remove('groups');
+      const removeRecreatedCategories = remove('categories');
 
       const replay = replayOf(
         init('categories', categorySchema),
         init('products', productSchema),
         update('products', [removeField('missing')]),
         rename('categories', 'groups'),
-        removeGroups,
+        init('categories', tagSchema),
+        removeRecreatedCategories,
       );
 
-      expect(slotOf(replay, removeGroups)?.failure).toEqual(
-        failure(removeGroups, 'Table "groups" is referenced by "products"'),
-      );
+      expect(
+        slotOf(replay, removeRecreatedCategories)?.failure,
+      ).toBeUndefined();
     });
 
     it('refuses a rename into the id of an unreplayable table', () => {

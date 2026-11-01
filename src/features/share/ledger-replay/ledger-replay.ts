@@ -165,21 +165,11 @@ class LedgerReplay {
     this.existingSchema(step.slot, tableId);
     this.ensureValidTableId(nextTableId);
     this.ensureFree(nextTableId, step.displaced);
-    const referrerSchemas = this.referrerSchemasAfterRename(
-      tableId,
-      nextTableId,
-    );
-    const renamedIsTainted = this.isTainted(step.slot);
+    const referrers = this.referrersAfterRename(tableId, nextTableId);
 
-    for (const [referrer, schema] of referrerSchemas) {
-      this.slotSchemaOf(referrer).schema = schema;
-
-      if (renamedIsTainted && referrer !== step.slot) {
-        this.taint(
-          referrer,
-          failureOf(migration, dependsOnUnreplayable(nextTableId)),
-        );
-      }
+    this.taintAcrossRename(migration, step.slot, referrers);
+    for (const { slot, schema } of referrers) {
+      this.slotSchemaOf(slot).schema = schema;
     }
   }
 
@@ -205,6 +195,36 @@ class LedgerReplay {
 
     if (!slotSchema.failure) {
       slotSchema.failure = failure;
+    }
+  }
+
+  private taintAcrossRename(
+    migration: RenameMigration,
+    renamed: TableSlot,
+    referrers: CurrentTable[],
+  ): void {
+    const otherReferrers = referrers.filter(({ slot }) => slot !== renamed);
+    const unreplayableReferrer = otherReferrers.find(({ slot }) =>
+      this.isTainted(slot),
+    );
+
+    if (this.isTainted(renamed)) {
+      for (const { slot } of otherReferrers) {
+        this.taint(
+          slot,
+          failureOf(migration, dependsOnUnreplayable(migration.nextTableId)),
+        );
+      }
+    }
+
+    if (unreplayableReferrer) {
+      this.taint(
+        renamed,
+        failureOf(
+          migration,
+          dependsOnUnreplayable(unreplayableReferrer.tableId),
+        ),
+      );
     }
   }
 
@@ -299,22 +319,20 @@ class LedgerReplay {
     }
   }
 
-  private referrerSchemasAfterRename(
+  private referrersAfterRename(
     tableId: string,
     nextTableId: string,
-  ): Map<TableSlot, JsonSchema> {
-    const referrerSchemas = new Map<TableSlot, JsonSchema>();
-
-    for (const { slot, schema } of this.currentTables()) {
-      if (this.references(schema, tableId)) {
-        referrerSchemas.set(
-          slot,
-          this.rules.renamedForeignKeys(schema, tableId, nextTableId),
-        );
-      }
-    }
-
-    return referrerSchemas;
+  ): CurrentTable[] {
+    return this.currentTables()
+      .filter(({ schema }) => this.references(schema, tableId))
+      .map((referrer) => ({
+        ...referrer,
+        schema: this.rules.renamedForeignKeys(
+          referrer.schema,
+          tableId,
+          nextTableId,
+        ),
+      }));
   }
 
   private references(schema: JsonSchema, tableId: string): boolean {

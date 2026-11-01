@@ -1,16 +1,9 @@
 import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import type { RepairOutcome } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import {
-  hasIntactPublishedPrefix,
   type LedgerEntry,
   ledgerOf,
-  splitLedger,
 } from 'src/features/share/ledger/migration-ledger';
-import {
-  type AttributedSlot,
-  attributePendingLedger,
-} from 'src/features/share/ledger/pending-attribution';
-import { pendingSchemaHistory } from 'src/features/share/ledger/schema-history';
 import {
   type LedgerReplayInput,
   replayLedger,
@@ -18,6 +11,7 @@ import {
 } from 'src/features/share/ledger-replay/ledger-replay';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
+import { DraftLedger } from './draft-ledger';
 import { lastPublishedBoundsOf, type MigrationBounds } from './repair-ids';
 import type { RepairState, RevisionLedger } from './repair-state-reader';
 
@@ -48,7 +42,7 @@ export class RepairLedger {
   public readonly baselineFailures: ReadonlySet<string>;
   private readonly headReplay: ReplayedLedger;
   private readonly headSchemaBaseline: ReplayedLedger;
-  private readonly attributedSlots: readonly AttributedSlot[];
+  private readonly draftLedger: DraftLedger;
   private readonly consistent: boolean;
 
   constructor(
@@ -56,13 +50,10 @@ export class RepairLedger {
     public readonly rules: ReplayRules,
     storedReplays: StoredLedgerReplays,
   ) {
-    const { published, pending } = splitLedger(
-      state.head.migrationRows,
-      state.draft.migrationRows,
-    );
-    this.published = migrationsOf(published);
-    this.pending = migrationsOf(pending);
-    this.lastPublished = lastPublishedBoundsOf(published);
+    this.draftLedger = new DraftLedger(state);
+    this.published = migrationsOf(this.draftLedger.published);
+    this.pending = migrationsOf(this.draftLedger.pending);
+    this.lastPublished = lastPublishedBoundsOf(this.draftLedger.published);
     this.headReplay = storedReplays.head;
     this.damagedTableIds = [...state.head.tableVersionIds.keys()].filter(
       (tableId) =>
@@ -78,21 +69,7 @@ export class RepairLedger {
       storedReplays.draft,
     );
     this.baselineFailures = failingMigrationIdsOf(storedReplays.draft);
-    this.attributedSlots = attributePendingLedger(
-      this.pending,
-      state.head.tableVersionIds.keys(),
-      state.draft.tableVersionIds,
-    );
-    this.consistent =
-      hasIntactPublishedPrefix(
-        state.head.migrationRows,
-        state.draft.migrationRows,
-      ) &&
-      this.attributedSlots.every(
-        (attributed) =>
-          attributed.owner.kind !== 'none' &&
-          this.continuesHeadHistory(attributed),
-      );
+    this.consistent = this.draftLedger.isConsistent();
   }
 
   public replay(ledger: readonly Migration[]): ReplayedLedger {
@@ -108,7 +85,7 @@ export class RepairLedger {
       return { outcome: 'ledgerDoesNotReplay' };
     }
 
-    const draftTableId = this.draftTableIdOf(tableId);
+    const draftTableId = this.draftLedger.draftTableIdOf(tableId);
 
     if (this.replaysToHeadSchema(tableId)) {
       return { outcome: this.draftDamageOf(draftTableId) };
@@ -133,14 +110,7 @@ export class RepairLedger {
     replay: ReplayedLedger,
     draftTableId: string,
   ): boolean {
-    const replayed = replay.schemas.get(draftTableId);
-    const stored = this.state.draft.schemas.get(draftTableId);
-
-    return (
-      replayed !== undefined &&
-      stored !== undefined &&
-      schemasEqual(replayed, stored.schema)
-    );
+    return this.draftLedger.reproducesDraftSchema(replay, draftTableId);
   }
 
   private replaysToHeadSchema(tableId: string): boolean {
@@ -181,33 +151,12 @@ export class RepairLedger {
     return NEEDS_DRAFT_STRUCTURE_REVERT;
   }
 
-  private draftTableIdOf(headTableId: string): string | undefined {
-    const attributed = this.attributedSlots.find(
-      ({ slot }) => slot.startingTableId === headTableId,
-    );
-
-    return attributed?.slot.currentTableId;
-  }
-
   private draftTablesReproducedBy(replay: ReplayedLedger): Set<string> {
     const tableIds = [...this.state.draft.tableVersionIds.keys()];
 
     return new Set(
       tableIds.filter((tableId) => this.reproducesDraftSchema(replay, tableId)),
     );
-  }
-
-  private continuesHeadHistory({ slot, owner }: AttributedSlot): boolean {
-    if (owner.kind !== 'headTable' || slot.currentTableId === undefined) {
-      return true;
-    }
-
-    const headHistory =
-      this.state.head.schemas.get(owner.tableId)?.history ?? [];
-    const draftHistory =
-      this.state.draft.schemas.get(slot.currentTableId)?.history ?? headHistory;
-
-    return pendingSchemaHistory(headHistory, draftHistory).extendsHead;
   }
 }
 

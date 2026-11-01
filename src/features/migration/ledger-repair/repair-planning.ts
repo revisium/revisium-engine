@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type {
   InvalidRows,
+  PlannedTableRepair,
   SchemaLedgerRepairPlan,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
@@ -23,6 +24,11 @@ import type { RepairState } from './repair-state-reader';
 export interface RepairPlanningOptions {
   readonly tableIds?: readonly string[];
   readonly storedReplays?: Partial<StoredLedgerReplays>;
+}
+
+export interface PlannedRepair {
+  readonly state: RepairState;
+  readonly plan: SchemaLedgerRepairPlan;
 }
 
 @Injectable()
@@ -83,6 +89,12 @@ export class RepairPlanning {
 
     return validatedRows;
   }
+}
+
+export function repairedTablesOf(
+  plan: SchemaLedgerRepairPlan,
+): PlannedTableRepair[] {
+  return plan.tables.filter(({ outcome }) => outcome === 'repaired');
 }
 
 function requestedTableIdsOf(

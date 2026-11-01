@@ -12,10 +12,7 @@ import {
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import type { RepairOutcome } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type { InputJsonValue } from 'src/engine-prisma-types';
-import {
-  ChangesScenario,
-  type TableFixture,
-} from 'src/features/partial-changes/__tests__/support/changes-scenario';
+import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 import {
   completeAsyncMigrationInPlace,
   describedLedgerOf,
@@ -31,68 +28,58 @@ import {
   branchContentsOf,
   expectStrictlyAscending,
   givenActiveMigration,
-  importMigrations,
   migratedRowOf,
-  initAt,
   lastPublishedMigrationId,
   pendingMigrationIds,
   planRepair,
   repairOf,
   writeRowWithoutValidation,
 } from './support/ledger-repair-planning';
+import {
+  addColor,
+  addTone,
+  ALPHAS,
+  BETAS,
+  CATEGORIES,
+  categories,
+  COLOR,
+  givenCatalogWithTags,
+  givenCommittedCatalog,
+  givenPublishedInPlaceMigration,
+  givenReciprocalDamage,
+  givenTwoDamagedTablesAfterFuturePublication,
+  givenUnpublishedInPlaceMigration,
+  NOTES,
+  noteSchema,
+  PRODUCTS,
+  productSchema,
+  TAGS,
+  tags,
+  tagSchema,
+  TONE,
+} from './support/ledger-damage';
 
-const CATEGORIES = 'categories';
-const PRODUCTS = 'products';
 const GOODS = 'goods';
-const TAGS = 'tags';
 const LABELS = 'labels';
-const NOTES = 'notes';
 const CARDS = 'cards';
 const INVOICES = 'invoices';
-const ALPHAS = 'alphas';
-const BETAS = 'betas';
 const TEXT = 'text';
 const BODY = 'body';
-const COLOR = 'color';
 const SHADE = 'shade';
-const TONE = 'tone';
 const HUE = 'hue';
-const FUTURE_MIGRATION_ID = '2999-01-01T00:00:00.000Z';
 
-const categorySchema = obj({ title: str() });
-const productSchema = obj({
-  code: str(),
-  category: str({ foreignKey: CATEGORIES }),
-});
-const tagSchema = obj({ label: str() });
 const cardSchema = obj({ title: str(), tag: str({ foreignKey: TAGS }) });
 const describedNoteSchema = { ...obj({ text: str() }), description: 'notes' };
 const describedAddressSchema = {
   ...obj({ city: str() }),
   description: 'where',
 };
-const noteSchema = obj({ [TEXT]: str() });
 const taggedNoteSchema = obj({
   text: str(),
   tags: arr(str({ foreignKey: TAGS })),
 });
 
-const categories: TableFixture = {
-  schema: categorySchema,
-  rows: { c1: { title: 'first' } },
-};
-const products: TableFixture = {
-  schema: productSchema,
-  rows: {
-    p1: { code: 'one', category: 'c1' },
-    p2: { code: 'two', category: 'c1' },
-  },
-};
-const tags: TableFixture = { schema: tagSchema, rows: { t1: { label: 'x' } } };
-
-const addColor = [addField(COLOR, str())];
 const addTagReference = [addField('tag', str({ foreignKey: TAGS }))];
-const addTone = [addField(TONE, str())];
 const addNote = [addField('note', str())];
 
 interface UnrepairableCase {
@@ -145,7 +132,7 @@ describe('Schema ledger repair planning', () => {
 
   describe('a damaged Head table', () => {
     it('plans the repair of an unpublished async migration right after the last published migration and renumbers the pending migrations after it', async () => {
-      const draft = await givenUnpublishedInPlaceMigration();
+      const draft = await givenUnpublishedInPlaceMigration(kit);
       await draft.updateTable(CATEGORIES, addNote);
       const lastPublishedId = await lastPublishedMigrationId(draft);
       const [pendingId] = await pendingMigrationIds(draft);
@@ -172,7 +159,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('plans the repair of a published async migration before the pending rename of the field it added', async () => {
-      const draft = await givenPublishedInPlaceMigration();
+      const draft = await givenPublishedInPlaceMigration(kit);
       await draft.updateTable(PRODUCTS, [moveField(COLOR, SHADE)]);
       const [pendingId] = await pendingMigrationIds(draft);
 
@@ -210,7 +197,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('plans the repair of a table renamed through recorded migrations', async () => {
-      const draft = await givenCommittedCatalog();
+      const draft = await givenCommittedCatalog(kit);
       await draft.renameTable(PRODUCTS, GOODS);
       await draft.commit();
       await completeAsyncMigrationInPlace(kit, draft, GOODS, addColor);
@@ -297,7 +284,7 @@ describe('Schema ledger repair planning', () => {
     );
 
     it('finds a Draft that already records the repair', async () => {
-      const draft = await givenUnpublishedInPlaceMigration();
+      const draft = await givenUnpublishedInPlaceMigration(kit);
       await recordLedgerRepair(draft, PRODUCTS, addColor);
 
       const plan = await planRepair(kit, draft, [PRODUCTS]);
@@ -414,7 +401,7 @@ describe('Schema ledger repair planning', () => {
     );
 
     it('refuses the repair of a Draft that lacks a published migration', async () => {
-      const draft = await givenUnpublishedInPlaceMigration();
+      const draft = await givenUnpublishedInPlaceMigration(kit);
       await draft.dropFromDraftLedger('init', CATEGORIES);
 
       const plan = await planRepair(kit, draft, [PRODUCTS]);
@@ -429,7 +416,7 @@ describe('Schema ledger repair planning', () => {
     it.each<UnrepairableCase>([
       {
         table: 'an undamaged table',
-        given: givenCommittedCatalog,
+        given: () => givenCommittedCatalog(kit),
         tableId: CATEGORIES,
         outcome: 'notDamaged',
       },
@@ -471,7 +458,7 @@ describe('Schema ledger repair planning', () => {
 
   describe('several damaged tables', () => {
     it('numbers two independent repairs consecutively after a published timestamp ahead of the clock and renumbers the pending migrations once', async () => {
-      const draft = await givenTwoDamagedTablesAfterFuturePublication();
+      const draft = await givenTwoDamagedTablesAfterFuturePublication(kit);
       await draft.updateTable(CATEGORIES, addNote);
 
       const plan = await planRepair(kit, draft, [PRODUCTS, TAGS]);
@@ -501,7 +488,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('accepts the repairs of two tables that reference each other together', async () => {
-      const draft = await givenReciprocalDamage();
+      const draft = await givenReciprocalDamage(kit);
 
       const plan = await planRepair(kit, draft, [ALPHAS, BETAS]);
 
@@ -515,7 +502,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('blocks the repair of a table whose coupled damaged table is not requested', async () => {
-      const draft = await givenReciprocalDamage();
+      const draft = await givenReciprocalDamage(kit);
 
       const plan = await planRepair(kit, draft, [ALPHAS]);
 
@@ -526,7 +513,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('repairs a table while an unrelated damaged table keeps failing and only has its pending migrations renumbered', async () => {
-      const draft = await givenCatalogWithTags();
+      const draft = await givenCatalogWithTags(kit);
       await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
       await completeAsyncMigrationInPlace(kit, draft, TAGS, addTone);
       await draft.updateTable(TAGS, [moveField(TONE, HUE)]);
@@ -564,7 +551,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('plans every damaged Head table when no table is named', async () => {
-      const draft = await givenUnpublishedInPlaceMigration();
+      const draft = await givenUnpublishedInPlaceMigration(kit);
       await recordLedgerRepair(draft, PRODUCTS, addColor);
 
       const plan = await planRepair(kit, draft);
@@ -577,7 +564,7 @@ describe('Schema ledger repair planning', () => {
 
   describe('planning', () => {
     it('writes nothing', async () => {
-      const draft = await givenUnpublishedInPlaceMigration();
+      const draft = await givenUnpublishedInPlaceMigration(kit);
       await draft.updateTable(CATEGORIES, addNote);
       const before = await branchContentsOf(kit, draft);
 
@@ -588,7 +575,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('fingerprints the rows it validated and the rows their foreign keys consulted', async () => {
-      const draft = await givenUnpublishedInPlaceMigration();
+      const draft = await givenUnpublishedInPlaceMigration(kit);
       const first = await planRepair(kit, draft, [PRODUCTS]);
       await writeRowWithoutValidation(kit, draft, PRODUCTS, 'p2', {
         code: 'changed',
@@ -669,7 +656,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('refuses to plan while an async migration is active on the branch', async () => {
-      const draft = await givenUnpublishedInPlaceMigration();
+      const draft = await givenUnpublishedInPlaceMigration(kit);
       await givenActiveMigration(kit, draft, CATEGORIES);
 
       await expect(planRepair(kit, draft, [PRODUCTS])).rejects.toThrow(
@@ -678,7 +665,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('rejects a table id that the Head does not have', async () => {
-      const draft = await givenCommittedCatalog();
+      const draft = await givenCommittedCatalog(kit);
 
       await expect(planRepair(kit, draft, ['missing'])).rejects.toThrow(
         new BadRequestException('Unknown Head table "missing"'),
@@ -686,23 +673,8 @@ describe('Schema ledger repair planning', () => {
     });
   });
 
-  function givenCommittedCatalog(): Promise<ChangesScenario> {
-    return ChangesScenario.committed(kit, {
-      [CATEGORIES]: categories,
-      [PRODUCTS]: products,
-    });
-  }
-
-  function givenCatalogWithTags(): Promise<ChangesScenario> {
-    return ChangesScenario.committed(kit, {
-      [CATEGORIES]: categories,
-      [PRODUCTS]: products,
-      [TAGS]: tags,
-    });
-  }
-
   async function givenDamageBesideTags(): Promise<ChangesScenario> {
-    const draft = await givenCatalogWithTags();
+    const draft = await givenCatalogWithTags(kit);
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
 
     return draft;
@@ -753,29 +725,15 @@ describe('Schema ledger repair planning', () => {
     return draft;
   }
 
-  async function givenUnpublishedInPlaceMigration(): Promise<ChangesScenario> {
-    const draft = await givenCommittedCatalog();
-    await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
-
-    return draft;
-  }
-
-  async function givenPublishedInPlaceMigration(): Promise<ChangesScenario> {
-    const draft = await givenUnpublishedInPlaceMigration();
-    await draft.commit();
-
-    return draft;
-  }
-
   async function givenRevertedInPlaceMigration(): Promise<ChangesScenario> {
-    const draft = await givenUnpublishedInPlaceMigration();
+    const draft = await givenUnpublishedInPlaceMigration(kit);
     await draft.revertNatively();
 
     return draft;
   }
 
   async function givenRowReferencingMissingCategory(): Promise<ChangesScenario> {
-    const draft = await givenUnpublishedInPlaceMigration();
+    const draft = await givenUnpublishedInPlaceMigration(kit);
     await writeRowWithoutValidation(kit, draft, PRODUCTS, 'p1', {
       code: 'one',
       category: 'missing',
@@ -786,7 +744,7 @@ describe('Schema ledger repair planning', () => {
   }
 
   async function givenDraftOnlyDamage(): Promise<ChangesScenario> {
-    const draft = await givenCommittedCatalog();
+    const draft = await givenCommittedCatalog(kit);
     await draft.updateTable(PRODUCTS, [addField('weight', num())]);
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
 
@@ -794,7 +752,7 @@ describe('Schema ledger repair planning', () => {
   }
 
   async function givenUnreplayableHeadLedger(): Promise<ChangesScenario> {
-    const draft = await givenCommittedCatalog();
+    const draft = await givenCommittedCatalog(kit);
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
     await draft.commit();
     await draft.updateTable(PRODUCTS, [moveField(COLOR, SHADE)]);
@@ -819,7 +777,7 @@ describe('Schema ledger repair planning', () => {
   }
 
   async function givenHeadTableRecreatedWithoutRecord(): Promise<ChangesScenario> {
-    const draft = await givenCommittedCatalog();
+    const draft = await givenCommittedCatalog(kit);
     await draft.removeTable(PRODUCTS);
     await draft.dropFromDraftLedger('remove', PRODUCTS);
     await draft.commit();
@@ -833,48 +791,7 @@ describe('Schema ledger repair planning', () => {
 
     return draft;
   }
-
-  async function givenTwoDamagedTablesAfterFuturePublication(): Promise<ChangesScenario> {
-    const draft = await givenCatalogWithTags();
-    await importMigrations(kit, draft, [
-      initAt(FUTURE_MIGRATION_ID, NOTES, noteSchema),
-    ]);
-    await draft.commit();
-    await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
-    await completeAsyncMigrationInPlace(kit, draft, TAGS, addTone);
-
-    return draft;
-  }
-
-  async function givenReciprocalDamage(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
-      [ALPHAS]: { schema: obj({ title: str() }) },
-      [BETAS]: {
-        schema: obj({ title: str(), alpha: str({ foreignKey: ALPHAS }) }),
-      },
-    });
-    await draft.updateTable(ALPHAS, [
-      addField('beta', str({ foreignKey: BETAS })),
-    ]);
-    await draft.commit();
-    await completeAsyncMigrationInPlace(kit, draft, ALPHAS, noteField('alpha'));
-    await completeAsyncMigrationInPlace(kit, draft, BETAS, noteField('beta'));
-    await draft.updateTable(ALPHAS, renamedNoteField('alpha'));
-    await draft.updateTable(BETAS, renamedNoteField('beta'));
-    await draft.renameTable(ALPHAS, 'firsts');
-    await draft.renameTable(BETAS, 'seconds');
-
-    return draft;
-  }
 });
-
-function noteField(prefix: string): JsonPatch[] {
-  return [addField(`${prefix}Note`, str())];
-}
-
-function renamedNoteField(prefix: string): JsonPatch[] {
-  return [moveField(`${prefix}Note`, `${prefix}Remark`)];
-}
 
 function keepTagsHistory(): Promise<void> {
   return Promise.resolve();

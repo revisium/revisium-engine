@@ -345,7 +345,7 @@ the same id, which joins it. Updates below the threshold apply synchronously, as
 The old swap rewrote schema rows in place without recording a migration, so a Head table can have a schema row that its
 Head ledger does not reproduce. `MigrationApiService.planSchemaLedgerRepair({ projectId, branchName, tableIds? })` plans
 the forward-only repair ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger))
-and writes nothing; the write step and the engine facade method come later. It reads one `READ ONLY` RepeatableRead
+and writes nothing; `repairSchemaLedger` writes it (see the next section). It reads one `READ ONLY` RepeatableRead
 snapshot, fails with `MIGRATION_LOCKED` while an async migration is active in the Draft, and gives each requested Head
 table (without `tableIds`, each Head table whose ledger does not reproduce its schema row) the first matching outcome:
 
@@ -379,6 +379,43 @@ of one reads the other: a foreign key it names, a removal refused while referenc
 and planning repeats with the rest. The plan carries a fingerprint of what it validated: per validated Draft table
 version its row count and a digest of row version ids and hashes, and per table version that a foreign key of a
 validated row references a digest of its row ids.
+
+### How is the schema ledger repaired?
+
+`repairSchemaLedger({ projectId, branchName, tableIds?, dryRun? })` on the engine facade (and `MigrationApiService`)
+writes the planned repair into the Draft
+([async-row-migration-v2 §6.4](specs/async-row-migration-v2.spec.md#64-writing-verification-and-concurrency)); the
+host exposes it to administrators. It returns `{ headRevisionId, draftRevisionId, dryRun, tables, renumbered }`: the
+planned table entries and renumbering of the previous section, or `stale` for every planned table when the Draft
+changed before the write. Errors are those of planning: unknown project or branch, an unknown Head table id,
+`MIGRATION_LOCKED` before any work.
+
+1. **Plan** in one `READ ONLY` RepeatableRead snapshot, as `planSchemaLedgerRepair`. `dryRun: true` returns that plan
+   and writes nothing; so does a plan without a `repaired` table.
+2. **Admit** the write in one Serializable transaction of the native runner: the branch write fence shared, then the
+   migration-lock check (an async migration started after planning fails the call with `MIGRATION_LOCKED`).
+3. **Re-check freshness** in that transaction: the Head and Draft ids, their user table version ids, schema rows
+   (schema and history) and migration rows must equal what planning read, and the validation fingerprint, recomputed
+   in SQL, must equal the plan's. Any difference (a row written below native validation, a native row or schema
+   change, a commit, a revert, another repair) gives `stale` for every table and writes nothing; rerun the repair.
+   Rows are not validated again: the fingerprint proves the validated rows unchanged.
+4. **Write** through the draft-revision writers, which copy a migration table or schema row the Draft shares with the
+   Head before changing it: the renumbered pending migration rows are replaced by new rows under their new ids (`id`,
+   `data.id` and `publishedAt` together; other columns kept); each repair becomes an `update` migration row
+   `{ changeType: 'update', tableId, id, hash, patches }` with `publishedAt` at its id and `hash` of the Head schema
+   row; the Draft schema row of each repaired table (followed through pending renames) keeps its schema and gets as
+   history the Head history, then the repair entry, then the pending entries. The Draft gets `hasChanges`; the views
+   row is not touched.
+5. **Verify** the stored Draft ledger in the same transaction: the published prefix equals the Head's, every pending
+   migration is attributable, the ids increase with the pending ones after the published ones, every Draft schema
+   history extends its Head history, and the replayed Draft ledger reproduces the Draft schema of each repaired table.
+   A failure is a defect: the transaction rolls back and the call fails.
+6. **Notify** the Draft endpoints after the commit.
+
+A serialization failure retries the transaction from step 2, so of two concurrent repairs one writes and the other
+finds its plan stale. A second run plans `alreadyRepaired`; once a native or `{ all: true }` commit publishes the
+repair, `notDamaged`. Head-synced replicas apply the published repair like any `update` and lose the values of
+`removedPaths`.
 
 ### How does the schema ledger scan report damage?
 
@@ -613,11 +650,14 @@ src/features/migration/
   ledger-repair/                   Repair planning: snapshot reader, ledger baselines and outcomes, repair patch,
                                    repair ids and renumbering, combined verification, Draft row validation and
                                    fingerprint; RepairPlanning plans a snapshot that its caller has read, on the
-                                   caller's replays of the stored ledgers when it passes them
+                                   caller's replays of the stored ledgers when it passes them. Repair write: freshness
+                                   re-check, writer through the draft-revision writers, stored-ledger verification;
+                                   DraftLedger attributes pending migrations for planning, writing and verification
   ledger-scan/                     Detection scan: request and cursor, branch pages, revision reader, per-call caches,
                                    schema checks and finding classification per role
   migration-payload.ts             Payload envelope encoder and decoder
-  commands/                        StartAsyncMigration (admission, validation, record, trigger), AbortMigration
+  commands/                        StartAsyncMigration (admission, validation, record, trigger), AbortMigration,
+                                   RepairSchemaLedger (plan, admitted write, notification)
   queries/                         GetMigrationStatus, GetActiveMigrations, PlanSchemaLedgerRepair, ScanSchemaLedger
 ```
 

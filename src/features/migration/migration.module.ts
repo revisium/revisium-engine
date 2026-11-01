@@ -4,6 +4,8 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
+import { DraftModule } from 'src/features/draft/draft.module';
+import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { MigrationWorkerService } from 'src/features/migration/services/migration-worker.service';
@@ -20,6 +22,9 @@ import { MigrationApiService } from 'src/features/migration/migration-api.servic
 import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-state-reader';
 import { DraftRowsValidation } from 'src/features/migration/ledger-repair/draft-rows-validation';
 import { RepairPlanning } from 'src/features/migration/ledger-repair/repair-planning';
+import { RepairFreshness } from 'src/features/migration/ledger-repair/repair-freshness';
+import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
+import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
 import { BranchPageReader } from 'src/features/migration/ledger-scan/branch-page-reader';
 import { ScanRevisionReader } from 'src/features/migration/ledger-scan/scan-revision-reader';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
@@ -44,6 +49,9 @@ const SERVICES = [
   RepairStateReader,
   DraftRowsValidation,
   RepairPlanning,
+  RepairFreshness,
+  RepairWriter,
+  StoredLedgerVerification,
   BranchPageReader,
   ScanRevisionReader,
   ...MIGRATION_QUERY_HANDLERS,
@@ -69,6 +77,8 @@ export class MigrationModule {
         ShareModule,
         PluginModule,
         FileUsageModule,
+        DraftRevisionModule,
+        DraftModule,
       ],
       providers: [
         {

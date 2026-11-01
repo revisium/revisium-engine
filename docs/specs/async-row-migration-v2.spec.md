@@ -395,8 +395,9 @@ changes.
 | `tableIds` | string[], optional | Head table ids; omitted → every Head table that fails (b). |
 | `dryRun` | boolean, default `false` | Planning only (§6.3). |
 
-Output `{ headRevisionId, draftRevisionId, dryRun, tables }`; each table entry is
-`{ tableId, outcome, migrationId?, patches?, removedPaths?, renumbered?, invalidRows?, blockedBy? }`. Errors: unknown
+Output `{ headRevisionId, draftRevisionId, dryRun, tables, renumbered }`; each table entry is
+`{ tableId, outcome, migrationId?, patches?, removedPaths?, invalidRows?, blockedBy? }`; `renumbered` lists every
+pending migration the plan renumbers, branch-wide (§6.3 step 4), including those of tables not requested. Errors: unknown
 project or branch → not found; an unknown table id → validation error; an active async migration on the branch →
 `MigrationLockedException` before any work.
 
@@ -732,5 +733,9 @@ still rewrite committed rows during the scan.
   synchronous validation and file references; `applyMigrations` drives and observes; payload envelope, no schema change.
 - New `scanSchemaLedger` and `repairSchemaLedger` (ledger only); backfill and row remediation decided with scan results.
 - Not carried over from v1: SSE, Redis, REST and GraphQL contracts, events and per-migration options (host concerns).
+
+### Version 2.1 (2026-11-01)
+
+- `repairSchemaLedger` returns `renumbered` once for the branch instead of per table entry (§6.1).
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

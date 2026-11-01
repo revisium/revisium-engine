@@ -1,11 +1,12 @@
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { num, obj, ref, str } from '@revisium/schema-toolkit/mocks';
+import objectHash from 'object-hash';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { countSqlStatements } from 'src/__tests__/utils/sql-statements';
-import type { JsonValue, Row } from 'src/engine-prisma-types';
+import { type JsonValue, type Row, sql } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
@@ -25,6 +26,11 @@ const GOODS = 'goods';
 const CATEGORIES = 'categories';
 const TAGS = 'tags';
 const DOCUMENTS = 'documents';
+
+const LARGE_TABLE_ROW_COUNT = 5_000;
+const CHANGED_ROW_IDS = ['r1', 'r2', 'r3'];
+const ROW_READS_PER_CHANGED_ROW = 10;
+const LARGE_TABLE_TIMEOUT_MS = 120_000;
 
 const productSchema = obj({ code: str(), price: num() });
 const categorySchema = obj({ title: str() });
@@ -188,6 +194,61 @@ describe('DraftRevisionCommitToTargetHandler', () => {
         p3: head.p3,
       });
       expect(await draft.tableVersionId('draft', GOODS)).toBe(draftVersionId);
+    });
+    it('locks only the Draft rows the new Head version takes when the structure side is Head', async () => {
+      const draft = await givenDraftWithEditedPrices();
+      const drafted = await rowVersionsOf(draft, 'draft', PRODUCTS);
+      const draftVersionId = await draft.tableVersionId('draft', PRODUCTS);
+      const flags = await readonlyFlagsOfBranch(draft);
+
+      await commitTo(draft, mixedProducts());
+
+      expect(await lockedSince(flags)).toEqual({
+        tables: [],
+        rows: [drafted.p1, drafted.p4].sort(),
+      });
+      expect(await draft.tableVersionId('draft', PRODUCTS)).toBe(
+        draftVersionId,
+      );
+      expect(await tableVersion(draftVersionId)).toMatchObject({
+        readonly: false,
+      });
+      expect(await draft.row('draft', PRODUCTS, 'p2')).toMatchObject({
+        versionId: drafted.p2,
+        readonly: false,
+      });
+    });
+
+    it('locks only the Draft rows the new Head version keeps when the structure side is the Draft', async () => {
+      const draft = await givenDraftWithEditedPrices();
+      await draft.renameTable(PRODUCTS, GOODS);
+      const drafted = await rowVersionsOf(draft, 'draft', GOODS);
+      const draftVersionId = await draft.tableVersionId('draft', GOODS);
+      const flags = await readonlyFlagsOfBranch(draft);
+
+      await commitTo(draft, {
+        tableId: GOODS,
+        outcome: 'mixed',
+        structureSide: 'draft',
+        rows: { otherSide: ['p2'], absent: ['p4'] },
+      });
+
+      expect(await lockedSince(flags)).toEqual({
+        tables: [],
+        rows: [drafted.p1],
+      });
+      expect(await draft.tableVersionId('draft', GOODS)).toBe(draftVersionId);
+      expect(await tableVersion(draftVersionId)).toMatchObject({
+        readonly: false,
+      });
+      expect(await draft.row('draft', GOODS, 'p2')).toMatchObject({
+        versionId: drafted.p2,
+        readonly: false,
+      });
+      expect(await draft.row('draft', GOODS, 'p4')).toMatchObject({
+        versionId: drafted.p4,
+        readonly: false,
+      });
     });
   });
 
@@ -400,6 +461,23 @@ describe('DraftRevisionCommitToTargetHandler', () => {
         ),
       ).toEqual([]);
     });
+
+    it(
+      'reads and updates only the changed rows when a large Draft table version is linked into Head',
+      async () => {
+        const draft = await givenDraftChangingRowsOfLargeTable();
+        const target = new CommitTarget(kit, draft);
+        const plan = await target.plan({ tableId: PRODUCTS, outcome: 'other' });
+
+        const work = await target.rowTableWorkOf(plan);
+
+        expect(work.rowsUpdated).toBe(CHANGED_ROW_IDS.length);
+        expect(work.rowsRead).toBeLessThanOrEqual(
+          ROW_READS_PER_CHANGED_ROW * CHANGED_ROW_IDS.length,
+        );
+      },
+      LARGE_TABLE_TIMEOUT_MS,
+    );
   });
 
   describe('file references', () => {
@@ -708,6 +786,62 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     return draft;
   }
 
+  async function givenDraftChangingRowsOfLargeTable(): Promise<ChangesScenario> {
+    const draft = await givenCommittedLargeProducts();
+
+    for (const rowId of CHANGED_ROW_IDS) {
+      await draft.updateRow(PRODUCTS, rowId, { code: rowId, price: 2 });
+    }
+
+    return draft;
+  }
+
+  async function givenCommittedLargeProducts(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { r0: { code: 'r0', price: 1 } },
+      },
+    });
+    await draft.updateRow(PRODUCTS, 'r0', { code: 'r0', price: 0 });
+    await insertDraftProductsInBulk(
+      draft,
+      Array.from(
+        { length: LARGE_TABLE_ROW_COUNT - 1 },
+        (_, index) => `r${index + 1}`,
+      ),
+    );
+    await draft.commit();
+
+    return draft;
+  }
+
+  // Native row writers validate row by row and exceed their transaction timeout at 5,000 rows.
+  async function insertDraftProductsInBulk(
+    draft: ChangesScenario,
+    rowIds: readonly string[],
+  ): Promise<void> {
+    const tableVersionId = await draft.tableVersionId('draft', PRODUCTS);
+    const { schemaHash } = await draft.row('draft', PRODUCTS, 'r0');
+    const rows = rowIds.map((rowId) => ({ code: rowId, price: 1 }));
+
+    await kit.prisma.$executeRaw(sql`
+      WITH inserted AS (
+        INSERT INTO "Row" ("versionId", "createdId", "id", "data", "hash", "schemaHash")
+        SELECT gen_random_uuid()::text, gen_random_uuid()::text, v."id", v."data"::jsonb,
+               v."hash", ${schemaHash}
+        FROM unnest(
+          ${[...rowIds]}::text[],
+          ${rows.map((row) => JSON.stringify(row))}::text[],
+          ${rows.map((row) => objectHash(row))}::text[]
+        ) AS v("id", "data", "hash")
+        RETURNING "versionId"
+      )
+      INSERT INTO "_RowToTable" ("A", "B")
+      SELECT "versionId", ${tableVersionId} FROM inserted
+    `);
+  }
+
   async function givenDraftWithPendingMigrations(): Promise<ChangesScenario> {
     const draft = await givenCommittedProducts();
     await draft.updateTable(PRODUCTS, [addField('stock', num())]);
@@ -813,6 +947,44 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     });
   }
 
+  async function readonlyFlagsOfBranch(
+    draft: ChangesScenario,
+  ): Promise<ReadonlyFlags> {
+    const tables = await kit.prisma.table.findMany({
+      where: { revisions: { some: { branchId: draft.branchId } } },
+      select: {
+        versionId: true,
+        readonly: true,
+        rows: { select: { versionId: true, readonly: true } },
+      },
+    });
+
+    return {
+      tables: new Map(tables.map((table) => [table.versionId, table.readonly])),
+      rows: new Map(
+        tables.flatMap((table) =>
+          table.rows.map((row) => [row.versionId, row.readonly] as const),
+        ),
+      ),
+    };
+  }
+
+  async function lockedSince(before: ReadonlyFlags): Promise<LockedVersions> {
+    const tables = await kit.prisma.table.findMany({
+      where: { versionId: { in: [...before.tables.keys()] }, readonly: true },
+      select: { versionId: true },
+    });
+    const rows = await kit.prisma.row.findMany({
+      where: { versionId: { in: [...before.rows.keys()] }, readonly: true },
+      select: { versionId: true },
+    });
+
+    return {
+      tables: previouslyMutable(before.tables, tables),
+      rows: previouslyMutable(before.rows, rows),
+    };
+  }
+
   async function tableVersionsLinkedBy(revisionId: string): Promise<string[]> {
     const tables = await kit.prisma.table.findMany({
       where: { revisions: { some: { id: revisionId } } },
@@ -896,6 +1068,16 @@ describe('DraftRevisionCommitToTargetHandler', () => {
 
 type RowWrites = Map<string, string>;
 
+interface ReadonlyFlags {
+  readonly tables: ReadonlyMap<string, boolean>;
+  readonly rows: ReadonlyMap<string, boolean>;
+}
+
+interface LockedVersions {
+  readonly tables: readonly string[];
+  readonly rows: readonly string[];
+}
+
 interface TableContent {
   readonly id: string;
   readonly system: boolean;
@@ -924,6 +1106,16 @@ function withoutTimestamps(content: JsonValue): JsonValue {
   return JSON.parse(
     JSON.stringify(content).replace(ISO_TIMESTAMP, 'timestamp'),
   ) as JsonValue;
+}
+
+function previouslyMutable(
+  flags: ReadonlyMap<string, boolean>,
+  versions: readonly { versionId: string }[],
+): string[] {
+  return versions
+    .map(({ versionId }) => versionId)
+    .filter((versionId) => flags.get(versionId) === false)
+    .sort();
 }
 
 function rewrittenSince(before: RowWrites, after: RowWrites): string[] {

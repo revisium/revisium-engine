@@ -181,14 +181,14 @@ export class AssembledVersionWriter {
     await this.transaction.$executeRaw(sql`
       UPDATE "Row" SET "readonly" = true
       WHERE "readonly" = false
-        AND "versionId" IN (
+        AND "versionId" = ANY(ARRAY(
           SELECT link."A" FROM "_RowToTable" link
           WHERE link."B" = ${tableVersionId}
             AND NOT EXISTS (
               SELECT 1 FROM "_RowToTable" head_link
               WHERE head_link."B" = ${headVersionId ?? null} AND head_link."A" = link."A"
             )
-        )
+        ))
     `);
   }
 

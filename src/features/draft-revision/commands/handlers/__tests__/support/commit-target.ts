@@ -1,6 +1,6 @@
 import objectHash from 'object-hash';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { JsonValue, Row } from 'src/engine-prisma-types';
+import { type JsonValue, type Row, sql } from 'src/engine-prisma-types';
 import type {
   CommitTableWritePlan,
   CommitTargetWritePlan,
@@ -20,6 +20,11 @@ export interface CommitTableTarget extends TableTarget {
 
 export type CommitResult = DraftRevisionCommitToTargetCommandReturnType;
 
+export interface RowTableWork {
+  readonly rowsRead: number;
+  readonly rowsUpdated: number;
+}
+
 export class CommitTarget {
   private readonly tablePlans: TablePlans;
 
@@ -36,6 +41,16 @@ export class CommitTarget {
 
   public write(plan: CommitTargetWritePlan): Promise<CommitResult> {
     return this.runner.runWrite(() => this.api.commitToTarget(plan));
+  }
+
+  public rowTableWorkOf(plan: CommitTargetWritePlan): Promise<RowTableWork> {
+    return this.runner.runWrite(async () => {
+      const before = await this.rowTableWorkSoFar();
+
+      await this.api.commitToTarget(plan);
+
+      return workBetween(before, await this.rowTableWorkSoFar());
+    });
   }
 
   public async commitInFailingCaller(
@@ -126,6 +141,23 @@ export class CommitTarget {
     };
   }
 
+  private async rowTableWorkSoFar(): Promise<RowTableWork> {
+    const [work] = await this.kit.transactionService.getTransaction().$queryRaw<
+      RowTableWork[]
+    >(sql`
+        SELECT (seq_tup_read + coalesce(idx_tup_fetch, 0))::int AS "rowsRead",
+               n_tup_upd::int AS "rowsUpdated"
+        FROM pg_stat_xact_user_tables
+        WHERE relid = '"Row"'::regclass
+      `);
+
+    if (!work) {
+      throw new Error('The Row table has no transaction statistics');
+    }
+
+    return work;
+  }
+
   private async linkedTableVersionsOf(
     side: RevisionSide,
   ): Promise<ReadonlyMap<string, string>> {
@@ -144,6 +176,13 @@ export class CommitTarget {
   private get api(): DraftRevisionTargetApiService {
     return this.kit.module.get(DraftRevisionTargetApiService);
   }
+}
+
+function workBetween(before: RowTableWork, after: RowTableWork): RowTableWork {
+  return {
+    rowsRead: after.rowsRead - before.rowsRead,
+    rowsUpdated: after.rowsUpdated - before.rowsUpdated,
+  };
 }
 
 function takeDraftVersion(

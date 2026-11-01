@@ -8,6 +8,7 @@ import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/cha
 import type {
   Finding,
   TargetCheck,
+  TargetChecking,
 } from 'src/features/partial-changes/closure/findings';
 import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
 import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
@@ -27,14 +28,13 @@ export class ScriptedCheck implements TargetCheck {
     this.script = NO_FINDINGS;
   }
 
-  public findingsOf(
-    source: AssemblySource,
-    _target: AssembledTarget,
-    choice: AppliedUnits,
-  ): Promise<Finding[]> {
-    return Promise.resolve(
-      this.script(new ScriptedPass(source.catalogue, choice)),
-    );
+  public checkingOf(source: AssemblySource): TargetChecking {
+    return {
+      findingsOf: (_target: AssembledTarget, choice: AppliedUnits) =>
+        Promise.resolve(
+          this.script(new ScriptedPass(source.catalogue, choice)),
+        ),
+    };
   }
 }
 

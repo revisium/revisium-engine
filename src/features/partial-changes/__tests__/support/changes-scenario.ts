@@ -201,6 +201,33 @@ export class ChangesScenario {
     });
   }
 
+  public async removeReferencedRows(
+    tableId: string,
+    rowIds: readonly string[],
+  ): Promise<void> {
+    await this.writeBelowNativeValidation((revisionId) =>
+      this.kit.draftRevisionApi.removeRows({
+        revisionId,
+        tableId,
+        rowIds: [...rowIds],
+      }),
+    );
+  }
+
+  public async writeDanglingReference(
+    tableId: string,
+    rowId: string,
+    data: InputJsonValue,
+  ): Promise<void> {
+    await this.writeBelowNativeValidation((revisionId) =>
+      this.kit.draftRevisionApi.updateRows({
+        revisionId,
+        tableId,
+        rows: [{ rowId, data }],
+      }),
+    );
+  }
+
   public async uploadFile(
     tableId: string,
     rowId: string,
@@ -262,7 +289,7 @@ export class ChangesScenario {
       SystemTables.SharedSchemas,
     );
 
-    await this.writeSharedSchemas(async (revisionId) => {
+    await this.writeBelowNativeValidation(async (revisionId) => {
       if (!hasSharedSchemas) {
         await this.kit.draftRevisionApi.createTable({
           revisionId,
@@ -283,7 +310,7 @@ export class ChangesScenario {
     id: string,
     schema: JsonSchema,
   ): Promise<void> {
-    await this.writeSharedSchemas((revisionId) =>
+    await this.writeBelowNativeValidation((revisionId) =>
       this.kit.draftRevisionApi.updateRows({
         revisionId,
         tableId: SystemTables.SharedSchemas,
@@ -293,7 +320,7 @@ export class ChangesScenario {
   }
 
   public async renameSharedSchema(id: string, nextId: string): Promise<void> {
-    await this.writeSharedSchemas((revisionId) =>
+    await this.writeBelowNativeValidation((revisionId) =>
       this.kit.draftRevisionApi.renameRows({
         revisionId,
         tableId: SystemTables.SharedSchemas,
@@ -303,7 +330,7 @@ export class ChangesScenario {
   }
 
   public async removeSharedSchema(id: string): Promise<void> {
-    await this.writeSharedSchemas((revisionId) =>
+    await this.writeBelowNativeValidation((revisionId) =>
       this.kit.draftRevisionApi.removeRows({
         revisionId,
         tableId: SystemTables.SharedSchemas,
@@ -475,7 +502,7 @@ export class ChangesScenario {
     return this.revisionId('draft');
   }
 
-  private async writeSharedSchemas(
+  private async writeBelowNativeValidation(
     write: (revisionId: string) => Promise<unknown>,
   ): Promise<void> {
     const revisionId = await this.draftRevisionId();

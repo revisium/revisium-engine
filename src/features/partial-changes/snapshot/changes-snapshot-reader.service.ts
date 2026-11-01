@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { sql, type Row } from 'src/engine-prisma-types';
+import { empty, type Row, type Sql, sql } from 'src/engine-prisma-types';
 import {
   changedRowCountSql,
   type ChangedRowPairIds,
@@ -25,6 +25,19 @@ import {
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+
+const MAX_IDS_FOR_INDEXED_LOOKUP = 100;
+
+export interface ReferrerQuery {
+  readonly jsonPath: string;
+  readonly rowIds: readonly string[];
+  readonly exceptRows: readonly string[];
+}
+
+export interface FirstReferrer {
+  readonly referencedId: string;
+  readonly rowId: string;
+}
 
 @Injectable()
 export class ChangesSnapshotReader {
@@ -94,6 +107,25 @@ export class ChangesSnapshotReader {
     `);
 
     return result?.count ?? 0;
+  }
+
+  public readFirstReferrers(
+    tableVersionId: string,
+    { jsonPath, rowIds, exceptRows }: ReferrerQuery,
+  ): Promise<FirstReferrer[]> {
+    return this.transaction.$queryRaw<FirstReferrer[]>(sql`
+      SELECT v.value #>> '{}' AS "referencedId", min(r."id" COLLATE "C") AS "rowId"
+      FROM "Row" r
+      JOIN "_RowToTable" rt ON rt."A" = r."versionId"
+      CROSS JOIN LATERAL jsonb_path_query(r."data", ${jsonPath}::jsonpath) AS v(value)
+      WHERE rt."B" = ${tableVersionId}
+        ${indexedReferenceFilter(jsonPath, rowIds)}
+        AND jsonb_typeof(v.value) = 'string'
+        AND v.value #>> '{}' = ANY(${[...rowIds]}::text[])
+        AND r."createdId" <> ALL(${[...exceptRows]}::text[])
+      GROUP BY v.value #>> '{}'
+      ORDER BY (v.value #>> '{}') COLLATE "C"
+    `);
   }
 
   public async readRowDigest(tableVersionId: string): Promise<string> {
@@ -210,6 +242,20 @@ export class ChangesSnapshotReader {
       where: { tables: { some: { versionId: table.versionId } } },
     });
   }
+}
+
+function indexedReferenceFilter(
+  jsonPath: string,
+  rowIds: readonly string[],
+): Sql {
+  if (rowIds.length > MAX_IDS_FOR_INDEXED_LOOKUP) {
+    return empty;
+  }
+
+  const equalities = rowIds.map((rowId) => `@ == ${JSON.stringify(rowId)}`);
+  const referencing = `${jsonPath} ? (${equalities.join(' || ')})`;
+
+  return sql`AND r."data" @? ${referencing}::jsonpath`;
 }
 
 function versionIdsOf(pair: ChangedRowPairIds): string[] {

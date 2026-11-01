@@ -15,6 +15,10 @@ import { buildStructureUnits } from 'src/features/partial-changes/catalogue/stru
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import { buildViewsUnits } from 'src/features/partial-changes/catalogue/views-units';
 import type {
+  HeadSchemaCheck,
+  RefusedTable,
+} from 'src/features/partial-changes/head-schema/head-schema-check';
+import type {
   ChangedRows,
   ChangesSnapshot,
   ComparedTable,
@@ -24,11 +28,13 @@ export interface ChangeCatalogue {
   readonly units: readonly CatalogueUnit[];
   readonly rows: ReadonlyMap<string, readonly CatalogueRow[]>;
   readonly ledgerInconsistencies: readonly LedgerInconsistency[];
+  readonly refusedTables: readonly RefusedTable[];
 }
 
 export interface CatalogueSource {
   readonly snapshot: ChangesSnapshot;
   readonly ledger: LedgerAttribution;
+  readonly headSchema: HeadSchemaCheck;
   readonly tables: readonly ComparedTable[];
   readonly changedRows: ChangedRows;
 }
@@ -44,9 +50,12 @@ export function buildChangeCatalogue(
 ): ChangeCatalogue {
   const tables = new CatalogueTables(source.snapshot, source.tables);
   const rowUnits = buildRowUnitsOfChangedTables(source);
-  const units = [
+  const tableUnits = [
     ...buildStructureUnits(tables, source.ledger),
     ...buildViewsUnits(tables, headViews),
+  ];
+  const units = [
+    ...tableUnits.filter((unit) => !holdsRefusedTable(unit, source.headSchema)),
     ...buildSharedSchemaUnits(source.snapshot.systemRows.sharedSchemas),
     ...rowUnits.units,
   ];
@@ -55,6 +64,7 @@ export function buildChangeCatalogue(
     units: units.sort(compareUnits),
     rows: rowUnits.rows,
     ledgerInconsistencies: ledgerInconsistenciesOf(tables, source.ledger),
+    refusedTables: source.headSchema.refusedTables,
   };
 }
 
@@ -65,7 +75,7 @@ function buildRowUnitsOfChangedTables(
   const units: CatalogueUnit[] = [];
   const rows = new Map<string, readonly CatalogueRow[]>();
 
-  for (const table of source.tables) {
+  for (const table of tablesNotRefused(source)) {
     const pairs = source.changedRows.get(table.identity);
 
     if (!pairs) {
@@ -87,6 +97,24 @@ function buildRowUnitsOfChangedTables(
   }
 
   return { units, rows };
+}
+
+function tablesNotRefused({
+  tables,
+  headSchema,
+}: CatalogueSource): ComparedTable[] {
+  return tables.filter(
+    ({ identity }) => !headSchema.refusedIdentities.has(identity),
+  );
+}
+
+function holdsRefusedTable(
+  unit: CatalogueUnit,
+  headSchema: HeadSchemaCheck,
+): boolean {
+  return unit.tableIdentities.some((identity) =>
+    headSchema.refusedIdentities.has(identity),
+  );
 }
 
 function draftTableIdsOf(

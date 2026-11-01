@@ -5,6 +5,10 @@ import {
   type LedgerAttribution,
   pendingMigrationsOf,
 } from 'src/features/partial-changes/catalogue/ledger-attribution';
+import {
+  checkHeadSchema,
+  type HeadSchemaCheck,
+} from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   ChangedRows,
   ChangesBranch,
@@ -36,8 +40,15 @@ export type RevisionSide = 'head' | 'draft';
 export interface ComparedSnapshot {
   readonly snapshot: ChangesSnapshot;
   readonly ledger: LedgerAttribution;
+  readonly headSchema: HeadSchemaCheck;
   readonly tables: readonly ComparedTable[];
 }
+
+export interface OperationScope {
+  readonly wholeDraft: boolean;
+}
+
+const PARTIAL_OPERATION: OperationScope = { wholeDraft: false };
 
 export function readInPlanningTransaction<T>(
   kit: PartialChangesTestKit,
@@ -72,11 +83,21 @@ export function readChangedRows(
 export async function readComparedSnapshot(
   kit: PartialChangesTestKit,
   branch: ChangesBranch,
+  { wholeDraft }: OperationScope = PARTIAL_OPERATION,
 ): Promise<ComparedSnapshot> {
   const snapshot = await kit.snapshotReader.readSnapshot(branch);
   const ledger = attributeLedger(snapshot);
+  const headSchema = checkHeadSchema(
+    { snapshot, ledger, wholeDraft },
+    kit.replayRules,
+  );
 
-  return { snapshot, ledger, tables: comparedTablesOf(kit, snapshot, ledger) };
+  return {
+    snapshot,
+    ledger,
+    headSchema,
+    tables: comparedTablesOf(kit, snapshot, ledger, headSchema),
+  };
 }
 
 export function affectedTablesOf(
@@ -97,6 +118,7 @@ function comparedTablesOf(
   kit: PartialChangesTestKit,
   snapshot: ChangesSnapshot,
   ledger: LedgerAttribution,
+  headSchema: HeadSchemaCheck,
 ): ComparedTable[] {
   return snapshot.tables.flatMap(({ identity, head, draft }) => {
     if (!head || !draft) {
@@ -108,6 +130,7 @@ function comparedTablesOf(
         head: sideOf(snapshot, head, 'head'),
         draft: sideOf(snapshot, draft, 'draft'),
         pendingMigrations: pendingMigrationsOf(ledger, identity),
+        replayedHeadSchema: headSchema.replayedHeadSchemas.get(identity),
       },
       kit.schemaRules,
     );

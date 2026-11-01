@@ -161,7 +161,7 @@ class PendingAttribution {
   }
 }
 
-function ledgerOf(rows: readonly Row[]): LedgerEntry[] {
+export function ledgerOf(rows: readonly Row[]): LedgerEntry[] {
   return [...rows]
     .sort((left, right) => compareCodePoints(left.id, right.id))
     .map((row) => ({ row, migration: row.data as unknown as Migration }));

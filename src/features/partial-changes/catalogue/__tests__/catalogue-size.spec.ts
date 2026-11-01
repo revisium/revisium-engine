@@ -6,6 +6,7 @@ import {
 } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { attributeLedger } from 'src/features/partial-changes/catalogue/ledger-attribution';
+import { checkHeadSchema } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   ChangesSnapshot,
   RevisionRows,
@@ -65,9 +66,15 @@ function givenEditedRows(rowCount: number): CatalogueSource {
     },
   };
 
+  const ledger = attributeLedger(snapshot);
+
   return {
     snapshot,
-    ledger: attributeLedger(snapshot),
+    ledger,
+    headSchema: checkHeadSchema(
+      { snapshot, ledger, wholeDraft: true },
+      { refs, validator },
+    ),
     tables: [
       {
         identity: TABLE_IDENTITY,

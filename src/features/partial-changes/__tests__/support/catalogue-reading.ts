@@ -10,6 +10,7 @@ import {
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { LedgerInconsistency } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
 import type { Side, Unit } from 'src/features/partial-changes/catalogue/unit';
+import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   ChangedRows,
   ChangesBranch,
@@ -17,6 +18,7 @@ import type {
   ComparedTable,
   RevisionRows,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 import {
   affectedTablesOf,
   readComparedSnapshot,
@@ -31,31 +33,65 @@ export interface CatalogueView {
   readonly tables: readonly ComparedTable[];
   readonly changedRows: ChangedRows;
   readonly ledgerInconsistencies: readonly LedgerInconsistency[];
+  readonly refusedTables: readonly RefusedTable[];
   units(): AddressedUnit[];
   unitsOf(tableId: string): AddressedUnit[];
   systemRowsOf(unit: AddressedUnit): string[];
+  structureOf(tableId: string): TableStructure;
 }
+
+type CatalogueScope =
+  | { readonly kind: 'tables'; readonly tableIds: readonly string[] }
+  | { readonly kind: 'wholeDraft' };
 
 export function readCatalogue(
   kit: PartialChangesTestKit,
   branch: ChangesBranch,
   tableIds: readonly string[],
 ): Promise<CatalogueView> {
+  return readCatalogueIn(kit, branch, { kind: 'tables', tableIds });
+}
+
+export function readWholeDraftCatalogue(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+): Promise<CatalogueView> {
+  return readCatalogueIn(kit, branch, { kind: 'wholeDraft' });
+}
+
+function readCatalogueIn(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  scope: CatalogueScope,
+): Promise<CatalogueView> {
   return readInPlanningTransaction(kit, async () => {
-    const { snapshot, ledger, tables } = await readComparedSnapshot(
+    const { snapshot, ledger, headSchema, tables } = await readComparedSnapshot(
       kit,
       branch,
+      { wholeDraft: scope.kind === 'wholeDraft' },
     );
     const changedRows = await kit.snapshotReader.readChangedRows(
-      affectedTablesOf(snapshot, tables, tableIds),
+      affectedTablesIn(scope, snapshot, tables),
     );
     const catalogue = buildChangeCatalogue(
-      { snapshot, ledger, tables, changedRows },
+      { snapshot, ledger, headSchema, tables, changedRows },
       new HeadViewsMigration(kit.viewsMigration, kit.schemaRules),
     );
 
     return catalogueView(catalogue, snapshot, tables, changedRows);
   });
+}
+
+function affectedTablesIn(
+  scope: CatalogueScope,
+  snapshot: ChangesSnapshot,
+  tables: readonly ComparedTable[],
+): ComparedTable[] {
+  if (scope.kind === 'wholeDraft') {
+    return [...tables];
+  }
+
+  return affectedTablesOf(snapshot, tables, scope.tableIds);
 }
 
 function catalogueView(
@@ -70,6 +106,7 @@ function catalogueView(
     tables,
     changedRows,
     ledgerInconsistencies: catalogue.ledgerInconsistencies,
+    refusedTables: catalogue.refusedTables,
     units: () => catalogue.units.map(addressedUnitOf),
     unitsOf: (tableId) =>
       catalogue.units
@@ -79,7 +116,22 @@ function catalogueView(
       unitAddressedAs(catalogue, unit)
         .systemRows.map((row) => describeSystemRow(snapshot, row))
         .sort(),
+    structureOf: (tableId) => structureNamed(snapshot, tables, tableId),
   };
+}
+
+function structureNamed(
+  snapshot: ChangesSnapshot,
+  tables: readonly ComparedTable[],
+  tableId: string,
+): TableStructure {
+  const [table] = affectedTablesOf(snapshot, tables, [tableId]);
+
+  if (!table) {
+    throw new Error(`Table ${tableId} is not on both sides`);
+  }
+
+  return table.structure;
 }
 
 function addressedUnitOf({ unit, side }: CatalogueUnit): AddressedUnit {

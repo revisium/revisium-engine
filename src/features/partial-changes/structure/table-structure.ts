@@ -34,6 +34,7 @@ export interface TableStructureInput {
   readonly head: TableSide;
   readonly draft: TableSide;
   readonly pendingMigrations: readonly Migration[];
+  readonly replayedHeadSchema?: JsonSchema;
 }
 
 export type PublishedAtOwner =
@@ -63,17 +64,25 @@ export function analyzeTableStructure(
 
   return {
     pendingHistory,
-    recorded: isStructureRecorded(
-      input.head.schema,
-      pendingHistory,
-      input.draft.schema,
-      rules,
+    recorded: headBaselinesOf(input).some((baseline) =>
+      isStructureRecorded(baseline, pendingHistory, input.draft.schema, rules),
     ),
     differs: structureDiffers(input, pendingHistory, changedPointers),
     unchangedLeaves: leaves.unchanged,
     changedPointers,
     publishedAtOwner: leaves.publishedAtOwner(),
   };
+}
+
+function headBaselinesOf({
+  head,
+  replayedHeadSchema,
+}: TableStructureInput): JsonSchema[] {
+  if (replayedHeadSchema === undefined) {
+    return [head.schema];
+  }
+
+  return [head.schema, replayedHeadSchema];
 }
 
 function structureDiffers(

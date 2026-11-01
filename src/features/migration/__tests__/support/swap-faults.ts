@@ -1,4 +1,5 @@
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import { MigrationSwapService } from 'src/features/migration/services/migration-swap.service';
 import { SwapRecheckService } from 'src/features/migration/services/swap-recheck.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 
@@ -31,4 +32,21 @@ export function failEndpointNotifications(kit: MigrationTestKit) {
   return jest
     .spyOn(kit.module.get(ShareCommands), 'notifyEndpoints')
     .mockRejectedValue(new Error(NOTIFICATION_FAILED));
+}
+
+export function recordSwapFailures(kit: MigrationTestKit): unknown[] {
+  const failures: unknown[] = [];
+  const swaps = kit.module.get(MigrationSwapService);
+  const swap = swaps.swap.bind(swaps);
+
+  jest.spyOn(swaps, 'swap').mockImplementation(async (...args) => {
+    try {
+      return await swap(...args);
+    } catch (error) {
+      failures.push(error);
+      throw error;
+    }
+  });
+
+  return failures;
 }

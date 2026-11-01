@@ -105,7 +105,8 @@ The start runs in one serializable transaction through the native runner and ref
 writing no record:
 
 1. It takes the branch write fence shared, as every Draft writer does; behind an exclusive holder it waits at most
-   half of `TRANSACTION_TIMEOUT`, then fails with `BranchWriteFencedException`.
+   half of `TRANSACTION_TIMEOUT`, then fails with `BranchWriteFencedException` (see "What happens when a commit holds
+   the branch write fence exclusively?").
 2. The revision must be the Draft (`Revision is not a draft`).
 3. One migration per revision: any active record of the revision, on any table, refuses the start with
    `MigrationLockedException` (`MIGRATION_LOCKED`). The check runs inside the transaction, so of two starts on
@@ -223,7 +224,8 @@ An interactive update in a Draft without a migration table completes without a l
 The swap runs in a single serializable transaction:
 
 1. Take the branch write fence shared; behind an exclusive holder it waits at most half of `TRANSACTION_TIMEOUT`, then
-   fails with `BranchWriteFencedException`, a transient failure
+   fails with `BranchWriteFencedException`, a transient failure (see "What happens when a commit holds the branch write
+   fence exclusively?")
 2. Renew `heartbeatAt` of the record where it is still `SWAPPING` with the owner's token; no match stops the swap
 3. Re-check (see above)
 4. Detach source table, attach shadow table, set hasChanges
@@ -248,6 +250,22 @@ transaction finds another token in its first statement and stops.
 
 Claims after lease expiry and takeovers of a `SWAPPING` record share one budget in `retryCount`. When `retryCount`
 has reached `maxRetries`, the claim or takeover fails the record with `SWAP_STALLED` instead, which releases the lock.
+
+### What happens when a commit holds the branch write fence exclusively?
+
+A native commit or revert that lost two attempts to serialization failures runs each later attempt under an exclusive
+holder of the branch write fence, a separate transaction, and in the `exclusiveHeld` admission mode of that attempt's
+transaction: the attempt skips the shared fence of its own branch. A commit still checks the migration lock, so it
+refuses with `MIGRATION_LOCKED` while a migration is active; a revert cancels the migrations as it does without the
+holder. The holder is released on every exit: success, error and timeout.
+
+The start and the swap never run in that mode: each opens its own transaction, which carries no admission mode, and
+takes the fence shared. Behind a holder they wait at most half of `TRANSACTION_TIMEOUT`, so a swap waiting behind a
+commit refused with `MIGRATION_LOCKED` completes once the holder is released. Past the wait limit:
+
+- the start fails with `BranchWriteFencedException` to its caller and records nothing;
+- the swap fails with `BranchWriteFencedException`, a transient failure: T-retry keeps the record `SWAPPING`, counts a
+  retry and releases the lease, and the next claim, which counts a retry as well, runs the swap again.
 
 ### What happens when two workers pick up the same migration?
 

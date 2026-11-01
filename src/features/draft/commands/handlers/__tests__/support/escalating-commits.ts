@@ -3,10 +3,13 @@ import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import { createBarrier, type Barrier } from 'src/__tests__/utils/barrier';
 import type { DraftRevisionCommitCommandData } from 'src/features/draft-revision/commands/impl/draft-revision-commit.command';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
+import { EscalatingTransactionRunner } from 'src/infrastructure/database/escalating-transaction-runner';
 import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
 import { ExclusiveFenceHolder } from 'src/infrastructure/database/exclusive-fence-holder';
 
 const SERIALIZATION_FAILURE = '40001';
+
+type EscalationKit = Pick<DraftTestKit, 'module' | 'transactionService'>;
 
 // Every attempt before escalation fails serialization, so each commit escalates
 // after its second attempt; an escalated attempt can be held inside its transaction.
@@ -50,6 +53,33 @@ export class EscalatingCommits {
         return commit(data);
       });
   }
+}
+
+// Each attempt of the next escalating operation fails serialization without
+// running it until the operation escalates, even where its admission would
+// refuse; the escalated attempt is then held under the exclusive fence before it runs.
+export function holdNextOperationEscalatedUnderItsFence(
+  kit: EscalationKit,
+): Barrier {
+  const barrier = createBarrier('The escalated attempt');
+  const runner = kit.module.get(EscalatingTransactionRunner);
+  const runSerializable = runner.runSerializable.bind(runner);
+
+  jest
+    .spyOn(runner, 'runSerializable')
+    .mockImplementationOnce((branch, operation) =>
+      runSerializable(branch, async () => {
+        if (kit.transactionService.exclusiveHeldBranchId === undefined) {
+          throw serializationFailure();
+        }
+
+        await barrier.arrive();
+
+        return operation();
+      }),
+    );
+
+  return barrier;
 }
 
 // Holds each escalated attempt after its own transaction started and before its

@@ -21,6 +21,10 @@ export interface PausedOwner {
   resume(): Promise<MigrationStepResult>;
 }
 
+export interface PausedAbort {
+  resume(): Promise<void>;
+}
+
 const startedOwners: { holds: OwnerHold[]; result: Promise<unknown> }[] = [];
 
 export function startOwnerUntil(
@@ -34,6 +38,16 @@ export function startOwnerUntil(
     kit.migrationService.processMigration(migrationId),
     hold,
   );
+}
+
+export async function crashOwnerAt(
+  kit: MigrationTestKit,
+  migrationId: string,
+  hold: OwnerHold,
+): Promise<void> {
+  const result = kit.migrationService.processMigration(migrationId);
+  startedOwners.push({ holds: [hold], result });
+  await hold.barrier.expectReachedBefore(result);
 }
 
 export async function takeOverUntil(
@@ -59,6 +73,24 @@ export async function sweptUntil(
   const { result } = await process.nextRunOf(migrationId);
 
   return pauseOwner(process.kit, migrationId, result, hold);
+}
+
+export async function startAbortUntil(
+  kit: MigrationTestKit,
+  table: { revisionId: string; tableId: string },
+  hold: OwnerHold,
+): Promise<PausedAbort> {
+  const result = kit.migrationApi.abortMigration(table);
+  startedOwners.push({ holds: [hold], result });
+  await hold.barrier.expectReachedBefore(result);
+
+  return {
+    resume() {
+      hold.barrier.release();
+
+      return result;
+    },
+  };
 }
 
 export async function observeStalledSwap(
@@ -127,6 +159,10 @@ export function beforeBatchWrite(
   );
 }
 
+export function beforeSwapBegins(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.migrationTransitions, 'beginSwap', 1, 'before');
+}
+
 export function afterSwapBegins(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.migrationTransitions, 'beginSwap', 1, 'after');
 }
@@ -148,6 +184,10 @@ export function beforeSwapTransaction(
   attempt: number,
 ): OwnerHold {
   return holdCall(kit.transactionService, 'runSerializable', attempt, 'before');
+}
+
+export function afterAbortReadsItsRecord(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.migrationTransitions, 'findByTable', 1, 'after');
 }
 
 export function insideSwapAfterItsRecordCheck(

@@ -5,12 +5,11 @@ import {
   type InputJsonValue,
   type Row,
 } from 'src/engine-prisma-types';
+import { MigrateTableViewsCommand } from 'src/features/draft/commands/impl/transactional/migrate-table-views.command';
 import { UpdateSchemaCommand } from 'src/features/draft/commands/impl/transactional/update-schema.command';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import {
   InternalUpdateRowsCommand,
   InternalUpdateRowsCommandReturnType,
@@ -22,12 +21,6 @@ import { DraftHandler } from 'src/features/draft/draft.handler';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
-import {
-  ViewsMigrationError,
-  ViewsMigrationService,
-} from 'src/features/share/views-migration.service';
-import { tableViewsSchema } from 'src/features/share/schema/table-views-schema';
-import { TableViewsData } from 'src/features/views/types';
 import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import {
   JsonPatch,
@@ -49,7 +42,6 @@ export class UpdateTableHandler extends DraftHandler<
     protected readonly jsonSchemaValidator: JsonSchemaValidatorService,
     protected readonly jsonSchemaStore: JsonSchemaStoreService,
     protected readonly pluginTable: PluginService,
-    protected readonly viewsMigrationService: ViewsMigrationService,
   ) {
     super(transactionService, draftContext);
   }
@@ -229,77 +221,19 @@ export class UpdateTableHandler extends DraftHandler<
     );
   }
 
-  private async migrateViews(
+  private migrateViews(
     revisionId: string,
     tableId: string,
     patches: JsonPatch[],
     previousSchema: JsonSchema,
   ): Promise<void> {
-    const viewsTable = await this.shareTransactionalQueries.findTableInRevision(
-      revisionId,
-      SystemTables.Views,
+    return this.commandBus.execute<MigrateTableViewsCommand, void>(
+      new MigrateTableViewsCommand({
+        revisionId,
+        tableId,
+        patches,
+        previousSchema,
+      }),
     );
-
-    if (!viewsTable) {
-      return;
-    }
-
-    const viewsRow = await this.findViewsRow(viewsTable.versionId, tableId);
-    if (!viewsRow) {
-      return;
-    }
-
-    const viewsData = viewsRow.data as unknown as TableViewsData;
-
-    try {
-      const migratedViewsData = this.viewsMigrationService.migrateViews(
-        {
-          viewsData,
-          patches,
-          previousSchema,
-        },
-        { revisionId, tableId },
-      );
-
-      const schemaHash =
-        this.jsonSchemaValidator.getSchemaHash(tableViewsSchema);
-
-      await this.commandBus.execute(
-        new InternalUpdateRowCommand({
-          revisionId,
-          tableId: SystemTables.Views,
-          rowId: tableId,
-          data: migratedViewsData as unknown as InputJsonValue,
-          schemaHash,
-        }),
-      );
-    } catch (error) {
-      if (error instanceof ViewsMigrationError) {
-        throw new BadRequestException(
-          `Views migration failed for table "${tableId}" in revision "${revisionId}": ${error.message}`,
-          {
-            cause: {
-              revisionId: error.context.revisionId,
-              tableId: error.context.tableId,
-              ...error.details,
-            },
-          },
-        );
-      }
-      throw error;
-    }
-  }
-
-  private async findViewsRow(tableVersionId: string, rowId: string) {
-    return this.transaction.row.findFirst({
-      where: {
-        id: rowId,
-        tables: {
-          some: {
-            versionId: tableVersionId,
-          },
-        },
-      },
-    });
   }
 }

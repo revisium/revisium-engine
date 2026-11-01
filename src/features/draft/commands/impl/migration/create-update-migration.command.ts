@@ -7,6 +7,7 @@ export class CreateUpdateMigrationCommand {
       readonly tableId: string;
       readonly schema: JsonSchema;
       readonly patches: JsonPatch[];
+      readonly migrationId?: string;
     },
   ) {}
 }

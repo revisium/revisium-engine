@@ -37,7 +37,7 @@ export class CreateUpdateMigrationHandler extends BaseMigrationHandler<CreateUpd
     return {
       changeType: 'update',
       tableId: data.tableId,
-      id: await this.getMigrationId(data.revisionId),
+      id: data.migrationId ?? (await this.getMigrationId(data.revisionId)),
       hash: await this.hashService.hashObject(data.schema),
       patches: data.patches,
     };

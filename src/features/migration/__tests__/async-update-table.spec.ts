@@ -7,6 +7,7 @@ import { givenMigrationTableWithRows } from 'src/__tests__/fixtures/scenarios/gi
 import {
   expectMigrationAbsent,
   expectRowsToHaveProperties,
+  observeCommittedVersions,
   waitForMigration,
 } from 'src/__tests__/assertions/migration';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
@@ -61,6 +62,10 @@ describe('Async Update Table', () => {
     });
   });
 
+  afterEach(async () => {
+    await kit.guard.verifyAndForget();
+  });
+
   afterAll(async () => {
     if (kit) {
       await kit.close();
@@ -68,11 +73,14 @@ describe('Async Update Table', () => {
   });
 
   async function prepareTableWithRows() {
-    return givenMigrationTableWithRows({
+    const draft = await givenMigrationTableWithRows({
       prisma: kit.prisma,
       schema: testSchema,
       rowCount: ROW_COUNT,
     });
+    await observeCommittedVersions(kit, draft.branchId);
+
+    return draft;
   }
 
   async function setupViews(

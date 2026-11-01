@@ -39,6 +39,14 @@ export function decodeMigrationPayload(payload: unknown): MigrationPayload {
   );
 }
 
+export function ledgerMigrationIdOf(
+  payload: MigrationPayload,
+): string | undefined {
+  return payload.version === ENVELOPE_VERSION
+    ? payload.ledgerMigrationId
+    : undefined;
+}
+
 function isPayloadEnvelope(payload: unknown): payload is PayloadEnvelope {
   if (typeof payload !== 'object' || payload === null) {
     return false;

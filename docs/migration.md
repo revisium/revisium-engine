@@ -6,6 +6,9 @@ When `updateTable` is called and the table exceeds the configured row count thre
 
 This implementation preserves the core ADR-0010 consistency guarantee: readers never observe mixed schema/data state. The schema row is updated only during swap, atomically with switching the draft to the migrated shadow table.
 
+The swap writes what the synchronous `updateTable` writes: the Draft's own copies of the schema and views rows, the
+schema history entry and the `update` row of the migration ledger. The Head and earlier revisions never change.
+
 The main intentional v1 deviation is lock scope: the engine currently applies a revision-level write lock during migration, not a table-level write lock. Progress delivery is also polling-only in engine core; SSE/webhooks/event history are not implemented here.
 
 ## v1 Deviations from ADR-0010
@@ -63,15 +66,18 @@ PHASE 3: COPY (one transaction per batch, T-batch)
     └─ insert the batch into the shadow table; a checkpoint that matches nothing writes nothing
 
 PHASE 4: SWAP-BEGIN (T-swap-begin)
-  ├─ shadow row count == totalRows
   └─ COPYING, token, copiedRows = totalRows → SWAPPING
 
 PHASE 5: SWAP (single serializable transaction)
-  ├─ first statement: renew heartbeatAt where SWAPPING and the owner's token, else stop
-  ├─ detach source table from revision, attach shadow table
-  ├─ update schema row in revisium_schema_table and the views row
-  ├─ set revision.hasChanges = true
+  ├─ take the branch write fence shared, without the migration-lock check (the record is the swap's own)
+  ├─ renew heartbeatAt where SWAPPING and the owner's token, else stop
+  ├─ re-check the Draft, the source table, the schema, the shadow row count and, for an imported update, the ledger
+  ├─ detach source table from revision, attach shadow table, set revision.hasChanges = true
+  ├─ write the schema through the synchronous schema writer: copy-on-write, history entry, `update` ledger row
+  ├─ migrate the views row through the synchronous views writer: copy-on-write
   └─ delete the record, guarded by SWAPPING and the owner's token
+
+AFTER COMMIT: notify the endpoints of the Draft (a failure is logged; the swap is not repeated)
 ```
 
 Every transition is one guarded statement or one transaction: a compare-and-set on the record status and the owner's
@@ -100,7 +106,8 @@ During migration, the entire draft revision is locked for writes (HTTP 423). All
 The copy resumes from the committed checkpoint (`copiedRows`, `lastCopiedRowId`); T-init does not run again.
 
 **Permanent failures** skip the retries: a payload that is neither a patch array nor a version 2 envelope fails with
-`PAYLOAD_UNSUPPORTED`. `errorMessage` starts with the code.
+`PAYLOAD_UNSUPPORTED`; a failed swap re-check or an unrecorded imported update fails with its code (see below).
+`errorMessage` starts with the code.
 
 ### What happens when a migration makes no progress?
 
@@ -121,6 +128,13 @@ resume. Schema and rows are consistent (both still original). To retry:
 
 ### What happens when migration is aborted?
 
+`abortMigration` runs as one serializable transaction. It reads the record and rejects a `SWAPPING` record ("Cannot
+abort during swap phase, please wait for completion") and a `CANCELLED` one. Otherwise it deletes the record guarded
+by status (`PENDING`, `COPYING` or `FAILED`), and only after that deletion removed the record does it delete the
+shadow table and its rows, and only while no revision links the shadow table. A swap that commits between the abort's
+read and its deletion makes the abort retry; the retry finds no record and returns as for no migration, so the
+abort never deletes the rows the swap has just linked.
+
 **State after abort:**
 
 - Shadow table: deleted (if it exists)
@@ -130,21 +144,44 @@ resume. Schema and rows are consistent (both still original). To retry:
 
 After abort, the draft is in a clean state — the next `updateTable` call on the same table will work (migration record was deleted). No revert needed.
 
+Native revert cancels `PENDING` and `COPYING` records inside its own transaction with the same guarded deletion and
+rejects a `SWAPPING` record. A revert after a completed swap relinks the Head's table versions, so the recorded
+`update` and the migrated rows leave the Draft.
+
+### What does the swap re-check?
+
+Inside its transaction, before writing, the swap checks what may have changed since the start. A failed re-check
+commits nothing but T-fail with its code; the Draft stays as the swap found it.
+
+| Code                    | Condition                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `REVISION_NOT_DRAFT`    | The revision is no longer the Draft                                                              |
+| `SOURCE_TABLE_REPLACED` | The Draft no longer links the source table version, or already links the shadow table            |
+| `SCHEMA_CHANGED`        | The Draft schema row lost `previousSchemaHash`, or the patches no longer give `targetSchemaHash` |
+| `ROW_COUNT_MISMATCH`    | The shadow table does not hold `totalRows` rows                                                  |
+| `LEDGER_UNAVAILABLE`    | An imported update (`ledgerMigrationId` in the payload) whose Draft has no migration table       |
+| `LEDGER_ID_TAKEN`       | The imported id is already in the Draft ledger, or a ledger row is published at or after it      |
+| `LEDGER_NOT_RECORDED`   | The migration writer recorded no ledger row for an imported update                               |
+
+An interactive update in a Draft without a migration table completes without a ledger row, as the synchronous
+`updateTable` does.
+
 ### What happens when the process crashes during swap?
 
 The swap runs in a single serializable transaction:
 
-1. Renew `heartbeatAt` of the record where it is still `SWAPPING` with the owner's token; no match stops the swap
-2. Detach source table
-3. Attach shadow table
-4. Update schema row
-5. Set hasChanges
+1. Take the branch write fence shared; behind an exclusive holder it waits at most half of `TRANSACTION_TIMEOUT`, then
+   fails with `BranchWriteFencedException`, a transient failure
+2. Renew `heartbeatAt` of the record where it is still `SWAPPING` with the owner's token; no match stops the swap
+3. Re-check (see above)
+4. Detach source table, attach shadow table, set hasChanges
+5. Write the schema row, its history entry and the `update` ledger row; migrate the views row
 6. Delete the record where it is still `SWAPPING` with the owner's token
 
-The first statement locks the record row until the swap commits, and the change and the deletion of the record commit
-together. A claim or a takeover that arrives meanwhile waits for the row lock and then finds no record, so it does
-nothing; a claim or a takeover that committed earlier makes the first statement match nothing, so a replaced owner
-never commits a swap.
+The renewal locks the record row until the swap commits, and the change and the deletion of the record commit
+together, so a fault or a lost connection after the commit leaves no record to swap again. A claim or a takeover that
+arrives meanwhile waits for the row lock and then finds no record, so it does nothing; a claim or a takeover that
+committed earlier makes the renewal match nothing, so a replaced owner never commits a swap.
 
 If the process crashes mid-swap, the transaction rolls back. The record stays `SWAPPING`. After its lease expires,
 the next claim counts a retry and runs the swap directly, without copying again.
@@ -202,14 +239,14 @@ A cancelled legacy change was not applied by the new engine: rerun `updateTable`
 
 ### Read consistency during migration
 
-| What                           | Before migration | During COPY          | After SWAP                           |
-| ------------------------------ | ---------------- | -------------------- | ------------------------------------ |
-| Schema (revisium_schema_table) | old              | old                  | **new** (updated atomically in swap) |
-| Row data                       | old              | old (source table)   | **new** (shadow table)               |
-| Row count                      | N                | N (source unchanged) | N (validated)                        |
-| Writes                         | allowed          | **blocked** (423)    | allowed                              |
+| What                           | Before migration | During COPY          | After SWAP                            |
+| ------------------------------ | ---------------- | -------------------- | ------------------------------------- |
+| Schema (revisium_schema_table) | old              | old                  | **new** (Draft-owned, atomic in swap) |
+| Row data                       | old              | old (source table)   | **new** (shadow table)                |
+| Row count                      | N                | N (source unchanged) | N (validated)                         |
+| Writes                         | allowed          | **blocked** (423)    | allowed                               |
 
-Schema and rows are always consistent from the reader's perspective. The schema row is only updated inside the swap transaction, atomically with the table swap. Before swap: old schema + old rows. After swap: new schema + new rows. No inconsistency window.
+Schema and rows are always consistent from the reader's perspective. The schema row is only updated inside the swap transaction, atomically with the table swap. Before swap: old schema + old rows. After swap: new schema + new rows. No inconsistency window. Revisions other than the Draft keep their schema and views rows.
 
 ## Configuration
 
@@ -331,11 +368,12 @@ model TableMigration {
 }
 ```
 
-`patches` holds the payload envelope `{ "version": 2, "patches": [...] }`. Records written before the envelope hold a
-plain patch array, which decodes as version 1; every process disposes of the active ones at startup (see above). Any
-other payload fails the migration with `PAYLOAD_UNSUPPORTED`. Old workers misread the envelope, so stop every process
-running the old worker code before a new process starts. `lockedBy` holds the owner's claim token and `lockedAt` the
-start of its lease. `phase` takes `INIT`, `COPYING` and `SWAPPING` only.
+`patches` holds the payload envelope `{ "version": 2, "patches": [...], "ledgerMigrationId"?: "..." }`; the swap
+records the `update` ledger row under `ledgerMigrationId` when it is set, and under the native id otherwise. Records
+written before the envelope hold a plain patch array, which decodes as version 1; every process disposes of the active
+ones at startup (see above). Any other payload fails the migration with `PAYLOAD_UNSUPPORTED`. Old workers misread
+the envelope, so stop every process running the old worker code before a new process starts. `lockedBy` holds the
+owner's claim token and `lockedAt` the start of its lease. `phase` takes `INIT`, `COPYING` and `SWAPPING` only.
 
 `@@unique([revisionId, tableId])` ensures one migration per table per draft at a time. Records are deleted on completion, abort, and when aborting failed migrations. Call `abortMigration` to clean up a failed record before retrying.
 
@@ -344,8 +382,8 @@ start of its lease. `phase` takes `INIT`, `COPYING` and `SWAPPING` only.
 `previousSchema` and the decoded patches together define the migration. The target schema is never stored explicitly — it is computed on demand as `SchemaTable(previousSchema).applyPatches(patches)`:
 
 - **During copy**: `MigrationBatchService` computes target schema per batch, passes it directly to `PluginService.afterMigrateRows({ targetSchema })` so plugins don't read from DB
-- **During swap**: `updateSchemaRowInTx` reads the current schema row (still original), applies the same patches, writes the result — all inside the serializable transaction
-- **Views parity**: if a `revisium_views_table` row exists for the migrated table, it is migrated inside the same swap transaction using the same patch semantics as the sync `updateTable` path
+- **During swap**: `SwapRecheckService` applies the same patches to `previousSchema` and checks the result against `targetSchemaHash`; the synchronous schema writer (`UpdateSchemaCommand`) writes it with copy-on-write, appends the history entry with the original patches and records the `update` ledger row — all inside the serializable transaction
+- **Views parity**: if a `revisium_views_table` row exists for the migrated table, the synchronous views writer (`MigrateTableViewsCommand`) migrates it with copy-on-write inside the same swap transaction
 
 The schema row in `revisium_schema_table` stays unchanged until swap completes.
 
@@ -361,13 +399,16 @@ src/features/migration/
   services/
     migration.service.ts           processMigration and takeOverStalledSwap: heartbeat, step runner, retries
     migration-transition.service.ts Guarded transitions of the record (claim, takeover, deadline, renew,
-                                   release, init, checkpoint, swap-begin, swap ownership, fail, retry)
+                                   release, init, checkpoint, swap-begin, swap ownership, fail, retry, cancel)
+    migration-swap.service.ts      The swap transaction: fence, re-checks, relink, native writers, record deletion,
+                                   endpoint notification
+    swap-recheck.service.ts        Re-checks of the swap and their permanent failure codes
     migration-batch.service.ts     Row-level: load, patch, plugin, guarded batch write
     migration-worker.service.ts    Legacy disposal at startup; recurring sweep of inline and polling modes
     legacy-migration-disposal.service.ts Terminal disposition of records without the payload envelope
     held-migration-leases.ts       Leases the drivers of this process hold; the claim capacity of the sweep
     migration-recovery-scope.ts    Records the sweep and the legacy disposal may act on (all in production)
-    migration-lock.service.ts      Lock check for Api*Handlers
+    migration-lock.service.ts      Lock check for Api*Handlers; cancellation of a branch's migrations on revert
     lease-heartbeat.ts             Lease renewal timer of one claim
   migration-payload.ts             Payload envelope encoder and decoder
   commands/                        StartAsyncMigration, AbortMigration

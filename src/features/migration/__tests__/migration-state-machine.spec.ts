@@ -489,6 +489,7 @@ describe('Async migration state machine', () => {
   afterEach(async () => {
     await releaseStartedOwners();
     jest.restoreAllMocks();
+    await kit.guard.verifyAndForget();
   });
 
   afterAll(async () => {

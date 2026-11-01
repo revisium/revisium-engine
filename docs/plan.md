@@ -37,7 +37,7 @@ Each item is delivered by its own pull requests, in this order.
 | Referrer rewrites and the row-removal guard without the 100 limits | Must | Done (#88) |
 | Table copy-on-write by `INSERT … SELECT` | Must | Done (#85) |
 | `applyMigrations` waits for the async migration ([async SPEC §4](specs/async-row-migration-v2.spec.md#4-applymigrations-above-the-threshold)) | Must | Not started |
-| Async migration fix ([async-row-migration-v2 §3](specs/async-row-migration-v2.spec.md#3-the-fixed-async-migration)) | Must | In progress (cleanup: #90, state machine: #97, recovery: #102) |
+| Async migration fix ([async-row-migration-v2 §3](specs/async-row-migration-v2.spec.md#3-the-fixed-async-migration)) | Must | In progress (cleanup: #90, state machine: #97, recovery: #102, atomic swap: #105) |
 | Detection scan ([async-row-migration-v2 §5](specs/async-row-migration-v2.spec.md#5-detection-scan-scanschemaledger)) | Must | Not started |
 | Forward-only repair tool ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger)) | Must | Not started |
 | Branch write fence | Must | In progress (shared: #92) |

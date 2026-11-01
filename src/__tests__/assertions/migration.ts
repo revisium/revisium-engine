@@ -102,6 +102,14 @@ export async function expectMigrationAbsent(
   expect(status).toBeNull();
 }
 
+export async function observeCommittedVersions(
+  kit: MigrationTestKit,
+  branchId: string,
+): Promise<void> {
+  kit.guard.track(branchId);
+  await kit.guard.verify();
+}
+
 export async function getDraftSchemaData(
   kit: MigrationTestKit,
   revisionId: string,

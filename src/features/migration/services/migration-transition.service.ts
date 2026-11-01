@@ -39,10 +39,18 @@ const SWAP_STALLED =
 
 const RELEASED = { lockedBy: null, lockedAt: null };
 
+const CANCELLABLE_STATUSES: MigrationStatus[] = [
+  MigrationStatus.PENDING,
+  MigrationStatus.COPYING,
+  MigrationStatus.FAILED,
+];
+
 type CopySource = Pick<
   TableMigration,
   'tableId' | 'sourceTableVersionId' | 'shadowTableVersionId' | 'startedAt'
 >;
+
+type CancelledMigration = Pick<TableMigration, 'id' | 'shadowTableVersionId'>;
 
 @Injectable()
 export class MigrationTransitionService {
@@ -178,6 +186,15 @@ export class MigrationTransitionService {
     return leases.filter((lease) => ownedTokens.has(lease.token));
   }
 
+  findByTable(
+    { revisionId, tableId }: { revisionId: string; tableId: string },
+    client: TransactionPrismaClient,
+  ): Promise<TableMigration | null> {
+    return client.tableMigration.findUnique({
+      where: { revisionId_tableId: { revisionId, tableId } },
+    });
+  }
+
   findOwned(lease: MigrationLease): Promise<TableMigration | null> {
     return this.prisma.tableMigration.findFirst({
       where: { id: lease.migrationId, lockedBy: lease.token },
@@ -305,6 +322,28 @@ export class MigrationTransitionService {
     return deleted.count === 1;
   }
 
+  async cancel(
+    migration: CancelledMigration,
+    transaction: TransactionPrismaClient,
+  ): Promise<boolean> {
+    const cancelled = await transaction.tableMigration.deleteMany({
+      where: { id: migration.id, status: { in: CANCELLABLE_STATUSES } },
+    });
+
+    if (cancelled.count !== 1) {
+      return false;
+    }
+
+    if (migration.shadowTableVersionId) {
+      await this.deleteUnlinkedTable(
+        transaction,
+        migration.shadowTableVersionId,
+      );
+    }
+
+    return true;
+  }
+
   async retry(lease: MigrationLease): Promise<boolean> {
     const retried = await this.prisma.tableMigration.updateMany({
       where: {
@@ -398,6 +437,18 @@ export class MigrationTransitionService {
         createdAt: source.createdAt,
       },
     });
+  }
+
+  private async deleteUnlinkedTable(
+    transaction: TransactionPrismaClient,
+    versionId: string,
+  ): Promise<void> {
+    const unlinked = { versionId, revisions: { none: {} } };
+
+    await transaction.row.deleteMany({
+      where: { tables: { some: unlinked } },
+    });
+    await transaction.table.deleteMany({ where: unlinked });
   }
 
   private inRecoveryScope(): Prisma.TableMigrationWhereInput {

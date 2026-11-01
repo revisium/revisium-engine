@@ -6,6 +6,7 @@ import {
   expectDraftSchemaToHaveProperties,
   expectMigrationAbsent,
   getDraftSchemaData,
+  observeCommittedVersions,
   waitForMigration,
   waitForMigrationStatus,
 } from 'src/__tests__/assertions/migration';
@@ -39,6 +40,10 @@ describe('Atomic swap — schema consistency', () => {
     jest.restoreAllMocks();
   });
 
+  afterEach(async () => {
+    await kit.guard.verifyAndForget();
+  });
+
   afterAll(async () => {
     if (kit) {
       await kit.close();
@@ -46,36 +51,20 @@ describe('Atomic swap — schema consistency', () => {
   });
 
   async function prepareTableWithRows(rowCount = ROW_COUNT) {
-    return givenMigrationTableWithRows({
+    const draft = await givenMigrationTableWithRows({
       prisma: kit.prisma,
       schema: testSchema,
       rowCount,
     });
+    await observeCommittedVersions(kit, draft.branchId);
+
+    return draft;
   }
 
   describe('schema unchanged during copy', () => {
     it('schema row should NOT have new field while migration is in progress', async () => {
       const { draftRevisionId, tableId } = await prepareTableWithRows();
-      let releaseFirstBatch: (() => void) | undefined;
-      const firstBatchGate = new Promise<void>((resolve) => {
-        releaseFirstBatch = resolve;
-      });
-      const originalLoadBatchRows =
-        kit.migrationBatchService.loadBatchRows.bind(kit.migrationBatchService);
-      let shouldPauseFirstBatch = true;
-
-      jest
-        .spyOn(kit.migrationBatchService, 'loadBatchRows')
-        .mockImplementation(async (...args) => {
-          const rows = await originalLoadBatchRows(...args);
-
-          if (shouldPauseFirstBatch) {
-            shouldPauseFirstBatch = false;
-            await firstBatchGate;
-          }
-
-          return rows;
-        });
+      const firstBatch = holdFirstBatch();
 
       const schemaBefore = await getDraftSchemaData(
         kit,
@@ -117,7 +106,7 @@ describe('Atomic swap — schema consistency', () => {
           | undefined;
         expect(duringProps).not.toHaveProperty('newField');
       } finally {
-        releaseFirstBatch?.();
+        firstBatch.release();
       }
 
       await waitForMigration(kit, draftRevisionId, tableId);
@@ -201,6 +190,7 @@ describe('Atomic swap — schema consistency', () => {
   describe('abort leaves schema clean', () => {
     it('schema should be unchanged after abort', async () => {
       const { draftRevisionId, tableId } = await prepareTableWithRows();
+      const firstBatch = holdFirstBatch();
 
       const schemaBefore = await getDraftSchemaData(
         kit,
@@ -221,10 +211,20 @@ describe('Atomic swap — schema consistency', () => {
       });
       expect(result.migrationId).toBeDefined();
 
-      await kit.migrationApi.abortMigration({
-        revisionId: draftRevisionId,
-        tableId,
-      });
+      try {
+        await waitForMigrationStatus(
+          kit,
+          draftRevisionId,
+          tableId,
+          MigrationStatus.COPYING,
+        );
+        await kit.migrationApi.abortMigration({
+          revisionId: draftRevisionId,
+          tableId,
+        });
+      } finally {
+        firstBatch.release();
+      }
 
       await waitForMigration(kit, draftRevisionId, tableId);
 
@@ -327,4 +327,29 @@ describe('Atomic swap — schema consistency', () => {
       expect(record).toBeNull();
     });
   });
+
+  function holdFirstBatch(): { release(): void } {
+    const batchService = kit.migrationBatchService;
+    const loadBatchRows = batchService.loadBatchRows.bind(batchService);
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let isFirstBatch = true;
+
+    jest
+      .spyOn(batchService, 'loadBatchRows')
+      .mockImplementation(async (...args) => {
+        const rows = await loadBatchRows(...args);
+
+        if (isFirstBatch) {
+          isFirstBatch = false;
+          await released;
+        }
+
+        return rows;
+      });
+
+    return { release };
+  }
 });

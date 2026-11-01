@@ -4,6 +4,7 @@ import {
   MigrationLockedDetails,
 } from 'src/features/migration/exceptions/migration-locked.exception';
 import { PERCENTAGE_MULTIPLIER } from 'src/features/migration/migration.consts';
+import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
 import {
   ACTIVE_MIGRATION_STATUSES,
   MigrationStatus,
@@ -12,7 +13,10 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 
 @Injectable()
 export class MigrationLockService {
-  constructor(private readonly transactionService: TransactionPrismaService) {}
+  constructor(
+    private readonly transactionService: TransactionPrismaService,
+    private readonly transitions: MigrationTransitionService,
+  ) {}
 
   async cancelBranchMigrations(
     projectId: string,
@@ -53,33 +57,7 @@ export class MigrationLockService {
     });
 
     for (const migration of migrations) {
-      if (migration.shadowTableVersionId) {
-        await client.row.deleteMany({
-          where: {
-            tables: {
-              some: { versionId: migration.shadowTableVersionId },
-            },
-          },
-        });
-        await client.table
-          .delete({
-            where: { versionId: migration.shadowTableVersionId },
-          })
-          .catch((err: Error & { code?: string }) => {
-            if (err.code !== 'P2025') {
-              throw err;
-            }
-          });
-      }
-      await client.tableMigration
-        .delete({
-          where: { id: migration.id },
-        })
-        .catch((err: Error & { code?: string }) => {
-          if (err.code !== 'P2025') {
-            throw err;
-          }
-        });
+      await this.transitions.cancel(migration, client);
     }
   }
 

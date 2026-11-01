@@ -3,15 +3,16 @@ import {
   expectDraftSchemaToHaveProperties,
   expectMigrationToFinish,
   getDraftSchemaData,
+  observeCommittedVersions,
 } from 'src/__tests__/assertions/migration';
 import {
   MigrationStatus,
   MigrationPhase,
 } from 'src/features/migration/types/migration.types';
-import { encodeMigrationPayload } from 'src/features/migration/migration-payload';
 import { createMigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { givenDraftWithRows } from 'src/__tests__/fixtures/scenarios/given-draft-with-rows';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
+import { asyncUpdateOf } from './support/migration-database';
 
 const TEST_THRESHOLD = 10;
 const ROW_COUNT = 15;
@@ -30,12 +31,7 @@ describe('Migration bugs', () => {
 
   describe('Bug: @@unique prevents second migration (major 1)', () => {
     it('should allow a second async migration after first completes', async () => {
-      const draft = await givenDraftWithRows({
-        prisma: kit.prisma,
-        schema: testSchema,
-        rowCount: ROW_COUNT,
-        rows: (index) => ({ ver: index }),
-      });
+      const draft = await givenDraft();
 
       const result1 = await kit.draftApi.apiUpdateTable({
         revisionId: draft.draftRevisionId,
@@ -70,12 +66,7 @@ describe('Migration bugs', () => {
 
   describe('Bug: retry re-creates shadow table (critical 2)', () => {
     it('should reuse existing shadow table on retry', async () => {
-      const draft = await givenDraftWithRows({
-        prisma: kit.prisma,
-        schema: testSchema,
-        rowCount: ROW_COUNT,
-        rows: (index) => ({ ver: index }),
-      });
+      const draft = await givenDraft();
 
       const shadowVersionId = 'shadow-already-exists-' + Date.now();
       await kit.prisma.table.create({
@@ -96,10 +87,13 @@ describe('Migration bugs', () => {
           shadowTableVersionId: shadowVersionId,
           status: MigrationStatus.PENDING,
           phase: MigrationPhase.COPYING,
-          patches: encodeMigrationPayload([]),
-          previousSchema: testSchema,
-          previousSchemaHash: 'h1',
-          targetSchemaHash: 'h2',
+          ...asyncUpdateOf(testSchema, [
+            {
+              op: 'add',
+              path: '/properties/retried',
+              value: { type: JsonSchemaTypeName.Number, default: 0 },
+            },
+          ]),
           totalRows: ROW_COUNT,
           copiedRows: 0,
         },
@@ -128,12 +122,7 @@ describe('Migration bugs', () => {
 
   describe('Bug: schema not atomic with migration record (critical 1)', () => {
     it('should not update schema if migration record creation fails', async () => {
-      const draft = await givenDraftWithRows({
-        prisma: kit.prisma,
-        schema: testSchema,
-        rowCount: ROW_COUNT,
-        rows: (index) => ({ ver: index }),
-      });
+      const draft = await givenDraft();
 
       const schemaBefore = await getDraftSchemaData(
         kit,
@@ -172,12 +161,7 @@ describe('Migration bugs', () => {
 
   describe('Bug: no row validation in async path (major 2)', () => {
     it('should produce rows with correct schema fields after migration', async () => {
-      const draft = await givenDraftWithRows({
-        prisma: kit.prisma,
-        schema: testSchema,
-        rowCount: ROW_COUNT,
-        rows: (index) => ({ ver: index }),
-      });
+      const draft = await givenDraft();
 
       const result = await kit.draftApi.apiUpdateTable({
         revisionId: draft.draftRevisionId,
@@ -226,7 +210,23 @@ describe('Migration bugs', () => {
     jest.restoreAllMocks();
   });
 
+  afterEach(async () => {
+    await kit.guard.verifyAndForget();
+  });
+
   afterAll(async () => {
     await kit.close();
   });
+
+  async function givenDraft() {
+    const draft = await givenDraftWithRows({
+      prisma: kit.prisma,
+      schema: testSchema,
+      rowCount: ROW_COUNT,
+      rows: (index) => ({ ver: index }),
+    });
+    await observeCommittedVersions(kit, draft.branchId);
+
+    return draft;
+  }
 });

@@ -2,6 +2,7 @@ import { JsonSchemaTypeName } from '@revisium/schema-toolkit/types';
 import {
   expectMigrationToFinish,
   expectRowsToHaveProperties,
+  observeCommittedVersions,
 } from 'src/__tests__/assertions/migration';
 import { givenMigrationTableWithRows } from 'src/__tests__/fixtures/scenarios/given-migration-table-with-rows';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
@@ -46,6 +47,10 @@ describe('CleanupService and shadow tables of async migrations', () => {
     cleanupService = kit.module.get(CleanupService);
   });
 
+  afterEach(async () => {
+    await kit.guard.verifyAndForget();
+  });
+
   afterAll(async () => {
     await kit.close();
   });
@@ -56,6 +61,7 @@ describe('CleanupService and shadow tables of async migrations', () => {
       schema: productSchema,
       rowCount: ROW_COUNT,
     });
+    await observeCommittedVersions(kit, draft.branchId);
 
     await duringCopyOfFieldAddition(kit, draft, 'price', () =>
       cleanupService.cleanOrphanedData(),

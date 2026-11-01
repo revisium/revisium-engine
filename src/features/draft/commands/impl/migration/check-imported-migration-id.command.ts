@@ -1,7 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 
 export class CheckImportedMigrationIdCommand {
-  constructor(public readonly revisionId: string) {}
+  constructor(
+    public readonly revisionId: string,
+    public readonly migrationId?: string,
+  ) {}
 }
 
 export class MigrationAlreadyAppliedException extends BadRequestException {

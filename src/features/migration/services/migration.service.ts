@@ -2,8 +2,8 @@ import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import type { InputJsonValue, TableMigration } from 'src/engine-prisma-types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
+import { MigrationSwapService } from 'src/features/migration/services/migration-swap.service';
 import {
   MigrationTransitionService,
   type MigrationLease,
@@ -24,23 +24,15 @@ import {
   MIGRATION_DEFAULTS,
   MIGRATION_OPTIONS,
 } from 'src/features/migration/migration.consts';
-import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
 import type { TransactionPrismaClient } from 'src/features/share/types';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
-import objectHash from 'object-hash';
-import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import { ViewsMigrationService } from 'src/features/share/views-migration.service';
-import { tableViewsSchema } from 'src/features/share/schema/table-views-schema';
-import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { TableViewsData } from 'src/features/views/types';
 
 type ClaimedRunResult = MigrationStepResult | 'retry';
 
 @Injectable()
 export class MigrationService {
   private readonly logger = new Logger(MigrationService.name);
-  private readonly viewsSchemaHash: string;
 
   private readonly options: Required<Omit<MigrationOptions, 'workerMode'>> & {
     workerMode: 'inline' | 'polling' | 'disabled';
@@ -49,10 +41,8 @@ export class MigrationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly transactionService: TransactionPrismaService,
-    private readonly jsonSchemaStore: JsonSchemaStoreService,
-    private readonly jsonSchemaValidator: JsonSchemaValidatorService,
-    private readonly viewsMigrationService: ViewsMigrationService,
     private readonly batchService: MigrationBatchService,
+    private readonly swapService: MigrationSwapService,
     private readonly transitions: MigrationTransitionService,
     private readonly heldLeases: HeldMigrationLeases,
     @Optional() @Inject(MIGRATION_OPTIONS) migrationOptions?: MigrationOptions,
@@ -72,8 +62,6 @@ export class MigrationService {
         migrationOptions?.stallTimeoutMs ?? MIGRATION_DEFAULTS.stallTimeoutMs,
       maxRetries: migrationOptions?.maxRetries ?? MIGRATION_DEFAULTS.maxRetries,
     };
-    this.viewsSchemaHash =
-      this.jsonSchemaValidator.getSchemaHash(tableViewsSchema);
   }
 
   get threshold() {
@@ -259,9 +247,9 @@ export class MigrationService {
       case MigrationStatus.COPYING:
         return migration.copiedRows < migration.totalRows
           ? this.copyNextBatch(lease, migration)
-          : this.startSwap(lease, migration);
+          : this.startSwap(lease);
       case MigrationStatus.SWAPPING:
-        return this.swap(lease, migration);
+        return this.swapService.swap(lease, migration);
       default:
         return Promise.resolve('stopped');
     }
@@ -356,26 +344,10 @@ export class MigrationService {
     return written ? 'continue' : 'stopped';
   }
 
-  private async startSwap(
-    lease: MigrationLease,
-    migration: TableMigration,
-  ): Promise<MigrationStepResult> {
-    await this.verifyShadowRowCount(migration);
+  private async startSwap(lease: MigrationLease): Promise<MigrationStepResult> {
     const begun = await this.transitions.beginSwap(lease);
 
     return begun ? 'continue' : 'stopped';
-  }
-
-  private async verifyShadowRowCount(migration: TableMigration): Promise<void> {
-    const shadowRowCount = await this.countRows(
-      this.requireShadowTable(migration),
-    );
-
-    if (shadowRowCount !== migration.totalRows) {
-      throw new Error(
-        `Row count mismatch: expected ${migration.totalRows}, got ${shadowRowCount}`,
-      );
-    }
   }
 
   private requireShadowTable(migration: TableMigration): string {
@@ -384,159 +356,5 @@ export class MigrationService {
     }
 
     return migration.shadowTableVersionId;
-  }
-
-  private async swap(
-    lease: MigrationLease,
-    migration: TableMigration,
-  ): Promise<MigrationStepResult> {
-    const { patches } = decodeMigrationPayload(migration.patches);
-    const shadowTableVersionId = this.requireShadowTable(migration);
-
-    const swapped = await this.transactionService.runSerializable(async () => {
-      const tx = this.transactionService.getTransaction();
-
-      if (!(await this.transitions.lockSwap(lease, tx))) {
-        return false;
-      }
-
-      await tx.table.update({
-        where: { versionId: migration.sourceTableVersionId },
-        data: {
-          revisions: {
-            disconnect: { id: migration.revisionId },
-          },
-        },
-      });
-
-      await tx.table.update({
-        where: { versionId: shadowTableVersionId },
-        data: {
-          revisions: {
-            connect: { id: migration.revisionId },
-          },
-        },
-      });
-
-      await tx.revision.update({
-        where: { id: migration.revisionId },
-        data: { hasChanges: true },
-      });
-
-      await this.updateSchemaRowInTx(tx, migration, patches);
-      await this.updateViewsRowInTx(tx, migration, patches);
-      await this.deleteSwappedRecord(lease, tx);
-
-      return true;
-    });
-
-    if (!swapped) {
-      return 'stopped';
-    }
-
-    this.logger.log(`Migration ${lease.migrationId} completed successfully`);
-    return 'completed';
-  }
-
-  private async deleteSwappedRecord(
-    lease: MigrationLease,
-    tx: TransactionPrismaClient,
-  ): Promise<void> {
-    if (!(await this.transitions.completeSwap(lease, tx))) {
-      throw new Error(
-        `Migration ${lease.migrationId} lost its record inside its own swap`,
-      );
-    }
-  }
-
-  private async updateSchemaRowInTx(
-    tx: ReturnType<TransactionPrismaService['getTransaction']>,
-    migration: { revisionId: string; tableId: string },
-    patches: JsonPatch[],
-  ) {
-    const schemaTable = await tx.table.findFirst({
-      where: {
-        id: 'revisium_schema_table',
-        revisions: { some: { id: migration.revisionId } },
-      },
-    });
-    if (!schemaTable) {
-      return;
-    }
-
-    const schemaRow = await tx.row.findFirst({
-      where: {
-        id: migration.tableId,
-        tables: { some: { versionId: schemaTable.versionId } },
-      },
-    });
-    if (!schemaRow) {
-      return;
-    }
-
-    const currentSchema = schemaRow.data as unknown as JsonSchema;
-    const st = new SchemaTable(currentSchema, this.jsonSchemaStore.refs);
-    st.applyPatches(patches);
-    const targetSchema = st.getSchema();
-
-    await tx.row.update({
-      where: { versionId: schemaRow.versionId },
-      data: {
-        data: targetSchema as InputJsonValue,
-        hash: objectHash(targetSchema as objectHash.NotUndefined),
-        updatedAt: new Date(),
-      },
-    });
-  }
-
-  private async updateViewsRowInTx(
-    tx: ReturnType<TransactionPrismaService['getTransaction']>,
-    migration: {
-      revisionId: string;
-      tableId: string;
-      previousSchema: unknown;
-    },
-    patches: JsonPatch[],
-  ) {
-    const viewsTable = await tx.table.findFirst({
-      where: {
-        id: SystemTables.Views,
-        revisions: { some: { id: migration.revisionId } },
-      },
-    });
-
-    if (!viewsTable) {
-      return;
-    }
-
-    const viewsRow = await tx.row.findFirst({
-      where: {
-        id: migration.tableId,
-        tables: { some: { versionId: viewsTable.versionId } },
-      },
-    });
-
-    if (!viewsRow) {
-      return;
-    }
-
-    const migratedViewsData = this.viewsMigrationService.migrateViews(
-      {
-        viewsData: viewsRow.data as unknown as TableViewsData,
-        patches,
-        previousSchema: migration.previousSchema as JsonSchema,
-      },
-      { revisionId: migration.revisionId, tableId: migration.tableId },
-    );
-
-    await tx.row.update({
-      where: { versionId: viewsRow.versionId },
-      data: {
-        data: migratedViewsData as unknown as InputJsonValue,
-        hash: objectHash(migratedViewsData),
-        schemaHash: this.viewsSchemaHash,
-        updatedAt: new Date(),
-      },
-    });
   }
 }

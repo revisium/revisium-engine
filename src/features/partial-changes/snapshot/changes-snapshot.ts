@@ -27,11 +27,20 @@ export interface RevisionRows {
   readonly draft: readonly Row[];
 }
 
+export interface SystemTableVersionIds {
+  readonly head?: string;
+  readonly draft?: string;
+}
+
+export interface SystemTableRows extends RevisionRows {
+  readonly versionIds: SystemTableVersionIds;
+}
+
 export interface SystemRows {
-  readonly schemas: RevisionRows;
-  readonly migrations: RevisionRows;
-  readonly views: RevisionRows;
-  readonly sharedSchemas: RevisionRows;
+  readonly schemas: SystemTableRows;
+  readonly migrations: SystemTableRows;
+  readonly views: SystemTableRows;
+  readonly sharedSchemas: SystemTableRows;
 }
 
 export interface BranchRevisions {

@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import {
+  type LinkChanges,
+  NO_LINK_CHANGES,
+} from 'src/features/partial-changes/assembly/link-changes';
+import {
   type AppliedUnits,
   type ChangeOperation,
   OutcomeRules,
@@ -16,6 +20,10 @@ import {
   type RowMerge,
   RowMerger,
 } from 'src/features/partial-changes/assembly/row-merger';
+import {
+  type SystemTablePlan,
+  SystemTargetAssembler,
+} from 'src/features/partial-changes/assembly/system-target-assembler';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { differInContent } from 'src/features/partial-changes/catalogue/row-differences';
@@ -49,12 +57,6 @@ export type TargetRow =
       readonly merged: MergedRow;
     };
 
-export interface LinkChanges {
-  readonly removedLinks: readonly string[];
-  readonly addedLinks: readonly string[];
-  readonly newRows: readonly MergedRow[];
-}
-
 export interface TablePlan extends LinkChanges {
   readonly identity: string;
   readonly outcome: TableOutcome;
@@ -72,6 +74,7 @@ export interface DeferredValues {
 
 export interface AssembledTarget {
   readonly tables: readonly TablePlan[];
+  readonly systemTables: readonly SystemTablePlan[];
   readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly DeferredValues[];
 }
@@ -110,28 +113,27 @@ interface DecidedRow {
   readonly outcome: RowOutcome;
 }
 
-const NO_LINK_CHANGES: LinkChanges = {
-  removedLinks: [],
-  addedLinks: [],
-  newRows: [],
-};
-
 @Injectable()
 export class TargetAssembler {
-  constructor(private readonly rowMerger: RowMerger) {}
+  constructor(
+    private readonly rowMerger: RowMerger,
+    private readonly systemTargetAssembler: SystemTargetAssembler,
+  ) {}
 
   public async assemble(
     source: AssemblySource,
     choice: AppliedUnits,
   ): Promise<AssembledTarget> {
+    const rules = new OutcomeRules(choice);
     const tables = await new TargetAssembly(
       source,
-      new OutcomeRules(choice),
+      rules,
       this.rowMerger,
     ).assembleUserTables();
 
     return {
       tables: tables.map(({ plan }) => plan),
+      systemTables: await this.systemTargetAssembler.assemble(source, rules),
       blockers: tables.flatMap(({ blockers }) => blockers),
       deferred: tables.flatMap(({ deferred }) => deferred),
     };

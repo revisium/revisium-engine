@@ -12,9 +12,9 @@ import {
   type ChangesSnapshot,
   type ComparedTable,
   hasDifferentVersions,
-  type RevisionRows,
   type RowPair,
   type SystemRows,
+  type SystemTableRows,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { rowDigestSql } from 'src/features/partial-changes/snapshot/row-digest-sql';
 import {
@@ -182,10 +182,14 @@ export class ChangesSnapshotReader {
   private async readSystemTable(
     tables: RevisionTables,
     tableId: SystemTables,
-  ): Promise<RevisionRows> {
+  ): Promise<SystemTableRows> {
+    const head = systemTableOf(tables.head, tableId);
+    const draft = systemTableOf(tables.draft, tableId);
+
     return {
-      head: await this.readRows(systemTableOf(tables.head, tableId)),
-      draft: await this.readRows(systemTableOf(tables.draft, tableId)),
+      head: await this.readRows(head),
+      draft: await this.readRows(draft),
+      versionIds: { head: head?.versionId, draft: draft?.versionId },
     };
   }
 

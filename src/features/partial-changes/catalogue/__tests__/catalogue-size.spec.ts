@@ -9,8 +9,8 @@ import { attributeLedger } from 'src/features/partial-changes/catalogue/ledger-a
 import { checkHeadSchema } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   ChangesSnapshot,
-  RevisionRows,
   RowPair,
+  SystemTableRows,
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
@@ -124,6 +124,6 @@ function tableVersion(versionId: string): TableVersion {
   };
 }
 
-function noRows(): RevisionRows {
-  return { head: [], draft: [] };
+function noRows(): SystemTableRows {
+  return { head: [], draft: [], versionIds: {} };
 }

@@ -7,12 +7,14 @@ import {
   addField,
   moveField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { SystemTables } from 'src/features/share/system-tables.consts';
 import {
   ChangesScenario,
   type TableFixture,
 } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
+import type { TargetView } from '../../__tests__/support/target-assembling';
 
 const PRODUCTS = 'products';
 const LOGS = 'logs';
@@ -190,6 +192,152 @@ describe('TargetAssembler: reverting structure units', () => {
     });
   });
 
+  describe('the Draft ledger and schema rows', () => {
+    it.each<{
+      change: string;
+      given: () => Promise<ChangesScenario>;
+      tableIds: string[];
+      dropped: string[];
+    }>([
+      {
+        change: 'a field added and filled',
+        given: () => givenProductsWithAddedField(),
+        tableIds: [PRODUCTS],
+        dropped: ['draft migration update products'],
+      },
+      {
+        change: 'a renamed field',
+        given: () => givenProductsWithRenamedField(),
+        tableIds: [PRODUCTS],
+        dropped: ['draft migration update products'],
+      },
+      {
+        change: 'a created table',
+        given: () => givenTagsCreated(),
+        tableIds: [TAGS],
+        dropped: ['draft migration init tags'],
+      },
+      {
+        change: 'a removed table',
+        given: () => givenTagsRemoved(),
+        tableIds: [TAGS],
+        dropped: ['draft migration remove tags'],
+      },
+      {
+        change: 'a renamed table',
+        given: () => givenProductsRenamed(),
+        tableIds: [GOODS],
+        dropped: ['draft migration rename products to goods'],
+      },
+      {
+        change: 'a swap of two tables',
+        given: () => givenSwappedTables(),
+        tableIds: [ALPHA, BETA],
+        dropped: [
+          'draft migration rename alpha to gamma',
+          'draft migration rename beta to alpha',
+          'draft migration rename gamma to beta',
+        ],
+      },
+      {
+        change: 'a table created and removed inside the Draft',
+        given: () => givenTransientTable(),
+        tableIds: [DRAFTS],
+        dropped: [
+          'draft migration init drafts',
+          'draft migration remove drafts',
+        ],
+      },
+    ])(
+      'drops the pending migrations of $change and keeps those of another table',
+      async ({ given, tableIds, dropped }) => {
+        const draft = await given();
+
+        const target = await draft.assembleTarget('revert', {
+          tables: tableIds,
+        });
+
+        expect(target.systemTableOf(SystemTables.Migration)).toMatchObject({
+          outcome: 'mixed',
+          version: 'draft',
+          removedLinks: dropped,
+          addedLinks: [],
+          newRows: [],
+          relinkCandidate: false,
+        });
+        expectLedgerKeepsPendingLogsUpdate(target);
+      },
+    );
+
+    it('keeps exactly the published migrations and the pending migrations of the kept units', async () => {
+      const draft = await givenProductsWithAddedField();
+
+      const target = await draft.assembleTarget('revert', {
+        tables: [PRODUCTS],
+      });
+
+      expect(target.systemTableOf(SystemTables.Migration)?.rows).toEqual([
+        'migration init logs',
+        'migration init products',
+        'migration update logs',
+      ]);
+    });
+
+    it.each<{
+      change: string;
+      given: () => Promise<ChangesScenario>;
+      tableIds: string[];
+      removedLinks: string[];
+      addedLinks: string[];
+    }>([
+      {
+        change: 'a field added and filled',
+        given: () => givenProductsWithAddedField(),
+        tableIds: [PRODUCTS],
+        removedLinks: ['draft schema products'],
+        addedLinks: ['head schema products'],
+      },
+      {
+        change: 'a created table',
+        given: () => givenTagsCreated(),
+        tableIds: [TAGS],
+        removedLinks: ['draft schema tags'],
+        addedLinks: [],
+      },
+      {
+        change: 'a removed table',
+        given: () => givenTagsRemoved(),
+        tableIds: [TAGS],
+        removedLinks: [],
+        addedLinks: ['head schema tags'],
+      },
+      {
+        change: 'a renamed table',
+        given: () => givenProductsRenamed(),
+        tableIds: [GOODS],
+        removedLinks: ['draft schema goods'],
+        addedLinks: ['head schema products'],
+      },
+    ])(
+      'restores the Head schema row of $change',
+      async ({ given, tableIds, removedLinks, addedLinks }) => {
+        const draft = await given();
+
+        const target = await draft.assembleTarget('revert', {
+          tables: tableIds,
+        });
+
+        expect(target.systemTableOf(SystemTables.Schema)).toMatchObject({
+          outcome: 'mixed',
+          version: 'draft',
+          removedLinks,
+          addedLinks,
+          newRows: [],
+        });
+      },
+    );
+  });
+
   describe('a Draft structure that its history does not record', () => {
     it('allows the revert of the structure and maps its rows to the Head structure', async () => {
       const draft = await givenUnrecordedDraftStructure();
@@ -203,8 +351,21 @@ describe('TargetAssembler: reverting structure units', () => {
         outcome: 'base',
         version: 'head',
       });
+      expect(target.systemTableOf(SystemTables.Migration)).toMatchObject({
+        removedLinks: ['draft migration update products'],
+      });
+      expect(target.systemTableOf(SystemTables.Schema)).toMatchObject({
+        removedLinks: ['draft schema products'],
+        addedLinks: ['head schema products'],
+      });
     });
   });
+
+  function expectLedgerKeepsPendingLogsUpdate(target: TargetView): void {
+    expect(target.systemTableOf(SystemTables.Migration)?.rows).toContain(
+      'migration update logs',
+    );
+  }
 
   async function givenCommitted(
     tables: Readonly<Record<string, TableFixture>>,

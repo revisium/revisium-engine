@@ -45,8 +45,10 @@ export class RevertTarget {
   ) {}
 
   public async revert(...targets: TableTarget[]): Promise<string> {
-    const plan = await this.plan(...targets);
+    return this.write(await this.plan(...targets));
+  }
 
+  public write(plan: TargetWritePlan): Promise<string> {
     return this.runner.runWrite(() => this.api.revertToTarget(plan));
   }
 

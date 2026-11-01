@@ -27,7 +27,7 @@ import {
   givenTwoRowsReferencingTombstonedFile,
   registerWhileAnotherRegistrationIsUncommitted,
 } from 'src/features/file-usage/commands/handlers/__tests__/support/registration-race';
-import { countSqlStatements } from 'src/features/file-usage/commands/handlers/__tests__/support/sql-statements';
+import { countSqlStatements } from 'src/__tests__/utils/sql-statements';
 
 describe('RegisterFileReferencesForRowsHandler', () => {
   let kit: DraftTestKit;

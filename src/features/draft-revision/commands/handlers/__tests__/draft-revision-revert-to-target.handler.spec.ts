@@ -6,11 +6,10 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
-import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
+import { countSqlStatements } from 'src/__tests__/utils/sql-statements';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { countDatabaseCalls } from './support/database-calls';
 import { RevertTarget } from './support/revert-target';
 
 const PRODUCTS = 'products';
@@ -338,13 +337,16 @@ describe('DraftRevisionRevertToTargetHandler', () => {
 
   describe('write cost', () => {
     it.each<RevisionSide>(['draft', 'head'])(
-      'writes a mixed table with structure side %s in as many database calls for 1,000 rows as for 10',
+      'writes a mixed table with structure side %s in as many SQL statements for 1,000 rows as for 10',
       async (structureSide) => {
-        const calls = await databaseCallsToMergeEveryRow(10, structureSide);
+        const statements = await sqlStatementsToMergeEveryRow(
+          10,
+          structureSide,
+        );
 
         await expect(
-          databaseCallsToMergeEveryRow(1_000, structureSide),
-        ).resolves.toBe(calls);
+          sqlStatementsToMergeEveryRow(1_000, structureSide),
+        ).resolves.toBe(statements);
       },
     );
   });
@@ -421,7 +423,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
     });
   }
 
-  async function databaseCallsToMergeEveryRow(
+  async function sqlStatementsToMergeEveryRow(
     rowCount: number,
     structureSide: RevisionSide,
   ): Promise<number> {
@@ -435,7 +437,8 @@ describe('DraftRevisionRevertToTargetHandler', () => {
       },
     });
     await draft.updateRow(PRODUCTS, 'r0', { code: 'r0', price: 2 });
-    const plan = await new RevertTarget(kit, draft).plan({
+    const target = new RevertTarget(kit, draft);
+    const plan = await target.plan({
       tableId: PRODUCTS,
       outcome: 'mixed',
       structureSide,
@@ -448,9 +451,8 @@ describe('DraftRevisionRevertToTargetHandler', () => {
         ),
       },
     });
-    const api = kit.module.get(DraftRevisionTargetApiService);
 
-    return countDatabaseCalls(kit, () => api.revertToTarget(plan));
+    return countSqlStatements(() => target.write(plan));
   }
 
   function givenCommittedProducts(): Promise<ChangesScenario> {

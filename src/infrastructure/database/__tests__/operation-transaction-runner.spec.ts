@@ -4,7 +4,11 @@ import {
   createDatabaseServiceTestKit,
   type DatabaseServiceTestKit,
 } from 'src/__tests__/kit/create-database-service-test-kit';
-import { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
+import { TransactionPrismaClient } from 'src/features/share/types';
+import {
+  DeadlineHandle,
+  OperationDeadline,
+} from 'src/infrastructure/database/operation-deadline';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
@@ -266,6 +270,29 @@ describe('OperationTransactionRunner', () => {
   );
 
   describe('on servers without transaction_timeout', () => {
+    it('refuses to commit when the final checkpoint ends after the deadline', async () => {
+      const counter = await givenCounter(fallbackKit);
+      const attemptStartedAt = performance.now();
+      const delayedLimits =
+        finalCheckpointEndingAfterDeadline(attemptStartedAt);
+
+      try {
+        await expect(
+          fallbackRunner.runWrite(() =>
+            incrementThenRunStatementFor(
+              fallbackKit,
+              counter,
+              0.3 * OPERATION_TIMEOUT_MS,
+            ),
+          ),
+        ).rejects.toThrow(OperationTimeoutException);
+      } finally {
+        delayedLimits.mockRestore();
+      }
+
+      await expect(readCounter(fallbackKit, counter)).resolves.toBe(0);
+    });
+
     it('cuts a statement started after a checkpoint at the deadline', async () => {
       const failure = await failureOf(
         fallbackRunner.runWrite((deadline) =>
@@ -485,6 +512,45 @@ function conflictingOnFirstAttempt(
     attempted = true;
     return incrementAfterConcurrentIncrement(kit, counter);
   };
+}
+
+interface CheckpointLimits {
+  limitStatementsAndIdleTime($prisma: TransactionPrismaClient): Promise<void>;
+}
+
+function finalCheckpointEndingAfterDeadline(attemptStartedAt: number) {
+  const deadlines = OperationDeadline.prototype as unknown as CheckpointLimits;
+  const setLimits = deadlines.limitStatementsAndIdleTime;
+  let checkpoints = 0;
+
+  return jest
+    .spyOn(deadlines, 'limitStatementsAndIdleTime')
+    .mockImplementation(async function (
+      this: CheckpointLimits,
+      $prisma: TransactionPrismaClient,
+    ) {
+      checkpoints += 1;
+
+      if (checkpoints === 1) {
+        return setLimits.call(this, $prisma);
+      }
+
+      await runSettingsStatementUntil(
+        $prisma,
+        attemptStartedAt + OPERATION_TIMEOUT_MS + 50,
+      );
+    });
+}
+
+// Stands in for a settings statement that the server finishes only after the deadline, the session still alive.
+async function runSettingsStatementUntil(
+  $prisma: TransactionPrismaClient,
+  moment: number,
+): Promise<void> {
+  await $prisma.$executeRaw`
+    SELECT set_config('statement_timeout', '0', true),
+           set_config('idle_in_transaction_session_timeout', '0', true)`;
+  await $prisma.$executeRaw`SELECT pg_sleep(${Math.max(moment - performance.now(), 0) / 1000})`;
 }
 
 interface AbandonedOperation {

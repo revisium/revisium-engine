@@ -47,6 +47,7 @@ export class OperationDeadline implements DeadlineHandle {
       const result = await this.settledByDeadline(body(this));
 
       await this.checkpoint();
+      this.refuseIfPassed();
 
       return result;
     } catch (error) {
@@ -56,9 +57,7 @@ export class OperationDeadline implements DeadlineHandle {
   }
 
   public async checkpoint(): Promise<void> {
-    if (this.hasPassed()) {
-      throw new OperationTimeoutException(this.timeoutMs);
-    }
+    this.refuseIfPassed();
 
     if (this.enforcement?.kind === 'statementLimits') {
       await this.limitStatementsAndIdleTime(this.enforcement.transaction);
@@ -75,6 +74,12 @@ export class OperationDeadline implements DeadlineHandle {
     }
 
     return error;
+  }
+
+  private refuseIfPassed(): void {
+    if (this.hasPassed()) {
+      throw new OperationTimeoutException(this.timeoutMs);
+    }
   }
 
   private settledByDeadline<T>(operation: Promise<T>): Promise<T> {

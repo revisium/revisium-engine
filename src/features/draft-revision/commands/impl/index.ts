@@ -10,3 +10,5 @@ export * from 'src/features/draft-revision/commands/impl/draft-revision-get-or-c
 export * from 'src/features/draft-revision/commands/impl/draft-revision-commit.command';
 export * from 'src/features/draft-revision/commands/impl/draft-revision-revert.command';
 export * from 'src/features/draft-revision/commands/impl/draft-revision-recompute-has-changes.command';
+export * from 'src/features/draft-revision/commands/impl/draft-revision-revert-to-target.command';
+export * from 'src/features/draft-revision/commands/impl/target-write-plan';

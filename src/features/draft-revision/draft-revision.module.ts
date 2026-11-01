@@ -3,7 +3,9 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { DRAFT_REVISION_COMMANDS_HANDLERS } from 'src/features/draft-revision/commands/handlers';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
+import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import {
+  AssembledVersionWriter,
   DraftRevisionInternalService,
   DraftRevisionValidationService,
 } from 'src/features/draft-revision/services';
@@ -23,10 +25,16 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
   ],
   providers: [
     DraftRevisionApiService,
+    DraftRevisionTargetApiService,
     DraftRevisionInternalService,
     DraftRevisionValidationService,
+    AssembledVersionWriter,
     ...DRAFT_REVISION_COMMANDS_HANDLERS,
   ],
-  exports: [DraftRevisionApiService, DraftRevisionInternalService],
+  exports: [
+    DraftRevisionApiService,
+    DraftRevisionTargetApiService,
+    DraftRevisionInternalService,
+  ],
 })
 export class DraftRevisionModule {}

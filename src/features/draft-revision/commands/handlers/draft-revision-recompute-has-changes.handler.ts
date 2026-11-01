@@ -1,5 +1,6 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { DraftRevisionRecomputeHasChangesCommand } from 'src/features/draft-revision/commands/impl';
+import { DraftRevisionInternalService } from 'src/features/draft-revision/services';
 import { DiffService } from 'src/features/share/diff.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -10,6 +11,7 @@ export class DraftRevisionRecomputeHasChangesHandler implements ICommandHandler<
     private readonly transactionService: TransactionPrismaService,
     private readonly diffService: DiffService,
     private readonly shareTransactionalQueries: ShareTransactionalQueries,
+    private readonly internalService: DraftRevisionInternalService,
   ) {}
 
   private get transaction() {
@@ -36,7 +38,10 @@ export class DraftRevisionRecomputeHasChangesHandler implements ICommandHandler<
     );
 
     if (!table) {
-      await this.updateRevisionHasChanges(revisionId, revision.parentId);
+      await this.internalService.updateHasChanges(
+        revisionId,
+        revision.parentId,
+      );
       return;
     }
 
@@ -50,7 +55,7 @@ export class DraftRevisionRecomputeHasChangesHandler implements ICommandHandler<
       await this.revertTable(revision.branchId, tableId);
     }
 
-    await this.updateRevisionHasChanges(revisionId, revision.parentId);
+    await this.internalService.updateHasChanges(revisionId, revision.parentId);
   }
 
   private async revertTable(branchId: string, tableId: string): Promise<void> {
@@ -92,21 +97,6 @@ export class DraftRevisionRecomputeHasChangesHandler implements ICommandHandler<
           },
         },
       },
-    });
-  }
-
-  private async updateRevisionHasChanges(
-    revisionId: string,
-    parentRevisionId: string,
-  ): Promise<void> {
-    const hasChanges = await this.diffService.hasTableDiffs({
-      fromRevisionId: parentRevisionId,
-      toRevisionId: revisionId,
-    });
-
-    await this.transaction.revision.update({
-      where: { id: revisionId },
-      data: { hasChanges },
     });
   }
 }

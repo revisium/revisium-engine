@@ -31,6 +31,7 @@ export interface SystemTableTarget {
   readonly tableId: SystemTables;
   readonly rows: SystemTableRows;
   readonly linkSide: RevisionSide;
+  readonly keptWhenEmpty: boolean;
   readonly versions: readonly Row[];
   readonly rewrites: readonly TableViews[];
   readonly ownerKinds: readonly UnitKind[];
@@ -51,14 +52,14 @@ export function tableViewsOf(
 }
 
 export function systemTableOutcomeOf(
-  { rows, linkSide }: SystemTableTarget,
+  { rows, linkSide, keptWhenEmpty }: SystemTableTarget,
   versions: readonly Row[],
   hasNewRows: boolean,
 ): TableOutcome {
   const otherSide = oppositeOf(linkSide);
   const onBothSides = rows.versionIds[otherSide] !== undefined;
 
-  if (!onBothSides && versions.length === 0 && !hasNewRows) {
+  if (!onBothSides && !keptWhenEmpty && versions.length === 0 && !hasNewRows) {
     return 'absent';
   }
 
@@ -122,7 +123,7 @@ class SystemTableTargets {
     return {
       tableId,
       rows,
-      linkSide: this.linkSideOf(rows),
+      ...this.linkOf(rows),
       versions: distinctRows([
         ...rows.head.filter((row) => sideOf(row) === 'head'),
         ...rows.draft.filter((row) => sideOf(row) === 'draft'),
@@ -138,7 +139,7 @@ class SystemTableTargets {
     return {
       tableId: SystemTables.Views,
       rows,
-      linkSide: this.linkSideOf(rows),
+      ...this.linkOf(rows),
       versions: views.filter(followsStructure).map(({ source }) => source),
       rewrites: views.filter((table) => !followsStructure(table)),
       ownerKinds: ['structure', 'views'],
@@ -171,6 +172,14 @@ class SystemTableTargets {
     }
 
     return this.rules.sideTakenBy(viewsUnit.key);
+  }
+
+  private linkOf(
+    rows: SystemTableRows,
+  ): Pick<SystemTableTarget, 'linkSide' | 'keptWhenEmpty'> {
+    const linkSide = this.linkSideOf(rows);
+
+    return { linkSide, keptWhenEmpty: this.rules.takesEveryTableOf(linkSide) };
   }
 
   private linkSideOf(rows: SystemTableRows): RevisionSide {

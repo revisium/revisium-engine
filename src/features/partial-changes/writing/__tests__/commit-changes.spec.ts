@@ -598,32 +598,52 @@ describe('commitChanges', () => {
   });
 
   describe('the whole Draft', () => {
-    it('commits exactly { all: true } of a Draft without structure changes with the content native createRevision gives', async () => {
-      const native = await givenEveryChangeButStructure();
-      const partial = await givenEveryChangeButStructure();
+    const drafts: WholeDraft[] = [
+      {
+        holding:
+          'every change but structure and a table of content-equal versions',
+        given: givenEveryChangeButStructure,
+      },
+      {
+        holding: 'an empty shared-schema table that Head lacks',
+        given: givenEmptySharedSchemaTableNextToAnEdit,
+      },
+    ];
 
-      await native.commit();
-      await expectApplied(partial.commitChanges({ selection: { all: true } }));
+    it.each(drafts)(
+      'commits exactly { all: true } of a Draft holding $holding with the content native createRevision gives',
+      async ({ given }) => {
+        const native = await given();
+        const partial = await given();
 
-      expect(await branchContentOf(kit, partial)).toEqual(
-        await branchContentOf(kit, native),
-      );
-    });
+        await native.commit();
+        await expectApplied(
+          partial.commitChanges({ selection: { all: true } }),
+        );
 
-    it('links into Head exactly the table versions the Draft linked, also of a table holding only content-equal versions, and the same versions into the new Draft without changes, as native createRevision does', async () => {
-      const draft = await givenEveryChangeButStructure();
-      const draftVersionIds = await draft.linkedTableVersionIds('draft');
+        expect(await branchContentOf(kit, partial)).toEqual(
+          await branchContentOf(kit, native),
+        );
+      },
+    );
 
-      await expectApplied(draft.commitChanges({ selection: { all: true } }));
+    it.each(drafts)(
+      'links into Head exactly the table versions of a Draft holding $holding, and the same versions into the new Draft without changes, as native createRevision does',
+      async ({ given }) => {
+        const draft = await given();
+        const draftVersionIds = await draft.linkedTableVersionIds('draft');
 
-      expect(await draft.linkedTableVersionIds('head')).toEqual(
-        draftVersionIds,
-      );
-      expect(await draft.linkedTableVersionIds('draft')).toEqual(
-        draftVersionIds,
-      );
-      expect(await draft.hasChanges()).toBe(false);
-    });
+        await expectApplied(draft.commitChanges({ selection: { all: true } }));
+
+        expect(await draft.linkedTableVersionIds('head')).toEqual(
+          draftVersionIds,
+        );
+        expect(await draft.linkedTableVersionIds('draft')).toEqual(
+          draftVersionIds,
+        );
+        expect(await draft.hasChanges()).toBe(false);
+      },
+    );
   });
 
   describe('endpoint notification', () => {
@@ -919,6 +939,15 @@ describe('commitChanges', () => {
     return draft;
   }
 
+  async function givenEmptySharedSchemaTableNextToAnEdit(): Promise<ChangesScenario> {
+    const draft = await givenCommittedPrices();
+    await draft.createSharedSchema(ADDRESS, addressSchema);
+    await draft.removeSharedSchema(ADDRESS);
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
+
+    return draft;
+  }
+
   async function givenHeadImageWithDraftDroppingTheImageField(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [DOCUMENTS]: {
@@ -933,6 +962,11 @@ describe('commitChanges', () => {
     return draft;
   }
 });
+
+interface WholeDraft {
+  readonly holding: string;
+  readonly given: () => Promise<ChangesScenario>;
+}
 
 function productViews(name: string): TableViewsData {
   return {

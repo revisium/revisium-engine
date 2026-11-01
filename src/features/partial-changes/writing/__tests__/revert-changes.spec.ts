@@ -478,21 +478,28 @@ describe('revertChanges', () => {
   });
 
   describe('the whole Draft', () => {
-    it('reverts exactly { all: true } as native revertChanges does: the Draft links exactly the Head table versions', async () => {
-      const draft = await givenEditedPricesNextToTags();
-      await draft.removeRow(PRODUCTS, 'p2');
-      await draft.createRows(PRODUCTS, { p3: { title: 'three', price: 3 } });
-      await draft.updateTable(PRODUCTS, [addField('color', str())]);
-      await draft.renameTable(TAGS, GOODS);
-      await draft.createTable(CATEGORIES, categorySchema);
+    it.each<{ holding: string; given: () => Promise<ChangesScenario> }>([
+      {
+        holding: 'data and structure changes',
+        given: givenDataAndStructureChanges,
+      },
+      {
+        holding: 'an empty shared-schema table that Head lacks',
+        given: givenEmptySharedSchemaTableNextToAnEdit,
+      },
+    ])(
+      'reverts exactly { all: true } of a Draft holding $holding as native revertChanges does: the Draft links exactly the Head table versions',
+      async ({ given }) => {
+        const draft = await given();
 
-      await expectApplied(draft.revertChanges({ selection: { all: true } }));
+        await expectApplied(draft.revertChanges({ selection: { all: true } }));
 
-      expect(await draft.linkedTableVersionIds('draft')).toEqual(
-        await draft.linkedTableVersionIds('head'),
-      );
-      expect(await draft.hasChanges()).toBe(false);
-    });
+        expect(await draft.linkedTableVersionIds('draft')).toEqual(
+          await draft.linkedTableVersionIds('head'),
+        );
+        expect(await draft.hasChanges()).toBe(false);
+      },
+    );
   });
 
   describe('endpoint notification', () => {
@@ -665,6 +672,26 @@ describe('revertChanges', () => {
       [TAGS]: { schema: tagSchema, rows: { t1: { title: 'one' } } },
     });
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
+
+    return draft;
+  }
+
+  async function givenDataAndStructureChanges(): Promise<ChangesScenario> {
+    const draft = await givenEditedPricesNextToTags();
+    await draft.removeRow(PRODUCTS, 'p2');
+    await draft.createRows(PRODUCTS, { p3: { title: 'three', price: 3 } });
+    await draft.updateTable(PRODUCTS, [addField('color', str())]);
+    await draft.renameTable(TAGS, GOODS);
+    await draft.createTable(CATEGORIES, categorySchema);
+
+    return draft;
+  }
+
+  async function givenEmptySharedSchemaTableNextToAnEdit(): Promise<ChangesScenario> {
+    const draft = await givenCommittedPrices();
+    await draft.createSharedSchema(ADDRESS, addressSchema);
+    await draft.removeSharedSchema(ADDRESS);
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
 
     return draft;
   }

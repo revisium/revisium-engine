@@ -20,7 +20,6 @@ import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/cha
 import {
   type ChangedRows,
   type ComparedTable,
-  type RowBound,
   type RowPair,
   unitRowIdOf,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -95,20 +94,22 @@ export class UnitListing {
     let from = page.rowsFromCursorIn(tableId);
 
     while (!page.isFull) {
-      const rowLimit = page.remaining;
+      const rowLimit = page.rowsToRead;
       const pairs = await this.snapshotReader.readChangedRowsFrom(table, {
         from,
         rowLimit,
       });
-      const rowsAfterRead = rowsAfterReadOf(pairs, rowLimit);
+      const rowIds = distinctRowIdsOf(pairs);
+      const lastRowId = rowIds.at(-1);
+      const tableEnded = pairs.length < rowLimit;
 
-      page.add(rowUnitsOf(tableId, table, pairs));
+      page.addRowsRead(tableId, rowIds, rowUnitsOf(tableId, table, pairs));
 
-      if (!rowsAfterRead) {
+      if (tableEnded || lastRowId === undefined) {
         return;
       }
 
-      from = rowsAfterRead;
+      from = { rowId: lastRowId, inclusive: false };
     }
   }
 }
@@ -123,18 +124,8 @@ function rowUnitsOf(
   return [...units].sort(compareUnits);
 }
 
-function rowsAfterReadOf(
-  pairs: readonly RowPair[],
-  rowLimit: number,
-): RowBound | undefined {
-  const rowIds = new Set(pairs.map(unitRowIdOf));
-  const lastRowId = [...rowIds].at(-1);
-
-  if (rowIds.size < rowLimit || lastRowId === undefined) {
-    return undefined;
-  }
-
-  return { rowId: lastRowId, inclusive: false };
+function distinctRowIdsOf(pairs: readonly RowPair[]): string[] {
+  return [...new Set(pairs.map(unitRowIdOf))];
 }
 
 function encodedCursorOf(cursor: ListingCursor | undefined): string | null {

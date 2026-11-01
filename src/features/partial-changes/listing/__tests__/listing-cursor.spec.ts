@@ -6,6 +6,7 @@ import {
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 
 const cursorInsideRow: ListingCursor = {
+  tableId: 'products',
   last: {
     key: '["field","t1","r1","/size/width"]',
     unit: {
@@ -19,10 +20,16 @@ const cursorInsideRow: ListingCursor = {
 };
 
 const cursorAfterTableUnit: ListingCursor = {
+  tableId: 'goods',
   last: {
     key: '["structure","t1"]',
     unit: { kind: 'structure', tableId: 'goods', previousTableId: 'products' },
   },
+};
+
+const cursorAfterRowsWithoutUnits: ListingCursor = {
+  tableId: 'products',
+  rows: { rowId: 'p4', inclusive: false },
 };
 
 const validPosition = {
@@ -34,6 +41,10 @@ describe('ListingCursor', () => {
   it.each([
     { position: 'inside a row', cursor: cursorInsideRow },
     { position: 'after a table-level unit', cursor: cursorAfterTableUnit },
+    {
+      position: 'after rows that listed no unit',
+      cursor: cursorAfterRowsWithoutUnits,
+    },
   ])('decodes the cursor it encoded $position', ({ cursor }) => {
     expect(decodeListingCursor(encodeListingCursor(cursor))).toEqual(cursor);
   });
@@ -48,22 +59,31 @@ describe('ListingCursor', () => {
     { malformation: 'a text that is not JSON', text: encoded('{"v":') },
     {
       malformation: 'another version',
-      text: encodedJson({ v: 2, last: validPosition }),
+      text: encodedJson({ v: 2, tableId: 'goods', last: validPosition }),
+    },
+    {
+      malformation: 'a cursor without the table to resume from',
+      text: encodedJson({ v: 1, last: validPosition }),
     },
     {
       malformation: 'a position without a unit key',
-      text: encodedJson({ v: 1, last: { unit: validPosition.unit } }),
+      text: encodedJson({
+        v: 1,
+        tableId: 'goods',
+        last: { unit: validPosition.unit },
+      }),
     },
     {
       malformation: 'a unit whose table id is not a string',
       text: encodedJson({
         v: 1,
+        tableId: 'goods',
         last: { key: validPosition.key, unit: { kind: 'field', tableId: 7 } },
       }),
     },
     {
       malformation: 'a row bound without its inclusive flag',
-      text: encodedJson({ v: 1, last: validPosition, rows: { rowId: 'r1' } }),
+      text: encodedJson({ v: 1, tableId: 'goods', rows: { rowId: 'r1' } }),
     },
   ])('refuses $malformation', ({ text }) => {
     expect(() => decodeListingCursor(text)).toThrow(ListingValidationError);

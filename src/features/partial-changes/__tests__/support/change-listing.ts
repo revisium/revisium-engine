@@ -16,6 +16,7 @@ export type ListingOptions = Omit<ListChangesInput, 'branch'>;
 export interface ChangedRowsRead {
   readonly tableId: string;
   readonly rowIds: readonly string[];
+  readonly pairs: number;
 }
 
 export interface PageWithReads {
@@ -136,6 +137,10 @@ class ChangedRowsReads {
       select: { id: true },
     });
 
-    return { tableId: table.id, rowIds: pairs.map(unitRowIdOf) };
+    return {
+      tableId: table.id,
+      rowIds: [...new Set(pairs.map(unitRowIdOf))],
+      pairs: pairs.length,
+    };
   }
 }

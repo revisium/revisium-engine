@@ -1,4 +1,4 @@
-import { sql, type Sql } from 'src/engine-prisma-types';
+import { raw, sql, type Sql } from 'src/engine-prisma-types';
 import type {
   ChangedRowsKeyset,
   ComparedTable,
@@ -29,7 +29,6 @@ export function changedRowPairsSql(table: ComparedTable): Sql {
       WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM draft_only))
     )
     SELECT coalesce(h."createdId", d."createdId") AS "identity",
-           coalesce(d."id", h."id") AS "rowId",
            h."versionId" AS "headVersionId",
            d."versionId" AS "draftVersionId"
     FROM h FULL OUTER JOIN d ON h."createdId" = d."createdId"
@@ -44,17 +43,39 @@ export function changedRowPairsFromSql(
   { from, rowLimit }: ChangedRowsKeyset,
 ): Sql {
   return sql`
-    WITH pairs AS (${changedRowPairsSql(table)}),
-    keyset AS (
-      SELECT "rowId" FROM pairs
-      WHERE ${rowsFrom(from)}
-      GROUP BY "rowId"
-      ORDER BY "rowId" COLLATE "C"
-      LIMIT ${rowLimit}
+    WITH head_only AS MATERIALIZED (
+      ${rowLinksMissingIn(table.headVersionId, table.draftVersionId)}
+    ),
+    draft_only AS MATERIALIZED (
+      ${rowLinksMissingIn(table.draftVersionId, table.headVersionId)}
+    ),
+    head_keys AS (${rowKeysOf(raw('head_only'))}),
+    draft_keys AS (${rowKeysOf(raw('draft_only'))}),
+    candidates AS (
+      SELECT coalesce(hk."createdId", dk."createdId") AS "identity",
+             coalesce(dk."id", hk."id") AS "rowId",
+             hk."versionId" AS "headVersionId",
+             dk."versionId" AS "draftVersionId"
+      FROM head_keys hk FULL OUTER JOIN draft_keys dk
+        ON hk."createdId" = dk."createdId"
     )
-    SELECT pairs.* FROM pairs
-    WHERE pairs."rowId" IN (SELECT "rowId" FROM keyset)
-    ORDER BY pairs."rowId" COLLATE "C", pairs."identity" COLLATE "C"
+    SELECT c.* FROM (
+      SELECT * FROM candidates c
+      WHERE ${rowsFrom(from)}
+      ORDER BY c."rowId" COLLATE "C"
+      OFFSET 0
+    ) c
+    CROSS JOIN LATERAL (
+      SELECT 1 FROM (VALUES (1)) AS pair
+      LEFT JOIN "Row" h ON h."versionId" = c."headVersionId"
+      LEFT JOIN "Row" d ON d."versionId" = c."draftVersionId"
+      WHERE c."headVersionId" IS NULL
+         OR c."draftVersionId" IS NULL
+         OR (${rowChangePredicate(table.structure)})
+      LIMIT 1
+    ) changed
+    ORDER BY c."rowId" COLLATE "C"
+    FETCH FIRST ${rowLimit} ROWS WITH TIES
   `;
 }
 
@@ -78,14 +99,21 @@ function rowLinksMissingIn(
   `;
 }
 
+function rowKeysOf(versions: Sql): Sql {
+  return sql`
+    SELECT r."versionId", r."createdId", r."id" FROM "Row" r
+    WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM ${versions}))
+  `;
+}
+
 function rowsFrom(from: RowBound | undefined): Sql {
   if (!from) {
     return sql`TRUE`;
   }
 
   if (from.inclusive) {
-    return sql`"rowId" COLLATE "C" >= ${from.rowId}`;
+    return sql`c."rowId" COLLATE "C" >= ${from.rowId}`;
   }
 
-  return sql`"rowId" COLLATE "C" > ${from.rowId}`;
+  return sql`c."rowId" COLLATE "C" > ${from.rowId}`;
 }

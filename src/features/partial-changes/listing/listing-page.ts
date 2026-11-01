@@ -1,13 +1,23 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
-import type { ListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
+import type {
+  ListedPosition,
+  ListingCursor,
+} from 'src/features/partial-changes/listing/listing-cursor';
 import type { ListingTable } from 'src/features/partial-changes/listing/listing-tables';
 import type { RowBound } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
+interface RowRead {
+  readonly tableId: string;
+  readonly rowId: string;
+}
+
 export class ListingPage {
   private readonly listed: CatalogueUnit[] = [];
   private lastRowContinues = false;
+  private rowIdsRead = 0;
+  private lastRowRead?: RowRead;
 
   constructor(
     private readonly pageSize: number,
@@ -19,15 +29,18 @@ export class ListingPage {
   }
 
   public get isFull(): boolean {
-    return this.listed.length >= this.pageSize;
+    return this.hasAllUnits() || this.hasReadAllRows();
   }
 
-  public get remaining(): number {
-    return this.pageSize - this.listed.length;
+  public get rowsToRead(): number {
+    return Math.min(
+      this.pageSize - this.listed.length,
+      this.pageSize - this.rowIdsRead,
+    );
   }
 
   public tablesFromCursor(tables: readonly ListingTable[]): ListingTable[] {
-    const cursorTableId = this.cursor?.last.unit.tableId;
+    const cursorTableId = this.cursor?.tableId;
 
     if (cursorTableId === undefined) {
       return [...tables];
@@ -39,18 +52,33 @@ export class ListingPage {
   }
 
   public rowsFromCursorIn(tableId: string): RowBound | undefined {
-    if (this.cursor?.last.unit.tableId !== tableId) {
+    if (this.cursor?.tableId !== tableId) {
       return undefined;
     }
 
     return this.cursor.rows;
   }
 
+  public addRowsRead(
+    tableId: string,
+    rowIds: readonly string[],
+    unitsInListingOrder: readonly CatalogueUnit[],
+  ): void {
+    const lastRowId = rowIds.at(-1);
+
+    if (lastRowId !== undefined) {
+      this.rowIdsRead += rowIds.length;
+      this.lastRowRead = { tableId, rowId: lastRowId };
+    }
+
+    this.add(unitsInListingOrder);
+  }
+
   public add(unitsInListingOrder: readonly CatalogueUnit[]): void {
     const unlisted = unitsInListingOrder.filter((unit) =>
       this.isAfterCursor(unit),
     );
-    const taken = unlisted.slice(0, this.remaining);
+    const taken = unlisted.slice(0, this.pageSize - this.listed.length);
     const last = taken.at(-1);
 
     if (last) {
@@ -62,18 +90,37 @@ export class ListingPage {
   public nextCursor(): ListingCursor | undefined {
     const last = this.listed.at(-1);
 
-    if (!this.isFull || !last) {
-      return undefined;
+    if (this.hasAllUnits() && last) {
+      return {
+        tableId: last.unit.tableId,
+        rows: this.rowsAfter(last),
+        last: positionOf(last),
+      };
     }
 
-    return {
-      last: { key: last.key, unit: last.unit },
-      rows: this.rowsAfter(last),
-    };
+    if (this.hasReadAllRows() && this.lastRowRead) {
+      return {
+        tableId: this.lastRowRead.tableId,
+        rows: { rowId: this.lastRowRead.rowId, inclusive: false },
+        last: this.lastListedPosition(),
+      };
+    }
+
+    return undefined;
+  }
+
+  private hasAllUnits(): boolean {
+    return this.listed.length >= this.pageSize;
+  }
+
+  private hasReadAllRows(): boolean {
+    return this.rowIdsRead >= this.pageSize;
   }
 
   private isAfterCursor(unit: CatalogueUnit): boolean {
-    return !this.cursor || compareUnits(unit, this.cursor.last) > 0;
+    const last = this.cursor?.last;
+
+    return !last || compareUnits(unit, last) > 0;
   }
 
   private rowsAfter({ unit }: CatalogueUnit): RowBound | undefined {
@@ -83,6 +130,20 @@ export class ListingPage {
 
     return { rowId: unit.rowId, inclusive: this.lastRowContinues };
   }
+
+  private lastListedPosition(): ListedPosition | undefined {
+    const last = this.listed.at(-1);
+
+    if (!last) {
+      return this.cursor?.last;
+    }
+
+    return positionOf(last);
+  }
+}
+
+function positionOf({ key, unit }: CatalogueUnit): ListedPosition {
+  return { key, unit };
 }
 
 function continuesRow(

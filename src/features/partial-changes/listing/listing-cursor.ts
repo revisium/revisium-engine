@@ -9,8 +9,9 @@ import type { RowBound } from 'src/features/partial-changes/snapshot/changes-sna
 export type ListedPosition = Pick<CatalogueUnit, 'key' | 'unit'>;
 
 export interface ListingCursor {
-  readonly last: ListedPosition;
+  readonly tableId: string;
   readonly rows?: RowBound;
+  readonly last?: ListedPosition;
 }
 
 interface CursorPayload extends ListingCursor {
@@ -29,11 +30,16 @@ const OPTIONAL_SORT_PARTS = [
   'previousRowId',
 ] as const;
 
-export function encodeListingCursor({ last, rows }: ListingCursor): string {
+export function encodeListingCursor({
+  tableId,
+  rows,
+  last,
+}: ListingCursor): string {
   const payload: CursorPayload = {
     v: CURSOR_VERSION,
-    last: { key: last.key, unit: sortKeyOf(last.unit) },
+    tableId,
     rows,
+    last: sortKeyPositionOf(last),
   };
 
   return Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -46,9 +52,19 @@ export function decodeListingCursor(text: string): ListingCursor {
     throw malformedCursor();
   }
 
-  const { last, rows } = payload;
+  const { tableId, rows, last } = payload;
 
-  return { last, rows };
+  return { tableId, rows, last };
+}
+
+function sortKeyPositionOf(
+  position: ListedPosition | undefined,
+): ListedPosition | undefined {
+  if (!position) {
+    return undefined;
+  }
+
+  return { key: position.key, unit: sortKeyOf(position.unit) };
 }
 
 function sortKeyOf({
@@ -78,8 +94,9 @@ function isCursorPayload(value: unknown): value is CursorPayload {
   return (
     isFields(value) &&
     value.v === CURSOR_VERSION &&
-    isPosition(value.last) &&
-    (value.rows === undefined || isRowBoundOf(value.rows, value.last))
+    typeof value.tableId === 'string' &&
+    (value.rows === undefined || isRowBound(value.rows)) &&
+    (value.last === undefined || isPosition(value.last))
   );
 }
 
@@ -96,10 +113,9 @@ function isUnit(value: unknown): value is Unit {
   );
 }
 
-function isRowBoundOf(value: unknown, { unit }: ListedPosition): boolean {
+function isRowBound(value: unknown): value is RowBound {
   return (
     isFields(value) &&
-    value.rowId === unit.rowId &&
     typeof value.rowId === 'string' &&
     typeof value.inclusive === 'boolean'
   );

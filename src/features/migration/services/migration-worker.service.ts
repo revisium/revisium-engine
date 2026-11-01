@@ -9,6 +9,7 @@ import {
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
 import { LegacyMigrationDisposalService } from 'src/features/migration/services/legacy-migration-disposal.service';
+import { HeldMigrationLeases } from 'src/features/migration/services/held-migration-leases';
 import type { MigrationStepResult } from 'src/features/migration/types/migration.types';
 import {
   MIGRATION_DEFAULTS,
@@ -31,6 +32,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly migrationService: MigrationService,
     private readonly transitions: MigrationTransitionService,
     private readonly legacyMigrations: LegacyMigrationDisposalService,
+    private readonly heldLeases: HeldMigrationLeases,
     @Optional() @Inject(MIGRATION_OPTIONS) migrationOptions?: MigrationOptions,
   ) {
     this.workerMode =
@@ -126,7 +128,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async claimAbandonedMigration() {
-    if (this.drivers.size > 0) {
+    if (await this.ownsAnyMigration()) {
       return;
     }
 
@@ -137,6 +139,17 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
         this.migrationService.processMigration(migrationId),
       );
     }
+  }
+
+  private async ownsAnyMigration(): Promise<boolean> {
+    const held = this.heldLeases.list();
+    const owned = await this.transitions.findStillOwned(held);
+
+    for (const lost of held.filter((lease) => !owned.includes(lease))) {
+      this.heldLeases.release(lost);
+    }
+
+    return owned.length > 0;
   }
 
   private drive(migrationId: string, run: () => Promise<MigrationStepResult>) {

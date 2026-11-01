@@ -70,9 +70,7 @@ PHASE 5: SWAP (single serializable transaction)
   ├─ first statement: renew heartbeatAt where SWAPPING and the owner's token, else stop
   ├─ detach source table from revision, attach shadow table
   ├─ update schema row in revisium_schema_table and the views row
-  └─ set revision.hasChanges = true
-
-PHASE 6: CLEANUP
+  ├─ set revision.hasChanges = true
   └─ delete the record, guarded by SWAPPING and the owner's token
 ```
 
@@ -141,9 +139,11 @@ The swap runs in a single serializable transaction:
 3. Attach shadow table
 4. Update schema row
 5. Set hasChanges
+6. Delete the record where it is still `SWAPPING` with the owner's token
 
-The first statement locks the record row until the swap commits. A claim that arrives meanwhile waits for it and then
-finds a live lease, and a claim that committed earlier makes the first statement match nothing, so a replaced owner
+The first statement locks the record row until the swap commits, and the change and the deletion of the record commit
+together. A claim or a takeover that arrives meanwhile waits for the row lock and then finds no record, so it does
+nothing; a claim or a takeover that committed earlier makes the first statement match nothing, so a replaced owner
 never commits a swap.
 
 If the process crashes mid-swap, the transaction rolls back. The record stays `SWAPPING`. After its lease expires,
@@ -159,10 +159,6 @@ transaction finds another token in its first statement and stops.
 
 Claims after lease expiry and takeovers of a `SWAPPING` record share one budget in `retryCount`. When `retryCount`
 has reached `maxRetries`, the claim or takeover fails the record with `SWAP_STALLED` instead, which releases the lock.
-
-The record is deleted in a separate statement after the swap commits. A crash between the two leaves `SWAPPING`, and
-the next claim runs the swap again; so does a takeover that waited for the row lock of a swap transaction that then
-committed. The atomic swap of [async-row-migration v2](specs/async-row-migration-v2.spec.md) §3.5 removes this gap.
 
 ### What happens when two workers pick up the same migration?
 
@@ -259,12 +255,18 @@ Inline and polling modes run the same **sweep** every `pollIntervalMs`. Each swe
 
 1. Cancels the `PENDING` and `COPYING` records past their progress deadline (T-deadline).
 2. Takes over every `SWAPPING` owner past its swap bound and drives the record (T-takeover).
-3. While the process drives no migration, claims the oldest active record without a live lease and drives it
+3. While the process owns no migration, claims the oldest active record without a live lease and drives it
    (T-claim).
 
-The sweep does not wait for the migrations it drives, so deadlines and takeovers apply while a migration runs. A tick
-that fires while the previous sweep still runs is skipped. On shutdown the worker stops sweeping and waits for the
-migrations it drives.
+The process counts the leases its drivers hold. Before it claims, the sweep drops every lease whose record is no
+longer active or carries another token, so a driver whose record was cancelled or taken over stops counting at once,
+even while it is suspended; its later writes still match nothing. The sweep does not wait for the migrations it
+drives, so deadlines and takeovers apply while a migration runs. A tick that fires while the previous sweep still runs
+is skipped. On shutdown the worker stops sweeping and waits for the migrations it drives.
+
+The sweep and the legacy disposal act on the records the `MigrationRecoveryScope` provider admits: every record in
+production. Test kits replace it with an explicit list of migration ids, empty by default, because the test database is
+shared.
 
 ### Inline (default)
 
@@ -363,6 +365,8 @@ src/features/migration/
     migration-batch.service.ts     Row-level: load, patch, plugin, guarded batch write
     migration-worker.service.ts    Legacy disposal at startup; recurring sweep of inline and polling modes
     legacy-migration-disposal.service.ts Terminal disposition of records without the payload envelope
+    held-migration-leases.ts       Leases the drivers of this process hold; the claim capacity of the sweep
+    migration-recovery-scope.ts    Records the sweep and the legacy disposal may act on (all in production)
     migration-lock.service.ts      Lock check for Api*Handlers
     lease-heartbeat.ts             Lease renewal timer of one claim
   migration-payload.ts             Payload envelope encoder and decoder

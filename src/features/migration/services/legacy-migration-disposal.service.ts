@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { join } from 'src/engine-prisma-types';
+import { empty, join, sql, type Sql } from 'src/engine-prisma-types';
+import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
 import {
   ACTIVE_MIGRATION_STATUSES,
   MigrationStatus,
@@ -13,7 +14,10 @@ const LEGACY_JOB =
 export class LegacyMigrationDisposalService {
   private readonly logger = new Logger(LegacyMigrationDisposalService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly recoveryScope: MigrationRecoveryScope,
+  ) {}
 
   async dispose(): Promise<void> {
     const deleted =
@@ -33,6 +37,7 @@ export class LegacyMigrationDisposalService {
       DELETE FROM "TableMigration" AS migration
       WHERE jsonb_typeof(migration."patches") = 'array'
         AND migration."status" = ${MigrationStatus.SWAPPING}
+        ${this.inRecoveryScope()}
         AND NOT EXISTS (
           SELECT 1 FROM "Revision"
           WHERE "Revision"."id" = migration."revisionId"
@@ -45,6 +50,7 @@ export class LegacyMigrationDisposalService {
       DELETE FROM "TableMigration" AS migration
       WHERE jsonb_typeof(migration."patches") = 'array'
         AND migration."status" = ${MigrationStatus.SWAPPING}
+        ${this.inRecoveryScope()}
         AND EXISTS (
           SELECT 1 FROM "Revision"
           JOIN "_RevisionToTable" ON "_RevisionToTable"."A" = "Revision"."id"
@@ -65,6 +71,13 @@ export class LegacyMigrationDisposalService {
         "lockedAt" = NULL
       WHERE jsonb_typeof("patches") = 'array'
         AND "status" IN (${join(ACTIVE_MIGRATION_STATUSES)})
+        ${this.inRecoveryScope()}
     `;
+  }
+
+  private inRecoveryScope(): Sql {
+    const migrationIds = this.recoveryScope.restrictedTo();
+
+    return migrationIds ? sql`AND "id" = ANY(${migrationIds}::text[])` : empty;
   }
 }

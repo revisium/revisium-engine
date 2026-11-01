@@ -9,6 +9,8 @@ import { MigrationWorkerService } from 'src/features/migration/services/migratio
 import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
 import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
 import { LegacyMigrationDisposalService } from 'src/features/migration/services/legacy-migration-disposal.service';
+import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
+import { HeldMigrationLeases } from 'src/features/migration/services/held-migration-leases';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MIGRATION_QUERY_HANDLERS } from 'src/features/migration/queries/handlers';
@@ -22,6 +24,8 @@ const SERVICES = [
   MigrationWorkerService,
   MigrationTransitionService,
   LegacyMigrationDisposalService,
+  MigrationRecoveryScope,
+  HeldMigrationLeases,
   MigrationApiService,
   ...MIGRATION_QUERY_HANDLERS,
   ...MIGRATION_COMMAND_HANDLERS,

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from 'src/app.module';
 import { createStorageMock } from 'src/__tests__/kit/storage.mock';
 import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
+import { restrictMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
 import { prepareProject } from 'src/__tests__/utils/prepareProject';
 import { EngineApiService } from 'src/engine-api.service';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
@@ -23,12 +24,12 @@ export interface EngineE2eTestKit {
 
 export async function createEngineE2eTestKit(): Promise<EngineE2eTestKit> {
   const storageMock = createStorageMock();
-  const module = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [AppModule.forRoot({ migration: WITHOUT_RECURRING_SWEEP })],
   })
     .overrideProvider(STORAGE_SERVICE)
-    .useValue(storageMock)
-    .compile();
+    .useValue(storageMock);
+  const module = await restrictMigrationRecovery(builder).compile();
 
   await module.init();
 

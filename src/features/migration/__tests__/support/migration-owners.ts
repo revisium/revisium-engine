@@ -5,6 +5,7 @@ import type {
   OwnershipEpoch,
 } from 'src/features/migration/services/migration-transition.service';
 import type { MigrationStepResult } from 'src/features/migration/types/migration.types';
+import type { SweepingProcess } from './migration-sweeps';
 
 export interface OwnerHold {
   barrier: Barrier;
@@ -48,6 +49,16 @@ export async function takeOverUntil(
     kit.migrationService.takeOverStalledSwap(stalledOwner),
     hold,
   );
+}
+
+export async function sweptUntil(
+  process: SweepingProcess,
+  migrationId: string,
+  hold: OwnerHold,
+): Promise<PausedOwner> {
+  const { result } = await process.nextRunOf(migrationId);
+
+  return pauseOwner(process.kit, migrationId, result, hold);
 }
 
 export async function observeStalledSwap(
@@ -118,6 +129,10 @@ export function beforeBatchWrite(
 
 export function afterSwapBegins(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.migrationTransitions, 'beginSwap', 1, 'after');
+}
+
+export function afterSwapTransactionCommits(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.transactionService, 'runSerializable', 1, 'after');
 }
 
 export function beforeSwapTransaction(

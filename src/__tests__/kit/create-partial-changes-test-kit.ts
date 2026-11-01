@@ -29,6 +29,8 @@ import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
+import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
+import { restrictMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
 
 export interface PartialChangesTestKit {
   module: TestingModule;
@@ -46,7 +48,7 @@ export interface PartialChangesTestKit {
 }
 
 export async function createPartialChangesTestKit(): Promise<PartialChangesTestKit> {
-  const module = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true }),
       DatabaseModule,
@@ -54,7 +56,7 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
       StorageModule.forRoot(),
       ShareModule,
       PluginModule,
-      MigrationModule.forRoot(),
+      MigrationModule.forRoot(WITHOUT_RECURRING_SWEEP),
       RevisionModule,
       BranchModule,
       TableModule,
@@ -68,8 +70,8 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
     ],
   })
     .overrideProvider(STORAGE_SERVICE)
-    .useValue(createStorageMock())
-    .compile();
+    .useValue(createStorageMock());
+  const module = await restrictMigrationRecovery(builder).compile();
 
   await module.init();
 

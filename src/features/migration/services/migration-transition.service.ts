@@ -17,6 +17,7 @@ import {
 import type { TransactionPrismaClient } from 'src/features/share/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
 
 export interface MigrationLease {
   migrationId: string;
@@ -52,6 +53,7 @@ export class MigrationTransitionService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly recoveryScope: MigrationRecoveryScope,
     transactionService: TransactionPrismaService,
     @Optional() @Inject(MIGRATION_OPTIONS) options?: MigrationOptions,
   ) {
@@ -69,6 +71,7 @@ export class MigrationTransitionService {
   async findOldestClaimable(): Promise<string | null> {
     const migration = await this.prisma.tableMigration.findFirst({
       where: {
+        ...this.inRecoveryScope(),
         status: { in: ACTIVE_MIGRATION_STATUSES },
         ...this.withoutLiveLease(),
       },
@@ -110,6 +113,7 @@ export class MigrationTransitionService {
   async findStalledSwaps(): Promise<OwnershipEpoch[]> {
     const owners = await this.prisma.tableMigration.findMany({
       where: {
+        ...this.inRecoveryScope(),
         status: MigrationStatus.SWAPPING,
         lockedBy: { not: null },
         ...this.withoutProgressWithin(this.swapBoundMs),
@@ -139,6 +143,7 @@ export class MigrationTransitionService {
   async cancelStalled(): Promise<number> {
     const cancelled = await this.prisma.tableMigration.updateMany({
       where: {
+        ...this.inRecoveryScope(),
         status: { in: [MigrationStatus.PENDING, MigrationStatus.COPYING] },
         ...this.withoutProgressWithin(this.stallTimeoutMs),
       },
@@ -151,6 +156,26 @@ export class MigrationTransitionService {
     });
 
     return cancelled.count;
+  }
+
+  async findStillOwned(leases: MigrationLease[]): Promise<MigrationLease[]> {
+    if (leases.length === 0) {
+      return [];
+    }
+
+    const owned = await this.prisma.tableMigration.findMany({
+      where: {
+        status: { in: ACTIVE_MIGRATION_STATUSES },
+        OR: leases.map((lease) => ({
+          id: lease.migrationId,
+          lockedBy: lease.token,
+        })),
+      },
+      select: { lockedBy: true },
+    });
+    const ownedTokens = new Set(owned.map((record) => record.lockedBy));
+
+    return leases.filter((lease) => ownedTokens.has(lease.token));
   }
 
   findOwned(lease: MigrationLease): Promise<TableMigration | null> {
@@ -269,8 +294,11 @@ export class MigrationTransitionService {
     return locked.count === 1;
   }
 
-  async completeSwap(lease: MigrationLease): Promise<boolean> {
-    const deleted = await this.prisma.tableMigration.deleteMany({
+  async completeSwap(
+    lease: MigrationLease,
+    transaction: TransactionPrismaClient,
+  ): Promise<boolean> {
+    const deleted = await transaction.tableMigration.deleteMany({
       where: this.swapOwnedBy(lease),
     });
 
@@ -370,6 +398,12 @@ export class MigrationTransitionService {
         createdAt: source.createdAt,
       },
     });
+  }
+
+  private inRecoveryScope(): Prisma.TableMigrationWhereInput {
+    const migrationIds = this.recoveryScope.restrictedTo();
+
+    return migrationIds ? { id: { in: [...migrationIds] } } : {};
   }
 
   private withoutProgressWithin(timeoutMs: number) {

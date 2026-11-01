@@ -1,3 +1,4 @@
+import { HeldMigrationLeases } from 'src/features/migration/services/held-migration-leases';
 import { MigrationWorkerService } from 'src/features/migration/services/migration-worker.service';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 
@@ -96,20 +97,39 @@ describe('MigrationWorkerService', () => {
       ]);
     });
 
-    it('keeps cancelling and taking over while it drives a migration, and claims no other', async () => {
-      const { worker, transitions, migrationService } = createWorker('polling');
-      transitions.findOldestClaimable.mockResolvedValue('mig-abandoned');
-      migrationService.processMigration.mockReturnValue(
-        deferred<string>().promise,
-      );
-      await worker.onModuleInit();
+    it('keeps cancelling and taking over while it owns a migration, and claims no other', async () => {
+      const worker = createWorker('polling');
+      worker.transitions.findOldestClaimable.mockResolvedValue('mig-abandoned');
+      driveWithoutEnd(worker);
+      await worker.worker.onModuleInit();
 
       await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
 
-      expect(transitions.cancelStalled).toHaveBeenCalledTimes(3);
-      expect(transitions.findStalledSwaps).toHaveBeenCalledTimes(3);
-      expect(transitions.findOldestClaimable).toHaveBeenCalledTimes(1);
-      expect(migrationService.processMigration).toHaveBeenCalledTimes(1);
+      expect(worker.transitions.cancelStalled).toHaveBeenCalledTimes(3);
+      expect(worker.transitions.findStalledSwaps).toHaveBeenCalledTimes(3);
+      expect(worker.transitions.findOldestClaimable).toHaveBeenCalledTimes(1);
+      expect(worker.migrationService.processMigration).toHaveBeenCalledTimes(1);
+    });
+
+    it('claims the next migration once the one it still drives is no longer owned', async () => {
+      const worker = createWorker('polling');
+      worker.transitions.findOldestClaimable
+        .mockResolvedValueOnce('mig-suspended')
+        .mockResolvedValueOnce('mig-next');
+      driveWithoutEnd(worker);
+      await worker.worker.onModuleInit();
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+
+      worker.transitions.findStillOwned.mockResolvedValue([]);
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+
+      expect(worker.migrationService.processMigration.mock.calls).toEqual([
+        ['mig-suspended'],
+        ['mig-next'],
+      ]);
+      expect(worker.heldLeases.list()).toEqual([
+        { migrationId: 'mig-next', token: 'mig-next-owner' },
+      ]);
     });
 
     it('sweeps again on the next tick after a failed sweep', async () => {
@@ -196,19 +216,39 @@ function createWorker(workerMode: WorkerMode) {
   const transitions = {
     cancelStalled: jest.fn().mockResolvedValue(0),
     findStalledSwaps: jest.fn().mockResolvedValue([]),
+    findStillOwned: jest.fn((leases: unknown[]) => Promise.resolve(leases)),
     findOldestClaimable: jest.fn().mockResolvedValue(null),
   };
   const legacyMigrations = {
     dispose: jest.fn().mockResolvedValue(undefined),
   };
+  const heldLeases = new HeldMigrationLeases();
   const worker = new MigrationWorkerService(
     migrationService as never,
     transitions as never,
     legacyMigrations as never,
+    heldLeases,
     { workerMode, pollIntervalMs: POLL_INTERVAL_MS },
   );
 
-  return { worker, migrationService, transitions, legacyMigrations };
+  return {
+    worker,
+    migrationService,
+    transitions,
+    legacyMigrations,
+    heldLeases,
+  };
+}
+
+function driveWithoutEnd({
+  migrationService,
+  heldLeases,
+}: ReturnType<typeof createWorker>): void {
+  migrationService.processMigration.mockImplementation((migrationId) => {
+    heldLeases.hold({ migrationId, token: `${migrationId}-owner` });
+
+    return deferred<string>().promise;
+  });
 }
 
 function callOrderOf(mock: jest.Mock): number {

@@ -16,6 +16,7 @@ export interface MigrationFixtureOptions {
   copiedRows?: number;
   shadowTableVersionId?: string;
   lockedBy?: string;
+  lockedAt?: Date;
   heartbeatAt?: Date;
   retryCount?: number;
 }
@@ -46,6 +47,7 @@ export function createMigrationRecord(
       copiedRows: options.copiedRows ?? 0,
       shadowTableVersionId: options.shadowTableVersionId,
       lockedBy: options.lockedBy,
+      lockedAt: options.lockedAt,
       heartbeatAt: options.heartbeatAt,
       retryCount: options.retryCount,
     },

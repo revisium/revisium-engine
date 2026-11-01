@@ -6,7 +6,7 @@ import {
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import type { TableMigration } from 'src/engine-prisma-types';
 import { decodeMigrationPayload } from 'src/features/migration/migration-payload';
-import { MIGRATION_DEFAULTS } from 'src/features/migration/migration.consts';
+import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import {
   MigrationPhase,
   MigrationStatus,
@@ -20,24 +20,32 @@ import {
   createMigrationRecord,
   expireLease,
   passTimeWithoutProgress,
+  type MigrationFixtureOptions,
 } from './support/migration-database';
 import {
   afterSwapBegins,
+  afterSwapTransactionCommits,
   beforeBatchWrite,
   beforeCopyStarts,
   beforeSwapTransaction,
   findStalledSwapOwner,
+  insideSwapAfterItsRecordCheck,
   observeStalledSwap,
   releaseStartedOwners,
   startOwnerUntil,
+  sweptUntil,
   takeOverUntil,
+  waitUntilSettledOrBlockedBy,
   type PausedOwner,
 } from './support/migration-owners';
 import {
   givenStartedFieldAddition,
   type StartedMigration,
 } from './support/migration-scenario';
-import { nextClaimAttempt, nextRunOf } from './support/migration-sweeps';
+import {
+  observeSweepingProcess,
+  type SweepingProcess,
+} from './support/migration-sweeps';
 
 const BATCH_SIZE = 5;
 const ROW_COUNT = 3 * BATCH_SIZE;
@@ -48,7 +56,7 @@ const OBSERVERS = 3;
 const LOCK_TIMEOUT_MS = 10_000;
 const STALL_TIMEOUT_MS = 60_000;
 const DEADLINE_MARGIN_MS = STALL_TIMEOUT_MS / 2;
-const RESTARTED_SWEEP_INTERVAL_MS = 50;
+const SWEEP_INTERVAL_MS = 50;
 
 interface LegacyRecordRow {
   record: string;
@@ -63,11 +71,11 @@ describe('Async migration recovery', () => {
       migration.migrationId,
       beforeBatchWrite(kit, 2),
     );
-    const restarted = await restartInlineProcess();
-
-    await expect(nextClaimAttempt(restarted)).resolves.not.toBe(
+    const restarted = await startSweepingProcess('inline', [
       migration.migrationId,
-    );
+    ]);
+
+    await restarted.sweepsCompleted(1);
     await expectMigrationState(migration, {
       status: MigrationStatus.COPYING,
       phase: MigrationPhase.COPYING,
@@ -76,14 +84,10 @@ describe('Async migration recovery', () => {
       lockedBy: previousOwner.lease.token,
     });
 
-    const recovery = nextRunOf(restarted, migration.migrationId);
-    await expireLease(
-      kit.prisma,
-      migration.migrationId,
-      MIGRATION_DEFAULTS.lockTimeoutMs,
-    );
+    const recovery = restarted.nextRunOf(migration.migrationId);
+    await expireLease(kit.prisma, migration.migrationId, LOCK_TIMEOUT_MS);
 
-    await expect(recovery).resolves.toBe('completed');
+    await expect((await recovery).result).resolves.toBe('completed');
     await expectMigrationAbsent(kit, migration.revisionId, migration.tableId);
     await expect(previousOwner.resume()).resolves.toBe('stopped');
     await expectRowsMigratedOnce(migration);
@@ -299,6 +303,117 @@ describe('Async migration recovery', () => {
     });
   });
 
+  describe('a takeover racing the swap commit of the stalled owner', () => {
+    it('finds no record once the swap transaction it waited for commits, and swaps nothing', async () => {
+      const migration = await givenMigration();
+      const owner = await startOwnerUntil(
+        kit,
+        migration.migrationId,
+        afterSwapBegins(kit),
+      );
+      const stalledOwner = await observeStalledOwnerPastSwapBound(migration);
+      const swaps = jest.spyOn(kit.transactionService, 'runSerializable');
+      const swapTransaction = insideSwapAfterItsRecordCheck(kit);
+      await owner.continueUntil(swapTransaction);
+
+      const takeover = kit.migrationService.takeOverStalledSwap(stalledOwner);
+      await waitUntilSettledOrBlockedBy(
+        kit,
+        swapTransaction.backendPid(),
+        takeover,
+      );
+
+      await expect(owner.resume()).resolves.toBe('completed');
+      await expect(takeover).resolves.toBe('stopped');
+      expect(swaps).toHaveBeenCalledTimes(1);
+      await expectMigrationAbsent(kit, migration.revisionId, migration.tableId);
+      await expectRowsMigratedOnce(migration);
+    });
+
+    it('finds no record right after the swap committed, and swaps nothing', async () => {
+      const migration = await givenMigration();
+      const owner = await startOwnerUntil(
+        kit,
+        migration.migrationId,
+        afterSwapBegins(kit),
+      );
+      const stalledOwner = await observeStalledOwnerPastSwapBound(migration);
+      const swapCommitted = afterSwapTransactionCommits(kit);
+      const swaps = jest.spyOn(kit.transactionService, 'runSerializable');
+      await owner.continueUntil(swapCommitted);
+
+      await expect(
+        kit.migrationService.takeOverStalledSwap(stalledOwner),
+      ).resolves.toBe('stopped');
+
+      expect(swaps).toHaveBeenCalledTimes(1);
+      await expectMigrationAbsent(kit, migration.revisionId, migration.tableId);
+      await expect(owner.resume()).resolves.toBe('completed');
+      await expectRowsMigratedOnce(migration);
+    });
+  });
+
+  describe('scheduling of a sweeping process', () => {
+    it('claims and completes the next migration once the record of its suspended driver is cancelled', async () => {
+      const suspended = await givenMigration();
+      const sweeping = await startSweepingProcess('polling', [
+        suspended.migrationId,
+      ]);
+      const suspendedDriver = await sweptUntil(
+        sweeping,
+        suspended.migrationId,
+        beforeBatchWrite(sweeping.kit, 2),
+      );
+      const next = await givenMigration();
+      sweeping.kit.recoveryScope.include(next.migrationId);
+
+      await sweeping.sweepsCompleted(1);
+      await expectMigrationState(next, {
+        status: MigrationStatus.PENDING,
+        lockedBy: null,
+      });
+
+      const nextRun = sweeping.nextRunOf(next.migrationId);
+      await passTimeWithoutProgress(
+        kit.prisma,
+        suspended.migrationId,
+        pastStallTimeout(),
+      );
+      await sweeping.sweepsCompleted(1);
+
+      await expectMigrationState(suspended, {
+        status: MigrationStatus.CANCELLED,
+        errorMessage: expect.stringMatching(/^STALLED: /),
+        lockedBy: null,
+      });
+      await expectNoLongerWaitingForAnOwner(next);
+      await expect((await nextRun).result).resolves.toBe('completed');
+      await expect(suspendedDriver.resume()).resolves.toBe('stopped');
+    });
+  });
+
+  describe('recovery scope', () => {
+    it('leaves records outside its scope untouched while a scoped process starts and sweeps', async () => {
+      const foreignRecords = await givenForeignRecordOfEveryRecovery();
+      const own = await givenMigration();
+      const sweeping = await startSweepingProcess('polling');
+
+      await sweeping.sweepsCompleted(1);
+      await expectUntouched(foreignRecords);
+
+      sweeping.kit.recoveryScope.include(own.migrationId);
+      const ownDriver = await sweptUntil(
+        sweeping,
+        own.migrationId,
+        beforeCopyStarts(sweeping.kit),
+      );
+      await sweeping.sweepsCompleted(1);
+
+      await expectUntouched(foreignRecords);
+      await expect(ownDriver.resume()).resolves.toBe('completed');
+    });
+  });
+
   describe('AM-12 legacy records at startup', () => {
     const kept: LegacyRecordRow[] = [
       { record: 'FAILED', shape: { status: MigrationStatus.FAILED } },
@@ -386,7 +501,10 @@ describe('Async migration recovery', () => {
       }
 
       activeEnvelopeRecord = await givenActiveEnvelopeRecord();
-      await restartProcess();
+      await restartProcess([
+        ...[...legacyRecords.values()].map((record) => record.id),
+        activeEnvelopeRecord.id,
+      ]);
     });
 
     function legacyRecordBefore(record: string): TableMigration {
@@ -440,6 +558,26 @@ describe('Async migration recovery', () => {
     return record;
   }
 
+  async function expectUntouched(records: TableMigration[]): Promise<void> {
+    for (const record of records) {
+      await expect(readMigration(record)).resolves.toEqual(record);
+    }
+  }
+
+  async function expectNoLongerWaitingForAnOwner(
+    migration: StartedMigration,
+  ): Promise<void> {
+    const record = await kit.prisma.tableMigration.findUnique({
+      where: { id: migration.migrationId },
+      select: { status: true, lockedBy: true },
+    });
+
+    expect(record).not.toEqual({
+      status: MigrationStatus.PENDING,
+      lockedBy: null,
+    });
+  }
+
   async function expectSwapStalled(migration: StartedMigration): Promise<void> {
     await expectMigrationState(migration, {
       status: MigrationStatus.FAILED,
@@ -480,11 +618,64 @@ describe('Async migration recovery', () => {
     ]);
   }
 
-  function givenMigration(): Promise<StartedMigration> {
-    return givenStartedFieldAddition(kit, {
+  async function givenMigration(): Promise<StartedMigration> {
+    const migration = await givenStartedFieldAddition(kit, {
       rowCount: ROW_COUNT,
       field: FIELD,
     });
+    kit.recoveryScope.include(migration.migrationId);
+
+    return migration;
+  }
+
+  async function givenForeignRecordOfEveryRecovery(): Promise<
+    TableMigration[]
+  > {
+    const legacy = await givenLegacyRecord(kit.prisma, {
+      status: MigrationStatus.PENDING,
+    });
+    const abandoned = await givenForeignRecord(MigrationStatus.PENDING);
+    const stalled = await givenForeignRecord(MigrationStatus.COPYING, {
+      lockedBy: 'foreign-owner',
+      heartbeatAt: new Date(),
+    });
+    const stalledSwap = await givenForeignRecord(MigrationStatus.SWAPPING, {
+      lockedBy: 'foreign-owner',
+      lockedAt: new Date(),
+      heartbeatAt: new Date(),
+    });
+    await passTimeWithoutProgress(kit.prisma, stalled.id, pastStallTimeout());
+    await passTimeWithoutProgress(kit.prisma, stalledSwap.id, pastSwapBound());
+
+    return Promise.all(
+      [legacy, abandoned.id, stalled.id, stalledSwap.id].map((id) =>
+        readMigration({ id }),
+      ),
+    );
+  }
+
+  async function givenForeignRecord(
+    status: MigrationStatus,
+    owner: MigrationFixtureOptions = {},
+  ): Promise<TableMigration> {
+    const branch = await prepareBranch(kit.prisma);
+
+    return createMigrationRecord(
+      kit.prisma,
+      branch.draftRevisionId,
+      status,
+      owner,
+    );
+  }
+
+  async function observeStalledOwnerPastSwapBound(migration: StartedMigration) {
+    await passTimeWithoutProgress(
+      kit.prisma,
+      migration.migrationId,
+      pastSwapBound(),
+    );
+
+    return observeStalledSwap(kit, migration.migrationId);
   }
 
   async function givenLegacyRecordSnapshot(
@@ -568,19 +759,28 @@ describe('Async migration recovery', () => {
     });
   }
 
-  async function restartInlineProcess(): Promise<MigrationTestKit> {
+  async function startSweepingProcess(
+    workerMode: NonNullable<MigrationOptions['workerMode']>,
+    recoveryScope: string[] = [],
+  ): Promise<SweepingProcess> {
     const restarted = await createMigrationTestKit({
       batchSize: BATCH_SIZE,
-      workerMode: 'inline',
-      pollIntervalMs: RESTARTED_SWEEP_INTERVAL_MS,
+      workerMode,
+      pollIntervalMs: SWEEP_INTERVAL_MS,
+      lockTimeoutMs: LOCK_TIMEOUT_MS,
+      stallTimeoutMs: STALL_TIMEOUT_MS,
+      recoveryScope,
     });
     restartedProcesses.push(restarted);
 
-    return restarted;
+    return observeSweepingProcess(restarted);
   }
 
-  async function restartProcess(): Promise<void> {
-    const restarted = await createMigrationTestKit({ workerMode: 'disabled' });
+  async function restartProcess(recoveryScope: string[]): Promise<void> {
+    const restarted = await createMigrationTestKit({
+      workerMode: 'disabled',
+      recoveryScope,
+    });
     await restarted.close();
   }
 

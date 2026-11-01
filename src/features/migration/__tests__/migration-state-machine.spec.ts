@@ -495,11 +495,14 @@ describe('Async migration state machine', () => {
     await kit.close();
   });
 
-  function givenMigration(): Promise<StartedMigration> {
-    return givenStartedFieldAddition(kit, {
+  async function givenMigration(): Promise<StartedMigration> {
+    const migration = await givenStartedFieldAddition(kit, {
       rowCount: ROW_COUNT,
       field: FIELD,
     });
+    kit.recoveryScope.include(migration.migrationId);
+
+    return migration;
   }
 
   async function givenAbandonedSwap(retryCount: number) {

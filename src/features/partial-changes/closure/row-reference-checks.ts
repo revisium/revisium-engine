@@ -31,11 +31,11 @@ import type {
   Reason,
   RequiredReasonCode,
 } from 'src/features/partial-changes/selection/selection-resolution';
-import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { getForeignKeyReferences } from 'src/features/share/foreign-key-references';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { getForeignKeyJsonPaths } from 'src/features/share/utils/get-foreign-key-json-paths';
 
 interface SideNames {

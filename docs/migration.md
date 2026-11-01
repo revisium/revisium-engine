@@ -46,11 +46,16 @@ All rows loaded into memory, schema patches applied, rows updated — single ser
 ### Async path (new)
 
 ```text
-PHASE 1: START (serializable transaction)
+PHASE 1: START (one serializable transaction, admitted as a Draft writer)
+  ├─ take the branch write fence shared
   ├─ validate revision is draft
-  ├─ validate schema patches
-  ├─ create TableMigration record (PENDING, payload envelope)
+  ├─ one migration per revision: an active record of the revision → MIGRATION_LOCKED
+  ├─ validate the schema as the synchronous path does (see "What does the start check?")
+  ├─ imported update: require the Draft migration table, check the imported id
+  ├─ create TableMigration record (PENDING, payload envelope with the imported id)
   └─ transaction commits (schema row NOT updated yet)
+
+AFTER COMMIT: trigger the inline worker (a failure is logged; the call still returns the migrationId)
 
 CLAIM: the owner writes a fresh claim token into lockedBy
 
@@ -90,6 +95,31 @@ table deletes such a record.
 During migration, the entire draft revision is locked for writes (HTTP 423). All reads continue from the source table until swap completes.
 
 ## Failure Scenarios
+
+### What does the start check?
+
+The start runs in one serializable transaction through the native runner and refuses with an exception to the caller,
+writing no record:
+
+1. It takes the branch write fence shared, as every Draft writer does; behind an exclusive holder it waits at most
+   half of `TRANSACTION_TIMEOUT`, then fails with `BranchWriteFencedException`.
+2. The revision must be the Draft (`Revision is not a draft`).
+3. One migration per revision: any active record of the revision, on any table, refuses the start with
+   `MigrationLockedException` (`MIGRATION_LOCKED`). The check runs inside the transaction, so of two starts on
+   different tables that read the lock together one fails serialization and its retry gets `MIGRATION_LOCKED`.
+   `updateTable` still checks the lock before it counts rows, outside the transaction.
+4. The schema validation of the synchronous `updateTable`, in its order and with its exceptions: at least one patch,
+   the JSON Patch schema and every `add`/`replace` value, not a system table, the patches applied to the schema, the
+   target schema against the meta-schema, its foreign keys to other tables and its formulas, then dry runs of the
+   synchronous schema writer (history patches, field names) and views writer. The draft command
+   `ValidateTableUpdateCommand` runs these validators; rows are validated by the batches, not at start.
+5. An update imported by `applyMigrations` carries its source id: the Draft must link a migration table, else
+   `LEDGER_UNAVAILABLE` (the update could not be recorded under that id), and the imported-id check of the
+   synchronous path runs again inside the transaction (`Migration … is already applied`, `Provided id (…) must be
+   after last migration date (…)`). The id is written into the payload envelope.
+
+After the commit the start triggers the inline worker. A trigger failure is logged and the call returns the
+`migrationId`; the recurring sweep claims the record.
 
 ### What happens when migration fails mid-copy?
 
@@ -265,7 +295,7 @@ All options are passed via `EngineModule.forRoot({ migration: { ... } })`:
 
 ## Revision Lock (HTTP 423)
 
-During an active migration, all draft mutation handlers check for an active `TableMigration` record before entering the serializable transaction. If found, they throw `MigrationLockedException` (HTTP 423) with migration progress in the response body:
+During an active migration, all draft mutation handlers, the async start among them, check for an active `TableMigration` record inside their serializable transaction, after taking the branch write fence shared. If found, they throw `MigrationLockedException` (HTTP 423) with migration progress in the response body:
 
 ```json
 {
@@ -307,7 +337,7 @@ shared.
 
 ### Inline (default)
 
-`processMigration()` runs as a detached Promise immediately after the migration record is created. Suitable for single-pod deployments. The caller gets the response immediately with `{ migrationId, migrationStatus: 'migrating' }`.
+`processMigration()` runs as a detached Promise immediately after the migration record is created. Suitable for single-pod deployments. The caller gets the response immediately with `{ migrationId, migrationStatus: 'migrating' }`, also when the trigger fails.
 
 The recurring sweep recovers what the start-time trigger leaves behind: a migration whose process restarted is claimed once its old lease expires.
 
@@ -384,6 +414,7 @@ owner's claim token and `lockedAt` the start of its lease. `phase` takes `INIT`,
 - **During copy**: `MigrationBatchService` computes target schema per batch, passes it directly to `PluginService.afterMigrateRows({ targetSchema })` so plugins don't read from DB
 - **During swap**: `SwapRecheckService` applies the same patches to `previousSchema` and checks the result against `targetSchemaHash`; the synchronous schema writer (`UpdateSchemaCommand`) writes it with copy-on-write, appends the history entry with the original patches and records the `update` ledger row — all inside the serializable transaction
 - **Views parity**: if a `revisium_views_table` row exists for the migrated table, the synchronous views writer (`MigrateTableViewsCommand`) migrates it with copy-on-write inside the same swap transaction
+- **At start**: `ValidateTableUpdateCommand` applies the patches to the Draft schema and runs the synchronous validators and dry runs (`dryRun: true`) of `UpdateSchemaCommand` and `MigrateTableViewsCommand`, the writers the swap runs later
 
 The schema row in `revisium_schema_table` stays unchanged until swap completes.
 
@@ -395,7 +426,7 @@ src/features/migration/
   migration-api.service.ts         Facade over CommandBus/QueryBus
   migration.consts.ts              Defaults and DI tokens
   types/migration.types.ts         Status/Phase enums, result interfaces
-  exceptions/                      MigrationLockedException (HTTP 423)
+  exceptions/                      MigrationLockedException (HTTP 423), LedgerUnavailableException
   services/
     migration.service.ts           processMigration and takeOverStalledSwap: heartbeat, step runner, retries
     migration-transition.service.ts Guarded transitions of the record (claim, takeover, deadline, renew,
@@ -411,7 +442,7 @@ src/features/migration/
     migration-lock.service.ts      Lock check for Api*Handlers; cancellation of a branch's migrations on revert
     lease-heartbeat.ts             Lease renewal timer of one claim
   migration-payload.ts             Payload envelope encoder and decoder
-  commands/                        StartAsyncMigration, AbortMigration
+  commands/                        StartAsyncMigration (admission, validation, record, trigger), AbortMigration
   queries/                         GetMigrationStatus, GetActiveMigrations
 ```
 

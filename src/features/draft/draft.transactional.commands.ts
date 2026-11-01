@@ -9,7 +9,8 @@ import {
 } from 'src/features/draft/commands/impl/transactional/validate-data.command';
 import { ValidateNotSystemTableCommand } from 'src/features/draft/commands/impl/transactional/validate-not-system-table.command';
 import { ValidateSchemaCommand } from 'src/features/draft/commands/impl/transactional/validate-schema.command';
-import { JsonSchema } from '@revisium/schema-toolkit/types';
+import { ValidateTablePatchesCommand } from 'src/features/draft/commands/impl/transactional/validate-table-patches.command';
+import { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
 
 @Injectable()
 export class DraftTransactionalCommands {
@@ -48,6 +49,12 @@ export class DraftTransactionalCommands {
   public async validateSchema(schema: InputJsonValue, tableId?: string) {
     return this.commandBus.execute<ValidateSchemaCommand>(
       new ValidateSchemaCommand(schema, tableId),
+    );
+  }
+
+  public async validateTablePatches(tableId: string, patches: JsonPatch[]) {
+    return this.commandBus.execute<ValidateTablePatchesCommand>(
+      new ValidateTablePatchesCommand(tableId, patches),
     );
   }
 }

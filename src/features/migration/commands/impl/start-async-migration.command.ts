@@ -6,6 +6,7 @@ export class StartAsyncMigrationCommand {
       revisionId: string;
       tableId: string;
       patches: JsonPatch[];
+      ledgerMigrationId?: string;
     },
   ) {}
 }

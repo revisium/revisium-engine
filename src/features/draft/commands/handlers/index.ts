@@ -35,6 +35,8 @@ import { UpdateSchemaHandler } from 'src/features/draft/commands/handlers/transa
 import { ValidateDataHandler } from 'src/features/draft/commands/handlers/transactional/validate-data.handler';
 import { ValidateNotSystemTableHandler } from 'src/features/draft/commands/handlers/transactional/validate-not-system-table.handler';
 import { ValidateSchemaHandler } from 'src/features/draft/commands/handlers/transactional/validate-schema.handler';
+import { ValidateTablePatchesHandler } from 'src/features/draft/commands/handlers/transactional/validate-table-patches.handler';
+import { ValidateTableUpdateHandler } from 'src/features/draft/commands/handlers/transactional/validate-table-update.handler';
 import { UpdateRowsHandler } from 'src/features/draft/commands/handlers/update-rows.handler';
 import { InternalUpdateRowsHandler } from 'src/features/draft/commands/handlers/transactional/internal-update-rows.handler';
 import { UpdateTableHandler } from 'src/features/draft/commands/handlers/update-table.handler';
@@ -63,6 +65,8 @@ export const DRAFT_COMMANDS_HANDLERS = [
   ValidateNotSystemTableHandler,
   ValidateDataHandler,
   ValidateSchemaHandler,
+  ValidateTablePatchesHandler,
+  ValidateTableUpdateHandler,
   UpdateTableHandler,
   RenameTableHandler,
   ApiUpdateTableHandler,

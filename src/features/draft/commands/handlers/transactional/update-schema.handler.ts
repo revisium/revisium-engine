@@ -56,6 +56,10 @@ export class UpdateSchemaHandler extends DraftHandler<
     this.validateHistoryPatches(nextHistoryPatches);
     this.validateFieldNamesInSchema(patches);
 
+    if (input.dryRun) {
+      return false;
+    }
+
     await this.updateRowInSchemaTable(input, nextHistoryPatches);
 
     if (input.skipCreatingMigration) {

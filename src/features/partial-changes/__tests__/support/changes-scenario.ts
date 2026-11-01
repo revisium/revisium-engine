@@ -314,9 +314,12 @@ export class ChangesScenario {
     );
   }
 
-  public async removeInitMigrationOf(tableId: string): Promise<void> {
+  public async dropFromDraftLedger(
+    changeType: Migration['changeType'],
+    tableId: string,
+  ): Promise<void> {
     const revisionId = await this.draftRevisionId();
-    const initMigration = await this.initMigrationOf(tableId);
+    const migration = await this.draftMigrationOf(changeType, tableId);
 
     await this.kit.draftWriteAdmission.runSerializableRevisionWrite(
       revisionId,
@@ -324,7 +327,7 @@ export class ChangesScenario {
         this.kit.draftRevisionApi.removeRows({
           revisionId,
           tableId: SystemTables.Migration,
-          rowIds: [initMigration.id],
+          rowIds: [migration.id],
         }),
     );
   }
@@ -442,18 +445,21 @@ export class ChangesScenario {
     );
   }
 
-  private async initMigrationOf(tableId: string): Promise<Migration> {
+  private async draftMigrationOf(
+    changeType: Migration['changeType'],
+    tableId: string,
+  ): Promise<Migration> {
     const ledger = await this.draftLedger();
-    const initMigration = ledger.find(
-      (migration) =>
-        migration.changeType === 'init' && migration.tableId === tableId,
+    const migration = ledger.find(
+      (candidate) =>
+        candidate.changeType === changeType && candidate.tableId === tableId,
     );
 
-    if (!initMigration) {
-      throw new Error(`The Draft ledger has no init of ${tableId}`);
+    if (!migration) {
+      throw new Error(`The Draft ledger has no ${changeType} of ${tableId}`);
     }
 
-    return initMigration;
+    return migration;
   }
 
   private async draftLedger(): Promise<Migration[]> {

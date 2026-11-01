@@ -1,6 +1,10 @@
-import type { JsonSchema } from '@revisium/schema-toolkit/types';
+import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import { publicTableIdOf } from 'src/features/partial-changes/catalogue/catalogue-tables';
-import type { LedgerAttribution } from 'src/features/partial-changes/catalogue/ledger-attribution';
+import {
+  type LedgerAttribution,
+  type LedgerEntry,
+  ledgerOf,
+} from 'src/features/partial-changes/catalogue/ledger-attribution';
 import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
 import type {
   ChangesSnapshot,
@@ -13,7 +17,11 @@ import {
   type ReplayedLedger,
 } from 'src/features/share/ledger-replay/ledger-replay';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
-import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
+import {
+  isLedgered,
+  type TableSlot,
+  traceTableSlots,
+} from 'src/features/share/ledger-replay/table-slots';
 
 export type RefusalCode = 'headSchemaInconsistent' | 'unledgeredTable';
 
@@ -46,7 +54,7 @@ export function checkHeadSchema(
   rules: LedgerReplayRules,
 ): HeadSchemaCheck {
   const headLedger = replayLedger({
-    ledger: input.ledger.published.map(({ migration }) => migration),
+    ledger: migrationsOf(input.ledger.published),
     ...rules,
   });
   const refusals = refusalsOf(input, headLedger);
@@ -66,7 +74,11 @@ function refusalsOf(
     return [];
   }
 
-  return new TableRefusals(headLedger, input.ledger)
+  const draftSlots = traceTableSlots(
+    migrationsOf(ledgerOf(input.snapshot.systemRows.migrations.draft)),
+  );
+
+  return new TableRefusals(headLedger, draftSlots)
     .of(input.snapshot.tables)
     .sort(byTableIdAndCode);
 }
@@ -74,7 +86,7 @@ function refusalsOf(
 class TableRefusals {
   constructor(
     private readonly headLedger: ReplayedLedger,
-    private readonly ledger: LedgerAttribution,
+    private readonly draftSlots: readonly TableSlot[],
   ) {}
 
   public of(pairs: readonly TablePair[]): Refusal[] {
@@ -96,7 +108,7 @@ class TableRefusals {
 
   private codeOf(pair: TablePair): RefusalCode | undefined {
     if (!pair.head) {
-      return this.createdTableCodeOf(pair);
+      return this.createdTableCodeOf(publicTableIdOf(pair));
     }
 
     return this.headTableCodeOf(pair.head);
@@ -114,12 +126,12 @@ class TableRefusals {
     return undefined;
   }
 
-  private createdTableCodeOf({ identity }: TablePair): RefusalCode | undefined {
-    if (this.hasPendingLineage(identity)) {
-      return undefined;
+  private createdTableCodeOf(tableId: string): RefusalCode | undefined {
+    if (!isLedgered(this.draftSlots, tableId)) {
+      return 'unledgeredTable';
     }
 
-    return 'unledgeredTable';
+    return undefined;
   }
 
   private replaysToSchemaRow({ id, schema }: TableVersion): boolean {
@@ -127,10 +139,10 @@ class TableRefusals {
 
     return replayed !== undefined && schemasEqual(replayed, schema);
   }
+}
 
-  private hasPendingLineage(tableIdentity: string): boolean {
-    return this.ledger.tables.has(tableIdentity);
-  }
+function migrationsOf(entries: readonly LedgerEntry[]): Migration[] {
+  return entries.map(({ migration }) => migration);
 }
 
 function replayedHeadSchemasOf(

@@ -70,6 +70,7 @@ const productRename: AddressedUnit = {
 };
 const goodsRename: AddressedUnit = { ...productRename, tableId: GOODS };
 const createdTags: AddressedUnit = { kind: 'structure', tableId: TAGS };
+const createdProducts: AddressedUnit = { kind: 'structure', tableId: PRODUCTS };
 
 interface RefusalCase {
   readonly damage: string;
@@ -135,6 +136,13 @@ describe('HeadSchemaCheck: refused tables', () => {
       given: givenDraftTableWithoutInit,
       refusal: { tableId: TAGS, code: 'unledgeredTable' },
       edit: createdTags,
+    },
+    {
+      damage:
+        'a Draft ledger that opens the id of a table created in the Draft a second time',
+      given: givenDraftTableAtAnIdRemovedWithoutRecord,
+      refusal: { tableId: PRODUCTS, code: 'unledgeredTable' },
+      edit: createdProducts,
     },
   ];
 
@@ -310,7 +318,7 @@ describe('HeadSchemaCheck: refused tables', () => {
     });
     await draft.createTable(PRODUCTS, productSchema);
     await draft.createRows(PRODUCTS, productRows);
-    await draft.removeInitMigrationOf(PRODUCTS);
+    await draft.dropFromDraftLedger('init', PRODUCTS);
     await draft.commit();
     expect(await describedLedgerOf(draft, 'head')).toEqual(['init categories']);
     await draft.renameRow(PRODUCTS, 'p1', 'p9');
@@ -321,9 +329,25 @@ describe('HeadSchemaCheck: refused tables', () => {
   async function givenDraftTableWithoutInit(): Promise<ChangesScenario> {
     const draft = await givenCommittedCatalog();
     await draft.createTable(TAGS, tagSchema);
-    await draft.removeInitMigrationOf(TAGS);
+    await draft.dropFromDraftLedger('init', TAGS);
     expect(await describedLedgerOf(draft, 'draft')).toEqual([
       'init categories',
+      'init products',
+    ]);
+
+    return draft;
+  }
+
+  async function givenDraftTableAtAnIdRemovedWithoutRecord(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.removeTable(PRODUCTS);
+    await draft.dropFromDraftLedger('remove', PRODUCTS);
+    await draft.commit();
+    await draft.createTable(PRODUCTS, productSchema);
+    expect(await draft.hasTable('head', PRODUCTS)).toBe(false);
+    expect(await describedLedgerOf(draft, 'draft')).toEqual([
+      'init categories',
+      'init products',
       'init products',
     ]);
 

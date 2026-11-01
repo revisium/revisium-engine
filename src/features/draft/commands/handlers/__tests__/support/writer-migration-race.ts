@@ -40,19 +40,18 @@ async function startMigration(
 function holdWriterBeforeItsTransaction(kit: DraftTestKit) {
   const barrier = createBarrier('The writer');
   const transactionService = kit.transactionService;
-  const runSerializable =
-    transactionService.runSerializable.bind(transactionService);
+  const run = transactionService.run.bind(transactionService);
   let isFirstTransaction = true;
 
   const spy = jest
-    .spyOn(transactionService, 'runSerializable')
+    .spyOn(transactionService, 'run')
     .mockImplementation(async (handler, options) => {
       if (isFirstTransaction) {
         isFirstTransaction = false;
         await barrier.arrive();
       }
 
-      return runSerializable(handler, options);
+      return run(handler, options);
     });
 
   return {

@@ -51,6 +51,11 @@ const DEFAULT_SERIALIZABLE_OPTIONS: Required<TransactionOptions> = {
   },
 };
 
+interface TransactionContext {
+  $prisma: TransactionPrismaClient;
+  exclusiveHeldBranchId?: string;
+}
+
 interface SettingConfig extends NumericSetting {
   unit: string;
 }
@@ -92,9 +97,8 @@ const SETTINGS_CONFIG: Record<string, SettingConfig> = {
 export class TransactionPrismaService implements OnModuleInit {
   private readonly logger = new Logger(TransactionPrismaService.name);
 
-  private readonly asyncLocalStorage = new AsyncLocalStorage<{
-    $prisma: TransactionPrismaClient;
-  }>();
+  private readonly asyncLocalStorage =
+    new AsyncLocalStorage<TransactionContext>();
 
   private readonly serializableOptions: Required<TransactionOptions>;
 
@@ -217,6 +221,20 @@ export class TransactionPrismaService implements OnModuleInit {
     };
 
     return this.run(handler, mergedOptions);
+  }
+
+  public get exclusiveHeldBranchId(): string | undefined {
+    return this.asyncLocalStorage.getStore()?.exclusiveHeldBranchId;
+  }
+
+  public runInExclusiveHeldAdmission<T>(
+    branchId: string,
+    handler: () => Promise<T>,
+  ): Promise<T> {
+    return this.asyncLocalStorage.run(
+      { $prisma: this.getTransaction(), exclusiveHeldBranchId: branchId },
+      handler,
+    );
   }
 
   public runInTransactionContext<T>(

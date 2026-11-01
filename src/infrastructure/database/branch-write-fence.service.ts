@@ -1,13 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { Sql, sql } from 'src/engine-prisma-types';
+import { TransactionPrismaClient } from 'src/features/share/types';
 import { BranchWriteFencedException } from 'src/infrastructure/database/branch-write-fenced.exception';
 import { sqlStateOf } from 'src/infrastructure/database/database-errors';
+import { ExclusiveFenceHolder } from 'src/infrastructure/database/exclusive-fence-holder';
+import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 // The wait and the admitted write share one transaction timeout: a writer that
 // waits at most half of it keeps the other half for its write, so the wait ends
 // with BranchWriteFencedException and never with Prisma's transaction timeout.
-const SHARED_WAIT_PART_OF_TRANSACTION_TIMEOUT = 0.5;
+const WAIT_PART_OF_TRANSACTION_TIMEOUT = 0.5;
 
 const LOCK_NOT_AVAILABLE = '55P03';
 
@@ -17,40 +20,94 @@ export function branchWriteFenceKey(branchId: string | Sql): Sql {
 
 @Injectable()
 export class BranchWriteFenceService {
-  private readonly sharedWaitLimitMs: number;
+  private readonly waitLimitMs: number;
 
-  constructor(private readonly transactionService: TransactionPrismaService) {
-    this.sharedWaitLimitMs = Math.ceil(
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly transactionService: TransactionPrismaService,
+  ) {
+    this.waitLimitMs = Math.ceil(
       transactionService.serializableTimeoutMs *
-        SHARED_WAIT_PART_OF_TRANSACTION_TIMEOUT,
+        WAIT_PART_OF_TRANSACTION_TIMEOUT,
     );
   }
 
   async enterSharedForRevision(revisionId: string): Promise<void> {
+    if (await this.isAdmittedByExclusiveHolder(revisionId)) {
+      return;
+    }
+
+    await this.lockWithinWaitLimit(
+      this.transactionService.getTransaction(),
+      sql`pg_advisory_xact_lock_shared(${branchWriteFenceKey(branchOfRevision(revisionId))})`,
+    );
+  }
+
+  exclusiveHolder(branchId: string): ExclusiveFenceHolder {
+    return new ExclusiveFenceHolder(
+      this.prismaService,
+      (holder) =>
+        this.lockWithinWaitLimit(
+          holder,
+          sql`pg_advisory_xact_lock(${branchWriteFenceKey(branchId)})`,
+        ),
+      {
+        maxWait: this.transactionService.serializableMaxWaitMs,
+        timeout: this.transactionService.serializableTimeoutMs,
+      },
+    );
+  }
+
+  private async isAdmittedByExclusiveHolder(
+    revisionId: string,
+  ): Promise<boolean> {
+    const heldBranchId = this.transactionService.exclusiveHeldBranchId;
+
+    if (heldBranchId === undefined) {
+      return false;
+    }
+
+    const revision = await this.transactionService
+      .getTransaction()
+      .revision.findUnique({
+        where: { id: revisionId },
+        select: { branchId: true },
+      });
+
+    return revision?.branchId === heldBranchId;
+  }
+
+  private async lockWithinWaitLimit(
+    transaction: TransactionPrismaClient,
+    fenceLock: Sql,
+  ): Promise<void> {
     try {
-      await this.lockSharedWithinWaitLimit(branchOfRevision(revisionId));
+      await this.lockRestoringLockTimeout(transaction, fenceLock);
     } catch (error) {
       if (isLockNotAvailable(error)) {
-        throw new BranchWriteFencedException(this.sharedWaitLimitMs);
+        throw new BranchWriteFencedException(this.waitLimitMs);
       }
 
       throw error;
     }
   }
 
-  private async lockSharedWithinWaitLimit(branchId: Sql): Promise<void> {
+  private async lockRestoringLockTimeout(
+    transaction: TransactionPrismaClient,
+    fenceLock: Sql,
+  ): Promise<void> {
     // Each MATERIALIZED step reads the row of the step before it, which fixes the order:
     // the wait limit bounds only the fence wait and the previous lock_timeout comes back after it.
-    await this.transactionService.getTransaction().$executeRaw`
+    await transaction.$executeRaw`
       WITH previous AS MATERIALIZED (
         SELECT current_setting('lock_timeout') AS lock_timeout
       ),
       wait_limit AS MATERIALIZED (
-        SELECT set_config('lock_timeout', ${String(this.sharedWaitLimitMs)}, true)
+        SELECT set_config('lock_timeout', ${String(this.waitLimitMs)}, true)
         FROM previous
       ),
       fence AS MATERIALIZED (
-        SELECT pg_advisory_xact_lock_shared(${branchWriteFenceKey(branchId)})
+        SELECT ${fenceLock}
         FROM wait_limit
       )
       SELECT set_config('lock_timeout', previous.lock_timeout, true)

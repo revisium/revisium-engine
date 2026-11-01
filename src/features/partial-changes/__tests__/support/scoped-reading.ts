@@ -1,7 +1,7 @@
 import type { ProviderOverride } from 'src/__tests__/kit/create-database-service-test-kit';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
 import type { ScopedCatalogue } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
 import {

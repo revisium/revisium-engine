@@ -8,7 +8,6 @@ import {
 } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type {
   LedgerAttribution,
-  LedgerEntry,
   TableHistory,
 } from 'src/features/partial-changes/catalogue/ledger-attribution';
 import {
@@ -23,6 +22,7 @@ import {
 } from 'src/features/partial-changes/catalogue/unit-key';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
 
 interface StructureUnitParts {
   readonly key: string;

@@ -4,6 +4,11 @@ import { AbortMigrationCommand } from 'src/features/migration/commands/impl/abor
 import { GetMigrationStatusQuery } from 'src/features/migration/queries/impl/get-migration-status.query';
 import { GetActiveMigrationsQuery } from 'src/features/migration/queries/impl/get-active-migrations.query';
 import {
+  type PlanSchemaLedgerRepairData,
+  PlanSchemaLedgerRepairQuery,
+  type SchemaLedgerRepairPlan,
+} from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import {
   ActiveMigrationResult,
   MigrationStatusResult,
 } from 'src/features/migration/types/migration.types';
@@ -30,5 +35,11 @@ export class MigrationApiService {
 
   abortMigration(data: { revisionId: string; tableId: string }): Promise<void> {
     return this.commandBus.execute(new AbortMigrationCommand(data));
+  }
+
+  planSchemaLedgerRepair(
+    data: PlanSchemaLedgerRepairData,
+  ): Promise<SchemaLedgerRepairPlan> {
+    return this.queryBus.execute(new PlanSchemaLedgerRepairQuery(data));
   }
 }

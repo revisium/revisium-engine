@@ -38,6 +38,12 @@ export interface UnattributedFailure extends ReplayFailure {
   tableId: string;
 }
 
+export interface TableRead {
+  migrationId: string;
+  tableId: string;
+  readTableId: string;
+}
+
 export interface ReplayedSlot extends TableSlot {
   readonly schema?: JsonSchema;
   readonly failure?: ReplayFailure;
@@ -48,6 +54,7 @@ export interface ReplayedLedger {
   schemas: ReadonlyMap<string, JsonSchema>;
   unreplayable: ReadonlyMap<string, ReplayFailure>;
   unattributed: readonly UnattributedFailure[];
+  reads: readonly TableRead[];
 }
 
 interface SlotSchema {
@@ -83,6 +90,7 @@ class LedgerReplay {
   private readonly tableSlots: TableSlots;
   private readonly slotSchemas = new Map<TableSlot, SlotSchema>();
   private readonly unattributed: UnattributedFailure[] = [];
+  private readonly reads: TableRead[] = [];
 
   constructor(
     private readonly rules: NativeSchemaRules,
@@ -116,6 +124,7 @@ class LedgerReplay {
       slots,
       ...ledgeredTablesOf(slots),
       unattributed: [...this.unattributed],
+      reads: [...this.reads],
     };
   }
 
@@ -165,17 +174,26 @@ class LedgerReplay {
     this.existingSchema(step.slot, tableId);
     this.ensureValidTableId(nextTableId);
     this.ensureFree(nextTableId, step.displaced);
-    const referrers = this.referrersAfterRename(tableId, nextTableId);
+    const referrers = this.referrersOf(tableId);
+    this.recordReads(
+      migration,
+      tableIdsOf(referrers.filter(({ slot }) => slot !== step.slot)),
+    );
+    const rewrittenReferrers = this.rewrittenAfterRename(
+      referrers,
+      tableId,
+      nextTableId,
+    );
 
-    this.taintAcrossRename(migration, step.slot, referrers);
-    for (const { slot, schema } of referrers) {
+    this.taintAcrossRename(migration, step.slot, rewrittenReferrers);
+    for (const { slot, schema } of rewrittenReferrers) {
       this.slotSchemaOf(slot).schema = schema;
     }
   }
 
-  private removeTable({ tableId }: RemoveMigration, slot: TableSlot): void {
-    this.existingSchema(slot, tableId);
-    this.ensureNotReferenced(tableId);
+  private removeTable(migration: RemoveMigration, slot: TableSlot): void {
+    this.existingSchema(slot, migration.tableId);
+    this.ensureNotReferenced(migration);
   }
 
   private recordFailure(
@@ -234,13 +252,11 @@ class LedgerReplay {
     migration: Migration,
     namedSchemas: JsonSchema[],
   ): void {
-    const unreplayableTarget = namedSchemas
-      .flatMap((schema) => this.rules.foreignKeysOf(schema))
-      .find(
-        (target) =>
-          target !== tableId &&
-          this.isTainted(this.tableSlots.currentSlot(target)),
-      );
+    const targets = this.foreignKeyTargetsOf(tableId, namedSchemas);
+    this.recordReads(migration, targets);
+    const unreplayableTarget = targets.find((target) =>
+      this.isTainted(this.tableSlots.currentSlot(target)),
+    );
 
     if (unreplayableTarget) {
       this.taint(
@@ -307,32 +323,63 @@ class LedgerReplay {
     }
   }
 
-  private ensureNotReferenced(tableId: string): void {
-    const referrerIds = this.currentTables()
-      .filter(({ schema }) => this.references(schema, tableId))
-      .map(({ tableId: referrerId }) => `"${referrerId}"`);
+  private ensureNotReferenced(migration: RemoveMigration): void {
+    const referrers = this.referrersOf(migration.tableId);
+    const referrerIds = tableIdsOf(referrers);
+    this.recordReads(migration, referrerIds);
 
     if (referrerIds.length > 0) {
+      const quotedIds = referrerIds.map((id) => `"${id}"`).join(', ');
+
       throw new Error(
-        `Table "${tableId}" is referenced by ${referrerIds.join(', ')}`,
+        `Table "${migration.tableId}" is referenced by ${quotedIds}`,
       );
     }
   }
 
-  private referrersAfterRename(
+  private referrersOf(tableId: string): CurrentTable[] {
+    return this.currentTables().filter(({ schema }) =>
+      this.references(schema, tableId),
+    );
+  }
+
+  private rewrittenAfterRename(
+    referrers: CurrentTable[],
     tableId: string,
     nextTableId: string,
   ): CurrentTable[] {
-    return this.currentTables()
-      .filter(({ schema }) => this.references(schema, tableId))
-      .map((referrer) => ({
-        ...referrer,
-        schema: this.rules.renamedForeignKeys(
-          referrer.schema,
-          tableId,
-          nextTableId,
-        ),
-      }));
+    return referrers.map((referrer) => ({
+      ...referrer,
+      schema: this.rules.renamedForeignKeys(
+        referrer.schema,
+        tableId,
+        nextTableId,
+      ),
+    }));
+  }
+
+  private foreignKeyTargetsOf(
+    tableId: string,
+    schemas: JsonSchema[],
+  ): string[] {
+    const targets = schemas
+      .flatMap((schema) => this.rules.foreignKeysOf(schema))
+      .filter((target) => target !== tableId);
+
+    return [...new Set(targets)];
+  }
+
+  private recordReads(
+    migration: Migration,
+    readTableIds: readonly string[],
+  ): void {
+    for (const readTableId of readTableIds) {
+      this.reads.push({
+        migrationId: migration.id,
+        tableId: migration.tableId,
+        readTableId,
+      });
+    }
   }
 
   private references(schema: JsonSchema, tableId: string): boolean {
@@ -404,6 +451,10 @@ function ledgeredTablesOf(slots: readonly ReplayedSlot[]) {
   }
 
   return { schemas, unreplayable };
+}
+
+function tableIdsOf(tables: readonly CurrentTable[]): string[] {
+  return tables.map(({ tableId }) => tableId);
 }
 
 function failureOf(migration: Migration, error: string): ReplayFailure {

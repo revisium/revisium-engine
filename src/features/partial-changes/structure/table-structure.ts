@@ -9,14 +9,16 @@ import { normalizedLeafSchema } from 'src/features/partial-changes/structure/nor
 import {
   hasPendingEntries,
   isStructureRecorded,
-  pendingSchemaHistory,
-  type PendingSchemaHistory,
 } from 'src/features/partial-changes/structure/pending-schema-history';
 import {
   dataPointerOfSchemaPath,
   type SchemaLeaf,
   SchemaLeaves,
 } from 'src/features/partial-changes/structure/schema-leaves';
+import {
+  pendingSchemaHistory,
+  type PendingSchemaHistory,
+} from 'src/features/share/ledger/schema-history';
 import type { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import type { HistoryPatches } from 'src/features/share/queries/impl';

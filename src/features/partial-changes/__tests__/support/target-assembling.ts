@@ -15,7 +15,7 @@ import type {
   TargetRow,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
   isWholeDraftSelection,
   type Selection,

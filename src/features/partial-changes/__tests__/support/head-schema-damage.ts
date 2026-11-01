@@ -8,7 +8,7 @@ import type {
 import objectHash from 'object-hash';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
-import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
   replayOf,
   update,

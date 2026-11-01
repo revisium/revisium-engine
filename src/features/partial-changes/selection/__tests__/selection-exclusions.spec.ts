@@ -3,12 +3,16 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { Selection } from 'src/features/partial-changes/selection/selection';
+import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const PRODUCTS = 'products';
+const TAGS = 'tags';
 
 const productSchema = obj({ code: str(), price: num(), labels: arr(str()) });
+const tagSchema = obj({ label: str() });
 
 const createdP3: AddressedUnit = {
   kind: 'rowCreate',
@@ -110,6 +114,61 @@ describe('SelectionResolver: exclusions and unmatched selectors', () => {
         unmatched: {},
       });
     });
+  });
+
+  describe('exclusions of missing rows', () => {
+    it.each<{
+      row: string;
+      edit: (draft: ChangesScenario) => Promise<void>;
+      selection: Selection;
+      selected: AddressedUnit[];
+    }>([
+      {
+        row: 'a missing row of a created table',
+        edit: async (draft) => {
+          await draft.createTable(TAGS, tagSchema);
+          await draft.createRows(TAGS, { t1: { label: 'one' } });
+        },
+        selection: {
+          all: true,
+          exclude: { rows: [{ tableId: TAGS, rowId: 'nonexistent' }] },
+        },
+        selected: [{ kind: 'structure', tableId: TAGS }],
+      },
+      {
+        row: 'a changed field of a missing row',
+        edit: (draft) =>
+          draft.updateTable(PRODUCTS, [addField('color', str())]),
+        selection: {
+          tables: [PRODUCTS],
+          exclude: {
+            fields: [{ tableId: PRODUCTS, rowId: 'p404', path: '/color' }],
+          },
+        },
+        selected: [{ kind: 'structure', tableId: PRODUCTS }],
+      },
+    ])(
+      'leaves an exclusion of $row unmatched instead of excluding the structure',
+      async ({ edit, selection, selected }) => {
+        const draft = await givenCommittedProducts();
+        await edit(draft);
+
+        const resolution = await draft.resolveSelection(selection);
+
+        expect(resolution).toEqual({
+          selected,
+          excluded: [],
+          required: [],
+          blockers: [
+            {
+              code: 'unmatchedSelector',
+              message: 'Some selectors match no unit; see unmatched',
+            },
+          ],
+          unmatched: { exclude: selection.exclude },
+        });
+      },
+    );
   });
 
   describe('unmatched selectors', () => {

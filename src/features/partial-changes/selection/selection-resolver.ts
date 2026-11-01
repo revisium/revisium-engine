@@ -1,9 +1,6 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { Unit } from 'src/features/partial-changes/catalogue/unit';
-import {
-  CatalogueLookup,
-  type SelectionSource,
-} from 'src/features/partial-changes/selection/catalogue-lookup';
+import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import {
   isWholeDraftSelection,
   type Selection,
@@ -12,13 +9,15 @@ import type {
   PlanBlocker,
   Reason,
   SelectionResolution,
+  SelectionSource,
   UnmatchedSelection,
 } from 'src/features/partial-changes/selection/selection-resolution';
-import type { ItemsResolution } from 'src/features/partial-changes/selection/selector-match';
+import { SelectionTargets } from 'src/features/partial-changes/selection/selection-targets';
 import {
+  type ItemsResolution,
   refusalBlocker,
-  SelectorMatcher,
-} from 'src/features/partial-changes/selection/selector-matcher';
+} from 'src/features/partial-changes/selection/selector-match';
+import { SelectorMatcher } from 'src/features/partial-changes/selection/selector-matcher';
 
 const UNMATCHED_SELECTOR: PlanBlocker = {
   code: 'unmatchedSelector',
@@ -42,9 +41,12 @@ class SelectionResolver {
     private readonly selection: Selection,
     private readonly source: SelectionSource,
   ) {
-    this.lookup = new CatalogueLookup(source);
+    this.lookup = new CatalogueLookup(source.catalogue);
 
-    const matcher = new SelectorMatcher(this.lookup);
+    const matcher = new SelectorMatcher(
+      new SelectionTargets(source),
+      this.lookup,
+    );
 
     this.included = matcher.matchItems(selection);
     this.exclusions = matcher.matchItems(selection.exclude ?? {});

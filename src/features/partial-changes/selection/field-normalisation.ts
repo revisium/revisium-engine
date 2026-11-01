@@ -1,11 +1,19 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
+import {
+  isCreatedOrRemoved,
+  requireStructureOfCreatedOrRemoved,
+} from 'src/features/partial-changes/selection/created-or-removed-tables';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import type {
   PlanBlocker,
   Reason,
   RequiredReasonCode,
 } from 'src/features/partial-changes/selection/selection-resolution';
+import type {
+  AddressedRow,
+  SelectionTargets,
+} from 'src/features/partial-changes/selection/selection-targets';
 import {
   blocking,
   combined,
@@ -14,62 +22,57 @@ import {
   type SelectorMatch,
   selecting,
 } from 'src/features/partial-changes/selection/selector-match';
-import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import type { SchemaLeaf } from 'src/features/partial-changes/structure/schema-leaves';
-import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 
 export class FieldNormalisation {
   private readonly path: JsonPointer;
-  private readonly structure: TableStructure;
+  private readonly leaf: SchemaLeaf | undefined;
   private readonly address: string;
 
   constructor(
-    private readonly lookup: CatalogueLookup,
-    private readonly table: TablePair,
+    private readonly targets: SelectionTargets,
+    private readonly units: CatalogueLookup,
+    private readonly row: AddressedRow,
     private readonly selector: FieldRef,
   ) {
     this.path = JsonPointer.parse(selector.path);
-    this.structure = lookup.structureOf(table);
+    this.leaf = targets.leafAtOrAbove(row, this.path);
     this.address = `${selector.tableId}/${selector.rowId}`;
   }
 
   public match(): SelectorMatch {
-    const leaf = this.unchangedLeafAtOrAbovePath();
-
-    if (leaf?.kind === 'computed') {
+    if (this.leaf?.kind === 'computed') {
       return blocking([this.notSelectable()]);
     }
 
+    if (isCreatedOrRemoved(this.row.table)) {
+      return requireStructureOfCreatedOrRemoved(
+        this.targets,
+        this.units,
+        this.row.table,
+        this.selector,
+      );
+    }
+
     return combined(
-      this.matchUnitsOfRow(leaf),
+      this.matchUnitsOfRow(),
       this.requireStructureOfChangedFields(),
     );
   }
 
-  private unchangedLeafAtOrAbovePath(): SchemaLeaf | undefined {
-    return this.structure.unchangedLeaves.find(({ pointer }) =>
-      pointer.isAtOrAbove(this.path),
-    );
-  }
+  private matchUnitsOfRow(): SelectorMatch {
+    const units = this.units.unitsOfRow(this.row);
+    const existence = units.find(isExistence);
 
-  private matchUnitsOfRow(leaf: SchemaLeaf | undefined): SelectorMatch {
-    const row = this.lookup.rowNamed(this.table, this.selector.rowId);
-
-    if (!row) {
-      return NO_MATCH;
+    if (existence) {
+      return this.requireExistence(existence);
     }
 
-    if (row.existence !== undefined) {
-      return this.requireExistence(row.existence);
-    }
+    const fields = units.filter(({ unit }) => unit.kind === 'field');
 
-    const fields = this.lookup
-      .unitsOfRow(row)
-      .filter(({ unit }) => unit.kind === 'field');
-
-    if (leaf && this.pointsInside(leaf)) {
-      return this.requireAtomicValue(leaf, fields);
+    if (this.leaf && this.pointsInside(this.leaf)) {
+      return this.requireAtomicValue(this.leaf, fields);
     }
 
     return selecting(
@@ -81,9 +84,9 @@ export class FieldNormalisation {
     return !this.path.isAtOrAbove(leaf.pointer);
   }
 
-  private requireExistence(existenceKey: string): SelectorMatch {
+  private requireExistence(existence: CatalogueUnit): SelectorMatch {
     return requiring(
-      this.lookup.unit(existenceKey),
+      existence,
       this.reason(
         'wholeRowUnit',
         `${this.address} is created, deleted or replaced as a whole row`,
@@ -111,17 +114,19 @@ export class FieldNormalisation {
   }
 
   private requireStructureOfChangedFields(): SelectorMatch {
-    const touchesChangedField = this.structure.changedPointers.some(
-      (pointer) =>
-        pointer.isAtOrAbove(this.path) || this.path.isAtOrAbove(pointer),
-    );
+    const touchesChangedField = this.targets
+      .structureOf(this.row.table)
+      .changedPointers.some(
+        (pointer) =>
+          pointer.isAtOrAbove(this.path) || this.path.isAtOrAbove(pointer),
+      );
 
     if (!touchesChangedField) {
       return NO_MATCH;
     }
 
     return requiring(
-      this.lookup.tableUnitOf('structure', this.table),
+      this.units.tableUnitOf('structure', this.row.table),
       this.reason(
         'structureBoundData',
         `${this.address}${this.selector.path} touches a new or changed field; its values belong to the structure of ${this.selector.tableId}`,
@@ -146,6 +151,14 @@ export class FieldNormalisation {
 
     return { code, tableId, rowId, path, because };
   }
+}
+
+function isExistence({ unit }: CatalogueUnit): boolean {
+  return (
+    unit.kind === 'rowCreate' ||
+    unit.kind === 'rowDelete' ||
+    unit.kind === 'rowReplace'
+  );
 }
 
 function pointerOf({ unit }: CatalogueUnit): JsonPointer {

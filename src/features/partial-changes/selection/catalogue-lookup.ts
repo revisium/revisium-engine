@@ -1,31 +1,12 @@
-import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type {
   CatalogueRow,
   CatalogueUnit,
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import type {
-  Side,
-  UnitKind,
-} from 'src/features/partial-changes/catalogue/unit';
-import type {
-  HeadSchemaCheck,
-  RefusedTable,
-} from 'src/features/partial-changes/head-schema/head-schema-check';
+import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import { PublicIdIndex } from 'src/features/partial-changes/selection/public-id-index';
-import type {
-  ChangesSnapshot,
-  ComparedTable,
-  TablePair,
-} from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
-
-export interface SelectionSource {
-  readonly snapshot: ChangesSnapshot;
-  readonly headSchema: HeadSchemaCheck;
-  readonly tables: readonly ComparedTable[];
-  readonly catalogue: ChangeCatalogue;
-}
+import type { AddressedRow } from 'src/features/partial-changes/selection/selection-targets';
+import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 const TABLE_LEVEL_KINDS: ReadonlySet<UnitKind> = new Set([
   'structure',
@@ -33,42 +14,20 @@ const TABLE_LEVEL_KINDS: ReadonlySet<UnitKind> = new Set([
 ]);
 
 export class CatalogueLookup {
-  private readonly tables: PublicIdIndex<TablePair>;
-  private readonly structures: CatalogueTables;
   private readonly rows = new Map<string, PublicIdIndex<CatalogueRow>>();
   private readonly unitsByKey = new Map<string, CatalogueUnit>();
   private readonly tableLevelUnits = new Map<string, CatalogueUnit[]>();
   private readonly rowLevelUnits = new Map<string, CatalogueUnit[]>();
   private readonly unitsWithoutTable = new Map<string, CatalogueUnit[]>();
 
-  constructor(private readonly source: SelectionSource) {
-    this.tables = new PublicIdIndex(source.snapshot.tables, (pair) => pair);
-    this.structures = new CatalogueTables(source.snapshot, source.tables);
-
-    for (const [identity, rows] of source.catalogue.rows) {
+  constructor(catalogue: ChangeCatalogue) {
+    for (const [identity, rows] of catalogue.rows) {
       this.rows.set(identity, new PublicIdIndex(rows, ({ pair }) => pair));
     }
 
-    for (const unit of source.catalogue.units) {
+    for (const unit of catalogue.units) {
       this.index(unit);
     }
-  }
-
-  public tableNamed(tableId: string, side?: Side): TablePair | undefined {
-    return this.tables.resolve(tableId, side);
-  }
-
-  public refusalsNaming(tableId: string): RefusedTable[] {
-    return this.tables.holding(tableId).flatMap(({ identity }) => {
-      const refused =
-        this.source.headSchema.refusedTablesByIdentity.get(identity);
-
-      return refused ? [refused] : [];
-    });
-  }
-
-  public structureOf(table: TablePair): TableStructure {
-    return this.structures.structureOf(table);
   }
 
   public tableUnitOf(
@@ -93,15 +52,13 @@ export class CatalogueLookup {
     return this.rowLevelUnits.get(identity) ?? [];
   }
 
-  public rowNamed(
-    { identity }: TablePair,
-    rowId: string,
-    side?: Side,
-  ): CatalogueRow | undefined {
-    return this.rows.get(identity)?.resolve(rowId, side);
-  }
+  public unitsOfRow({ table, rowId, side }: AddressedRow): CatalogueUnit[] {
+    const row = this.rows.get(table.identity)?.on(side, rowId);
 
-  public unitsOfRow(row: CatalogueRow): CatalogueUnit[] {
+    if (!row) {
+      return [];
+    }
+
     const keys = new Set([
       row.existence,
       ...row.columns.values(),

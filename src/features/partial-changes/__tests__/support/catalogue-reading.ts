@@ -44,7 +44,7 @@ export interface CatalogueView {
   structureOf(tableId: string): TableStructure;
 }
 
-type CatalogueScope =
+export type CatalogueScope =
   | { readonly kind: 'tables'; readonly tableIds: readonly string[] }
   | { readonly kind: 'everyTable' }
   | { readonly kind: 'wholeDraft' };
@@ -55,13 +55,6 @@ export function readCatalogue(
   tableIds: readonly string[],
 ): Promise<CatalogueView> {
   return readCatalogueIn(kit, branch, { kind: 'tables', tableIds });
-}
-
-export function readCatalogueOfEveryTable(
-  kit: PartialChangesTestKit,
-  branch: ChangesBranch,
-): Promise<CatalogueView> {
-  return readCatalogueIn(kit, branch, { kind: 'everyTable' });
 }
 
 export function readWholeDraftCatalogue(
@@ -76,22 +69,30 @@ function readCatalogueIn(
   branch: ChangesBranch,
   scope: CatalogueScope,
 ): Promise<CatalogueView> {
-  return readInPlanningTransaction(kit, async () => {
-    const { snapshot, ledger, headSchema, tables } = await readComparedSnapshot(
-      kit,
-      branch,
-      { wholeDraft: scope.kind === 'wholeDraft' },
-    );
-    const changedRows = await kit.snapshotReader.readChangedRows(
-      affectedTablesIn(scope, snapshot, tables),
-    );
-    const catalogue = buildChangeCatalogue(
-      { snapshot, ledger, headSchema, tables, changedRows },
-      new HeadViewsMigration(kit.viewsMigration, kit.schemaRules),
-    );
+  return readInPlanningTransaction(kit, () =>
+    buildCatalogueView(kit, branch, scope),
+  );
+}
 
-    return catalogueView(catalogue, snapshot, headSchema, tables, changedRows);
-  });
+export async function buildCatalogueView(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  scope: CatalogueScope,
+): Promise<CatalogueView> {
+  const { snapshot, ledger, headSchema, tables } = await readComparedSnapshot(
+    kit,
+    branch,
+    { wholeDraft: scope.kind === 'wholeDraft' },
+  );
+  const changedRows = await kit.snapshotReader.readChangedRows(
+    affectedTablesIn(scope, snapshot, tables),
+  );
+  const catalogue = buildChangeCatalogue(
+    { snapshot, ledger, headSchema, tables, changedRows },
+    new HeadViewsMigration(kit.viewsMigration, kit.schemaRules),
+  );
+
+  return catalogueView(catalogue, snapshot, headSchema, tables, changedRows);
 }
 
 function affectedTablesIn(

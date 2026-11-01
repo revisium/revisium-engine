@@ -40,7 +40,7 @@ export class TargetTable {
 
   constructor(
     public readonly pair: TablePair,
-    private readonly structureSide: RevisionSide,
+    public readonly structureSide: RevisionSide,
     public readonly heldRows: readonly HeldRow[],
     private readonly loaded: readonly CatalogueRow[],
     private readonly changedPointers: readonly JsonPointer[],
@@ -136,6 +136,10 @@ export class TargetTable {
 export class TargetTables {
   public readonly all: readonly TargetTable[];
   private readonly byTableId: ReadonlyMap<string, TargetTable>;
+  private readonly identities: ReadonlySet<string>;
+  private readonly pairsById: Readonly<
+    Record<RevisionSide, ReadonlyMap<string, TablePair>>
+  >;
   private readonly plans: ReadonlyMap<string, TablePlan>;
   private readonly changedPointers: ReadonlyMap<string, readonly JsonPointer[]>;
 
@@ -156,10 +160,40 @@ export class TargetTables {
       this.targetTablesOf(pair),
     );
     this.byTableId = new Map(this.all.map((table) => [table.tableId, table]));
+    this.identities = new Set(this.all.map(({ pair }) => pair.identity));
+    this.pairsById = {
+      head: pairsByIdOn(source.snapshot.tables, 'head'),
+      draft: pairsByIdOn(source.snapshot.tables, 'draft'),
+    };
   }
 
   public named(tableId: string): TargetTable | undefined {
     return this.byTableId.get(tableId);
+  }
+
+  public contains({ identity }: TablePair): boolean {
+    return this.identities.has(identity);
+  }
+
+  public tableMeantBy(
+    referrer: TargetTable,
+    tableId: string,
+  ): TablePair | undefined {
+    return this.pairsById[referrer.structureSide].get(tableId);
+  }
+
+  public referencedBy(
+    referrer: TargetTable,
+    tableId: string,
+  ): TargetTable | undefined {
+    const holder = this.named(tableId);
+    const meant = this.tableMeantBy(referrer, tableId);
+
+    if (meant !== undefined && holder?.pair.identity !== meant.identity) {
+      return undefined;
+    }
+
+    return holder;
   }
 
   private targetTablesOf(pair: TablePair): TargetTable[] {
@@ -226,6 +260,23 @@ function targetVersionOf(
     case 'merge':
       return targetRow.merged;
   }
+}
+
+function pairsByIdOn(
+  pairs: readonly TablePair[],
+  side: RevisionSide,
+): ReadonlyMap<string, TablePair> {
+  const byId = new Map<string, TablePair>();
+
+  for (const pair of pairs) {
+    const version = pair[side];
+
+    if (version) {
+      byId.set(version.id, pair);
+    }
+  }
+
+  return byId;
 }
 
 function rowsByIdOn(

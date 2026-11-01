@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
   type AppliedUnits,
-  oppositeOf,
   OutcomeRules,
   type RevisionSide,
 } from 'src/features/partial-changes/assembly/outcome-rules';
@@ -10,6 +9,10 @@ import type {
   AssembledTarget,
   AssemblySource,
 } from 'src/features/partial-changes/assembly/target-assembler';
+import {
+  CatalogueTables,
+  publicTableIdOf,
+} from 'src/features/partial-changes/catalogue/catalogue-tables';
 import {
   blocking,
   danglingInSource,
@@ -40,6 +43,7 @@ import { ViewValidationService } from 'src/features/views/services';
 interface OperationContext {
   readonly source: AssemblySource;
   readonly lookup: CatalogueLookup;
+  readonly catalogueTables: CatalogueTables;
   readonly schemas: TableSchemas;
   readonly viewsFit: ViewsFit;
   readonly references: UnresolvedReferences;
@@ -68,6 +72,7 @@ export class StructureChecks implements TargetCheck {
     return new StructureChecking({
       source,
       lookup: new CatalogueLookup(source.catalogue),
+      catalogueTables: new CatalogueTables(source.snapshot, source.tables),
       schemas: new TableSchemas(this.schemaStore),
       viewsFit: new ViewsFit(this.viewValidation, source.snapshot),
       references: new UnresolvedReferences(this.snapshotReader),
@@ -101,7 +106,6 @@ class StructureChecking implements TargetChecking {
 
 class TargetStructureChecks {
   private readonly names: SideNames;
-  private readonly otherSide: RevisionSide;
 
   constructor(
     private readonly context: OperationContext,
@@ -110,13 +114,13 @@ class TargetStructureChecks {
     private readonly rules: OutcomeRules,
   ) {
     this.names = sideNamesOf(rules.operation);
-    this.otherSide = oppositeOf(rules.baseSide);
   }
 
   public async findings(): Promise<Finding[]> {
     return [
       ...this.tableIdCollisions(),
-      ...this.missingReferencedTables(),
+      ...this.brokenTableReferences(),
+      ...this.viewsWithoutTable(),
       ...(await this.viewsNotFittingStructure()),
       ...(await this.danglingReferencesOfWholesaleRows()),
     ];
@@ -149,73 +153,120 @@ class TargetStructureChecks {
     });
   }
 
-  private missingReferencedTables(): Finding[] {
-    const tableIds = new Set(this.tables.all.map(({ tableId }) => tableId));
-
+  private brokenTableReferences(): Finding[] {
     return this.tables.all.flatMap((referrer) =>
       this.context.schemas
         .referencedTablesOf(referrer.version)
-        .filter((tableId) => !tableIds.has(tableId))
-        .map((tableId) => this.restoreReferencedTable(referrer, tableId)),
+        .filter((tableId) => !this.tables.referencedBy(referrer, tableId))
+        .map((tableId) => this.restoreTableReference(referrer, tableId)),
     );
   }
 
-  private restoreReferencedTable(
+  private restoreTableReference(
     referrer: TargetTable,
     tableId: string,
   ): Finding {
     const structure = this.structureOf(referrer.pair);
-    const reference = `the schema of ${referrer.tableId} references the table ${tableId}`;
+    const tableIdSite = { tableId: referrer.tableId };
 
-    if (this.removesTableReference(structure, referrer, tableId)) {
+    if (structure !== undefined && !this.rules.isApplied(structure)) {
       return requiring(structure, {
+        ...tableIdSite,
         code: 'referrerStillReferences',
-        tableId: referrer.tableId,
-        because: `${reference}, which the ${this.names.target} no longer contains`,
+        because: this.brokenReference(
+          referrer,
+          tableId,
+          `which the ${this.names.target} no longer contains`,
+        ),
       });
     }
 
-    const provider = this.structureBringing(tableId);
+    const provider = this.unappliedStructureMeantBy(referrer, tableId);
 
     if (provider !== undefined) {
       return requiring(provider, {
+        ...tableIdSite,
         code: 'referencedTableMissing',
-        tableId: referrer.tableId,
-        because: `${reference}, which exists only in ${this.names.other}`,
+        because: this.brokenReference(
+          referrer,
+          tableId,
+          `which exists only in ${this.names.other}`,
+        ),
       });
     }
 
     return blocking(
       danglingInSource(
-        `${reference}, which the ${this.names.target} does not contain`,
-        { tableId: referrer.tableId },
-        this.appliedUnitOf(structure),
+        this.brokenReference(
+          referrer,
+          tableId,
+          `which the ${this.names.target} does not contain`,
+        ),
+        tableIdSite,
+        structure,
       ),
     );
   }
 
-  private removesTableReference(
-    structure: string | undefined,
+  private brokenReference(
     referrer: TargetTable,
     tableId: string,
-  ): structure is string {
-    if (structure === undefined || this.rules.isApplied(structure)) {
-      return false;
+    whichWhenMissing: string,
+  ): string {
+    const reference = `the schema of ${referrer.tableId} references the table ${tableId}`;
+
+    if (this.tables.named(tableId) !== undefined) {
+      return `${reference}, which is another table in the ${this.names.target}`;
     }
 
-    const otherSide = referrer.pair[this.otherSide];
-
-    return (
-      otherSide === undefined ||
-      !this.context.schemas.referencedTablesOf(otherSide).includes(tableId)
-    );
+    return `${reference}, ${whichWhenMissing}`;
   }
 
-  private structureBringing(tableId: string): string | undefined {
+  private unappliedStructureMeantBy(
+    referrer: TargetTable,
+    tableId: string,
+  ): string | undefined {
+    const meant = this.tables.tableMeantBy(referrer, tableId);
+    const structure = meant && this.structureOf(meant);
+
+    if (structure === undefined || this.rules.isApplied(structure)) {
+      return undefined;
+    }
+
+    return structure;
+  }
+
+  private viewsWithoutTable(): Finding[] {
     return this.context.source.snapshot.tables
-      .filter((pair) => pair[this.otherSide]?.id === tableId)
-      .map((pair) => this.structureOf(pair))
-      .find((unit) => unit !== undefined && !this.rules.isApplied(unit));
+      .filter((pair) => !this.tables.contains(pair))
+      .flatMap((pair) => this.keepViewsWithTable(pair));
+  }
+
+  private keepViewsWithTable(pair: TablePair): Finding[] {
+    const views = this.context.lookup.tableUnitOf('views', pair)?.key;
+
+    if (views === undefined) {
+      return [];
+    }
+
+    const viewsSide = this.rules.sideTakenBy(views);
+
+    if (!this.context.catalogueTables.viewsRowsOf(pair)[viewsSide]) {
+      return [];
+    }
+
+    const tableId = publicTableIdOf(pair);
+    const unapplied = this.tableUnitsOf(pair).find(
+      (unit) => !this.rules.isApplied(unit),
+    );
+
+    return [
+      requiringOrDangling(unapplied, {
+        code: 'viewsDoNotFitStructure',
+        tableId,
+        because: `the ${REVISION_NAMES[viewsSide]} views of ${tableId} belong to a table the ${this.names.target} does not contain`,
+      }),
+    ];
   }
 
   private async viewsNotFittingStructure(): Promise<Finding[]> {
@@ -297,7 +348,7 @@ class TargetStructureChecks {
   }
 
   private scansOf(referrer: TargetTable, tableId: string): WholesaleRowsScan[] {
-    const referenced = this.tables.named(tableId);
+    const referenced = this.tables.referencedBy(referrer, tableId);
 
     if (!referenced) {
       return [];
@@ -352,14 +403,6 @@ class TargetStructureChecks {
 
   private structureOf(pair: TablePair): string | undefined {
     return this.context.lookup.tableUnitOf('structure', pair)?.key;
-  }
-
-  private appliedUnitOf(unit: string | undefined): string | undefined {
-    if (unit === undefined || !this.rules.isApplied(unit)) {
-      return undefined;
-    }
-
-    return unit;
   }
 }
 

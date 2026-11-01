@@ -24,6 +24,19 @@ export class TableSchemas {
 
   constructor(private readonly schemaStore: JsonSchemaStoreService) {}
 
+  public storeOf({ schema }: TableVersion): JsonSchemaStore {
+    const cached = this.stores.get(schema);
+
+    if (cached) {
+      return cached;
+    }
+
+    const store = this.schemaStore.create(schema);
+    this.stores.set(schema, store);
+
+    return store;
+  }
+
   public referencedTablesOf(version: TableVersion): string[] {
     return getForeignKeysFromSchema(this.storeOf(version));
   }
@@ -47,18 +60,5 @@ export class TableSchemas {
     });
 
     return leaves;
-  }
-
-  private storeOf({ schema }: TableVersion): JsonSchemaStore {
-    const cached = this.stores.get(schema);
-
-    if (cached) {
-      return cached;
-    }
-
-    const store = this.schemaStore.create(schema);
-    this.stores.set(schema, store);
-
-    return store;
   }
 }

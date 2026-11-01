@@ -209,6 +209,62 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         expect(closure.blockers).toEqual([]);
       },
     );
+
+    it.each<{ operation: ChangeOperation; tableId: string; target: string }>([
+      { operation: 'commit', tableId: BETA, target: 'new Head' },
+      { operation: 'revert', tableId: ALPHA, target: 'reverted Draft' },
+    ])(
+      'requires the referrer schema a table swap rewrote in a $operation of the swap',
+      async ({ operation, tableId, target }) => {
+        const draft = await givenSwappedTablesUnderProducts(kit);
+
+        const closure = await draft.closeDependencies(operation, {
+          tables: [ALPHA, BETA],
+        });
+
+        expect(closure.required).toEqual([
+          {
+            unit: structureOf(PRODUCTS),
+            reason: {
+              code: 'referrerStillReferences',
+              tableId: PRODUCTS,
+              because: `the schema of products references the table ${tableId}, which is another table in the ${target}`,
+            },
+          },
+        ]);
+        expect(closure.blockers).toEqual([]);
+      },
+    );
+
+    it('requires the swap that a committed referrer schema means', async () => {
+      const draft = await givenSwappedTablesUnderProducts(kit);
+
+      const closure = await draft.closeDependencies('commit', {
+        tables: [PRODUCTS],
+      });
+
+      expect(closure.required).toEqual([
+        {
+          unit: renamedStructureOf(ALPHA, BETA),
+          reason: {
+            code: 'referencedTableMissing',
+            tableId: PRODUCTS,
+            because:
+              'the schema of products references the table alpha, which is another table in the new Head',
+          },
+        },
+        {
+          unit: renamedStructureOf(BETA, ALPHA),
+          reason: {
+            code: 'idOccupied',
+            tableId: ALPHA,
+            because:
+              'the table id alpha would be held by two tables in the new Head',
+          },
+        },
+      ]);
+      expect(closure.blockers).toEqual([]);
+    });
   });
 
   describe('views against the target structure', () => {
@@ -248,6 +304,70 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         expect(closure.blockers).toEqual([]);
       },
     );
+
+    it.each<{
+      operation: ChangeOperation;
+      selection: Selection;
+      required: Record<string, unknown>;
+      target: string;
+    }>([
+      {
+        operation: 'commit',
+        selection: { views: [OFFERS] },
+        required: structureOf(OFFERS),
+        target: 'new Head',
+      },
+      {
+        operation: 'revert',
+        selection: { tables: [OFFERS] },
+        required: viewsOf(OFFERS),
+        target: 'reverted Draft',
+      },
+    ])(
+      'keeps the views of a created table together with the table in a $operation',
+      async ({ operation, selection, required, target }) => {
+        const draft = await givenCreatedOffersWithViews(kit);
+
+        const closure = await draft.closeDependencies(operation, selection);
+
+        expect(closure.required).toEqual([
+          {
+            unit: required,
+            reason: {
+              code: 'viewsDoNotFitStructure',
+              tableId: OFFERS,
+              because: `the Draft views of offers belong to a table the ${target} does not contain`,
+            },
+          },
+        ]);
+        expect(closure.blockers).toEqual([]);
+      },
+    );
+
+    it('blocks committed views of a created table whose structure is excluded as requiredExcluded', async () => {
+      const draft = await givenCreatedOffersWithViews(kit);
+
+      const closure = await draft.closeDependencies('commit', {
+        views: [OFFERS],
+        exclude: { tables: [OFFERS] },
+      });
+
+      expect(closure.required).toEqual([]);
+      expect(closure.blockers).toEqual([
+        {
+          code: 'requiredExcluded',
+          tableId: OFFERS,
+          message: 'offers is required but excluded',
+          unit: structureOf(OFFERS),
+          reason: {
+            code: 'viewsDoNotFitStructure',
+            tableId: OFFERS,
+            because:
+              'the Draft views of offers belong to a table the new Head does not contain',
+          },
+        },
+      ]);
+    });
 
     it('blocks views that do not fit the structure of their own side as invalidViews', async () => {
       const draft = await givenViewsOfMissingField(kit);
@@ -440,10 +560,40 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       selection: { tables: [KINDS] },
     },
     {
+      name: 'a referrer schema a table swap rewrote',
+      operation: 'commit',
+      given: givenSwappedTablesUnderProducts,
+      selection: { tables: [ALPHA, BETA] },
+    },
+    {
+      name: 'the swap a committed referrer schema means',
+      operation: 'commit',
+      given: givenSwappedTablesUnderProducts,
+      selection: { tables: [PRODUCTS] },
+    },
+    {
+      name: 'a referrer schema a reverted table swap rewrote',
+      operation: 'revert',
+      given: givenSwappedTablesUnderProducts,
+      selection: { tables: [ALPHA, BETA] },
+    },
+    {
       name: 'the structure that views need',
       operation: 'commit',
       given: givenViewsOfNewField,
       selection: { views: [PRODUCTS] },
+    },
+    {
+      name: 'the table that committed views belong to',
+      operation: 'commit',
+      given: givenCreatedOffersWithViews,
+      selection: { views: [OFFERS] },
+    },
+    {
+      name: 'the views of a reverted created table',
+      operation: 'revert',
+      given: givenCreatedOffersWithViews,
+      selection: { tables: [OFFERS] },
     },
     {
       name: 'a row that a created table references',
@@ -487,6 +637,23 @@ async function givenSwappedTables(
   const draft = await ChangesScenario.committed(kit, {
     [ALPHA]: { schema: titleSchema },
     [BETA]: { schema: titleSchema },
+  });
+  await draft.renameTable(ALPHA, GAMMA);
+  await draft.renameTable(BETA, ALPHA);
+  await draft.renameTable(GAMMA, BETA);
+
+  return draft;
+}
+
+async function givenSwappedTablesUnderProducts(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [ALPHA]: { schema: titleSchema },
+    [BETA]: { schema: titleSchema },
+    [PRODUCTS]: {
+      schema: obj({ title: str(), part: str({ foreignKey: BETA }) }),
+    },
   });
   await draft.renameTable(ALPHA, GAMMA);
   await draft.renameTable(BETA, ALPHA);
@@ -552,6 +719,16 @@ async function givenProductsWithViews(
   });
   await draft.updateViews(PRODUCTS, tableViews(['title']));
   await draft.commit();
+
+  return draft;
+}
+
+async function givenCreatedOffersWithViews(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {});
+  await draft.createTable(OFFERS, titleSchema);
+  await draft.updateViews(OFFERS, tableViews(['title']));
 
   return draft;
 }

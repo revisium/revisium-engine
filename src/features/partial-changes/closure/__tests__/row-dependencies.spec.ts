@@ -24,12 +24,19 @@ const productSchema = obj({
   category: str({ foreignKey: CATEGORIES }),
 });
 
+const plainCategorySchema = obj({ title: str(), category: str() });
+
 const shelfSchema = obj({
   title: str(),
   categories: arr(str({ foreignKey: CATEGORIES })),
 });
 
 const category = (rowId: string): RowRef => ({ tableId: CATEGORIES, rowId });
+const productsStructure = {
+  kind: 'structure',
+  tableId: PRODUCTS,
+  selector: { tables: [PRODUCTS] },
+};
 const product = (rowId: string): RowRef => ({ tableId: PRODUCTS, rowId });
 const categoriesOfS1: FieldRef = {
   tableId: SHELVES,
@@ -417,6 +424,78 @@ describe('DependencyClosure: references and ids of rows', () => {
     );
   });
 
+  describe('an unchanged row whose key the structure changes and that references an id the target loses', () => {
+    it.each<{
+      operation: ChangeOperation;
+      given: Given;
+      selection: Selection;
+      because: string;
+    }>([
+      {
+        operation: 'commit',
+        given: givenCategoryDeletedAfterItsKeyWasDropped,
+        selection: { rows: [category('c1')] },
+        because:
+          'products/p1/category references categories/c1, which the new Head loses; the value follows the structure of products',
+      },
+      {
+        operation: 'revert',
+        given: givenCategoryCreatedForANewKey,
+        selection: { rows: [category('c9')] },
+        because:
+          'products/p1/category references categories/c9, which the reverted Draft loses; the value follows the structure of products',
+      },
+    ])(
+      'requires the structure that owns the key in a $operation',
+      async ({ operation, given, selection, because }) => {
+        const draft = await given(kit);
+
+        const closure = await draft.closeDependencies(operation, selection);
+
+        expect(closure.required).toEqual([
+          {
+            unit: productsStructure,
+            reason: {
+              code: 'structureBoundData',
+              tableId: PRODUCTS,
+              rowId: 'p1',
+              path: '/category',
+              because,
+            },
+          },
+        ]);
+        expect(closure.blockers).toEqual([]);
+      },
+    );
+
+    it('blocks the structure that owns the key as requiredExcluded when the selection excludes it', async () => {
+      const draft = await givenCategoryDeletedAfterItsKeyWasDropped(kit);
+
+      const closure = await draft.closeDependencies('commit', {
+        rows: [category('c1')],
+        exclude: { tables: [PRODUCTS] },
+      });
+
+      expect(closure.required).toEqual([]);
+      expect(closure.blockers).toEqual([
+        {
+          code: 'requiredExcluded',
+          tableId: PRODUCTS,
+          message: 'products is required but excluded',
+          unit: productsStructure,
+          reason: {
+            code: 'structureBoundData',
+            tableId: PRODUCTS,
+            rowId: 'p1',
+            path: '/category',
+            because:
+              'products/p1/category references categories/c1, which the new Head loses; the value follows the structure of products',
+          },
+        },
+      ]);
+    });
+  });
+
   it('blocks a committed value that references a row of neither revision as danglingInSource', async () => {
     const draft = await givenProductReferencingMissingCategory(kit);
 
@@ -567,6 +646,18 @@ describe('DependencyClosure: references and ids of rows', () => {
       operation: 'revert',
       given: givenSwappedCategoryIds,
       selection: { renames: [category('c2')] },
+    },
+    {
+      name: 'the structure that dropped the key of an unchanged referrer',
+      operation: 'commit',
+      given: givenCategoryDeletedAfterItsKeyWasDropped,
+      selection: { rows: [category('c1')] },
+    },
+    {
+      name: 'the structure that added the key of an unchanged referrer',
+      operation: 'revert',
+      given: givenCategoryCreatedForANewKey,
+      selection: { rows: [category('c9')] },
     },
   ])(
     'closes with nothing required once the selectors of $name are added (AS-67)',
@@ -747,6 +838,34 @@ async function givenProductReferencingMissingCategory(
   await expect(draft.row('draft', PRODUCTS, 'p1')).resolves.toMatchObject({
     data: { category: 'c404' },
   });
+
+  return draft;
+}
+
+async function givenCategoryDeletedAfterItsKeyWasDropped(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await givenCatalogue(kit, ['c1'], { p1: 'c1' });
+  await draft.updateTable(PRODUCTS, [replaceField('category', str())]);
+  await draft.removeRow(CATEGORIES, 'c1');
+
+  return draft;
+}
+
+async function givenCategoryCreatedForANewKey(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'c1' } } },
+    [PRODUCTS]: {
+      schema: plainCategorySchema,
+      rows: { p1: { title: 'p1', category: 'c9' } },
+    },
+  });
+  await draft.createRows(CATEGORIES, { c9: { title: 'c9' } });
+  await draft.updateTable(PRODUCTS, [
+    replaceField('category', str({ foreignKey: CATEGORIES })),
+  ]);
 
   return draft;
 }

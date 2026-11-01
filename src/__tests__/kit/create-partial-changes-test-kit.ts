@@ -16,10 +16,12 @@ import { MigrationModule } from 'src/features/migration/migration.module';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import type { LedgerReplayRules } from 'src/features/partial-changes/head-schema/head-schema-check';
+import { PartialChangesApiService } from 'src/features/partial-changes/partial-changes-api.service';
 import { PartialChangesModule } from 'src/features/partial-changes/partial-changes.module';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
 import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import { ComparedSnapshotReader } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import { TargetValidator } from 'src/features/partial-changes/validation/target-validator';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
@@ -49,7 +51,9 @@ export interface PartialChangesTestKit {
   draftRevisionApi: DraftRevisionApiService;
   draftWriteAdmission: DraftWriteAdmissionService;
   viewsApi: ViewsApiService;
+  partialChangesApi: PartialChangesApiService;
   snapshotReader: ChangesSnapshotReader;
+  comparedSnapshotReader: ComparedSnapshotReader;
   scopedCatalogueReader: ScopedCatalogueReader;
   targetAssembler: TargetAssembler;
   dependencyClosure: DependencyClosure;
@@ -118,7 +122,9 @@ export async function createPartialChangesTestKit({
     draftRevisionApi: module.get(DraftRevisionApiService),
     draftWriteAdmission: module.get(DraftWriteAdmissionService),
     viewsApi: module.get(ViewsApiService),
+    partialChangesApi: module.get(PartialChangesApiService),
     snapshotReader: module.get(ChangesSnapshotReader),
+    comparedSnapshotReader: module.get(ComparedSnapshotReader),
     scopedCatalogueReader: module.get(ScopedCatalogueReader),
     targetAssembler: module.get(TargetAssembler),
     dependencyClosure: module.get(DependencyClosure),

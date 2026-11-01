@@ -333,7 +333,8 @@ Output:
 
 Order: `tableId`, `rowId` (table-level units first), `kind`, `path`, `previousTableId`, `previousRowId`, in code-point
 order, and finally the internal unit key (carried in the cursor) so the order is total. The cursor carries the sort
-key of the last returned unit and the table to resume from. The listing has no total: it would need every table read.
+key of the last returned unit and the table and row to resume from. The listing has no total: it would need every
+table read.
 
 Reading is incremental:
 
@@ -341,9 +342,16 @@ Reading is incremental:
   time, in listing order from the cursor's table (only `tableId` when given), and stops as soon as the page is full.
   Tables after the last one it needed are not read.
 - **Keyset paging inside a table (required).** A page reads the changed rows of a table in keyset order of the unit
-  row id, starting at the cursor's row, and stops when the page is full. Every changed row read yields at least one
-  unit, so a page reads at most `pageSize` changed rows and needs no separate size guard. A row whose units do not
-  fit continues on the next page from the cursor. (The PoC still read every changed row of each table it listed.)
+  row id, starting at the cursor's row, and stops when the page is full or when it has read `pageSize` changed row
+  ids across its tables. Each row id holds at most two row version pairs (a replaced id, or an id a rename took over
+  from a deletion). A changed row can yield no unit, for example when its data differs only in a formula output that
+  a native foreign-key rewrite left stale, so this read budget is separate from the unit count. A row whose units do
+  not fit continues on the next page from the cursor. (The PoC still read every changed row of each table it
+  listed.)
+- **Per-page cost.** A page compares and loads only the row version pairs of the row ids it reads, but it still finds
+  a table's changed rows by the anti-join of the table's two link sets, so each table a page reads costs time
+  proportional to its row links. Measured in the sandbox on a pair of table versions with 1,000,000 rows: 1.1–1.2 s
+  per page with 10 changed rows and 1.8–1.9 s with 100,000.
 - Refused tables (§6.10) are not read for units; every page returns them in `refusedTables`.
 - A page can hold fewer than `pageSize` units, or none; only `nextCursor = null` ends the listing.
 - Paging is snapshot-free: each page reads its own snapshot and returns its Head and Draft ids; under concurrent edits
@@ -1196,7 +1204,7 @@ structure-digest cost (§9.1) was not measured and is measured before release.
 | `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | Links copied into one new table version (an in-place revert copies none) | Above for any table → `tooLarge` with `tableId`, before that assembly (§6.5). |
 | `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | 180,000 | Lifetime of one preview, one listing page, or one commit or revert attempt | Expired → error, rollback; the callback settles at the deadline and COMMIT never starts after it; a statement is cut at the deadline by `transaction_timeout` on PostgreSQL 17, and within the budget left at the last checkpoint on older servers (§8.1). |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | 3 | Serializable attempts of the operation's own loop (§8.1) | Exhausted → error. |
-| `listChanges` `pageSize` | 500 (max 5,000) | Units per page, and so changed rows read per page (§5.2) | — |
+| `listChanges` `pageSize` | 500 (max 5,000) | Units per page, and changed row ids read per page (§5.2) | — |
 
 `all: true` reads every table, so a Draft above `maxChangedRows` can be committed whole only natively. When stage 0
 brings compiled formulas and set-based file registration, the per-row-work limit is re-measured.
@@ -1655,6 +1663,12 @@ Deadline enforcement:
   it; `transaction_timeout` is re-armed in each transaction on PostgreSQL 17; older servers renew `statement_timeout`
   and `idle_in_transaction_session_timeout` at deadline checkpoints instead of per-statement budgets; COMMIT never
   starts after the deadline; an error counts as the timeout only with evidence, and `P2028` never does.
+
+Listing:
+
+- §5.2, §11: a page stops after reading `pageSize` changed row ids, each with at most two row version pairs, because
+  a changed row can yield no unit; the cursor carries the row to resume from; the per-page cost of the link anti-join
+  is stated with measurements.
 
 ### Version 1 (2026-10-22)
 

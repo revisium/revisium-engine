@@ -1,15 +1,6 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
-import {
-  attributeLedger,
-  type LedgerAttribution,
-  pendingMigrationsOf,
-} from 'src/features/partial-changes/catalogue/ledger-attribution';
-import {
-  checkHeadSchema,
-  type HeadSchemaCheck,
-} from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   ChangedRows,
   ChangesBranch,
@@ -17,12 +8,7 @@ import type {
   ComparedTable,
   RowPair,
   TablePair,
-  TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import {
-  analyzeTableStructure,
-  type TableSide,
-} from 'src/features/partial-changes/structure/table-structure';
 
 export interface RowPairIds {
   readonly head?: string;
@@ -74,24 +60,12 @@ export function readChangedRows(
   });
 }
 
-export async function readComparedSnapshot(
+export function readComparedSnapshot(
   kit: PartialChangesTestKit,
   branch: ChangesBranch,
-  { wholeDraft }: OperationScope = PARTIAL_OPERATION,
+  scope: OperationScope = PARTIAL_OPERATION,
 ): Promise<ComparedSnapshot> {
-  const snapshot = await kit.snapshotReader.readSnapshot(branch);
-  const ledger = attributeLedger(snapshot);
-  const headSchema = checkHeadSchema(
-    { snapshot, ledger, wholeDraft },
-    kit.replayRules,
-  );
-
-  return {
-    snapshot,
-    ledger,
-    headSchema,
-    tables: comparedTablesOf(kit, snapshot, ledger, headSchema),
-  };
+  return kit.comparedSnapshotReader.readComparedSnapshot(branch, scope);
 }
 
 export function affectedTablesOf(
@@ -108,38 +82,6 @@ export function affectedTablesOf(
   return tables.filter(({ identity }) => identities.has(identity));
 }
 
-function comparedTablesOf(
-  kit: PartialChangesTestKit,
-  snapshot: ChangesSnapshot,
-  ledger: LedgerAttribution,
-  headSchema: HeadSchemaCheck,
-): ComparedTable[] {
-  return snapshot.tables.flatMap(({ identity, head, draft }) => {
-    if (!head || !draft) {
-      return [];
-    }
-
-    const structure = analyzeTableStructure(
-      {
-        head: sideOf(snapshot, head, 'head'),
-        draft: sideOf(snapshot, draft, 'draft'),
-        pendingMigrations: pendingMigrationsOf(ledger, identity),
-        replayedHeadSchema: headSchema.replayedHeadSchemas.get(identity),
-      },
-      kit.schemaRules,
-    );
-
-    return [
-      {
-        identity,
-        headVersionId: head.versionId,
-        draftVersionId: draft.versionId,
-        structure,
-      },
-    ];
-  });
-}
-
 function pairsNamed(snapshot: ChangesSnapshot, tableId: string): TablePair[] {
   const pairs = snapshot.tables.filter(
     ({ head, draft }) => draft?.id === tableId || head?.id === tableId,
@@ -150,29 +92,6 @@ function pairsNamed(snapshot: ChangesSnapshot, tableId: string): TablePair[] {
   }
 
   return pairs;
-}
-
-function sideOf(
-  snapshot: ChangesSnapshot,
-  version: TableVersion,
-  side: RevisionSide,
-): TableSide {
-  const tableIdentities = new Map<string, string>();
-
-  for (const pair of snapshot.tables) {
-    const sideVersion = pair[side];
-
-    if (sideVersion) {
-      tableIdentities.set(sideVersion.id, pair.identity);
-    }
-  }
-
-  return {
-    tableId: version.id,
-    schema: version.schema,
-    history: version.history,
-    tableIdentities,
-  };
 }
 
 function changedRowsView(

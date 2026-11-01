@@ -13,6 +13,7 @@ import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-revert-changes.command';
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ListChangesResult } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
   ChangesBranch,
@@ -26,6 +27,13 @@ import {
   readCatalogue,
   readWholeDraftCatalogue,
 } from './catalogue-reading';
+import {
+  listChanges,
+  listEveryPage,
+  listEveryPageWithReads,
+  type ListingOptions,
+  type PageWithReads,
+} from './change-listing';
 import { type ClosureView, readClosedDependencies } from './dependency-closing';
 import { type PlanVariant, readPlanFingerprint } from './plan-fingerprinting';
 import {
@@ -202,6 +210,23 @@ export class ChangesScenario {
       revisionId: await this.draftRevisionId(),
       tableId,
       rowId,
+    });
+  }
+
+  public async renameDraftRowBelowNativeValidation(
+    tableId: string,
+    rowId: string,
+    nextRowId: string,
+  ): Promise<void> {
+    const row = await this.row('draft', tableId, rowId);
+
+    if (row.readonly) {
+      throw new Error(`Row ${rowId} of ${tableId} is not owned by the Draft`);
+    }
+
+    await this.kit.prisma.row.update({
+      where: { versionId: row.versionId },
+      data: { id: nextRowId },
     });
   }
 
@@ -456,6 +481,20 @@ export class ChangesScenario {
 
   public resolveSelection(selection: Selection): Promise<ResolutionView> {
     return readSelectionResolution(this.kit, this.branch, selection);
+  }
+
+  public listChanges(options: ListingOptions = {}): Promise<ListChangesResult> {
+    return listChanges(this.kit, this.branch, options);
+  }
+
+  public listEveryPage(options: ListingOptions): Promise<ListChangesResult[]> {
+    return listEveryPage(this.kit, this.branch, options);
+  }
+
+  public listEveryPageWithReads(
+    options: ListingOptions,
+  ): Promise<PageWithReads[]> {
+    return listEveryPageWithReads(this.kit, this.branch, options);
   }
 
   public assembleTarget(

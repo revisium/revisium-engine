@@ -9,6 +9,11 @@ import {
   type SchemaLedgerRepairPlan,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import {
+  type SchemaLedgerScan,
+  type ScanSchemaLedgerData,
+  ScanSchemaLedgerQuery,
+} from 'src/features/migration/queries/impl/scan-schema-ledger.query';
+import {
   ActiveMigrationResult,
   MigrationStatusResult,
 } from 'src/features/migration/types/migration.types';
@@ -41,5 +46,9 @@ export class MigrationApiService {
     data: PlanSchemaLedgerRepairData,
   ): Promise<SchemaLedgerRepairPlan> {
     return this.queryBus.execute(new PlanSchemaLedgerRepairQuery(data));
+  }
+
+  scanSchemaLedger(data: ScanSchemaLedgerData = {}): Promise<SchemaLedgerScan> {
+    return this.queryBus.execute(new ScanSchemaLedgerQuery(data));
   }
 }

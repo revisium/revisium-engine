@@ -362,6 +362,42 @@ and planning repeats with the rest. The plan carries a fingerprint of what it va
 version its row count and a digest of row version ids and hashes, and per table version that a foreign key of a
 validated row references a digest of its row ids.
 
+### How does the schema ledger scan report damage?
+
+`scanSchemaLedger({ projectId?, branchName?, cursor?, limit?, rowDiagnostics? })` on the engine facade (and
+`MigrationApiService`) reports, read-only, where the schema ledger of a revision does not reproduce its schema rows
+([async-row-migration-v2 §5](specs/async-row-migration-v2.spec.md#5-detection-scan-scanschemaledger)). It returns
+`{ findings, nextCursor, stats }`; the host exposes it to administrators.
+
+- **Scope and paging.** One branch, the branches of one project, or every branch when `projectId` is omitted;
+  `branchName` requires `projectId`. Branches are paged by project id, then branch name, in code-point order
+  (`COLLATE "C"`); `limit` is 1–1,000 (default 50) and the opaque `nextCursor` continues after the last branch of the
+  page (`null` on the last page). An unknown project or branch fails with not found; `branchName` without `projectId`,
+  a malformed `cursor` or `limit`, or an unknown `rowDiagnostics` fails with a validation error. There are no retries:
+  a failed call is repeated from its cursor.
+- **Reading.** Per branch, one `READ ONLY` RepeatableRead transaction reads the Head and Draft, their table links and
+  system rows, the row hashes of damaged Head tables, and plans repairs. Earlier revisions are committed and are read
+  afterwards without a transaction. The scan writes nothing.
+- **Evaluation.** Each user table of every revision of the branch, in the role `head`, `draft` or `history`. The
+  revision's ledger is replayed with the shared ledger replay; the identity pass decides whether the table is
+  ledgered (a table created as `A` and renamed to `B` by recorded migrations is ledgered), and predicate (b) compares
+  the replayed schema with the schema row. Per call, each migration-table version is replayed once, each schema-table
+  version is read once, (b) runs once per migration-table version and schema row version, and one
+  `GROUP BY "schemaHash"` statement runs per table version; `stats` counts branches, revisions, replays, schema-table
+  reads, (b) checks and row-hash reads. A finding lists every revision of the branch that shares its evaluation.
+
+| Code | Role | When; `detail` |
+| --- | --- | --- |
+| `unledgeredTable` | any | No intact lineage ends at the table id; `reason`: `noMigrationTable`, `noLineage` (no open slot, for example a removed table recreated without an `init`) or `brokenLineage` with the `migrationId` that broke it (an unattributable step, or a step that reused a taken id). |
+| `unreplayableLedger` | any | The slot is tainted; the first failing migration (`migrationId`, `step`, `error`). A failed rename moves the slot, so the new id is reported. |
+| `damagedTable` | `head` | Fails (b); `shape` from the Head rows' hashes: `unpublished` (some rows carry the replayed schema's hash, none the schema row's), `published` (every row carries the schema row's hash), else `unknown` (no rows, mixed or other hashes); `repair`: the planner's outcome for the table when every damaged Head table of the branch is planned together (as `planSchemaLedgerRepair` without `tableIds`), or `deferred` while an async migration is active in the Draft. |
+| `draftOnlyDamage` | `draft` | Fails (b) while the Head table of the same lineage (the same opening `init`) passes, or the table exists only in the Draft. |
+| `damagedHistory` | `history` | An earlier revision fails (b). |
+
+An unledgered or unreplayable table gets only that finding. Predicate (a) and its finding `rowSchemaHashMismatch` come
+next: `rowDiagnostics` (`none`, `headAndDraft` by default, or `all`) is accepted and validated, but no
+`rowSchemaHashMismatch` is produced yet.
+
 ### Read consistency during migration
 
 | What                           | Before migration | During COPY          | After SWAP                            |
@@ -550,9 +586,11 @@ src/features/migration/
   ledger-repair/                   Repair planning: snapshot reader, ledger baselines and outcomes, repair patch,
                                    repair ids and renumbering, combined verification, Draft row validation and
                                    fingerprint; RepairPlanning plans a snapshot that its caller has read
+  ledger-scan/                     Detection scan: request and cursor, branch pages, revision reader, per-call caches,
+                                   schema checks and finding classification per role
   migration-payload.ts             Payload envelope encoder and decoder
   commands/                        StartAsyncMigration (admission, validation, record, trigger), AbortMigration
-  queries/                         GetMigrationStatus, GetActiveMigrations, PlanSchemaLedgerRepair
+  queries/                         GetMigrationStatus, GetActiveMigrations, PlanSchemaLedgerRepair, ScanSchemaLedger
 ```
 
 ## Known Limitations (v1)

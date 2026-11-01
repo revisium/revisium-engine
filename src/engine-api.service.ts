@@ -385,6 +385,12 @@ export class EngineApiService {
     return this.fileUsageApi.validateProjectFileBytes(...args);
   }
 
+  scanSchemaLedger(
+    ...args: Parameters<MigrationApiService['scanSchemaLedger']>
+  ) {
+    return this.migrationApi.scanSchemaLedger(...args);
+  }
+
   restoreProjectFileBytes(
     ...args: Parameters<FileUsageApiService['restoreProjectFileBytes']>
   ) {

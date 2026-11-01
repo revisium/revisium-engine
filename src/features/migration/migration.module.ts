@@ -20,6 +20,8 @@ import { MigrationApiService } from 'src/features/migration/migration-api.servic
 import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-state-reader';
 import { DraftRowsValidation } from 'src/features/migration/ledger-repair/draft-rows-validation';
 import { RepairPlanning } from 'src/features/migration/ledger-repair/repair-planning';
+import { BranchPageReader } from 'src/features/migration/ledger-scan/branch-page-reader';
+import { ScanRevisionReader } from 'src/features/migration/ledger-scan/scan-revision-reader';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MIGRATION_QUERY_HANDLERS } from 'src/features/migration/queries/handlers';
 import { MIGRATION_COMMAND_HANDLERS } from 'src/features/migration/commands/handlers';
@@ -42,6 +44,8 @@ const SERVICES = [
   RepairStateReader,
   DraftRowsValidation,
   RepairPlanning,
+  BranchPageReader,
+  ScanRevisionReader,
   ...MIGRATION_QUERY_HANDLERS,
   ...MIGRATION_COMMAND_HANDLERS,
 ];

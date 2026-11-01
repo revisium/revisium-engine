@@ -39,6 +39,13 @@ export interface FirstReferrer {
   readonly rowId: string;
 }
 
+export interface UnresolvedReferenceQuery {
+  readonly jsonPath: string;
+  readonly exceptRows: readonly string[];
+  readonly referencedTableVersionId: string;
+  readonly changedRowIds: readonly string[];
+}
+
 @Injectable()
 export class ChangesSnapshotReader {
   constructor(
@@ -123,6 +130,38 @@ export class ChangesSnapshotReader {
         AND jsonb_typeof(v.value) = 'string'
         AND v.value #>> '{}' = ANY(${[...rowIds]}::text[])
         AND r."createdId" <> ALL(${[...exceptRows]}::text[])
+      GROUP BY v.value #>> '{}'
+      ORDER BY (v.value #>> '{}') COLLATE "C"
+    `);
+  }
+
+  public readUnresolvedReferences(
+    tableVersionId: string,
+    {
+      jsonPath,
+      exceptRows,
+      referencedTableVersionId,
+      changedRowIds,
+    }: UnresolvedReferenceQuery,
+  ): Promise<FirstReferrer[]> {
+    return this.transaction.$queryRaw<FirstReferrer[]>(sql`
+      SELECT v.value #>> '{}' AS "referencedId", min(r."id" COLLATE "C") AS "rowId"
+      FROM "Row" r
+      JOIN "_RowToTable" rt ON rt."A" = r."versionId"
+      CROSS JOIN LATERAL jsonb_path_query(r."data", ${jsonPath}::jsonpath) AS v(value)
+      WHERE rt."B" = ${tableVersionId}
+        AND jsonb_typeof(v.value) = 'string'
+        AND r."createdId" <> ALL(${[...exceptRows]}::text[])
+        AND (
+          v.value #>> '{}' = ANY(${[...changedRowIds]}::text[])
+          OR NOT EXISTS (
+            SELECT 1
+            FROM "Row" referenced
+            JOIN "_RowToTable" referenced_rt ON referenced_rt."A" = referenced."versionId"
+            WHERE referenced_rt."B" = ${referencedTableVersionId}
+              AND referenced."id" = v.value #>> '{}'
+          )
+        )
       GROUP BY v.value #>> '{}'
       ORDER BY (v.value #>> '{}') COLLATE "C"
     `);

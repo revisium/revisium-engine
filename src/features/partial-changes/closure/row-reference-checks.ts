@@ -3,7 +3,6 @@ import type { JsonSchemaStore } from '@revisium/schema-toolkit/model';
 import type { JsonValue } from '@revisium/schema-toolkit/types';
 import {
   type AppliedUnits,
-  type ChangeOperation,
   OutcomeRules,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type {
@@ -16,6 +15,9 @@ import {
   danglingInSource,
   type Finding,
   requiring,
+  requiringOrDangling,
+  type SideNames,
+  sideNamesOf,
   type TargetCheck,
   type TargetChecking,
 } from 'src/features/partial-changes/closure/findings';
@@ -37,11 +39,6 @@ import { getForeignKeyReferences } from 'src/features/share/foreign-key-referenc
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { getForeignKeyJsonPaths } from 'src/features/share/utils/get-foreign-key-json-paths';
-
-interface SideNames {
-  readonly target: string;
-  readonly other: string;
-}
 
 interface Reference {
   readonly referrer: TargetTable;
@@ -65,15 +62,11 @@ interface Covering {
 
 interface OperationContext {
   readonly source: AssemblySource;
+  readonly lookup: CatalogueLookup;
   readonly snapshotReader: ChangesSnapshotReader;
   readonly schemaStore: JsonSchemaStoreService;
   readonly referrers: LostIdReferrers;
 }
-
-const SIDE_NAMES: Readonly<Record<ChangeOperation, SideNames>> = {
-  commit: { target: 'new Head', other: 'the Draft' },
-  revert: { target: 'reverted Draft', other: 'Head' },
-};
 
 @Injectable()
 export class RowReferenceChecks implements TargetCheck {
@@ -85,6 +78,7 @@ export class RowReferenceChecks implements TargetCheck {
   public checkingOf(source: AssemblySource): TargetChecking {
     return new RowReferenceChecking({
       source,
+      lookup: new CatalogueLookup(source.catalogue),
       snapshotReader: this.snapshotReader,
       schemaStore: this.schemaStore,
       referrers: new LostIdReferrers(this.snapshotReader),
@@ -100,14 +94,18 @@ class RowReferenceChecking implements TargetChecking {
     choice: AppliedUnits,
   ): Promise<Finding[]> {
     const rules = new OutcomeRules(choice);
-    const tables = new TargetTables(this.context.source, target, rules);
+    const tables = new TargetTables(
+      this.context.source,
+      target,
+      rules,
+      this.context.lookup,
+    );
 
     return new TargetRowChecks(this.context, tables, rules).findings();
   }
 }
 
 class TargetRowChecks {
-  private readonly lookup: CatalogueLookup;
   private readonly names: SideNames;
   private readonly schemas = new Map<TargetTable, JsonSchemaStore>();
 
@@ -116,8 +114,7 @@ class TargetRowChecks {
     private readonly tables: TargetTables,
     private readonly rules: OutcomeRules,
   ) {
-    this.lookup = new CatalogueLookup(context.source.catalogue);
-    this.names = SIDE_NAMES[rules.operation];
+    this.names = sideNamesOf(rules.operation);
   }
 
   public async findings(): Promise<Finding[]> {
@@ -154,7 +151,7 @@ class TargetRowChecks {
     row: CatalogueRow,
     rowId: string,
   ): Finding {
-    return this.requiringOrDangling(idUnitOf(row), {
+    return requiringOrDangling(idUnitOf(row), {
       code: 'idOccupied',
       tableId,
       rowId,
@@ -333,29 +330,20 @@ class TargetRowChecks {
     referrer,
     pointer,
   }: Reference): string | undefined {
-    const structure = this.lookup.tableUnitOf('structure', referrer.pair)?.key;
+    const structure = this.context.lookup.tableUnitOf(
+      'structure',
+      referrer.pair,
+    )?.key;
 
     if (
       structure === undefined ||
       this.rules.isApplied(structure) ||
-      !this.isChangedField(referrer, pointer)
+      !referrer.isChangedField(pointer)
     ) {
       return undefined;
     }
 
     return structure;
-  }
-
-  private isChangedField({ pair }: TargetTable, pointer: JsonPointer): boolean {
-    const compared = this.context.source.tables.find(
-      ({ identity }) => identity === pair.identity,
-    );
-
-    return (
-      compared?.structure.changedPointers.some((changed) =>
-        changed.isAtOrAbove(pointer),
-      ) ?? false
-    );
   }
 
   private async unchangedReferrersOfLostIds(): Promise<Finding[]> {
@@ -412,7 +400,7 @@ class TargetRowChecks {
       because: `${referrer.tableId}/${rowId} references ${losing.tableId}/${referencedId}, which the ${this.names.target} loses`,
     };
 
-    return this.requiringOrDangling(
+    return requiringOrDangling(
       losing.providerOf(referencedId),
       reason,
       losing.unitLosing(referencedId),
@@ -430,18 +418,6 @@ class TargetRowChecks {
     this.schemas.set(table, schema);
 
     return schema;
-  }
-
-  private requiringOrDangling(
-    unitKey: string | undefined,
-    reason: Reason,
-    culprit?: string,
-  ): Finding {
-    if (unitKey !== undefined) {
-      return requiring(unitKey, reason);
-    }
-
-    return blocking(danglingInSource(reason.because, reason, culprit));
   }
 }
 

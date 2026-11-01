@@ -1,4 +1,7 @@
-import type { AppliedUnits } from 'src/features/partial-changes/assembly/outcome-rules';
+import type {
+  AppliedUnits,
+  ChangeOperation,
+} from 'src/features/partial-changes/assembly/outcome-rules';
 import type {
   AssembledTarget,
   AssemblySource,
@@ -28,12 +31,38 @@ export interface TargetChecking {
   findingsOf(target: AssembledTarget, choice: AppliedUnits): Promise<Finding[]>;
 }
 
+export interface SideNames {
+  readonly target: string;
+  readonly other: string;
+}
+
+const SIDE_NAMES: Readonly<Record<ChangeOperation, SideNames>> = {
+  commit: { target: 'new Head', other: 'the Draft' },
+  revert: { target: 'reverted Draft', other: 'Head' },
+};
+
 export function requiring(unitKey: string, reason: Reason): Finding {
   return { kind: 'requires', unitKey, reason };
 }
 
 export function blocking(blocker: PlanBlocker): Finding {
   return { kind: 'blocks', blocker };
+}
+
+export function requiringOrDangling(
+  unitKey: string | undefined,
+  reason: Reason,
+  culprit?: string,
+): Finding {
+  if (unitKey !== undefined) {
+    return requiring(unitKey, reason);
+  }
+
+  return blocking(danglingInSource(reason.because, reason, culprit));
+}
+
+export function sideNamesOf(operation: ChangeOperation): SideNames {
+  return SIDE_NAMES[operation];
 }
 
 export function danglingInSource(

@@ -106,6 +106,14 @@ export class OutcomeRules {
 
     return 'head';
   }
+
+  public structureSideOf(structure: string | undefined): RevisionSide {
+    if (structure === undefined) {
+      return this.baseSide;
+    }
+
+    return this.sideTakenBy(structure);
+  }
 }
 
 export class TableOutcomeRules {
@@ -116,7 +124,7 @@ export class TableOutcomeRules {
     private readonly rules: OutcomeRules,
     private readonly table: OutcomeTable,
   ) {
-    this.structureSide = structureSideOf(rules, table.units.structure);
+    this.structureSide = rules.structureSideOf(table.units.structure);
     this.otherSide = oppositeOf(this.structureSide);
   }
 
@@ -258,15 +266,4 @@ export function oppositeOf(side: RevisionSide): RevisionSide {
   }
 
   return 'head';
-}
-
-function structureSideOf(
-  rules: OutcomeRules,
-  structure: string | undefined,
-): RevisionSide {
-  if (structure === undefined) {
-    return rules.baseSide;
-  }
-
-  return rules.sideTakenBy(structure);
 }

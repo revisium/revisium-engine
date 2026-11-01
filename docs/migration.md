@@ -549,7 +549,7 @@ src/features/migration/
     lease-heartbeat.ts             Lease renewal timer of one claim
   ledger-repair/                   Repair planning: snapshot reader, ledger baselines and outcomes, repair patch,
                                    repair ids and renumbering, combined verification, Draft row validation and
-                                   fingerprint
+                                   fingerprint; RepairPlanning plans a snapshot that its caller has read
   migration-payload.ts             Payload envelope encoder and decoder
   commands/                        StartAsyncMigration (admission, validation, record, trigger), AbortMigration
   queries/                         GetMigrationStatus, GetActiveMigrations, PlanSchemaLedgerRepair

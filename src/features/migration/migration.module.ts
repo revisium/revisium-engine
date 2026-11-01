@@ -19,6 +19,7 @@ import { MigrationImportService } from 'src/features/migration/services/migratio
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-state-reader';
 import { DraftRowsValidation } from 'src/features/migration/ledger-repair/draft-rows-validation';
+import { RepairPlanning } from 'src/features/migration/ledger-repair/repair-planning';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MIGRATION_QUERY_HANDLERS } from 'src/features/migration/queries/handlers';
 import { MIGRATION_COMMAND_HANDLERS } from 'src/features/migration/commands/handlers';
@@ -40,6 +41,7 @@ const SERVICES = [
   MigrationApiService,
   RepairStateReader,
   DraftRowsValidation,
+  RepairPlanning,
   ...MIGRATION_QUERY_HANDLERS,
   ...MIGRATION_COMMAND_HANDLERS,
 ];

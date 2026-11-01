@@ -15,6 +15,8 @@ import {
   failure,
   init,
   moveField,
+  ownStep,
+  referrerRewrite,
   refs,
   remove,
   removeField,
@@ -24,6 +26,7 @@ import {
   schemasOf,
   slotOf,
   tableRead,
+  tracedReplayOf,
   unattributedFailure,
   unattributedOf,
   unreplayableOf,
@@ -803,6 +806,69 @@ describe('replayLedger', () => {
 
       expect(schemasOf(replay)).toEqual({ categories: tagSchema });
       expect(unreplayableOf(replay)).toEqual({});
+    });
+  });
+
+  describe('trail', () => {
+    it('records no trail unless the caller asks for it', () => {
+      const initCategories = init('categories', categorySchema);
+
+      const replay = replayOf(initCategories, rename('categories', 'groups'));
+
+      expect(slotOf(replay, initCategories)?.trail).toBeUndefined();
+    });
+
+    it('traces the schema after each own step and each rewrite by the rename of a referenced table', () => {
+      const initProducts = init('products', productSchema);
+      const addPrice = update('products', [addField('price', num())]);
+      const renameCategories = rename('categories', 'groups');
+
+      const replay = tracedReplayOf(
+        init('categories', categorySchema),
+        initProducts,
+        addPrice,
+        renameCategories,
+      );
+
+      expect(slotOf(replay, initProducts)?.trail).toEqual([
+        ownStep(initProducts, productSchema),
+        ownStep(
+          addPrice,
+          obj({ category: str({ foreignKey: 'categories' }), price: num() }),
+        ),
+        referrerRewrite(
+          renameCategories,
+          obj({ category: str({ foreignKey: 'groups' }), price: num() }),
+        ),
+      ]);
+    });
+
+    it('traces the rewrite of a reference of the table to itself as a referrer rewrite', () => {
+      const initNodes = init('nodes', nodeSchema);
+      const renameNodes = rename('nodes', 'tree');
+
+      const replay = tracedReplayOf(initNodes, renameNodes);
+
+      expect(slotOf(replay, initNodes)?.trail).toEqual([
+        ownStep(initNodes, nodeSchema),
+        referrerRewrite(
+          renameNodes,
+          obj({ parent: str({ foreignKey: 'tree' }) }),
+        ),
+      ]);
+    });
+
+    it('leaves a failed step out of the trail', () => {
+      const initCategories = init('categories', categorySchema);
+
+      const replay = tracedReplayOf(
+        initCategories,
+        update('categories', [removeField('missing')]),
+      );
+
+      expect(slotOf(replay, initCategories)?.trail).toEqual([
+        ownStep(initCategories, categorySchema),
+      ]);
     });
   });
 

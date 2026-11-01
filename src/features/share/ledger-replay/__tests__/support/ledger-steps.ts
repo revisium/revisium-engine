@@ -15,6 +15,7 @@ import {
   type ReplayedLedger,
   type ReplayedSlot,
   type ReplayFailure,
+  type SchemaTrailStep,
   type TableRead,
   type UnattributedFailure,
 } from 'src/features/share/ledger-replay/ledger-replay';
@@ -78,6 +79,10 @@ export function replayOf(...ledger: Migration[]): ReplayedLedger {
   return replayLedger({ ledger, refs, validator });
 }
 
+export function tracedReplayOf(...ledger: Migration[]): ReplayedLedger {
+  return replayLedger({ ledger, refs, validator, recordTrail: true });
+}
+
 export function schemasOf(replay: ReplayedLedger) {
   return Object.fromEntries(replay.schemas);
 }
@@ -99,6 +104,20 @@ export function slotOf(
 
 export function failure(migration: Migration, error: string): ReplayFailure {
   return { migrationId: migration.id, step: migration.changeType, error };
+}
+
+export function ownStep(
+  migration: Migration,
+  schema: JsonSchema,
+): SchemaTrailStep {
+  return { migrationId: migration.id, cause: 'ownStep', schema };
+}
+
+export function referrerRewrite(
+  migration: Migration,
+  schema: JsonSchema,
+): SchemaTrailStep {
+  return { migrationId: migration.id, cause: 'referrerRewrite', schema };
 }
 
 export function tableRead(

@@ -10,6 +10,7 @@ import type {
   RowDiagnostics,
   ScanSchemaLedgerData,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
+import type * as SchemaChecksModule from 'src/features/migration/ledger-scan/schema-checks';
 import type * as LedgerReplayModule from 'src/features/share/ledger-replay/ledger-replay';
 import {
   ChangesScenario,
@@ -40,6 +41,7 @@ import {
   ledgerReplaysDuring,
   pendingMigrationOf,
   removeSchemaRow,
+  rowHashClassificationsDuring,
   removeSchemaTable,
   rowSchemaHashOf,
   scanBranch,
@@ -59,6 +61,14 @@ jest.mock('src/features/share/ledger-replay/ledger-replay', () => {
   );
 
   return { ...actual, replayLedger: jest.fn(actual.replayLedger) };
+});
+
+jest.mock('src/features/migration/ledger-scan/schema-checks', () => {
+  const actual: typeof SchemaChecksModule = jest.requireActual(
+    'src/features/migration/ledger-scan/schema-checks',
+  );
+
+  return { ...actual, rowHashReasonOf: jest.fn(actual.rowHashReasonOf) };
 });
 
 const CATEGORIES = 'categories';
@@ -535,6 +545,23 @@ describe('Schema ledger scan', () => {
         ).toEqual(roles);
       },
     );
+    it('classifies the row hashes of a table version once per ledger however many revisions share them', async () => {
+      const draft = await givenUnknownRowHashSharedByTenCommits();
+
+      const { result: scan, classifications } =
+        await rowHashClassificationsDuring(() =>
+          scanBranch(kit, draft, { rowDiagnostics: 'all' }),
+        );
+
+      const mismatches = findingsOf(scan, PRODUCTS).filter(
+        ({ code }) => code === 'rowSchemaHashMismatch',
+      );
+      expect(mismatches.flatMap(({ revisionIds }) => revisionIds)).toHaveLength(
+        12,
+      );
+      expect(classifications).toBe(2);
+    });
+
     it('checks the rows of each table version once however many revisions link it', async () => {
       const draft = await givenDamageSharedByTenCommits();
 
@@ -795,6 +822,21 @@ describe('Schema ledger scan', () => {
     await draft.writeRowColumns(PRODUCTS, 'p1', {
       schemaHash: hashOf(productSchema),
     });
+
+    return draft;
+  }
+
+  async function givenUnknownRowHashSharedByTenCommits(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: '' });
+    await draft.commit();
+
+    for (let commit = 1; commit <= 10; commit++) {
+      await draft.updateRow(CATEGORIES, 'c1', { title: `title ${commit}` });
+      await draft.commit();
+    }
+
+    await draft.updateTable(CATEGORIES, addNote);
 
     return draft;
   }

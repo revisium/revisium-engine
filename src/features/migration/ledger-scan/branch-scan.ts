@@ -17,7 +17,6 @@ import {
   lineageOf,
   passesSchemaCheck,
   type ReplayedCheck,
-  rowHashReasonOf,
 } from './schema-checks';
 import type { RevisionTables } from './scan-revision-reader';
 
@@ -171,34 +170,28 @@ export class BranchScan {
   }
 
   private async rowHashMismatchOf(
-    { tableVersionId, schemaRow }: ScannedTable,
+    table: ScannedTable,
     check: ReplayedCheck,
   ): Promise<FindingContent | undefined> {
+    const { schemaRow } = table;
+
     if (!schemaRow) {
       return undefined;
     }
 
-    const mismatched = await this.scan.mismatchedRowHashesOf(
-      tableVersionId,
+    const rowHashes = await this.scan.classifiedRowHashesOf(
+      table,
+      check,
       schemaRow.hash,
     );
 
-    if (mismatched.length === 0) {
+    if (rowHashes.length === 0) {
       return undefined;
     }
 
     return {
       code: 'rowSchemaHashMismatch',
-      detail: {
-        schemaHash: schemaRow.hash,
-        rowHashes: mismatched.map(({ hash, rowCount }) => ({
-          hash,
-          rowCount,
-          reason: rowHashReasonOf(hash, check, (schema) =>
-            this.scan.hashOf(schema),
-          ),
-        })),
-      },
+      detail: { schemaHash: schemaRow.hash, rowHashes },
     };
   }
 

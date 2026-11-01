@@ -406,8 +406,10 @@ validated row references a digest of its row ids.
   `rowDiagnostics` selects: `none`, `headAndDraft` (default) or `all` (every revision). Per call, each migration-table
   version is replayed once (repair planning reuses that replay and replays only its own hypothetical ledgers), each
   schema-table version is read once, (b) runs once per migration-table version, table id and schema row version, one
-  `GROUP BY "schemaHash"` statement runs per table version, and (a) runs once per table version and schema row hash;
-  `stats` counts branches, revisions, replays, schema-table reads, (b) checks and row-hash reads as they happen. A finding lists every revision of the branch that shares its evaluation.
+  `GROUP BY "schemaHash"` statement runs per table version, (a) runs once per table version and schema row hash, and
+  its row hashes are classified once per migration-table version, table version and schema row hash; `stats` counts
+  branches, revisions, replays, schema-table reads, (b) checks and row-hash reads as they happen. A finding lists
+  every revision of the branch that shares its evaluation.
 
 | Code | Role | When; `detail` |
 | --- | --- | --- |

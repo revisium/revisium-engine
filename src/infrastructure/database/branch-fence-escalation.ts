@@ -5,8 +5,6 @@ import { BranchWriteFencedException } from 'src/infrastructure/database/branch-w
 import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 
-const SERIALIZATION_FAILURES_BEFORE_ESCALATION = 2;
-
 export interface ProjectBranch {
   readonly projectId: string;
   readonly branchName: string;
@@ -43,10 +41,6 @@ export class BranchFenceEscalation {
     private readonly branchWriteFence: BranchWriteFenceService,
     private readonly escalationSlots: EscalationSlots,
   ) {}
-
-  public isDueFor(attempt: number): boolean {
-    return attempt >= SERIALIZATION_FAILURES_BEFORE_ESCALATION;
-  }
 
   public runEscalated<T>(
     branch: ProjectBranch,

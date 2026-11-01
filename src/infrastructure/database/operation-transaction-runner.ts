@@ -1,13 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { setTimeout as waitFor } from 'node:timers/promises';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { TransactionPrismaClient } from 'src/features/share/types';
 import {
   BranchFenceEscalation,
   ProjectBranch,
 } from 'src/infrastructure/database/branch-fence-escalation';
-import { isSerializationFailure } from 'src/infrastructure/database/database-errors';
 import {
   NumericSetting,
   readNumericSetting,
@@ -17,7 +15,10 @@ import {
   OperationDeadline,
 } from 'src/infrastructure/database/operation-deadline';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { retryDelayMs } from 'src/infrastructure/database/retry-backoff';
+import {
+  retryOnSerializationFailure,
+  SerializationRetryLimits,
+} from 'src/infrastructure/database/serialization-retry';
 import {
   TransactionOptions,
   TransactionPrismaService,
@@ -76,25 +77,19 @@ export class OperationTransactionRunner {
     );
   }
 
-  public async runWrite<T>(
+  public runWrite<T>(
     branch: ProjectBranch,
     planAndWrite: Operation<T>,
   ): Promise<T> {
-    const lastAttempt = this.maxAttempts - 1;
-
-    for (let attempt = 0; attempt < lastAttempt; attempt++) {
-      try {
-        return await this.runWriteAttempt(attempt, branch, planAndWrite);
-      } catch (error) {
-        if (!isSerializationFailure(error)) {
-          throw error;
-        }
-
-        await this.backOff(attempt);
-      }
-    }
-
-    return this.runWriteAttempt(lastAttempt, branch, planAndWrite);
+    return retryOnSerializationFailure(this.writeRetryLimits(), {
+      run: () =>
+        this.runAttempt(
+          TransactionIsolationLevel.Serializable,
+          planAndWrite,
+          this.unfencedStart(),
+        ),
+      runEscalated: () => this.runEscalatedAttempt(branch, planAndWrite),
+    });
   }
 
   public runPlanning<T>(plan: Operation<T>): Promise<T> {
@@ -103,22 +98,6 @@ export class OperationTransactionRunner {
       (deadline) => this.planReadOnly(plan, deadline),
       this.unfencedStart(),
     );
-  }
-
-  private runWriteAttempt<T>(
-    attempt: number,
-    branch: ProjectBranch,
-    planAndWrite: Operation<T>,
-  ): Promise<T> {
-    if (!this.escalation.isDueFor(attempt)) {
-      return this.runAttempt(
-        TransactionIsolationLevel.Serializable,
-        planAndWrite,
-        this.unfencedStart(),
-      );
-    }
-
-    return this.runEscalatedAttempt(branch, planAndWrite);
   }
 
   private runEscalatedAttempt<T>(
@@ -154,10 +133,11 @@ export class OperationTransactionRunner {
     );
   }
 
-  private backOff(attempt: number): Promise<void> {
-    return waitFor(
-      retryDelayMs(attempt, this.transactionService.serializableRetryBackoff),
-    );
+  private writeRetryLimits(): SerializationRetryLimits {
+    return {
+      maxAttempts: this.maxAttempts,
+      backoff: this.transactionService.serializableRetryBackoff,
+    };
   }
 
   private async planReadOnly<T>(

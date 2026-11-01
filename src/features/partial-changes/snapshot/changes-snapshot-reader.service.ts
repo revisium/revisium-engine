@@ -3,11 +3,13 @@ import { empty, type Row, type Sql, sql } from 'src/engine-prisma-types';
 import {
   changedRowCountSql,
   type ChangedRowPairIds,
+  changedRowPairsFromSql,
   changedRowPairsSql,
 } from 'src/features/partial-changes/snapshot/changed-row-pairs-sql';
 import {
   type BranchRevisions,
   type ChangedRows,
+  type ChangedRowsKeyset,
   type ChangesBranch,
   type ChangesSnapshot,
   type ComparedTable,
@@ -95,6 +97,17 @@ export class ChangesSnapshotReader {
     }
 
     return changedRows;
+  }
+
+  public async readChangedRowsFrom(
+    table: ComparedTable,
+    keyset: ChangedRowsKeyset,
+  ): Promise<RowPair[]> {
+    const pairs = await this.transaction.$queryRaw<ChangedRowPairIds[]>(
+      changedRowPairsFromSql(table, keyset),
+    );
+
+    return this.withRowVersions(pairs);
   }
 
   public async readExistingRowIds(
@@ -201,6 +214,13 @@ export class ChangesSnapshotReader {
     const pairs = await this.transaction.$queryRaw<ChangedRowPairIds[]>(
       changedRowPairsSql(table),
     );
+
+    return this.withRowVersions(pairs);
+  }
+
+  private async withRowVersions(
+    pairs: readonly ChangedRowPairIds[],
+  ): Promise<RowPair[]> {
     const versions = await this.readRowVersions(pairs.flatMap(versionIdsOf));
 
     return pairs.map((pair) => ({

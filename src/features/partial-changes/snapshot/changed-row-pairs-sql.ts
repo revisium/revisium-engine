@@ -1,5 +1,9 @@
 import { sql, type Sql } from 'src/engine-prisma-types';
-import type { ComparedTable } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type {
+  ChangedRowsKeyset,
+  ComparedTable,
+  RowBound,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { rowChangePredicate } from 'src/features/partial-changes/snapshot/row-change-predicate';
 
 export interface ChangedRowPairIds {
@@ -25,12 +29,32 @@ export function changedRowPairsSql(table: ComparedTable): Sql {
       WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM draft_only))
     )
     SELECT coalesce(h."createdId", d."createdId") AS "identity",
+           coalesce(d."id", h."id") AS "rowId",
            h."versionId" AS "headVersionId",
            d."versionId" AS "draftVersionId"
     FROM h FULL OUTER JOIN d ON h."createdId" = d."createdId"
     WHERE h."createdId" IS NULL
        OR d."createdId" IS NULL
        OR (${rowChangePredicate(table.structure)})
+  `;
+}
+
+export function changedRowPairsFromSql(
+  table: ComparedTable,
+  { from, rowLimit }: ChangedRowsKeyset,
+): Sql {
+  return sql`
+    WITH pairs AS (${changedRowPairsSql(table)}),
+    keyset AS (
+      SELECT "rowId" FROM pairs
+      WHERE ${rowsFrom(from)}
+      GROUP BY "rowId"
+      ORDER BY "rowId" COLLATE "C"
+      LIMIT ${rowLimit}
+    )
+    SELECT pairs.* FROM pairs
+    WHERE pairs."rowId" IN (SELECT "rowId" FROM keyset)
+    ORDER BY pairs."rowId" COLLATE "C", pairs."identity" COLLATE "C"
   `;
 }
 
@@ -52,4 +76,16 @@ function rowLinksMissingIn(
         WHERE other."B" = ${otherTableVersionId} AND other."A" = rt."A"
       )
   `;
+}
+
+function rowsFrom(from: RowBound | undefined): Sql {
+  if (!from) {
+    return sql`TRUE`;
+  }
+
+  if (from.inclusive) {
+    return sql`"rowId" COLLATE "C" >= ${from.rowId}`;
+  }
+
+  return sql`"rowId" COLLATE "C" > ${from.rowId}`;
 }

@@ -73,3 +73,23 @@ export interface RowPair {
 }
 
 export type ChangedRows = ReadonlyMap<string, readonly RowPair[]>;
+
+export function unitRowIdOf({ identity, head, draft }: RowPair): string {
+  const row = draft ?? head;
+
+  if (!row) {
+    throw new Error(`Row ${identity} is in neither revision`);
+  }
+
+  return row.id;
+}
+
+export interface RowBound {
+  readonly rowId: string;
+  readonly inclusive: boolean;
+}
+
+export interface ChangedRowsKeyset {
+  readonly from?: RowBound;
+  readonly rowLimit: number;
+}

@@ -1,13 +1,16 @@
-export type UnitKind =
-  | 'field'
-  | 'rowCreate'
-  | 'rowDelete'
-  | 'rowReplace'
-  | 'rowRename'
-  | 'rowColumns'
-  | 'structure'
-  | 'views'
-  | 'sharedSchema';
+export const UNIT_KINDS = [
+  'field',
+  'rowCreate',
+  'rowDelete',
+  'rowReplace',
+  'rowRename',
+  'rowColumns',
+  'structure',
+  'views',
+  'sharedSchema',
+] as const;
+
+export type UnitKind = (typeof UNIT_KINDS)[number];
 
 export type RowColumn = 'publishedAt' | 'meta' | 'schemaHash';
 

@@ -1,27 +1,22 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import {
   DraftRevisionRevertToTargetCommand,
-  RevisionSide,
+  oppositeOf,
   TableWritePlan,
+  versionIdOn,
+  versionRefsOf,
 } from 'src/features/draft-revision/commands/impl';
 import {
   AssembledTableVersion,
   AssembledVersionWriter,
   DraftRevisionInternalService,
+  linkedVersion,
+  NewRowFileReferences,
+  WrittenTable,
+  WrittenVersion,
 } from 'src/features/draft-revision/services';
-import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { DiffService } from 'src/features/share/diff.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-
-interface WrittenVersion {
-  readonly versionId?: string;
-  readonly newRowVersionIds: readonly string[];
-}
-
-interface RevertedTable {
-  readonly plan: TableWritePlan;
-  readonly written: WrittenVersion;
-}
 
 @CommandHandler(DraftRevisionRevertToTargetCommand)
 export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
@@ -33,7 +28,7 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
     private readonly versionWriter: AssembledVersionWriter,
     private readonly internalService: DraftRevisionInternalService,
     private readonly diffService: DiffService,
-    private readonly fileUsageIntegration: FileUsageIntegrationService,
+    private readonly fileReferences: NewRowFileReferences,
   ) {}
 
   private get transaction() {
@@ -45,7 +40,7 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
     const tables = await this.revertTables(data.tables);
 
     await this.relinkDraftTables(draftRevisionId, tables);
-    await this.registerFileReferences(draftRevisionId, tables);
+    await this.fileReferences.register(draftRevisionId, tables);
     await this.internalService.updateHasChanges(
       draftRevisionId,
       headRevisionId,
@@ -56,8 +51,8 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
 
   private async revertTables(
     plans: readonly TableWritePlan[],
-  ): Promise<RevertedTable[]> {
-    const tables: RevertedTable[] = [];
+  ): Promise<WrittenTable[]> {
+    const tables: WrittenTable[] = [];
 
     for (const plan of plans) {
       const written = await this.writeTable(plan);
@@ -143,7 +138,7 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
 
   private async relinkDraftTables(
     draftRevisionId: string,
-    tables: readonly RevertedTable[],
+    tables: readonly WrittenTable[],
   ): Promise<void> {
     const relinked = tables.filter(
       ({ plan, written }) => plan.draftVersionId !== written.versionId,
@@ -167,74 +162,4 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
       },
     });
   }
-
-  private async registerFileReferences(
-    draftRevisionId: string,
-    tables: readonly RevertedTable[],
-  ): Promise<void> {
-    for (const version of newVersionsWithFiles(tables)) {
-      await this.fileUsageIntegration.registerReferencesForRowVersions({
-        revisionId: draftRevisionId,
-        tableId: await this.publicIdOf(version.versionId),
-        rowVersionIds: version.newRowVersionIds,
-      });
-    }
-  }
-
-  private async publicIdOf(tableVersionId: string): Promise<string> {
-    const { id } = await this.transaction.table.findUniqueOrThrow({
-      where: { versionId: tableVersionId },
-      select: { id: true },
-    });
-
-    return id;
-  }
-}
-
-function linkedVersion(versionId: string | undefined): WrittenVersion {
-  return { versionId, newRowVersionIds: [] };
-}
-
-function versionIdOn(plan: TableWritePlan, side: RevisionSide): string {
-  const versionId = side === 'head' ? plan.headVersionId : plan.draftVersionId;
-
-  if (versionId === undefined) {
-    throw new Error(`Table ${plan.identity} has no ${side} version`);
-  }
-
-  return versionId;
-}
-
-function oppositeOf(side: RevisionSide): RevisionSide {
-  if (side === 'head') {
-    return 'draft';
-  }
-
-  return 'head';
-}
-
-function versionRefsOf(versionId: string | undefined): { versionId: string }[] {
-  if (versionId === undefined) {
-    return [];
-  }
-
-  return [{ versionId }];
-}
-
-function newVersionsWithFiles(
-  tables: readonly RevertedTable[],
-): AssembledTableVersion[] {
-  return tables.flatMap(({ plan, written }) => {
-    const { versionId, newRowVersionIds } = written;
-
-    if (
-      !plan.hasFileFields ||
-      versionId === undefined ||
-      newRowVersionIds.length === 0
-    ) {
-      return [];
-    }
-
-    return [{ versionId, newRowVersionIds }];
-  });
 }

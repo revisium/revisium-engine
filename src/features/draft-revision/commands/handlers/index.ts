@@ -1,4 +1,5 @@
 import { DraftRevisionCommitHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-commit.handler';
+import { DraftRevisionCommitToTargetHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-commit-to-target.handler';
 import { DraftRevisionCreateRowsHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-create-rows.handler';
 import { DraftRevisionCreateTableHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-create-table.handler';
 import { DraftRevisionGetOrCreateDraftRowHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-get-or-create-draft-row.handler';
@@ -26,6 +27,7 @@ export const DRAFT_REVISION_COMMANDS_HANDLERS = [
   DraftRevisionRevertHandler,
   DraftRevisionRecomputeHasChangesHandler,
   DraftRevisionRevertToTargetHandler,
+  DraftRevisionCommitToTargetHandler,
 ];
 
 export { DraftRevisionCreateTableHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-create-table.handler';
@@ -41,3 +43,4 @@ export { DraftRevisionCommitHandler } from 'src/features/draft-revision/commands
 export { DraftRevisionRevertHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-revert.handler';
 export { DraftRevisionRecomputeHasChangesHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-recompute-has-changes.handler';
 export { DraftRevisionRevertToTargetHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-revert-to-target.handler';
+export { DraftRevisionCommitToTargetHandler } from 'src/features/draft-revision/commands/handlers/draft-revision-commit-to-target.handler';

@@ -6,8 +6,10 @@ import { DRAFT_REVISION_COMMANDS_HANDLERS } from 'src/features/draft-revision/co
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
 import {
   AssembledVersionWriter,
+  CommitTransition,
   DraftRevisionInternalService,
   DraftRevisionValidationService,
+  NewRowFileReferences,
 } from 'src/features/draft-revision/services';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
@@ -139,6 +141,8 @@ export const createDraftRevisionTestingModule = async () => {
       DraftRevisionInternalService,
       DraftRevisionValidationService,
       AssembledVersionWriter,
+      CommitTransition,
+      NewRowFileReferences,
       DiffService,
       ShareTransactionalQueries,
       ...DRAFT_REVISION_COMMANDS_HANDLERS,

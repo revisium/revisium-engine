@@ -6,8 +6,10 @@ import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revis
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import {
   AssembledVersionWriter,
+  CommitTransition,
   DraftRevisionInternalService,
   DraftRevisionValidationService,
+  NewRowFileReferences,
 } from 'src/features/draft-revision/services';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
@@ -29,6 +31,8 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     DraftRevisionInternalService,
     DraftRevisionValidationService,
     AssembledVersionWriter,
+    CommitTransition,
+    NewRowFileReferences,
     ...DRAFT_REVISION_COMMANDS_HANDLERS,
   ],
   exports: [

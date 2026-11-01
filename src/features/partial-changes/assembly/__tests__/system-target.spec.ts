@@ -3,6 +3,8 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { removeField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
@@ -145,6 +147,60 @@ describe('SystemTargetAssembler: system rows of the target', () => {
     });
   });
 
+  describe('a system table on one side only', () => {
+    it('plans no views table in a revert of exactly { all: true }, as native revert leaves none', async () => {
+      const draft = await givenViewsTableCreatedInDraft();
+
+      const target = await draft.assembleTarget('revert', { all: true });
+      await draft.revertNatively();
+
+      expect(target.systemTableOf(SystemTables.Views)).toEqual({
+        outcome: 'absent',
+        rows: [],
+        removedLinks: [],
+        addedLinks: [],
+        newRows: [],
+        relinkCandidate: true,
+      });
+      expect(await draft.hasTable('draft', SystemTables.Views)).toBe(false);
+    });
+
+    it.each<{
+      operation: ChangeOperation;
+      units: string;
+      selection: Selection;
+    }>([
+      {
+        operation: 'revert',
+        units: 'its views unit',
+        selection: { views: [PRODUCTS] },
+      },
+      {
+        operation: 'commit',
+        units: 'another unit',
+        selection: {
+          fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/code' }],
+        },
+      },
+    ])(
+      'plans no views table when a $operation of $units leaves no row on the views table the Draft alone holds',
+      async ({ operation, selection }) => {
+        const draft = await givenViewsTableCreatedInDraft();
+
+        const target = await draft.assembleTarget(operation, selection);
+
+        expect(target.systemTableOf(SystemTables.Views)).toMatchObject({
+          outcome: 'absent',
+          version: undefined,
+          rows: [],
+          removedLinks: [],
+          addedLinks: [],
+          newRows: [],
+        });
+      },
+    );
+  });
+
   describe('shared schemas', () => {
     it('reverts a shared schema and keeps the other shared schema changes', async () => {
       const draft = await givenCommittedSharedSchemas();
@@ -187,6 +243,20 @@ describe('SystemTargetAssembler: system rows of the target', () => {
       });
     });
   });
+
+  async function givenViewsTableCreatedInDraft(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { code: 'one', price: 1 } },
+      },
+    });
+    expect(await draft.hasTable('head', SystemTables.Views)).toBe(false);
+    await draft.updateRow(PRODUCTS, 'p1', { code: 'uno', price: 1 });
+    await draft.updateViews(PRODUCTS, tableViews('All', ['code']));
+
+    return draft;
+  }
 
   async function givenEditedViewsOfTwoTables(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {

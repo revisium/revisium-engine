@@ -305,6 +305,8 @@ class SystemTablePlanDescription {
     const { plan, rows } = this;
 
     switch (plan.outcome) {
+      case 'absent':
+        return [];
       case 'base':
         return [...rows[plan.linkSide]];
       case 'other':

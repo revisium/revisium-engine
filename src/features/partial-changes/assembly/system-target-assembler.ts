@@ -302,6 +302,11 @@ function systemTableOutcomeOf(
   linkSide: RevisionSide,
 ): TableOutcome {
   const otherSide = oppositeOf(linkSide);
+  const onBothSides = rows.versionIds[otherSide] !== undefined;
+
+  if (!onBothSides && holdsNoRows(desired)) {
+    return 'absent';
+  }
 
   if (desired.newRows.length > 0) {
     return 'mixed';
@@ -311,10 +316,7 @@ function systemTableOutcomeOf(
     return 'base';
   }
 
-  if (
-    rows.versionIds[otherSide] !== undefined &&
-    holdsExactly(rows[otherSide], desired.versions)
-  ) {
+  if (onBothSides && holdsExactly(rows[otherSide], desired.versions)) {
     return 'other';
   }
 
@@ -345,11 +347,19 @@ function linkedVersionIdOf(
   outcome: TableOutcome,
   linkSide: RevisionSide,
 ): string | undefined {
+  if (outcome === 'absent') {
+    return undefined;
+  }
+
   if (outcome === 'other') {
     return rows.versionIds[oppositeOf(linkSide)];
   }
 
   return rows.versionIds[linkSide];
+}
+
+function holdsNoRows({ versions, newRows }: DesiredRows): boolean {
+  return versions.length === 0 && newRows.length === 0;
 }
 
 function holdsExactly(rows: readonly Row[], versions: readonly Row[]): boolean {

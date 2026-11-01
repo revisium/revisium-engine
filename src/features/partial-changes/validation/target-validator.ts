@@ -52,7 +52,11 @@ export class TargetValidator {
     { choice, assembled }: AppliedTarget,
   ): Promise<PlanBlocker[]> {
     const unrecorded = unrecordedStructureChangesOf(source, choice);
-    const ledger = this.ledgerConsistency.blockersOf(source, choice);
+    const ledger = this.ledgerConsistency.blockersOf(
+      source,
+      choice,
+      assembled.ledger,
+    );
     const invalidRows = await new InvalidRows(
       this.dataValidator,
       source,

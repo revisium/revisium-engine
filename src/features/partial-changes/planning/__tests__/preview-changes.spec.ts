@@ -500,8 +500,8 @@ describe('previewChanges', () => {
     });
   });
 
-  describe('structure units until delivery stage 3', () => {
-    it('blocks a commit of a structure unit with structureCommitUnavailable and plans its revert', async () => {
+  describe('structure units', () => {
+    it('plans a commit of a structure unit as ready, as it plans its revert', async () => {
       const draft = await givenProductsWithNewField();
       const selection = { tables: [PRODUCTS] };
 
@@ -514,14 +514,11 @@ describe('previewChanges', () => {
         selection,
       });
 
-      expect(commit).toMatchObject({
-        status: 'blocked',
-        blockers: [structureCommitUnavailable(PRODUCTS)],
-      });
+      expect(commit).toMatchObject({ status: 'ready', blockers: [] });
       expect(revert).toMatchObject({ status: 'ready', blockers: [] });
     });
 
-    it('blocks a commit whose required addition is a structure unit', async () => {
+    it('requires the structure unit of a created table for its row in a commit, as in a revert', async () => {
       const draft = await givenCreatedTable();
       const selection = { rows: [rowOf(TAGS, 't1')] };
 
@@ -535,9 +532,9 @@ describe('previewChanges', () => {
       });
 
       expect(commit).toMatchObject({
-        status: 'blocked',
+        status: 'required',
         required: [{ unit: structureOf(TAGS) }],
-        blockers: [structureCommitUnavailable(TAGS)],
+        blockers: [],
       });
       expect(revert).toMatchObject({
         status: 'required',
@@ -546,7 +543,7 @@ describe('previewChanges', () => {
       });
     });
 
-    it('blocks a commit of exactly { all: true } holding a structure unit, which the SPEC does not exempt', async () => {
+    it('plans a commit of exactly { all: true } holding a structure unit as ready', async () => {
       const draft = await givenProductsWithNewField();
 
       const preview = await draft.previewChanges({
@@ -554,10 +551,7 @@ describe('previewChanges', () => {
         selection: { all: true },
       });
 
-      expect(preview).toMatchObject({
-        status: 'blocked',
-        blockers: [structureCommitUnavailable(PRODUCTS)],
-      });
+      expect(preview).toMatchObject({ status: 'ready', blockers: [] });
     });
   });
 
@@ -1013,13 +1007,4 @@ function wholeRowOfC9() {
 
 function structureOf(tableId: string): UnitRef {
   return { kind: 'structure', tableId, selector: { tables: [tableId] } };
-}
-
-function structureCommitUnavailable(tableId: string) {
-  return {
-    code: 'structureCommitUnavailable',
-    tableId,
-    message: `Committing the structure of ${tableId} is not available yet; commit its other units or revert the structure`,
-    unit: structureOf(tableId),
-  };
 }

@@ -1,10 +1,13 @@
 import type {
+  CommitTableWritePlan,
   CommitTargetWritePlan,
+  RenumberedRows,
   RowLinkChanges,
   TableWriteOutcome,
   TableWritePlan,
   TargetWritePlan,
 } from 'src/features/draft-revision/commands/impl';
+import type { RenumberedMigrationRow } from 'src/features/partial-changes/assembly/ledger-plan';
 import type { LinkChanges } from 'src/features/partial-changes/assembly/link-changes';
 import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
@@ -17,6 +20,7 @@ import type {
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { hasFileFields } from 'src/features/partial-changes/structure/schema-fields';
+import { SystemTables } from 'src/features/share/system-tables.consts';
 
 export interface WritableTarget {
   readonly source: {
@@ -25,13 +29,37 @@ export interface WritableTarget {
       'branchId' | 'headRevisionId' | 'draftRevisionId' | 'tables'
     >;
   };
-  readonly assembled: Pick<AssembledTarget, 'tables' | 'systemTables'>;
+  readonly assembled: Pick<
+    AssembledTarget,
+    'tables' | 'systemTables' | 'ledger'
+  >;
 }
 
-export function targetWritePlanOf({
-  source: { snapshot },
-  assembled,
-}: WritableTarget): TargetWritePlan {
+type SystemTableWriting = (plan: SystemTablePlan) => TableWritePlan;
+
+export function targetWritePlanOf(writable: WritableTarget): TargetWritePlan {
+  return writePlanOf(writable, systemTableWritePlanOf);
+}
+
+export function commitTargetWritePlanOf(
+  writable: WritableTarget,
+  comment?: string,
+): CommitTargetWritePlan {
+  const { renumbered } = writable.assembled.ledger;
+
+  return {
+    ...writePlanOf(writable, (plan) =>
+      committedSystemTableWritePlanOf(plan, renumbered),
+    ),
+    branchId: writable.source.snapshot.branchId,
+    comment,
+  };
+}
+
+function writePlanOf(
+  { source: { snapshot }, assembled }: WritableTarget,
+  writeSystemTable: SystemTableWriting,
+): TargetWritePlan {
   const pairs = new Map(snapshot.tables.map((pair) => [pair.identity, pair]));
 
   return {
@@ -41,21 +69,8 @@ export function targetWritePlanOf({
       ...assembled.tables.map((plan) =>
         userTableWritePlanOf(plan, pairOf(pairs, plan.identity)),
       ),
-      ...assembled.systemTables.map(systemTableWritePlanOf),
+      ...assembled.systemTables.map(writeSystemTable),
     ],
-  };
-}
-
-export function commitTargetWritePlanOf(
-  writable: WritableTarget,
-  comment?: string,
-): CommitTargetWritePlan {
-  assertCommitsNoStructure(writable.assembled.tables);
-
-  return {
-    ...targetWritePlanOf(writable),
-    branchId: writable.source.snapshot.branchId,
-    comment,
   };
 }
 
@@ -88,6 +103,28 @@ function systemTableWritePlanOf(plan: SystemTablePlan): TableWritePlan {
   };
 }
 
+function committedSystemTableWritePlanOf(
+  plan: SystemTablePlan,
+  renumbered: readonly RenumberedMigrationRow[],
+): CommitTableWritePlan {
+  const written = systemTableWritePlanOf(plan);
+
+  if (plan.tableId !== SystemTables.Migration || renumbered.length === 0) {
+    return written;
+  }
+
+  return { ...written, renumberedRows: renumberedRowsOf(renumbered) };
+}
+
+function renumberedRowsOf(
+  renumbered: readonly RenumberedMigrationRow[],
+): RenumberedRows {
+  return {
+    replacedRowVersionIds: renumbered.map(({ source }) => source.row.versionId),
+    newRows: renumbered.map(({ row }) => row),
+  };
+}
+
 function writeOutcomeOf(outcome: TableOutcome): TableWriteOutcome {
   if (outcome === 'present') {
     return 'base';
@@ -106,18 +143,6 @@ function rowLinkChangesOf({
     addedRowVersionIds: addedLinks,
     newRows,
   };
-}
-
-function assertCommitsNoStructure(tables: readonly TablePlan[]): void {
-  const committed = tables.find(
-    ({ structureSide }) => structureSide === 'draft',
-  );
-
-  if (committed) {
-    throw new Error(
-      `The commit takes the structure of table ${committed.identity} from the Draft, which is not written before delivery stage 3`,
-    );
-  }
 }
 
 function structureHasFileFields(

@@ -262,45 +262,42 @@ describe('TargetAssembler: row outcomes in a table of one structure', () => {
     ]);
   });
 
-  it.each<{
-    operation: ChangeOperation;
-    selection: Selection;
-    outcome: string;
-    removedLinks: string[];
-    addedLinks: string[];
-  }>([
-    {
-      operation: 'commit',
-      selection: { rowColumns: [{ tableId: ARTICLES, rowId: 'a1' }] },
-      outcome: 'base',
-      removedLinks: [],
-      addedLinks: [],
-    },
-    {
-      operation: 'revert',
-      selection: {
-        fields: [{ tableId: ARTICLES, rowId: 'a1', path: '/title' }],
-      },
+  it('links the Head version instead of a merged row equal to it in a revert', async () => {
+    const draft = await givenArticleWithForeignSchemaHash();
+
+    const target = await draft.assembleTarget('revert', {
+      fields: [{ tableId: ARTICLES, rowId: 'a1', path: '/title' }],
+    });
+
+    expect(target.tableOf(ARTICLES)).toMatchObject({
       outcome: 'mixed',
+      rows: [{ head: 'a1', draft: 'a1', target: 'head' }],
       removedLinks: ['draft a1'],
       addedLinks: ['head a1'],
-    },
-  ])(
-    'links the Head version instead of a merged row equal to it in a $operation',
-    async ({ operation, selection, outcome, removedLinks, addedLinks }) => {
-      const draft = await givenArticleWithForeignSchemaHash();
+      newRows: [],
+    });
+  });
 
-      const target = await draft.assembleTarget(operation, selection);
+  it('merges the Draft schemaHash into the Head row in a commit of the rowColumns unit that owns it', async () => {
+    const draft = await givenArticleWithForeignSchemaHash();
 
-      expect(target.tableOf(ARTICLES)).toMatchObject({
-        outcome,
-        rows: [{ head: 'a1', draft: 'a1', target: 'head' }],
-        removedLinks,
-        addedLinks,
-        newRows: [],
-      });
-    },
-  );
+    const target = await draft.assembleTarget('commit', {
+      rowColumns: [{ tableId: ARTICLES, rowId: 'a1' }],
+    });
+
+    expect(target.tableOf(ARTICLES)).toMatchObject({
+      outcome: 'mixed',
+      rows: [{ head: 'a1', draft: 'a1', target: 'merged' }],
+      removedLinks: ['head a1'],
+      addedLinks: [],
+      newRows: [
+        expect.objectContaining({
+          data: { title: 'one', releasedAt: '', reviewedAt: '' },
+          schemaHash: 'foreign',
+        }),
+      ],
+    });
+  });
 
   it.each<{
     operation: ChangeOperation;

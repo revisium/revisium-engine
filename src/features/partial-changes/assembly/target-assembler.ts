@@ -5,6 +5,10 @@ import {
   NO_LINK_CHANGES,
 } from 'src/features/partial-changes/assembly/link-changes';
 import {
+  type LedgerPlan,
+  planLedger,
+} from 'src/features/partial-changes/assembly/ledger-plan';
+import {
   type AppliedUnits,
   type ChangeOperation,
   OutcomeRules,
@@ -82,6 +86,7 @@ export interface AssembledTarget {
   readonly tables: readonly TablePlan[];
   readonly systemTables: readonly SystemTablePlan[];
   readonly views: readonly TargetViews[];
+  readonly ledger: LedgerPlan;
   readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly DeferredValues[];
 }
@@ -125,6 +130,7 @@ export class TargetAssembler {
       tables: tables.map(({ plan }) => plan),
       systemTables: await this.systemTargetAssembler.assemble(source, rules),
       views: this.systemTargetAssembler.viewsOf(source, rules),
+      ledger: planLedger(source, rules),
       blockers: tables.flatMap(({ blockers }) => blockers),
       deferred: tables.flatMap(({ deferred }) => deferred),
     };
@@ -402,25 +408,13 @@ function collapsedRowOf(
   newVersion: MergedRow,
   rules: TableOutcomeRules,
 ): TargetRow {
-  if (equalsVersionOn(pair, rules.structureSide, newVersion)) {
-    return { pair, kind: 'structureSide' };
-  }
+  const otherSide = pair[rules.otherSide];
 
-  if (equalsVersionOn(pair, rules.otherSide, newVersion)) {
+  if (otherSide !== undefined && !differInContent(newVersion, otherSide)) {
     return { pair, kind: 'otherSide' };
   }
 
   return { pair, kind: 'merge', merged: newVersion };
-}
-
-function equalsVersionOn(
-  pair: RowPair,
-  side: RevisionSide,
-  newVersion: MergedRow,
-): boolean {
-  const version = pair[side];
-
-  return version !== undefined && !differInContent(newVersion, version);
 }
 
 function changedFieldsOf({ pair, structure }: ReadTable): string[] {

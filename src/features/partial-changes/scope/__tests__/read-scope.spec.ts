@@ -159,6 +159,28 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
     });
   });
 
+  it('reads a table that a pending migration of a read table referenced, under the id it had then, although no schema references it now', async () => {
+    const draft =
+      await givenTagsThatReferencedRenamedNotesOnlyInPendingMigrations();
+
+    const read = await draft.readScopedCatalogue({
+      rows: [{ tableId: TAGS, rowId: 't1' }],
+    });
+
+    expect(read).toMatchObject({
+      readTableIds: [MEMOS, TAGS],
+      unreadTables: 1,
+    });
+  });
+
+  it('reads a table that a table created and removed in the Draft referenced', async () => {
+    const draft = await givenLettersCreatedAndRemovedWithAReferenceToNotes();
+
+    const read = await draft.readScopedCatalogue({ tables: [LETTERS] });
+
+    expect(read).toMatchObject({ readTableIds: [NOTES], unreadTables: 2 });
+  });
+
   it.each<{ selection: Selection }>([
     { selection: { all: true } },
     { selection: { all: true, exclude: { fields: [titleOfP1] } } },
@@ -192,6 +214,48 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
     await draft.updateRow(ORDERS, 'o1', { note: 'edited', product: 'p1' });
     await draft.updateRow(LOGS, 'l1', { entry: 'edited', order: 'o1' });
     await draft.updateRow(TAGS, 't1', { label: 'edited' });
+
+    return draft;
+  }
+
+  async function givenTagsThatReferencedRenamedNotesOnlyInPendingMigrations(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [NOTES]: { schema: labelSchema, rows: { n1: { label: 'one' } } },
+      [TAGS]: { schema: labelSchema },
+      [LOGS]: { schema: logSchema, rows: { l1: { entry: 'one', order: '' } } },
+    });
+    await draft.updateTable(TAGS, [
+      addField('note', str({ foreignKey: NOTES })),
+    ]);
+    await draft.renameTable(NOTES, MEMOS);
+    await draft.updateTable(TAGS, [removeField('note')]);
+    await draft.createRows(TAGS, { t1: { label: 'one' } });
+    await draft.updateRow(MEMOS, 'n1', { label: 'edited' });
+    await draft.updateRow(LOGS, 'l1', { entry: 'edited', order: '' });
+
+    return draft;
+  }
+
+  async function givenLettersCreatedAndRemovedWithAReferenceToNotes(): Promise<ChangesScenario> {
+    const draft = await givenEditedNotesTagsAndLogs();
+    await draft.createTable(
+      LETTERS,
+      obj({ label: str(), note: str({ foreignKey: NOTES }) }),
+    );
+    await draft.removeTable(LETTERS);
+
+    return draft;
+  }
+
+  async function givenEditedNotesTagsAndLogs(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [NOTES]: { schema: labelSchema, rows: { n1: { label: 'one' } } },
+      [TAGS]: { schema: labelSchema, rows: { t1: { label: 'one' } } },
+      [LOGS]: { schema: logSchema, rows: { l1: { entry: 'one', order: '' } } },
+    });
+    await draft.updateRow(NOTES, 'n1', { label: 'edited' });
+    await draft.updateRow(TAGS, 't1', { label: 'edited' });
+    await draft.updateRow(LOGS, 'l1', { entry: 'edited', order: '' });
 
     return draft;
   }

@@ -79,10 +79,14 @@ const REVERTS: LedgerDependency[] = [
     operation: 'revert',
     selection: { tables: [ARCHIVE] },
   },
+  {
+    name: 'the rename of a table that only pending migrations of another table referenced',
+    given: givenProductsThatReferencedKindsOnlyInPendingMigrations,
+    operation: 'revert',
+    selection: { tables: [KINDS] },
+  },
 ];
 
-// Structure commits are applied from delivery stage 3 (SPEC §5.8), so commits are checked at the target level: the
-// closure and the validation of the new Head and the remaining Draft.
 const COMMITS: LedgerDependency[] = [
   {
     name: 'a table created while the table it references had another id',
@@ -113,6 +117,12 @@ const COMMITS: LedgerDependency[] = [
     given: givenProductsReferencingNotesBeforeItsIdWasReused,
     operation: 'commit',
     selection: { tables: [NOTES, MEMOS] },
+  },
+  {
+    name: 'a table whose pending migrations alone referenced a renamed table',
+    given: givenProductsThatReferencedKindsOnlyInPendingMigrations,
+    operation: 'commit',
+    selection: { tables: [PRODUCTS] },
   },
 ];
 
@@ -456,7 +466,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
   );
 
   it.each(COMMITS)(
-    'validates the new Head and the remaining Draft of a commit of $name with its required units (target level)',
+    'validates the new Head and the remaining Draft of a commit of $name with its required units',
     async ({ given, selection }) => {
       const draft = await given(kit);
       const { required } = await draft.closeDependencies('commit', selection);
@@ -467,6 +477,32 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       );
 
       expect(blockers).toEqual([]);
+    },
+  );
+
+  it.each(COMMITS)(
+    'commits $name with its required units to a Head and a remaining Draft whose ledgers replay to their schemas',
+    async ({ given, selection }) => {
+      const draft = await given(kit);
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection,
+      });
+
+      const result = await draft.commitChanges({
+        selection,
+        includeRequired: true,
+        expected: preview.fingerprint,
+      });
+
+      expect(preview.status).toBe('required');
+      expect(result.status).toBe('applied');
+      expect(await replayedSchemasOf(draft, 'head')).toEqual(
+        await schemasOf(draft, 'head'),
+      );
+      expect(await replayedSchemasOf(draft, 'draft')).toEqual(
+        await schemasOf(draft, 'draft'),
+      );
     },
   );
 });
@@ -493,6 +529,21 @@ async function givenLinksCreatedAndRemovedWhileCategoriesWasRenamed(
   await draft.renameTable(CATEGORIES, KINDS);
   await draft.createTable(LINKS, linkSchemaTo(KINDS));
   await draft.removeTable(LINKS);
+
+  return draft;
+}
+
+async function givenProductsThatReferencedKindsOnlyInPendingMigrations(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: { schema: titleSchema, rows: { c1: { title: 'c1' } } },
+    [PRODUCTS]: { schema: titleSchema },
+  });
+  await draft.renameTable(CATEGORIES, KINDS);
+  await draft.updateTable(PRODUCTS, [targetIn(KINDS)]);
+  await draft.updateTable(PRODUCTS, [removeField('target')]);
+  await draft.createRows(PRODUCTS, { p1: { title: 'p1' } });
 
   return draft;
 }

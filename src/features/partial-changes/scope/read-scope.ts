@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { TableConnections } from 'src/features/partial-changes/scope/table-connections';
+import type { TableHistory } from 'src/features/partial-changes/catalogue/ledger-attribution';
+import { publicIdsOf } from 'src/features/partial-changes/catalogue/public-id-groups';
+import {
+  type ConnectedTable,
+  TableConnections,
+} from 'src/features/partial-changes/scope/table-connections';
 import {
   type Selection,
   type SelectionItems,
@@ -10,23 +16,27 @@ import {
   type ComparedTable,
   hasDifferentVersions,
   type TablePair,
+  type TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
+import {
+  NativeSchemaRules,
+  patchValues,
+} from 'src/features/share/ledger-replay/native-schema-rules';
 
 export interface TableScope {
   readonly affectedTables: readonly ComparedTable[];
   readonly unreadTables: number;
 }
 
+const NO_HISTORY: TableHistory = { tableIds: [], entries: [] };
+
 @Injectable()
 export class ReadScope {
   constructor(private readonly schemaRules: NativeSchemaRules) {}
 
-  public scopeOf(
-    selection: Selection,
-    { snapshot, tables }: ComparedSnapshot,
-  ): TableScope {
-    const affected = this.affectedTablesOf(selection, snapshot.tables);
+  public scopeOf(selection: Selection, compared: ComparedSnapshot): TableScope {
+    const { tables } = compared;
+    const affected = this.affectedTablesOf(selection, compared);
     const affectedTables = tables.filter(({ identity }) =>
       affected.has(identity),
     );
@@ -39,18 +49,72 @@ export class ReadScope {
 
   private affectedTablesOf(
     selection: Selection,
-    tables: readonly TablePair[],
+    { snapshot, ledger }: ComparedSnapshot,
   ): ReadonlySet<string> {
     if (selection.all === true) {
-      return new Set(tables.map(({ identity }) => identity));
+      return new Set(snapshot.tables.map(({ identity }) => identity));
     }
 
-    const connections = new TableConnections(tables, (schema) =>
-      this.schemaRules.foreignKeysOf(schema),
-    );
+    const connections = new TableConnections([
+      ...snapshot.tables.map((pair) =>
+        this.connectedTableOf(
+          pair,
+          ledger.tables.get(pair.identity) ?? NO_HISTORY,
+        ),
+      ),
+      ...ledger.transientGroups.map((group) => this.connectedHistoryOf(group)),
+    ]);
 
     return connections.connectedTo(tableIdsNamedBy(selection));
   }
+
+  private connectedTableOf(
+    pair: TablePair,
+    history: TableHistory,
+  ): ConnectedTable {
+    const { tableIds, referencedTableIds } = this.connectedHistoryOf(history);
+
+    return {
+      identity: pair.identity,
+      tableIds: [...publicIdsOf(pair), ...tableIds],
+      referencedTableIds: [
+        ...versionsOf(pair).flatMap(({ schema }) =>
+          this.schemaRules.foreignKeysOf(schema),
+        ),
+        ...referencedTableIds,
+      ],
+    };
+  }
+
+  private connectedHistoryOf({
+    tableIds,
+    entries,
+  }: TableHistory): ConnectedTable {
+    return {
+      tableIds,
+      referencedTableIds: entries
+        .flatMap(({ migration }) => schemasNamedBy(migration))
+        .flatMap((schema) => this.schemaRules.foreignKeysOf(schema)),
+    };
+  }
+}
+
+function schemasNamedBy(migration: Migration): JsonSchema[] {
+  switch (migration.changeType) {
+    case 'init':
+      return [migration.schema];
+    case 'update':
+      return patchValues(migration.patches);
+    case 'rename':
+    case 'remove':
+      return [];
+  }
+}
+
+function versionsOf({ head, draft }: TablePair): TableVersion[] {
+  return [head, draft].filter(
+    (version): version is TableVersion => version !== undefined,
+  );
 }
 
 function tableIdsNamedBy(selection: Selection): string[] {

@@ -46,6 +46,13 @@ export function systemTableTargetsOf(
   return new SystemTableTargets(source, rules).targets();
 }
 
+export function targetLedgerRowsOf(
+  source: AssemblySource,
+  rules: OutcomeRules,
+): readonly Row[] {
+  return new SystemTableTargets(source, rules).ledgerTarget().versions;
+}
+
 export function tableViewsOf(
   source: AssemblySource,
   rules: OutcomeRules,
@@ -93,12 +100,11 @@ class SystemTableTargets {
   }
 
   public targets(): SystemTableTarget[] {
-    const { schemas, migrations, views, sharedSchemas } =
-      this.source.snapshot.systemRows;
+    const { schemas, views, sharedSchemas } = this.source.snapshot.systemRows;
 
     return [
       this.rowsFollowingOwners(SystemTables.Schema, schemas, 'structure'),
-      this.rowsFollowingOwners(SystemTables.Migration, migrations, 'structure'),
+      this.ledgerTarget(),
       this.viewsTarget(views),
       this.rowsFollowingOwners(
         SystemTables.SharedSchemas,
@@ -106,6 +112,14 @@ class SystemTableTargets {
         'sharedSchema',
       ),
     ].filter(({ rows }) => existsOnEitherSide(rows));
+  }
+
+  public ledgerTarget(): SystemTableTarget {
+    return this.rowsFollowingOwners(
+      SystemTables.Migration,
+      this.source.snapshot.systemRows.migrations,
+      'structure',
+    );
   }
 
   public tableViews(): TableViews[] {

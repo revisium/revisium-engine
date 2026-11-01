@@ -1,9 +1,11 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
+import type { LedgerPlan } from 'src/features/partial-changes/assembly/ledger-plan';
 import {
   type CommitChangesResult,
   CommitDraftChangesCommand,
   type CommittedDraft,
+  type RenumberedMigration,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import {
   type ApplicablePlan,
@@ -51,7 +53,7 @@ export class CommitDraftChangesHandler implements ICommandHandler<
       headRevisionId,
       draftRevisionId,
       ...appliedCountsOf(plan),
-      renumbered: [],
+      renumbered: renumberedMigrationsOf(plan.target.assembled.ledger),
     };
   }
 
@@ -69,4 +71,13 @@ export class CommitDraftChangesHandler implements ICommandHandler<
       revisionId: result.draftRevisionId,
     });
   }
+}
+
+function renumberedMigrationsOf({
+  renumbered,
+}: LedgerPlan): RenumberedMigration[] {
+  return renumbered.map(({ source, row }) => ({
+    from: source.migration.id,
+    to: row.id,
+  }));
 }

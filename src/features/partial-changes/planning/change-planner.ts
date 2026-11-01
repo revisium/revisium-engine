@@ -14,6 +14,7 @@ import {
 } from 'src/features/partial-changes/closure/dependency-closure';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import { assertEveryAppliedTableRead } from 'src/features/partial-changes/planning/applied-tables-read';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
 import {
   type Blocker,
@@ -21,7 +22,6 @@ import {
   type Deferred,
   deferredRefOf,
 } from 'src/features/partial-changes/planning/plan-refs';
-import { structureCommitBlockersOf } from 'src/features/partial-changes/planning/structure-commit-unavailable';
 import {
   type ScopedCatalogue,
   ScopedCatalogueReader,
@@ -101,7 +101,6 @@ interface ClosedSelection {
 }
 
 interface PlanParts {
-  readonly operation: ChangeOperation;
   readonly source: ClosureSource;
   readonly unreadTables: number;
   readonly closure: DependencyClosureResult;
@@ -158,6 +157,9 @@ export class ChangePlanner {
       request,
       deadline,
     );
+
+    assertEveryAppliedTableRead(source, closure.applied);
+
     const validated = await this.validateAndFingerprint(
       request,
       { source, closure },
@@ -165,7 +167,6 @@ export class ChangePlanner {
     );
 
     return planOf({
-      operation: request.operation,
       source,
       unreadTables: scoped.unreadTables,
       closure,
@@ -225,7 +226,6 @@ export class ChangePlanner {
 }
 
 function planOf({
-  operation,
   source,
   unreadTables,
   closure,
@@ -240,7 +240,6 @@ function planOf({
     ...closure.blockers,
     ...validated.blockers,
     ...catalogue.ledgerInconsistencies.map(ledgerInconsistentBlockerOf),
-    ...structureCommitBlockersOf(operation, appliedUnits),
   ]);
 
   return {

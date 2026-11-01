@@ -7,6 +7,7 @@ import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revis
 import {
   AssembledVersionWriter,
   CommitTransition,
+  DraftFollowsHead,
   DraftRevisionInternalService,
   DraftRevisionValidationService,
   NewRowFileReferences,
@@ -142,6 +143,7 @@ export const createDraftRevisionTestingModule = async () => {
       DraftRevisionValidationService,
       AssembledVersionWriter,
       CommitTransition,
+      DraftFollowsHead,
       NewRowFileReferences,
       DiffService,
       ShareTransactionalQueries,

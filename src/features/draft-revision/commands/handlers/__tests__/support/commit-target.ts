@@ -12,7 +12,7 @@ import type {
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
-import { type TableTarget, TablePlans } from './table-plans';
+import { requiredRow, type TableTarget, TablePlans } from './table-plans';
 
 export interface CommitTableTarget extends TableTarget {
   readonly renumbered?: Readonly<Record<string, string>>;
@@ -217,14 +217,4 @@ function renumberedRowOf(row: Row, id: string): NewRowVersion {
     publishedAt: new Date(id),
     meta: row.meta,
   };
-}
-
-function requiredRow(rows: ReadonlyMap<string, Row>, rowId: string): Row {
-  const row = rows.get(rowId);
-
-  if (!row) {
-    throw new Error(`Row ${rowId} is not in the Draft`);
-  }
-
-  return row;
 }

@@ -7,30 +7,23 @@ import {
   oppositeOf,
   RenumberedRows,
   versionIdOn,
-  versionRefsOf,
 } from 'src/features/draft-revision/commands/impl';
 import {
   AssembledVersionWriter,
   CommitTransition,
+  DraftFollowsHead,
   DraftRevisionInternalService,
   linkedVersion,
   NewRowFileReferences,
-  TableVersionRef,
+  TableLinkReplacement,
   WrittenTable,
   WrittenVersion,
 } from 'src/features/draft-revision/services';
-import { DiffService } from 'src/features/share/diff.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 interface CommittedTable {
   readonly plan: CommitTableWritePlan;
   readonly head: WrittenVersion;
   readonly nextDraftVersionId?: string;
-}
-
-interface LinkReplacement {
-  readonly replacedVersionId?: string;
-  readonly versionId?: string;
 }
 
 @CommandHandler(DraftRevisionCommitToTargetCommand)
@@ -39,17 +32,12 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
   DraftRevisionCommitToTargetCommandReturnType
 > {
   constructor(
-    private readonly transactionService: TransactionPrismaService,
     private readonly versionWriter: AssembledVersionWriter,
     private readonly transition: CommitTransition,
     private readonly internalService: DraftRevisionInternalService,
-    private readonly diffService: DiffService,
+    private readonly draftFollowsHead: DraftFollowsHead,
     private readonly fileReferences: NewRowFileReferences,
   ) {}
-
-  private get transaction() {
-    return this.transactionService.getTransaction();
-  }
 
   async execute({
     data,
@@ -152,14 +140,11 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
       return this.writeRenumberedVersion(plan, plan.renumberedRows);
     }
 
-    if (plan.relinkCandidate) {
-      return this.followHeadWhenContentEqual(
-        plan.draftVersionId,
-        headVersionId,
-      );
-    }
-
-    return plan.draftVersionId;
+    return this.draftFollowsHead.versionToLink(
+      plan,
+      plan.draftVersionId,
+      headVersionId,
+    );
   }
 
   private async writeRenumberedVersion(
@@ -178,39 +163,15 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
     return versionId;
   }
 
-  private async followHeadWhenContentEqual(
-    draftVersionId: string | undefined,
-    headVersionId: string | undefined,
-  ): Promise<string | undefined> {
-    if (
-      draftVersionId === undefined ||
-      headVersionId === undefined ||
-      draftVersionId === headVersionId
-    ) {
-      return draftVersionId;
-    }
-
-    const differs = await this.diffService.hasTableVersionContentDiffs({
-      fromTableVersionId: headVersionId,
-      toTableVersionId: draftVersionId,
-    });
-
-    if (differs) {
-      return draftVersionId;
-    }
-
-    return headVersionId;
-  }
-
   private async advanceRevisions(
     plan: CommitTargetWritePlan,
     tables: readonly CommittedTable[],
   ): Promise<string> {
-    const headTables = await this.relinkedTablesOf(
+    const headTables = await this.transition.relinkedTablesOf(
       plan.headRevisionId,
       tables.map(headLinkOf),
     );
-    const nextDraftTables = await this.relinkedTablesOf(
+    const nextDraftTables = await this.transition.relinkedTablesOf(
       plan.draftRevisionId,
       tables.map(nextDraftLinkOf),
     );
@@ -219,8 +180,8 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
     await this.transition.promoteDraftToHead(
       plan.draftRevisionId,
       plan.comment,
+      headTables,
     );
-    await this.replaceTableLinks(plan.draftRevisionId, headTables);
 
     return this.transition.openNextDraft({
       branchId: plan.branchId,
@@ -228,43 +189,16 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
       tables: nextDraftTables,
     });
   }
-
-  private async relinkedTablesOf(
-    revisionId: string,
-    replacements: readonly LinkReplacement[],
-  ): Promise<TableVersionRef[]> {
-    const linked =
-      await this.internalService.getRevisionTableVersionIds(revisionId);
-    const replaced = new Set(
-      replacements.map(({ replacedVersionId }) => replacedVersionId),
-    );
-    const kept = linked.filter(({ versionId }) => !replaced.has(versionId));
-    const linkedInstead = replacements.flatMap(({ versionId }) =>
-      versionRefsOf(versionId),
-    );
-
-    return [...kept, ...linkedInstead];
-  }
-
-  private async replaceTableLinks(
-    revisionId: string,
-    tables: readonly TableVersionRef[],
-  ): Promise<void> {
-    await this.transaction.revision.update({
-      where: { id: revisionId },
-      data: { tables: { set: [...tables] } },
-    });
-  }
 }
 
-function headLinkOf({ plan, head }: CommittedTable): LinkReplacement {
+function headLinkOf({ plan, head }: CommittedTable): TableLinkReplacement {
   return { replacedVersionId: plan.headVersionId, versionId: head.versionId };
 }
 
 function nextDraftLinkOf({
   plan,
   nextDraftVersionId,
-}: CommittedTable): LinkReplacement {
+}: CommittedTable): TableLinkReplacement {
   return {
     replacedVersionId: plan.draftVersionId,
     versionId: nextDraftVersionId,

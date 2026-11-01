@@ -97,8 +97,8 @@ export class ApplyMigrationsHandler implements ICommandHandler<
   }
 
   private checkIdBeforeChange(revisionId: string) {
-    // Table changes repeat this check in their transaction; an async update
-    // has only this one. RepeatableRead gives both lookups one snapshot.
+    // Table changes, the async start among them, repeat this check in their
+    // transaction. RepeatableRead gives both lookups one snapshot.
     return this.transactionService.run(
       () =>
         this.draftTransactionalCommands.checkImportedMigrationId(revisionId),

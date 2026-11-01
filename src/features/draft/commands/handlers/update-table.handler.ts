@@ -19,7 +19,6 @@ import { UpdateTableHandlerReturnType } from 'src/features/draft/commands/types/
 import { DraftContextService } from 'src/features/draft/draft-context.service';
 import { DraftHandler } from 'src/features/draft/draft.handler';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
-import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
 import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import {
@@ -39,19 +38,10 @@ export class UpdateTableHandler extends DraftHandler<
     protected readonly commandBus: CommandBus,
     protected readonly shareTransactionalQueries: ShareTransactionalQueries,
     protected readonly draftTransactionalCommands: DraftTransactionalCommands,
-    protected readonly jsonSchemaValidator: JsonSchemaValidatorService,
     protected readonly jsonSchemaStore: JsonSchemaStoreService,
     protected readonly pluginTable: PluginService,
   ) {
     super(transactionService, draftContext);
-  }
-
-  protected async validations({ data }: UpdateTableCommand) {
-    if (data.patches.length < 1) {
-      throw new BadRequestException('Invalid length of patches');
-    }
-
-    await this.validatePatchSchema(data.tableId, data.patches);
   }
 
   protected async handler({
@@ -61,7 +51,10 @@ export class UpdateTableHandler extends DraftHandler<
 
     await this.draftTransactionalCommands.resolveDraftRevision(revisionId);
     await this.draftTransactionalCommands.checkImportedMigrationId(revisionId);
-    await this.validations({ data });
+    await this.draftTransactionalCommands.validateTablePatches(
+      tableId,
+      data.patches,
+    );
 
     const table =
       await this.shareTransactionalQueries.findTableInRevisionOrThrow(
@@ -152,29 +145,6 @@ export class UpdateTableHandler extends DraftHandler<
           id: SortOrder.asc,
         },
       });
-  }
-
-  private async validatePatchSchema(tableId: string, patches: JsonPatch[]) {
-    const { result, errors } =
-      this.jsonSchemaValidator.validateJsonPatchSchema(patches);
-
-    if (!result) {
-      const details = (errors ?? [])
-        .map((e) => `${e.instancePath} ${e.message ?? '<no message>'}`)
-        .join('; ');
-      throw new BadRequestException(`patches is not valid: ${details}`, {
-        cause: errors,
-      });
-    }
-
-    for (const patch of patches) {
-      if (patch.op === 'replace' || patch.op === 'add') {
-        await this.draftTransactionalCommands.validateSchema(
-          patch.value,
-          tableId,
-        );
-      }
-    }
   }
 
   private async updateSchema(

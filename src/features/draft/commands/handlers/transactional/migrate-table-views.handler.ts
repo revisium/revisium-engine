@@ -59,6 +59,10 @@ export class MigrateTableViewsHandler implements ICommandHandler<
         { revisionId, tableId },
       );
 
+      if (data.dryRun) {
+        return;
+      }
+
       const schemaHash =
         this.jsonSchemaValidator.getSchemaHash(tableViewsSchema);
 

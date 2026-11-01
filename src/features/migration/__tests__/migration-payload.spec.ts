@@ -27,6 +27,18 @@ describe('Migration payload', () => {
     });
   });
 
+  it('decodes the source migration id the start writes for an imported update', () => {
+    expect(
+      decodeMigrationPayload(
+        encodeMigrationPayload(patches, '2026-10-31T00:00:00.000Z'),
+      ),
+    ).toEqual({
+      version: 2,
+      patches,
+      ledgerMigrationId: '2026-10-31T00:00:00.000Z',
+    });
+  });
+
   it('decodes the source migration id of an imported envelope', () => {
     expect(
       decodeMigrationPayload({

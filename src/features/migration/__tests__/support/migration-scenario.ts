@@ -5,9 +5,15 @@ import {
 } from '@revisium/schema-toolkit/types';
 import { observeCommittedVersions } from 'src/__tests__/assertions/migration';
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
-import { prepareBranch } from 'src/__tests__/utils/prepareProject';
+import {
+  prepareBranch,
+  type BranchGraph,
+} from 'src/__tests__/utils/prepareProject';
+import type { ApplyMigrationResult } from 'src/features/draft/commands/impl/migration';
+import { MigrationContextService } from 'src/features/draft/migration-context.service';
 import { ViewsApiService } from 'src/features/views/views-api.service';
 import type { TableViewsData } from 'src/features/views/types';
+import { asyncUpdateOf } from './migration-database';
 
 const TABLE_ID = 'products';
 const ROW_ID_DIGITS = 3;
@@ -50,6 +56,11 @@ export interface CommittedTable extends DraftOwnedTable {
 export interface CommittedRevisions {
   headRevisionId: string;
   draftRevisionId: string;
+}
+
+export interface DraftWithTables {
+  revisionId: string;
+  tables: DraftOwnedTable[];
 }
 
 export interface StartedMigration extends DraftOwnedTable {
@@ -106,13 +117,38 @@ export function startFieldAddition(
   table: DraftOwnedTable,
   field: string,
 ): Promise<StartedMigration> {
-  return startAsyncUpdate(kit, table, field, [
-    {
-      op: 'add',
-      path: `/properties/${field}`,
-      value: { type: JsonSchemaTypeName.Number, default: 0 },
-    },
-  ]);
+  return startAsyncUpdate(kit, table, field, fieldAdditionOf(field));
+}
+
+export function startImportedFieldAddition(
+  kit: MigrationTestKit,
+  table: DraftOwnedTable,
+  { field, migrationId }: { field: string; migrationId: string },
+): Promise<StartedMigration> {
+  return kit.module
+    .get(MigrationContextService)
+    .run(migrationId, () => startFieldAddition(kit, table, field));
+}
+
+export function importFieldAddition(
+  kit: MigrationTestKit,
+  table: DraftOwnedTable,
+  { field, migrationId }: { field: string; migrationId: string },
+): Promise<ApplyMigrationResult[]> {
+  const patches = fieldAdditionOf(field);
+
+  return kit.draftApi.applyMigrations({
+    revisionId: table.revisionId,
+    migrations: [
+      {
+        changeType: 'update',
+        id: migrationId,
+        tableId: table.tableId,
+        hash: asyncUpdateOf(productSchema, patches).targetSchemaHash,
+        patches,
+      },
+    ],
+  });
 }
 
 export function startFieldRename(
@@ -153,7 +189,7 @@ export async function findRevisionId(
   return revision.id;
 }
 
-async function startAsyncUpdate(
+export async function startAsyncUpdate(
   kit: MigrationTestKit,
   table: DraftOwnedTable,
   field: string,
@@ -172,12 +208,52 @@ async function startAsyncUpdate(
   return { ...table, migrationId, field, patches };
 }
 
-async function givenDraftOwnedTable(
+export async function givenDraftOwnedTable(
   kit: MigrationTestKit,
   rowCount: number,
   schema: JsonObjectSchema = productSchema,
 ): Promise<DraftOwnedTable> {
   const branch = await prepareBranch(kit.prisma);
+  const table = await addDraftOwnedTable(kit, branch, {
+    tableId: TABLE_ID,
+    rowCount,
+    schema,
+  });
+  await observeCommittedVersions(kit, branch.branchId);
+
+  return table;
+}
+
+export async function givenDraftOwnedTables(
+  kit: MigrationTestKit,
+  { tableIds, rowCount }: { tableIds: string[]; rowCount: number },
+): Promise<DraftWithTables> {
+  const branch = await prepareBranch(kit.prisma);
+  const tables: DraftOwnedTable[] = [];
+
+  for (const tableId of tableIds) {
+    tables.push(
+      await addDraftOwnedTable(kit, branch, {
+        tableId,
+        rowCount,
+        schema: productSchema,
+      }),
+    );
+  }
+  await observeCommittedVersions(kit, branch.branchId);
+
+  return { revisionId: branch.draftRevisionId, tables };
+}
+
+async function addDraftOwnedTable(
+  kit: MigrationTestKit,
+  branch: BranchGraph,
+  {
+    tableId,
+    rowCount,
+    schema,
+  }: { tableId: string; rowCount: number; schema: JsonObjectSchema },
+): Promise<DraftOwnedTable> {
   const rowIds = Array.from(
     { length: rowCount },
     (_, index) => `row-${String(index).padStart(ROW_ID_DIGITS, '0')}`,
@@ -185,27 +261,36 @@ async function givenDraftOwnedTable(
 
   await kit.draftApi.apiCreateTable({
     revisionId: branch.draftRevisionId,
-    tableId: TABLE_ID,
+    tableId,
     schema,
   });
   await kit.draftApi.apiCreateRows({
     revisionId: branch.draftRevisionId,
-    tableId: TABLE_ID,
+    tableId,
     rows: rowIds.map((rowId, index) => ({
       rowId,
       data: rowDataOf(schema, index),
     })),
   });
-  await observeCommittedVersions(kit, branch.branchId);
 
   return {
     projectId: branch.projectId,
     branchId: branch.branchId,
     branchName: branch.branchName,
     revisionId: branch.draftRevisionId,
-    tableId: TABLE_ID,
+    tableId,
     rowIds,
   };
+}
+
+export function fieldAdditionOf(field: string): JsonPatch[] {
+  return [
+    {
+      op: 'add',
+      path: `/properties/${field}`,
+      value: { type: JsonSchemaTypeName.Number, default: 0 },
+    },
+  ];
 }
 
 function productSchemaWith(field: string): JsonObjectSchema {

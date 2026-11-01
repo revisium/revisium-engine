@@ -9,6 +9,7 @@ export class UpdateSchemaCommand {
       patches: JsonPatch[];
       migrationId?: string;
       skipCreatingMigration?: boolean;
+      dryRun?: boolean;
     },
   ) {}
 }

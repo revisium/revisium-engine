@@ -33,6 +33,11 @@ export interface ShadowTableFixture {
   rowVersionIds: string[];
 }
 
+interface TableInRevision {
+  revisionId: string;
+  tableId: string;
+}
+
 export function createMigrationRecord(
   database: Pick<PrismaService, 'tableMigration'>,
   revisionId: string,
@@ -232,16 +237,9 @@ export async function describeDraftSchema(
   revisionId: string,
   tableId: string,
 ): Promise<void> {
-  const schemaRow = await database.row.findFirstOrThrow({
-    where: {
-      id: tableId,
-      tables: {
-        some: {
-          id: SystemTables.Schema,
-          revisions: { some: { id: revisionId } },
-        },
-      },
-    },
+  const schemaRow = await findSystemRow(database, SystemTables.Schema, {
+    revisionId,
+    tableId,
   });
   const described = {
     ...(schemaRow.data as Record<string, unknown>),
@@ -251,6 +249,45 @@ export async function describeDraftSchema(
   await database.row.update({
     where: { versionId: schemaRow.versionId },
     data: { data: described, hash: objectHash(described) },
+  });
+}
+
+export async function replaceDraftSchema(
+  database: Pick<PrismaService, 'row'>,
+  table: TableInRevision,
+  schema: JsonSchema,
+): Promise<void> {
+  const schemaRow = await findSystemRow(database, SystemTables.Schema, table);
+
+  await database.row.update({
+    where: { versionId: schemaRow.versionId },
+    data: { data: schema as InputJsonValue, hash: objectHash(schema) },
+  });
+}
+
+export async function replaceSchemaHistory(
+  database: Pick<PrismaService, 'row'>,
+  table: TableInRevision,
+  history: InputJsonValue,
+): Promise<void> {
+  const schemaRow = await findSystemRow(database, SystemTables.Schema, table);
+
+  await database.row.update({
+    where: { versionId: schemaRow.versionId },
+    data: { meta: history },
+  });
+}
+
+export async function replaceViewsData(
+  database: Pick<PrismaService, 'row'>,
+  table: TableInRevision,
+  viewsData: InputJsonValue,
+): Promise<void> {
+  const viewsRow = await findSystemRow(database, SystemTables.Views, table);
+
+  await database.row.update({
+    where: { versionId: viewsRow.versionId },
+    data: { data: viewsData, hash: objectHash(viewsData) },
   });
 }
 
@@ -265,20 +302,39 @@ export async function removeOneRow(
   await database.row.delete({ where: { versionId: row.versionId } });
 }
 
-export async function unlinkMigrationTable(
+export function unlinkMigrationTable(
   database: Pick<PrismaService, 'table'>,
   revisionId: string,
 ): Promise<void> {
-  const migrationTable = await database.table.findFirstOrThrow({
-    where: {
-      id: SystemTables.Migration,
-      revisions: { some: { id: revisionId } },
-    },
+  return unlinkTable(database, { revisionId, tableId: SystemTables.Migration });
+}
+
+export async function unlinkTable(
+  database: Pick<PrismaService, 'table'>,
+  { revisionId, tableId }: TableInRevision,
+): Promise<void> {
+  const table = await database.table.findFirstOrThrow({
+    where: { id: tableId, revisions: { some: { id: revisionId } } },
   });
 
   await database.table.update({
-    where: { versionId: migrationTable.versionId },
+    where: { versionId: table.versionId },
     data: { revisions: { disconnect: { id: revisionId } } },
+  });
+}
+
+function findSystemRow(
+  database: Pick<PrismaService, 'row'>,
+  systemTableId: SystemTables,
+  { revisionId, tableId }: TableInRevision,
+) {
+  return database.row.findFirstOrThrow({
+    where: {
+      id: tableId,
+      tables: {
+        some: { id: systemTableId, revisions: { some: { id: revisionId } } },
+      },
+    },
   });
 }
 

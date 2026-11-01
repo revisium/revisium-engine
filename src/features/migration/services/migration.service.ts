@@ -122,6 +122,7 @@ export class MigrationService {
     tableId: string;
     sourceTableVersionId: string;
     patches: JsonPatch[];
+    ledgerMigrationId?: string;
     previousSchema: InputJsonValue;
     previousSchemaHash: string;
     targetSchemaHash: string;
@@ -145,7 +146,7 @@ export class MigrationService {
         revisionId: data.revisionId,
         tableId: data.tableId,
         sourceTableVersionId: data.sourceTableVersionId,
-        patches: encodeMigrationPayload(data.patches),
+        patches: encodeMigrationPayload(data.patches, data.ledgerMigrationId),
         previousSchema: data.previousSchema,
         previousSchemaHash: data.previousSchemaHash,
         targetSchemaHash: data.targetSchemaHash,

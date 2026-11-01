@@ -10,6 +10,7 @@ import { ApiUpdateTableHandlerReturnType } from 'src/features/draft/commands/typ
 import { UpdateTableHandlerReturnType } from 'src/features/draft/commands/types/update-table.handler.types';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
+import { MigrationContextService } from 'src/features/draft/migration-context.service';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { StartAsyncMigrationCommand } from 'src/features/migration/commands/impl/start-async-migration.command';
 import { StartAsyncMigrationResult } from 'src/features/migration/types/migration.types';
@@ -29,6 +30,7 @@ export class ApiUpdateTableHandler implements ICommandHandler<
     private readonly migrationLockService: MigrationLockService,
     private readonly draftWriteAdmission: DraftWriteAdmissionService,
     private readonly migrationService: MigrationService,
+    private readonly migrationContextService: MigrationContextService,
   ) {}
 
   async execute({ data }: ApiUpdateTableCommand) {
@@ -89,6 +91,7 @@ export class ApiUpdateTableHandler implements ICommandHandler<
           revisionId: data.revisionId,
           tableId: data.tableId,
           patches: data.patches,
+          ledgerMigrationId: this.migrationContextService.migrationId,
         }),
       );
 

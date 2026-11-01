@@ -7,6 +7,7 @@ export class MigrateTableViewsCommand {
       readonly tableId: string;
       readonly patches: JsonPatch[];
       readonly previousSchema: JsonSchema;
+      readonly dryRun?: boolean;
     },
   ) {}
 }

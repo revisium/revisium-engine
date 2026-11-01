@@ -14,8 +14,15 @@ export type MigrationPayload =
   | { version: 1; patches: JsonPatch[] }
   | PayloadEnvelope;
 
-export function encodeMigrationPayload(patches: JsonPatch[]): InputJsonValue {
+export function encodeMigrationPayload(
+  patches: JsonPatch[],
+  ledgerMigrationId?: string,
+): InputJsonValue {
   const envelope: PayloadEnvelope = { version: ENVELOPE_VERSION, patches };
+
+  if (ledgerMigrationId !== undefined) {
+    envelope.ledgerMigrationId = ledgerMigrationId;
+  }
 
   return envelope as unknown as InputJsonValue;
 }

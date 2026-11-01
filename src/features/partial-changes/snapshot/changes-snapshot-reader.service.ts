@@ -26,6 +26,17 @@ import { ShareTransactionalQueries } from 'src/features/share/share.transactiona
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
+export interface ReferrerQuery {
+  readonly jsonPath: string;
+  readonly rowIds: readonly string[];
+  readonly exceptRows: readonly string[];
+}
+
+export interface FirstReferrer {
+  readonly referencedId: string;
+  readonly rowId: string;
+}
+
 @Injectable()
 export class ChangesSnapshotReader {
   constructor(
@@ -94,6 +105,24 @@ export class ChangesSnapshotReader {
     `);
 
     return result?.count ?? 0;
+  }
+
+  public readFirstReferrers(
+    tableVersionId: string,
+    { jsonPath, rowIds, exceptRows }: ReferrerQuery,
+  ): Promise<FirstReferrer[]> {
+    return this.transaction.$queryRaw<FirstReferrer[]>(sql`
+      SELECT v.value #>> '{}' AS "referencedId", min(r."id" COLLATE "C") AS "rowId"
+      FROM "_RowToTable" rt
+      JOIN "Row" r ON r."versionId" = rt."A"
+      CROSS JOIN LATERAL jsonb_path_query(r."data", ${jsonPath}::jsonpath) AS v(value)
+      WHERE rt."B" = ${tableVersionId}
+        AND jsonb_typeof(v.value) = 'string'
+        AND v.value #>> '{}' = ANY(${[...rowIds]}::text[])
+        AND r."createdId" <> ALL(${[...exceptRows]}::text[])
+      GROUP BY v.value #>> '{}'
+      ORDER BY (v.value #>> '{}') COLLATE "C"
+    `);
   }
 
   public async readRowDigest(tableVersionId: string): Promise<string> {

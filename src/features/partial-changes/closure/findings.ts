@@ -28,6 +28,14 @@ export interface TargetCheck {
   ): Promise<Finding[]>;
 }
 
+export function requiring(unitKey: string, reason: Reason): Finding {
+  return { kind: 'requires', unitKey, reason };
+}
+
+export function blocking(blocker: PlanBlocker): Finding {
+  return { kind: 'blocks', blocker };
+}
+
 export function danglingInSource(
   because: string,
   { tableId, rowId, path }: Site,

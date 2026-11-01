@@ -4,6 +4,7 @@ import { SystemTargetAssembler } from 'src/features/partial-changes/assembly/sys
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import { TARGET_CHECKS } from 'src/features/partial-changes/closure/findings';
+import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-reference-checks';
 import { OperationEstimator } from 'src/features/partial-changes/limits/operation-estimator';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
@@ -35,7 +36,12 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     SystemTargetAssembler,
     TargetAssembler,
     OperationEstimator,
-    { provide: TARGET_CHECKS, useValue: [] },
+    RowReferenceChecks,
+    {
+      provide: TARGET_CHECKS,
+      useFactory: (rowChecks: RowReferenceChecks) => [rowChecks],
+      inject: [RowReferenceChecks],
+    },
     DependencyClosure,
   ],
 })

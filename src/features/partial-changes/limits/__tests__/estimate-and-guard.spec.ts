@@ -23,10 +23,16 @@ const LIMITED_WORK = {
 };
 
 const PRODUCTS = 'products';
+const CATEGORIES = 'categories';
 const ORDERS = 'orders';
 const DOCUMENTS = 'documents';
 
 const productSchema = obj({ title: str(), price: num() });
+const categorySchema = obj({ title: str() });
+const shelfSchema = obj({
+  title: str(),
+  category: str({ foreignKey: CATEGORIES }),
+});
 const orderSchema = obj({
   price: num(),
   quantity: num(),
@@ -321,6 +327,31 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
         expect(assembling).not.toHaveBeenCalled();
       },
     );
+
+    it('estimates again before the assembly a required addition needs, and refuses that assembly', async () => {
+      const draft = await givenShelfMovedToCreatedCategory(limitedKit);
+      const assembling = jest.spyOn(limitedKit.targetAssembler, 'assemble');
+
+      const closure = await draft.closeDependencies('commit', {
+        fields: [{ tableId: 'shelves', rowId: 's1', path: '/category' }],
+      });
+
+      expect(closure).toMatchObject({
+        kind: 'tooLarge',
+        required: [
+          { unit: { kind: 'rowCreate', tableId: CATEGORIES, rowId: 'c9' } },
+        ],
+        blockers: [
+          {
+            code: 'tooLarge',
+            tableId: CATEGORIES,
+            message:
+              'Assembling categories copies up to 4 row links; the limit for one table is 3',
+          },
+        ],
+      });
+      expect(assembling).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -402,6 +433,26 @@ async function givenRowColumnsEditNextToFieldEdit(
   await draft.updateRow(PRODUCTS, 'p1', { title: 'renamed', price: 10 });
   await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: 'edited' });
   await draft.updateRow(PRODUCTS, 'p2', { title: 'renamed', price: 10 });
+
+  return draft;
+}
+
+async function givenShelfMovedToCreatedCategory(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: {
+      schema: categorySchema,
+      rows: rowsOf(['c1', 'c2', 'c3', 'c4'], (rowId) => ({ title: rowId })),
+    },
+    shelves: {
+      schema: shelfSchema,
+      rows: { s1: { title: 's1', category: 'c1' } },
+    },
+  });
+  await draft.updateRow(CATEGORIES, 'c2', { title: 'edited' });
+  await draft.createRows(CATEGORIES, { c9: { title: 'c9' } });
+  await draft.updateRow('shelves', 's1', { title: 's1', category: 'c9' });
 
   return draft;
 }

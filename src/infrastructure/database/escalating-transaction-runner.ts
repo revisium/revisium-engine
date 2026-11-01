@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { setTimeout as waitFor } from 'node:timers/promises';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import {
   BranchFenceEscalation,
   ProjectBranch,
 } from 'src/infrastructure/database/branch-fence-escalation';
-import { isSerializationFailure } from 'src/infrastructure/database/database-errors';
-import { retryDelayMs } from 'src/infrastructure/database/retry-backoff';
+import {
+  retryOnSerializationFailure,
+  SerializationRetryLimits,
+} from 'src/infrastructure/database/serialization-retry';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 type Operation<T> = () => Promise<T>;
@@ -18,39 +19,24 @@ export class EscalatingTransactionRunner {
     private readonly escalation: BranchFenceEscalation,
   ) {}
 
-  public async runSerializable<T>(
+  public runSerializable<T>(
     branch: ProjectBranch,
     operation: Operation<T>,
   ): Promise<T> {
-    const lastAttempt = this.transactionService.serializableMaxAttempts - 1;
-
-    for (let attempt = 0; attempt < lastAttempt; attempt++) {
-      try {
-        return await this.runAttempt(attempt, branch, operation);
-      } catch (error) {
-        if (!isSerializationFailure(error)) {
-          throw error;
-        }
-
-        await this.backOff(attempt);
-      }
-    }
-
-    return this.runAttempt(lastAttempt, branch, operation);
+    return retryOnSerializationFailure(this.retryLimits(), {
+      run: () =>
+        this.runSerializableAttempt(
+          operation,
+          this.transactionService.serializableTimeoutMs,
+        ),
+      runEscalated: () => this.runEscalatedAttempt(branch, operation),
+    });
   }
 
-  private runAttempt<T>(
-    attempt: number,
+  private runEscalatedAttempt<T>(
     branch: ProjectBranch,
     operation: Operation<T>,
   ): Promise<T> {
-    if (!this.escalation.isDueFor(attempt)) {
-      return this.runSerializableAttempt(
-        operation,
-        this.transactionService.serializableTimeoutMs,
-      );
-    }
-
     return this.escalation.runEscalated(
       branch,
       this.transactionService.serializableTimeoutMs,
@@ -77,9 +63,10 @@ export class EscalatingTransactionRunner {
     });
   }
 
-  private backOff(attempt: number): Promise<void> {
-    return waitFor(
-      retryDelayMs(attempt, this.transactionService.serializableRetryBackoff),
-    );
+  private retryLimits(): SerializationRetryLimits {
+    return {
+      maxAttempts: this.transactionService.serializableMaxAttempts,
+      backoff: this.transactionService.serializableRetryBackoff,
+    };
   }
 }

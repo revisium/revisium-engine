@@ -5,7 +5,6 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
-import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 
@@ -195,21 +194,6 @@ describe('TargetAssembler: table outcomes in tables of one structure', () => {
 
     expect(target.tableIds).toEqual([CATEGORIES, PRODUCTS]);
   });
-
-  it.each<{ operation: ChangeOperation }>([
-    { operation: 'commit' },
-    { operation: 'revert' },
-  ])(
-    'refuses an applied structure unit in a $operation',
-    async ({ operation }) => {
-      const draft = await givenEditedCatalog();
-      await draft.updateTable(LOGS, [addField('level', str())]);
-
-      await expect(
-        draft.assembleTarget(operation, { tables: [LOGS] }),
-      ).rejects.toThrow(/structure/);
-    },
-  );
 
   async function givenEditedCatalog(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {

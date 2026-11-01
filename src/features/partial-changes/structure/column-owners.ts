@@ -1,5 +1,5 @@
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
-import type { SchemaLeaf } from 'src/features/partial-changes/structure/schema-leaves';
+import { storesValueInData } from 'src/features/partial-changes/structure/schema-leaves';
 import type {
   PublishedAtOwner,
   TableStructure,
@@ -48,8 +48,4 @@ function schemaHashOwner(structure: TableStructure): ColumnOwner {
   }
 
   return { owner: 'rowColumns' };
-}
-
-function storesValueInData(leaf: SchemaLeaf): boolean {
-  return leaf.kind === 'value' || leaf.kind === 'atomic';
 }

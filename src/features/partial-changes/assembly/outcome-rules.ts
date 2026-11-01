@@ -1,5 +1,8 @@
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { RowPair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type {
+  RowPair,
+  TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 export type ChangeOperation = 'commit' | 'revert';
 
@@ -33,7 +36,13 @@ export interface RowWithOutcome {
   readonly kind: RowOutcomeKind;
 }
 
-export type TableOutcome = 'unchanged' | 'base' | 'other' | 'mixed';
+export type TableOutcome =
+  | 'unchanged'
+  | 'base'
+  | 'other'
+  | 'mixed'
+  | 'present'
+  | 'absent';
 
 export interface TableUnits {
   readonly structure?: string;
@@ -66,6 +75,10 @@ export class OutcomeRules {
     return new TableOutcomeRules(this, table);
   }
 
+  public get operation(): ChangeOperation {
+    return this.choice.operation;
+  }
+
   public get appliesWholeDraft(): boolean {
     return this.choice.wholeDraft;
   }
@@ -76,6 +89,14 @@ export class OutcomeRules {
 
   public isTakenFromDraft(key: string): boolean {
     return this.isApplied(key) === (this.baseSide === 'head');
+  }
+
+  public sideTakenBy(key: string): RevisionSide {
+    if (this.isTakenFromDraft(key)) {
+      return 'draft';
+    }
+
+    return 'head';
   }
 }
 
@@ -127,6 +148,14 @@ export class TableOutcomeRules {
 
   public isRelinkCandidate(): boolean {
     return this.unitKeys().every((key) => this.rules.isApplied(key));
+  }
+
+  public outcomeOfOneSidedTable(pair: TablePair): TableOutcome {
+    if (pair[this.structureSide]) {
+      return 'present';
+    }
+
+    return 'absent';
   }
 
   private outcomeWithoutUnits(): TableOutcome {
@@ -231,9 +260,5 @@ function structureSideOf(
     return rules.baseSide;
   }
 
-  if (rules.isTakenFromDraft(structure)) {
-    return 'draft';
-  }
-
-  return 'head';
+  return rules.sideTakenBy(structure);
 }

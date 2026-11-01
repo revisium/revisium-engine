@@ -43,6 +43,10 @@ export class SchemaLeaves {
   }
 }
 
+export function storesValueInData(leaf: SchemaLeaf): boolean {
+  return leaf.kind === 'value' || leaf.kind === 'atomic';
+}
+
 export function dataPointerOfSchemaPath(schemaPath: string): JsonPointer {
   return dataSegmentsOf(JsonPointer.parse(schemaPath).segments).reduce(
     (pointer, name) => pointer.child(name),

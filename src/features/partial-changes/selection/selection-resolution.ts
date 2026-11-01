@@ -28,6 +28,7 @@ export type BlockerCode =
   | 'requiredExcluded'
   | 'unmatchedSelector'
   | 'tooLarge'
+  | 'unrecordedStructureChange'
   | RefusalCode;
 
 export interface Reason {

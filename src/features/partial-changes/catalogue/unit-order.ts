@@ -3,9 +3,11 @@ import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catal
 const LAST_SINGLE_UNIT_CODE_POINT = 0xffff;
 const SURROGATE_PAIR_LENGTH = 2;
 
+type OrderedUnit = Pick<CatalogueUnit, 'key' | 'unit'>;
+
 export function compareUnits(
-  { key: leftKey, unit: left }: CatalogueUnit,
-  { key: rightKey, unit: right }: CatalogueUnit,
+  { key: leftKey, unit: left }: OrderedUnit,
+  { key: rightKey, unit: right }: OrderedUnit,
 ): number {
   return (
     compareCodePoints(left.tableId, right.tableId) ||

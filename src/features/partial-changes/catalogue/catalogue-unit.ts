@@ -1,11 +1,13 @@
+import type { Row } from 'src/engine-prisma-types';
 import type { Side, Unit } from 'src/features/partial-changes/catalogue/unit';
 import type { RowPair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { WholeColumn } from 'src/features/partial-changes/structure/column-owners';
 
 export interface CatalogueUnit {
   readonly key: string;
-  readonly tableIdentity: string;
+  readonly tableIdentities: readonly string[];
   readonly rowIdentities: readonly string[];
+  readonly systemRows: readonly Row[];
   readonly side?: Side;
   readonly unit: Unit;
 }

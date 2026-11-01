@@ -1,4 +1,8 @@
-import type { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
+import type {
+  JsonPatch,
+  JsonSchema,
+  Migration,
+} from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { createExpressImageFile } from 'src/__tests__/utils/file';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
@@ -8,6 +12,7 @@ import type {
   ChangesBranch,
   ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import { type CatalogueView, readCatalogue } from './catalogue-reading';
@@ -205,23 +210,86 @@ export class ChangesScenario {
     id: string,
     schema: JsonSchema,
   ): Promise<void> {
-    const revisionId = await this.draftRevisionId();
+    const hasSharedSchemas = await this.hasDraftTable(
+      SystemTables.SharedSchemas,
+    );
 
-    await this.kit.draftWriteAdmission.runSerializableRevisionWrite(
-      revisionId,
-      async () => {
+    await this.writeSharedSchemas(async (revisionId) => {
+      if (!hasSharedSchemas) {
         await this.kit.draftRevisionApi.createTable({
           revisionId,
           tableId: SystemTables.SharedSchemas,
           system: true,
         });
-        await this.kit.draftRevisionApi.createRows({
-          revisionId,
-          tableId: SystemTables.SharedSchemas,
-          rows: [{ rowId: id, data: schema as InputJsonValue }],
-        });
-      },
+      }
+
+      await this.kit.draftRevisionApi.createRows({
+        revisionId,
+        tableId: SystemTables.SharedSchemas,
+        rows: [{ rowId: id, data: schema as InputJsonValue }],
+      });
+    });
+  }
+
+  public async updateSharedSchema(
+    id: string,
+    schema: JsonSchema,
+  ): Promise<void> {
+    await this.writeSharedSchemas((revisionId) =>
+      this.kit.draftRevisionApi.updateRows({
+        revisionId,
+        tableId: SystemTables.SharedSchemas,
+        rows: [{ rowId: id, data: schema as InputJsonValue }],
+      }),
     );
+  }
+
+  public async renameSharedSchema(id: string, nextId: string): Promise<void> {
+    await this.writeSharedSchemas((revisionId) =>
+      this.kit.draftRevisionApi.renameRows({
+        revisionId,
+        tableId: SystemTables.SharedSchemas,
+        renames: [{ rowId: id, nextRowId: nextId }],
+      }),
+    );
+  }
+
+  public async removeSharedSchema(id: string): Promise<void> {
+    await this.writeSharedSchemas((revisionId) =>
+      this.kit.draftRevisionApi.removeRows({
+        revisionId,
+        tableId: SystemTables.SharedSchemas,
+        rowIds: [id],
+      }),
+    );
+  }
+
+  public async recordPendingMigration(migration: Migration): Promise<void> {
+    const revisionId = await this.draftRevisionId();
+
+    await this.kit.draftWriteAdmission.runSerializableRevisionWrite(
+      revisionId,
+      () =>
+        this.kit.draftRevisionApi.createRows({
+          revisionId,
+          tableId: SystemTables.Migration,
+          rows: [
+            {
+              rowId: migration.id,
+              data: migration as unknown as InputJsonValue,
+            },
+          ],
+        }),
+    );
+  }
+
+  public async rewriteSchemaHistory(
+    tableId: string,
+    history: readonly HistoryPatches[],
+  ): Promise<void> {
+    await this.writeRowColumns(SystemTables.Schema, tableId, {
+      meta: history as unknown as InputJsonValue,
+    });
   }
 
   public readSnapshot(): Promise<ChangesSnapshot> {
@@ -299,6 +367,29 @@ export class ChangesScenario {
 
   private draftRevisionId(): Promise<string> {
     return this.revisionId('draft');
+  }
+
+  private async writeSharedSchemas(
+    write: (revisionId: string) => Promise<unknown>,
+  ): Promise<void> {
+    const revisionId = await this.draftRevisionId();
+
+    await this.kit.draftWriteAdmission.runSerializableRevisionWrite(
+      revisionId,
+      () => write(revisionId),
+    );
+  }
+
+  private async hasDraftTable(tableId: string): Promise<boolean> {
+    const table = await this.kit.prisma.table.findFirst({
+      where: {
+        id: tableId,
+        revisions: { some: { id: await this.draftRevisionId() } },
+      },
+      select: { versionId: true },
+    });
+
+    return table !== null;
   }
 
   private async observeCommittedVersions(): Promise<void> {

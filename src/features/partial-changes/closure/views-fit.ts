@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { RevisionSide } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { TargetViews } from 'src/features/partial-changes/assembly/system-target-assembler';
 import type { BranchRevisions } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { ViewValidationService } from 'src/features/views/services';
@@ -13,8 +13,8 @@ export class ViewsFit {
   ) {}
 
   public fits(views: TargetViews): Promise<boolean> {
-    const { pair, structureSide, viewsSide } = views;
-    const key = JSON.stringify([pair.identity, structureSide, viewsSide]);
+    const { pair, tableSide, viewsSide } = views;
+    const key = JSON.stringify([pair.identity, tableSide, viewsSide]);
     const cached = this.checks.get(key);
 
     if (cached) {
@@ -29,13 +29,13 @@ export class ViewsFit {
 
   private async validate({
     tableId,
-    structureSide,
+    tableSide,
     document,
   }: TargetViews): Promise<boolean> {
     try {
       await this.validation.validateViewsData(document);
       await this.validation.validateViewsFields(
-        this.revisionIdOf(structureSide),
+        this.revisionIdOf(tableSide),
         tableId,
         document,
       );

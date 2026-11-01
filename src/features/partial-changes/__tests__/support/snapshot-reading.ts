@@ -22,7 +22,7 @@ export interface ChangedRowsView {
   rowPairOf(tableId: string, rowId: string): RowPair | undefined;
 }
 
-export type RevisionSide = 'head' | 'draft';
+export type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 
 export interface OperationScope {
   readonly wholeDraft: boolean;

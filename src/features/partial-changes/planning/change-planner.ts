@@ -42,8 +42,8 @@ import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/cha
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { ComparedSnapshotReader } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import {
+  type AppliedTarget,
   TargetValidator,
-  type ValidatedTarget,
 } from 'src/features/partial-changes/validation/target-validator';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 
@@ -64,7 +64,7 @@ export interface Counts {
   readonly remaining: number;
 }
 
-export interface PlannedTarget extends ValidatedTarget {
+export interface PlannedTarget extends AppliedTarget {
   readonly source: AssemblySource;
 }
 
@@ -175,12 +175,12 @@ export class ChangePlanner {
 
   private async closureSourceOf(
     { compared, selection }: PlanRequest,
-    { catalogue, changedRows }: CatalogueRead,
+    { catalogue, changedRowCount }: CatalogueRead,
   ): Promise<ClosureSource> {
     return {
       ...compared,
       catalogue,
-      changedRows,
+      changedRowCount,
       addressedRows: await readAddressedRows(
         this.snapshotReader,
         compared.snapshot,
@@ -207,7 +207,7 @@ export class ChangePlanner {
         applied: closure.applied,
         wholeDraft: isWholeDraftSelection(selection),
       },
-      target: closure.target,
+      assembled: closure.target,
     };
     const blockers = await this.targetValidator.validate(source, target);
 
@@ -273,12 +273,12 @@ function countsOf(
 function deferredValuesOf({
   target,
 }: ValidatedClosure): readonly DeferredValues[] {
-  return target?.target.deferred ?? [];
+  return target?.assembled.deferred ?? [];
 }
 
 function planRefusedBeforeCatalogue(
   { snapshot, headSchema }: ComparedSnapshot,
-  { changedRows, unreadTables, blocker }: CatalogueRefused,
+  { changedRowCount, unreadTables, blocker }: CatalogueRefused,
 ): ChangePlan {
   return {
     headRevisionId: snapshot.headRevisionId,
@@ -294,7 +294,7 @@ function planRefusedBeforeCatalogue(
     deferred: [],
     unmatched: {},
     estimate: {
-      changedRows,
+      changedRows: changedRowCount,
       mergedRows: 0,
       perRowWorkRows: 0,
       mixedTables: [],

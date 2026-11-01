@@ -1,4 +1,5 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type {
   ChangesSnapshot,
   TablePair,
@@ -159,7 +160,7 @@ class PendingAttribution {
 
 function identitiesByTableId(
   tables: readonly TablePair[],
-  side: 'head' | 'draft',
+  side: RevisionSide,
 ): ReadonlyMap<string, string> {
   const identities = new Map<string, string>();
 

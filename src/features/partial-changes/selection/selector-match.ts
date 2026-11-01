@@ -43,7 +43,7 @@ export function selectingUnit(unit: CatalogueUnit | undefined): SelectorMatch {
   return selecting(unit ? [unit] : []);
 }
 
-export function requiring(
+export function requiringUnit(
   unit: CatalogueUnit | undefined,
   reason: Reason,
 ): SelectorMatch {
@@ -54,7 +54,7 @@ export function requiring(
   return { ...NO_MATCH, required: [{ key: unit.key, reason }] };
 }
 
-export function blocking(blockers: readonly PlanBlocker[]): SelectorMatch {
+export function blockedBy(blockers: readonly PlanBlocker[]): SelectorMatch {
   return { ...NO_MATCH, blockers };
 }
 
@@ -65,7 +65,7 @@ export function refusing(
     return undefined;
   }
 
-  return blocking(refusals.map(refusalBlocker));
+  return blockedBy(refusals.map(refusalBlocker));
 }
 
 export function refusalBlocker({ tableId, code }: RefusedTable): PlanBlocker {

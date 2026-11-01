@@ -1,3 +1,4 @@
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 interface VersionPair {
@@ -18,7 +19,7 @@ export function groupRecreations<T extends VersionPair>(
   return groupLinkedPairs(pairs, isOnOneSide);
 }
 
-export function publicIdOf(group: readonly VersionPair[]): string {
+export function groupPublicIdOf(group: readonly VersionPair[]): string {
   const [publicId] = [...idsOn(group, 'draft'), ...idsOn(group, 'head')];
 
   if (publicId === undefined) {
@@ -61,10 +62,7 @@ export function publicIdsOf({ head, draft }: VersionPair): string[] {
   );
 }
 
-function idsOn(
-  group: readonly VersionPair[],
-  side: 'head' | 'draft',
-): string[] {
+function idsOn(group: readonly VersionPair[], side: RevisionSide): string[] {
   return group
     .flatMap((pair) => {
       const version = pair[side];

@@ -90,7 +90,7 @@ export async function readSelectionSource(
   return {
     ...compared,
     catalogue: scoped.catalogue,
-    changedRows: scoped.changedRows,
+    changedRowCount: scoped.changedRowCount,
     addressedRows: await readAddressedRows(
       kit.snapshotReader,
       compared.snapshot,

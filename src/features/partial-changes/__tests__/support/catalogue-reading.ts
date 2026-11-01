@@ -9,7 +9,10 @@ import {
 } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { LedgerInconsistency } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
-import type { Side, Unit } from 'src/features/partial-changes/catalogue/unit';
+import type {
+  HeadQualifier,
+  Unit,
+} from 'src/features/partial-changes/catalogue/unit';
 import type {
   HeadSchemaCheck,
   RefusedTable,
@@ -28,7 +31,7 @@ import {
   readInPlanningTransaction,
 } from './snapshot-reading';
 
-export type AddressedUnit = Unit & { readonly side?: Side };
+export type AddressedUnit = Unit & { readonly side?: HeadQualifier };
 
 export interface CatalogueView {
   readonly catalogue: ChangeCatalogue;

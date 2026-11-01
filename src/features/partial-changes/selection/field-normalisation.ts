@@ -15,10 +15,10 @@ import type {
   SelectionTargets,
 } from 'src/features/partial-changes/selection/selection-targets';
 import {
-  blocking,
+  blockedBy,
   combined,
   NO_MATCH,
-  requiring,
+  requiringUnit,
   type SelectorMatch,
   selecting,
 } from 'src/features/partial-changes/selection/selector-match';
@@ -43,7 +43,7 @@ export class FieldNormalisation {
 
   public match(): SelectorMatch {
     if (this.leaf?.kind === 'computed') {
-      return blocking([this.notSelectable()]);
+      return blockedBy([this.notSelectable()]);
     }
 
     if (isCreatedOrRemoved(this.row.table)) {
@@ -85,7 +85,7 @@ export class FieldNormalisation {
   }
 
   private requireExistence(existence: CatalogueUnit): SelectorMatch {
-    return requiring(
+    return requiringUnit(
       existence,
       this.reason(
         'wholeRowUnit',
@@ -104,7 +104,7 @@ export class FieldNormalisation {
 
     const value = leaf.pointer.toString();
 
-    return requiring(
+    return requiringUnit(
       fields.find(({ unit }) => unit.path === value),
       this.reason(
         'atomicValue',
@@ -125,7 +125,7 @@ export class FieldNormalisation {
       return NO_MATCH;
     }
 
-    return requiring(
+    return requiringUnit(
       this.units.tableUnitOf('structure', this.row.table),
       this.reason(
         'structureBoundData',

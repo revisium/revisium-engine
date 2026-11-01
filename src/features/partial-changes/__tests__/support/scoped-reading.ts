@@ -117,12 +117,12 @@ function scopedCatalogueView(
   snapshot: ChangesSnapshot,
   scoped: ScopedCatalogue,
 ): ScopedCatalogueView {
-  const { changedRows, unreadTables } = scoped;
+  const { changedRowCount, unreadTables } = scoped;
 
   if (scoped.kind === 'tooLarge') {
     return {
       kind: 'tooLarge',
-      changedRows,
+      changedRows: changedRowCount,
       unreadTables,
       blocker: scoped.blocker,
     };
@@ -130,7 +130,7 @@ function scopedCatalogueView(
 
   return {
     kind: 'catalogue',
-    changedRows,
+    changedRows: changedRowCount,
     unreadTables,
     readTableIds: [...scoped.catalogue.rows.keys()]
       .map((identity) => tableIdOf(snapshot, identity))

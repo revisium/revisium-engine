@@ -1,9 +1,7 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
-import type {
-  AppliedUnits,
-  RevisionSide,
-} from 'src/features/partial-changes/assembly/outcome-rules';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type { AppliedUnits } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import { publicIdsOf } from 'src/features/partial-changes/catalogue/public-id-groups';
 import { isUnledgered } from 'src/features/partial-changes/head-schema/head-schema-check';

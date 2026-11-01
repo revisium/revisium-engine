@@ -3,7 +3,11 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type {
+  ChangeOperation,
+  TableOutcome,
+} from 'src/features/partial-changes/assembly/outcome-rules';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { removeField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
@@ -115,6 +119,51 @@ describe('SystemTargetAssembler: system rows of the target', () => {
         ],
       });
     });
+
+    it.each<{
+      operation: ChangeOperation;
+      selection: Selection;
+      tableVersion: RevisionSide;
+      views: { outcome: TableOutcome; version: RevisionSide };
+    }>([
+      {
+        operation: 'commit',
+        selection: { all: true },
+        tableVersion: 'draft',
+        views: { outcome: 'other', version: 'draft' },
+      },
+      {
+        operation: 'commit',
+        selection: { tableData: [PRODUCTS] },
+        tableVersion: 'draft',
+        views: { outcome: 'base', version: 'head' },
+      },
+      {
+        operation: 'revert',
+        selection: { all: true },
+        tableVersion: 'head',
+        views: { outcome: 'other', version: 'head' },
+      },
+      {
+        operation: 'revert',
+        selection: { tableData: [PRODUCTS] },
+        tableVersion: 'head',
+        views: { outcome: 'base', version: 'draft' },
+      },
+    ])(
+      'keeps the base structure side of a table without structure or views units and takes its views from the $views.version in a $operation of $selection',
+      async ({ operation, selection, tableVersion, views }) => {
+        const draft = await givenContentEqualViewsNextToEditedRow();
+
+        const target = await draft.assembleTarget(operation, selection);
+
+        expect(target.tableOf(PRODUCTS)).toMatchObject({
+          outcome: 'other',
+          version: tableVersion,
+        });
+        expect(target.systemTableOf(SystemTables.Views)).toMatchObject(views);
+      },
+    );
   });
 
   describe('rows without units', () => {
@@ -353,6 +402,15 @@ describe('SystemTargetAssembler: system rows of the target', () => {
     });
     await draft.updateViews(PRODUCTS, tableViews('All', ['code', 'price']));
     await draft.commit();
+
+    return draft;
+  }
+
+  async function givenContentEqualViewsNextToEditedRow(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProductsWithViews();
+    await draft.updateViews(PRODUCTS, tableViews('Renamed', ['code']));
+    await draft.updateViews(PRODUCTS, tableViews('All', ['code', 'price']));
+    await draft.updateRow(PRODUCTS, 'p1', { code: 'uno', price: 1 });
 
     return draft;
   }

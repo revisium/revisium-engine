@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import {
   type AppliedUnits,
   type ChangeOperation,
   OutcomeRules,
-  type RevisionSide,
   type RowOutcomeKind,
   type RowWithOutcome,
   type TableOutcome,
@@ -43,7 +43,7 @@ export interface Estimate {
 }
 
 export interface EstimationSource extends AssemblySource {
-  readonly changedRows: number;
+  readonly changedRowCount: number;
 }
 
 export type GuardedEstimate =
@@ -121,7 +121,7 @@ export class OperationEstimation {
     }
 
     return {
-      changedRows: this.source.changedRows,
+      changedRows: this.source.changedRowCount,
       mergedRows: convertedRowsIn(mixed),
       perRowWorkRows: convertedRowsIn(mixed.filter(needsPerRowWork)),
       mixedTables: inTableIdOrder([

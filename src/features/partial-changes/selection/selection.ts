@@ -1,13 +1,13 @@
-import type { Side } from 'src/features/partial-changes/catalogue/unit';
+import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
 
 export type TableRef =
   | string
-  | { readonly tableId: string; readonly side?: Side };
+  | { readonly tableId: string; readonly side?: HeadQualifier };
 
 export interface RowRef {
   readonly tableId: string;
   readonly rowId: string;
-  readonly side?: Side;
+  readonly side?: HeadQualifier;
 }
 
 export interface FieldRef {

@@ -28,7 +28,7 @@ interface CoveredReads {
 
 type FingerprintRecord = readonly unknown[];
 
-const TABLE_LEVEL_KINDS: ReadonlySet<UnitKind> = new Set([
+const NON_ROW_UNIT_KINDS: ReadonlySet<UnitKind> = new Set([
   'structure',
   'views',
   'sharedSchema',
@@ -219,7 +219,7 @@ class PlanCoverage {
 }
 
 function isRowUnit({ unit }: CatalogueUnit): boolean {
-  return !TABLE_LEVEL_KINDS.has(unit.kind);
+  return !NON_ROW_UNIT_KINDS.has(unit.kind);
 }
 
 function tableIdentityOf({ key, tableIdentities }: CatalogueUnit): string {

@@ -1,9 +1,9 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import {
   type AppliedUnits,
   OutcomeRules,
-  type RevisionSide,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import { systemTableTargetsOf } from 'src/features/partial-changes/assembly/system-table-targets';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';

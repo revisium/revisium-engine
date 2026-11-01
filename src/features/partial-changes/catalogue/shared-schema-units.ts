@@ -3,7 +3,7 @@ import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catal
 import { distinctRows } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import {
   groupBySharedPublicId,
-  publicIdOf,
+  groupPublicIdOf,
 } from 'src/features/partial-changes/catalogue/public-id-groups';
 import { differInContent } from 'src/features/partial-changes/catalogue/row-differences';
 import { sharedSchemaUnitKey } from 'src/features/partial-changes/catalogue/unit-key';
@@ -28,7 +28,7 @@ function sharedSchemaUnitOf(pairs: readonly RowPair[]): CatalogueUnit {
     tableIdentities: [],
     rowIdentities: [],
     systemRows: distinctRows(pairs.flatMap(({ head, draft }) => [head, draft])),
-    unit: { kind: 'sharedSchema', tableId: publicIdOf(pairs) },
+    unit: { kind: 'sharedSchema', tableId: groupPublicIdOf(pairs) },
   };
 }
 

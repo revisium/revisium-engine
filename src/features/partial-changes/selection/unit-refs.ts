@@ -1,6 +1,9 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import type { Side, Unit } from 'src/features/partial-changes/catalogue/unit';
+import type {
+  HeadQualifier,
+  Unit,
+} from 'src/features/partial-changes/catalogue/unit';
 import type {
   RowRef,
   Selection,
@@ -9,7 +12,7 @@ import type {
 import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
 
 export type UnitRef = Unit & {
-  readonly side?: Side;
+  readonly side?: HeadQualifier;
   readonly selector: Selection;
 };
 
@@ -43,7 +46,7 @@ export function requiredUnitsOf(
   });
 }
 
-function selectorOf(unit: Unit, side: Side | undefined): Selection {
+function selectorOf(unit: Unit, side: HeadQualifier | undefined): Selection {
   switch (unit.kind) {
     case 'field':
       return {
@@ -72,7 +75,7 @@ function selectorOf(unit: Unit, side: Side | undefined): Selection {
   }
 }
 
-function rowRefOf(unit: Unit, side: Side | undefined): RowRef {
+function rowRefOf(unit: Unit, side: HeadQualifier | undefined): RowRef {
   const ref = { tableId: unit.tableId, rowId: rowIdOf(unit) };
 
   if (side === undefined) {
@@ -82,7 +85,10 @@ function rowRefOf(unit: Unit, side: Side | undefined): RowRef {
   return { ...ref, side };
 }
 
-function tableRefOf({ tableId }: Unit, side: Side | undefined): TableRef {
+function tableRefOf(
+  { tableId }: Unit,
+  side: HeadQualifier | undefined,
+): TableRef {
   if (side === undefined) {
     return tableId;
   }

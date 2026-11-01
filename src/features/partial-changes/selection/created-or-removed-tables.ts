@@ -2,7 +2,7 @@ import type { CatalogueLookup } from 'src/features/partial-changes/selection/cat
 import type { SelectionTargets } from 'src/features/partial-changes/selection/selection-targets';
 import {
   refusing,
-  requiring,
+  requiringUnit,
   type SelectorMatch,
 } from 'src/features/partial-changes/selection/selector-match';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -25,7 +25,7 @@ export function requireStructureOfCreatedOrRemoved(
 ): SelectorMatch {
   return (
     refusing(targets.refusalsOfStructure(table)) ??
-    requiring(units.tableUnitOf('structure', table), {
+    requiringUnit(units.tableUnitOf('structure', table), {
       code: 'structureBoundData',
       tableId,
       rowId,

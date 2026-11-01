@@ -11,11 +11,14 @@ import type {
   TableHistory,
 } from 'src/features/partial-changes/catalogue/ledger-attribution';
 import {
+  groupPublicIdOf,
   groupRecreations,
-  publicIdOf,
   publicIdsOf,
 } from 'src/features/partial-changes/catalogue/public-id-groups';
-import type { Side, Unit } from 'src/features/partial-changes/catalogue/unit';
+import type {
+  HeadQualifier,
+  Unit,
+} from 'src/features/partial-changes/catalogue/unit';
 import {
   structureUnitKey,
   transientStructureUnitKey,
@@ -27,7 +30,7 @@ import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
 interface StructureUnitParts {
   readonly key: string;
   readonly unit: Unit;
-  readonly side?: Side;
+  readonly side?: HeadQualifier;
   readonly tables: readonly TablePair[];
   readonly transientEntries: LedgerEntry[];
 }
@@ -176,7 +179,7 @@ function transientStructureUnit(group: TableHistory): StructureUnitParts {
 }
 
 function structureUnitAddressOf(tables: readonly TablePair[]): Unit {
-  const tableId = publicIdOf(tables);
+  const tableId = groupPublicIdOf(tables);
   const previousTableId = tables
     .map(previousTableIdOf)
     .find((tableId) => tableId !== undefined);
@@ -191,8 +194,11 @@ function structureUnitAddressOf(tables: readonly TablePair[]): Unit {
 function sideOfRemovedTable(
   tables: readonly TablePair[],
   takenOverTableIds: ReadonlySet<string>,
-): Side | undefined {
-  if (tables.every(isRemoved) && takenOverTableIds.has(publicIdOf(tables))) {
+): HeadQualifier | undefined {
+  if (
+    tables.every(isRemoved) &&
+    takenOverTableIds.has(groupPublicIdOf(tables))
+  ) {
     return 'head';
   }
 

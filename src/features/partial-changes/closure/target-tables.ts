@@ -1,9 +1,9 @@
 import type { JsonValue, Row } from 'src/engine-prisma-types';
 import {
   oppositeOf,
-  type OutcomeRules,
   type RevisionSide,
-} from 'src/features/partial-changes/assembly/outcome-rules';
+} from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type { OutcomeRules } from 'src/features/partial-changes/assembly/outcome-rules';
 import { versionOn } from 'src/features/partial-changes/assembly/read-tables';
 import type {
   AssembledTarget,

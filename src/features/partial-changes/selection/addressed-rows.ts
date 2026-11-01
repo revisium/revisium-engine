@@ -1,8 +1,8 @@
-import type { Side } from 'src/features/partial-changes/catalogue/unit';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
 import {
   PublicIdIndex,
   resolveSide,
-  type VersionSide,
 } from 'src/features/partial-changes/selection/public-id-index';
 import type {
   Selection,
@@ -23,7 +23,7 @@ export type ExistingRowIdsReader = Pick<
 interface AddressedRowId {
   readonly tableId: string;
   readonly rowId: string;
-  readonly side?: Side;
+  readonly side?: HeadQualifier;
 }
 
 export class AddressedRows {
@@ -34,10 +34,10 @@ export class AddressedRows {
   public sideOf(
     table: TablePair,
     rowId: string,
-    side?: Side,
-  ): VersionSide | undefined {
-    return resolveSide(side, (versionSide) =>
-      this.exists(table[versionSide], rowId),
+    side?: HeadQualifier,
+  ): RevisionSide | undefined {
+    return resolveSide(side, (revisionSide) =>
+      this.exists(table[revisionSide], rowId),
     );
   }
 
@@ -89,7 +89,7 @@ function rowIdsByTableVersion(
 export function tablesOfRow(
   tables: PublicIdIndex<TablePair>,
   tableId: string,
-  side: Side | undefined,
+  side: HeadQualifier | undefined,
 ): TablePair[] {
   if (side === 'head') {
     return distinctTables([

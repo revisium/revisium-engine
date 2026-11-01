@@ -23,6 +23,11 @@ import type { RepairState, RevisionLedger } from './repair-state-reader';
 
 export type ReplayRules = Pick<LedgerReplayInput, 'refs' | 'validator'>;
 
+export interface StoredLedgerReplays {
+  readonly head: ReplayedLedger;
+  readonly draft: ReplayedLedger;
+}
+
 export type TableAssessment =
   | { readonly outcome: RepairOutcome }
   | {
@@ -49,6 +54,7 @@ export class RepairLedger {
   constructor(
     private readonly state: RepairState,
     public readonly rules: ReplayRules,
+    storedReplays: StoredLedgerReplays,
   ) {
     const { published, pending } = splitLedger(
       state.head.migrationRows,
@@ -57,7 +63,7 @@ export class RepairLedger {
     this.published = migrationsOf(published);
     this.pending = migrationsOf(pending);
     this.lastPublished = lastPublishedBoundsOf(published);
-    this.headReplay = this.replay(this.published);
+    this.headReplay = storedReplays.head;
     this.damagedTableIds = [...state.head.tableVersionIds.keys()].filter(
       (tableId) =>
         isLedgered(this.headReplay.slots, tableId) &&
@@ -68,11 +74,10 @@ export class RepairLedger {
       schemas: schemasOf(state.head),
       ...rules,
     });
-    const draftReplay = this.replay(
-      migrationsOf(ledgerOf(state.draft.migrationRows)),
+    this.passingDraftTableIds = this.draftTablesReproducedBy(
+      storedReplays.draft,
     );
-    this.passingDraftTableIds = this.draftTablesReproducedBy(draftReplay);
-    this.baselineFailures = failingMigrationIdsOf(draftReplay);
+    this.baselineFailures = failingMigrationIdsOf(storedReplays.draft);
     this.attributedSlots = attributePendingLedger(
       this.pending,
       state.head.tableVersionIds.keys(),
@@ -204,6 +209,16 @@ export class RepairLedger {
 
     return pendingSchemaHistory(headHistory, draftHistory).extendsHead;
   }
+}
+
+export function storedLedgerReplayOf(
+  revision: RevisionLedger,
+  rules: ReplayRules,
+): ReplayedLedger {
+  return replayLedger({
+    ledger: migrationsOf(ledgerOf(revision.migrationRows)),
+    ...rules,
+  });
 }
 
 function migrationsOf(entries: readonly LedgerEntry[]): Migration[] {

@@ -30,6 +30,6 @@ export class PlanSchemaLedgerRepairHandler implements IQueryHandler<
   ): Promise<SchemaLedgerRepairPlan> {
     const state = await this.stateReader.readUnlockedBranch(data);
 
-    return this.repairPlanning.plan(state, data.tableIds);
+    return this.repairPlanning.plan(state, { tableIds: data.tableIds });
   }
 }

@@ -10,9 +10,20 @@ import {
   DraftRowsValidation,
   type ValidatedRows,
 } from './draft-rows-validation';
-import { RepairLedger, type TableAssessment } from './repair-ledger';
+import {
+  RepairLedger,
+  type ReplayRules,
+  type StoredLedgerReplays,
+  storedLedgerReplayOf,
+  type TableAssessment,
+} from './repair-ledger';
 import { RepairPlanner } from './repair-planner';
 import type { RepairState } from './repair-state-reader';
+
+export interface RepairPlanningOptions {
+  readonly tableIds?: readonly string[];
+  readonly storedReplays?: Partial<StoredLedgerReplays>;
+}
 
 @Injectable()
 export class RepairPlanning {
@@ -24,11 +35,15 @@ export class RepairPlanning {
 
   public async plan(
     state: RepairState,
-    tableIds?: readonly string[],
+    { tableIds, storedReplays = {} }: RepairPlanningOptions = {},
   ): Promise<SchemaLedgerRepairPlan> {
-    const ledger = new RepairLedger(state, {
+    const rules: ReplayRules = {
       refs: this.schemaStore.refs,
       validator: this.validator,
+    };
+    const ledger = new RepairLedger(state, rules, {
+      head: storedReplays.head ?? storedLedgerReplayOf(state.head, rules),
+      draft: storedReplays.draft ?? storedLedgerReplayOf(state.draft, rules),
     });
     const assessments = assessmentsOf(
       ledger,

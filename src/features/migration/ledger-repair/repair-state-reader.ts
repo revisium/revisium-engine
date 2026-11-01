@@ -77,17 +77,16 @@ export class RepairStateReader {
       where: { revisions: { some: { id: revisionId } } },
       select: { id: true, versionId: true, system: true },
     });
-    const schemaRows = await this.readSystemRows(tables, SystemTables.Schema);
 
-    return {
-      tableVersionIds: new Map(
+    return revisionLedgerOf(
+      new Map(
         tables
           .filter(({ system }) => !system)
           .map(({ id, versionId }) => [id, versionId]),
       ),
-      schemas: new Map(schemaRows.map((row) => [row.id, storedSchemaOf(row)])),
-      migrationRows: await this.readSystemRows(tables, SystemTables.Migration),
-    };
+      await this.readSystemRows(tables, SystemTables.Schema),
+      await this.readSystemRows(tables, SystemTables.Migration),
+    );
   }
 
   private readSystemRows(
@@ -104,6 +103,18 @@ export class RepairStateReader {
       where: { tables: { some: { versionId: table.versionId } } },
     });
   }
+}
+
+export function revisionLedgerOf(
+  tableVersionIds: ReadonlyMap<string, string>,
+  schemaRows: readonly Row[],
+  migrationRows: readonly Row[],
+): RevisionLedger {
+  return {
+    tableVersionIds,
+    schemas: new Map(schemaRows.map((row) => [row.id, storedSchemaOf(row)])),
+    migrationRows,
+  };
 }
 
 function storedSchemaOf(row: Row): StoredSchema {

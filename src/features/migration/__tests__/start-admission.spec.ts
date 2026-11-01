@@ -198,7 +198,7 @@ describe('Async migration start', () => {
     it('carries its source id in the payload, so the swap records the update under it', async () => {
       const table = await givenDraftOwnedTable(kit, ROW_COUNT);
 
-      await importFieldAddition(kit, table, {
+      await startImportedFieldAddition(kit, table, {
         field: FIELD,
         migrationId: IMPORTED_MIGRATION_ID,
       });

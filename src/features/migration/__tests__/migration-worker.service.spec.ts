@@ -1,4 +1,5 @@
 import { HeldMigrationLeases } from 'src/features/migration/services/held-migration-leases';
+import { MigrationDrivers } from 'src/features/migration/services/migration-drivers';
 import { MigrationWorkerService } from 'src/features/migration/services/migration-worker.service';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 
@@ -228,6 +229,7 @@ function createWorker(workerMode: WorkerMode) {
     transitions as never,
     legacyMigrations as never,
     heldLeases,
+    new MigrationDrivers(),
     { workerMode, pollIntervalMs: POLL_INTERVAL_MS },
   );
 

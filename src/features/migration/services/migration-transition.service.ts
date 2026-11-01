@@ -11,6 +11,7 @@ import {
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import {
   ACTIVE_MIGRATION_STATUSES,
+  isActiveMigrationStatus,
   MigrationPhase,
   MigrationStatus,
 } from 'src/features/migration/types/migration.types';
@@ -96,7 +97,7 @@ export class MigrationTransitionService {
       select: { status: true },
     });
 
-    if (!migration || !isActive(migration.status)) {
+    if (!migration || !isActiveMigrationStatus(migration.status)) {
       return null;
     }
 
@@ -118,22 +119,18 @@ export class MigrationTransitionService {
     return claimed.count === 1 ? lease : null;
   }
 
-  async findStalledSwaps(): Promise<OwnershipEpoch[]> {
-    const owners = await this.prisma.tableMigration.findMany({
-      where: {
-        ...this.inRecoveryScope(),
-        status: MigrationStatus.SWAPPING,
-        lockedBy: { not: null },
-        ...this.withoutProgressWithin(this.swapBoundMs),
-      },
-      select: { id: true, lockedBy: true, lockedAt: true },
+  findStalledSwaps(): Promise<OwnershipEpoch[]> {
+    return this.findStalledSwapsWhere(this.inRecoveryScope());
+  }
+
+  async findStalledSwap(
+    migrationId: string,
+  ): Promise<OwnershipEpoch | undefined> {
+    const [stalledOwner] = await this.findStalledSwapsWhere({
+      id: migrationId,
     });
 
-    return owners.flatMap(({ id, lockedBy, lockedAt }) =>
-      lockedBy && lockedAt
-        ? [{ migrationId: id, token: lockedBy, lockedAt }]
-        : [],
-    );
+    return stalledOwner;
   }
 
   takeOver(stalledOwner: OwnershipEpoch): Promise<MigrationLease | null> {
@@ -148,22 +145,12 @@ export class MigrationTransitionService {
     );
   }
 
-  async cancelStalled(): Promise<number> {
-    const cancelled = await this.prisma.tableMigration.updateMany({
-      where: {
-        ...this.inRecoveryScope(),
-        status: { in: [MigrationStatus.PENDING, MigrationStatus.COPYING] },
-        ...this.withoutProgressWithin(this.stallTimeoutMs),
-      },
-      data: {
-        status: MigrationStatus.CANCELLED,
-        errorMessage: STALLED,
-        completedAt: new Date(),
-        ...RELEASED,
-      },
-    });
+  cancelStalled(): Promise<number> {
+    return this.cancelStalledWhere(this.inRecoveryScope());
+  }
 
-    return cancelled.count;
+  async cancelIfStalled(migrationId: string): Promise<boolean> {
+    return (await this.cancelStalledWhere({ id: migrationId })) === 1;
   }
 
   async findStillOwned(leases: MigrationLease[]): Promise<MigrationLease[]> {
@@ -370,6 +357,46 @@ export class MigrationTransitionService {
     return failed.count === 1;
   }
 
+  private async findStalledSwapsWhere(
+    scope: Prisma.TableMigrationWhereInput,
+  ): Promise<OwnershipEpoch[]> {
+    const owners = await this.prisma.tableMigration.findMany({
+      where: {
+        ...scope,
+        status: MigrationStatus.SWAPPING,
+        lockedBy: { not: null },
+        ...this.withoutProgressWithin(this.swapBoundMs),
+      },
+      select: { id: true, lockedBy: true, lockedAt: true },
+    });
+
+    return owners.flatMap(({ id, lockedBy, lockedAt }) =>
+      lockedBy && lockedAt
+        ? [{ migrationId: id, token: lockedBy, lockedAt }]
+        : [],
+    );
+  }
+
+  private async cancelStalledWhere(
+    scope: Prisma.TableMigrationWhereInput,
+  ): Promise<number> {
+    const cancelled = await this.prisma.tableMigration.updateMany({
+      where: {
+        ...scope,
+        status: { in: [MigrationStatus.PENDING, MigrationStatus.COPYING] },
+        ...this.withoutProgressWithin(this.stallTimeoutMs),
+      },
+      data: {
+        status: MigrationStatus.CANCELLED,
+        errorMessage: STALLED,
+        completedAt: new Date(),
+        ...RELEASED,
+      },
+    });
+
+    return cancelled.count;
+  }
+
   private claimSwap(lease: MigrationLease): Promise<MigrationLease | null> {
     return this.replaceSwapOwner(
       {
@@ -505,8 +532,4 @@ export class MigrationTransitionService {
 
     return { lockedBy: lease.token, lockedAt: now, heartbeatAt: now };
   }
-}
-
-function isActive(status: string): boolean {
-  return ACTIVE_MIGRATION_STATUSES.some((active) => active === status);
 }

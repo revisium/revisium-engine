@@ -14,6 +14,8 @@ import { SwapRecheckService } from 'src/features/migration/services/swap-recheck
 import { LegacyMigrationDisposalService } from 'src/features/migration/services/legacy-migration-disposal.service';
 import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
 import { HeldMigrationLeases } from 'src/features/migration/services/held-migration-leases';
+import { MigrationDrivers } from 'src/features/migration/services/migration-drivers';
+import { MigrationImportService } from 'src/features/migration/services/migration-import.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MIGRATION_QUERY_HANDLERS } from 'src/features/migration/queries/handlers';
@@ -31,12 +33,19 @@ const SERVICES = [
   LegacyMigrationDisposalService,
   MigrationRecoveryScope,
   HeldMigrationLeases,
+  MigrationDrivers,
+  MigrationImportService,
   MigrationApiService,
   ...MIGRATION_QUERY_HANDLERS,
   ...MIGRATION_COMMAND_HANDLERS,
 ];
 
-const EXPORTS = [MigrationLockService, MigrationService, MigrationApiService];
+const EXPORTS = [
+  MigrationLockService,
+  MigrationService,
+  MigrationImportService,
+  MigrationApiService,
+];
 
 @Global()
 @Module({})

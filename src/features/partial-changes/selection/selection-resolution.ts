@@ -38,6 +38,8 @@ export type BlockerCode =
   | 'unrecordedStructureChange'
   | 'ledgerInconsistent'
   | 'invalidRow'
+  | 'migrationInProgress'
+  | 'structureCommitUnavailable'
   | RefusalCode;
 
 export interface Reason {

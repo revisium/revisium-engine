@@ -23,6 +23,7 @@ export type ExistingRowIdsReader = Pick<
 interface AddressedRowId {
   readonly tableId: string;
   readonly rowId: string;
+  readonly side?: Side;
 }
 
 export class AddressedRows {
@@ -73,20 +74,51 @@ function rowIdsByTableVersion(
   const tables = new PublicIdIndex(snapshot.tables, (pair) => pair);
   const rowIds = new Map<string, Set<string>>();
 
-  for (const { tableId, rowId } of addressedRowIdsOf(selection)) {
-    const table = tables.resolve(tableId);
-
-    for (const version of [table?.head, table?.draft]) {
-      if (version) {
-        rowIds.set(
-          version.versionId,
-          (rowIds.get(version.versionId) ?? new Set()).add(rowId),
-        );
-      }
+  for (const { tableId, rowId, side } of addressedRowIdsOf(selection)) {
+    for (const version of versionsOf(tablesOfRow(tables, tableId, side))) {
+      rowIds.set(
+        version.versionId,
+        (rowIds.get(version.versionId) ?? new Set()).add(rowId),
+      );
     }
   }
 
   return rowIds;
+}
+
+export function tablesOfRow(
+  tables: PublicIdIndex<TablePair>,
+  tableId: string,
+  side: Side | undefined,
+): TablePair[] {
+  if (side === 'head') {
+    return distinctTables([
+      tables.on('head', tableId),
+      tables.on('draft', tableId),
+    ]);
+  }
+
+  return distinctTables([tables.resolve(tableId)]);
+}
+
+function distinctTables(
+  tables: readonly (TablePair | undefined)[],
+): TablePair[] {
+  const byIdentity = new Map<string, TablePair>();
+
+  for (const table of tables) {
+    if (table && !byIdentity.has(table.identity)) {
+      byIdentity.set(table.identity, table);
+    }
+  }
+
+  return [...byIdentity.values()];
+}
+
+function versionsOf(tables: readonly TablePair[]): TableVersion[] {
+  return tables.flatMap(({ head, draft }) =>
+    [head, draft].filter((version) => version !== undefined),
+  );
 }
 
 function addressedRowIdsOf(selection: Selection): AddressedRowId[] {

@@ -11,6 +11,7 @@ import { OperationEstimator } from 'src/features/partial-changes/limits/operatio
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { UnitListing } from 'src/features/partial-changes/listing/unit-listing';
 import { PartialChangesApiService } from 'src/features/partial-changes/partial-changes-api.service';
+import { ChangePlanner } from 'src/features/partial-changes/planning/change-planner';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
 import { PARTIAL_CHANGES_QUERY_HANDLERS } from 'src/features/partial-changes/queries/handlers';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
@@ -59,6 +60,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     DependencyClosure,
     TargetValidator,
     PlanFingerprint,
+    ChangePlanner,
     UnitListing,
     PartialChangesApiService,
     ...PARTIAL_CHANGES_QUERY_HANDLERS,

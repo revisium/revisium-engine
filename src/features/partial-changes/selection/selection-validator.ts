@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
@@ -20,10 +21,23 @@ type ObjectRecord = Readonly<Record<string, unknown>>;
 
 const HEAD_SIDE = 'head';
 
+const OPERATIONS: ReadonlySet<unknown> = new Set<ChangeOperation>([
+  'commit',
+  'revert',
+]);
+
 export function validateSelection(input: unknown): Selection {
   checkSelection(input, 'selection');
 
   return input as Selection;
+}
+
+export function validateOperation(input: unknown): ChangeOperation {
+  if (!OPERATIONS.has(input)) {
+    throw invalid(`operation must be 'commit' or 'revert'`);
+  }
+
+  return input as ChangeOperation;
 }
 
 export function validateRequiredAdditionsAcceptance({

@@ -4,6 +4,7 @@ import {
   createDatabaseServiceTestKit,
   type DatabaseServiceTestKit,
 } from 'src/__tests__/kit/create-database-service-test-kit';
+import { blockEventLoopFor } from 'src/__tests__/utils/event-loop';
 import { TransactionPrismaClient } from 'src/features/share/types';
 import {
   DeadlineHandle,
@@ -596,14 +597,6 @@ function blockingPastTheDeadline(
   };
 
   return operation;
-}
-
-function blockEventLoopFor(durationMs: number): void {
-  const until = performance.now() + durationMs;
-
-  while (performance.now() < until) {
-    continue;
-  }
 }
 
 function checkpointingPastTheDeadline() {

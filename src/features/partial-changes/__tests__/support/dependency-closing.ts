@@ -26,6 +26,7 @@ import {
   unitRefOf,
 } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { readSelectionSource, unitKeyed } from './selection-resolving';
 import { readInPlanningTransaction } from './snapshot-reading';
 
@@ -46,6 +47,10 @@ export interface ClosedPlan {
   readonly target: AssembledTarget;
 }
 
+const WITHOUT_DEADLINE: DeadlineHandle = {
+  checkpoint: () => Promise.resolve(),
+};
+
 export function readClosedDependencies(
   kit: PartialChangesTestKit,
   branch: ChangesBranch,
@@ -54,10 +59,11 @@ export function readClosedDependencies(
 ): Promise<ClosureView> {
   return readInPlanningTransaction(kit, async () => {
     const source = await readSelectionSource(kit, branch, selection);
-    const closure = await kit.dependencyClosure.close(source, {
-      operation,
-      selection,
-    });
+    const closure = await kit.dependencyClosure.close(
+      source,
+      { operation, selection },
+      WITHOUT_DEADLINE,
+    );
 
     return {
       kind: closure.kind,
@@ -77,10 +83,11 @@ export async function closedPlanOf(
   selection: Selection,
 ): Promise<ClosedPlan> {
   const source = await readSelectionSource(kit, branch, selection);
-  const closure = await kit.dependencyClosure.close(source, {
-    operation,
-    selection,
-  });
+  const closure = await kit.dependencyClosure.close(
+    source,
+    { operation, selection },
+    WITHOUT_DEADLINE,
+  );
 
   if (closure.kind !== 'closed') {
     throw new Error('The closure was refused as too large');

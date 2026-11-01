@@ -62,6 +62,16 @@ export class MigrationLockService {
   }
 
   async checkRevisionLock(revisionId: string): Promise<void> {
+    const lock = await this.findRevisionLock(revisionId);
+
+    if (lock) {
+      throw new MigrationLockedException(lock);
+    }
+  }
+
+  async findRevisionLock(
+    revisionId: string,
+  ): Promise<MigrationLockedDetails | undefined> {
     const client = this.transactionService.getTransactionOrPrisma();
     const migration = await client.tableMigration.findFirst({
       where: {
@@ -70,22 +80,23 @@ export class MigrationLockService {
       },
     });
 
-    if (migration) {
-      const details: MigrationLockedDetails = {
-        migrationId: migration.id,
-        tableId: migration.tableId,
-        status: migration.status as MigrationStatus,
-        progress: {
-          percentage:
-            migration.totalRows > 0
-              ? (migration.copiedRows / migration.totalRows) *
-                PERCENTAGE_MULTIPLIER
-              : 0,
-          copiedRows: migration.copiedRows,
-          totalRows: migration.totalRows,
-        },
-      };
-      throw new MigrationLockedException(details);
+    if (!migration) {
+      return undefined;
     }
+
+    return {
+      migrationId: migration.id,
+      tableId: migration.tableId,
+      status: migration.status as MigrationStatus,
+      progress: {
+        percentage:
+          migration.totalRows > 0
+            ? (migration.copiedRows / migration.totalRows) *
+              PERCENTAGE_MULTIPLIER
+            : 0,
+        copiedRows: migration.copiedRows,
+        totalRows: migration.totalRows,
+      },
+    };
   }
 }

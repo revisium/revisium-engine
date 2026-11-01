@@ -93,11 +93,6 @@ export class ItemsResolution {
   public readonly blockers: PlanBlocker[] = [];
 
   private readonly unmatched = new Map<ItemKind, unknown[]>();
-  private anyMatched = false;
-
-  public get hasMatched(): boolean {
-    return this.anyMatched;
-  }
 
   public get hasUnmatched(): boolean {
     return this.unmatched.size > 0;
@@ -124,7 +119,6 @@ export class ItemsResolution {
       return;
     }
 
-    this.anyMatched = true;
     match.selected.forEach((key) => this.selected.add(key));
     match.required.forEach(({ key, reason }) => this.addRequired(key, reason));
     this.blockers.push(...match.blockers);

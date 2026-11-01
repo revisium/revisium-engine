@@ -40,6 +40,7 @@ export class RepairLedger {
   public readonly lastPublished: MigrationBounds;
   public readonly damagedTableIds: readonly string[];
   public readonly passingDraftTableIds: ReadonlySet<string>;
+  public readonly baselineFailures: ReadonlySet<string>;
   private readonly headReplay: ReplayedLedger;
   private readonly headSchemaBaseline: ReplayedLedger;
   private readonly attributedSlots: readonly AttributedSlot[];
@@ -47,7 +48,7 @@ export class RepairLedger {
 
   constructor(
     private readonly state: RepairState,
-    private readonly rules: ReplayRules,
+    public readonly rules: ReplayRules,
   ) {
     const { published, pending } = splitLedger(
       state.head.migrationRows,
@@ -67,9 +68,11 @@ export class RepairLedger {
       schemas: schemasOf(state.head),
       ...rules,
     });
-    this.passingDraftTableIds = this.draftTablesReproducedBy(
-      this.replay(migrationsOf(ledgerOf(state.draft.migrationRows))),
+    const draftReplay = this.replay(
+      migrationsOf(ledgerOf(state.draft.migrationRows)),
     );
+    this.passingDraftTableIds = this.draftTablesReproducedBy(draftReplay);
+    this.baselineFailures = failingMigrationIdsOf(draftReplay);
     this.attributedSlots = attributePendingLedger(
       this.pending,
       state.head.tableVersionIds.keys(),
@@ -205,6 +208,16 @@ export class RepairLedger {
 
 function migrationsOf(entries: readonly LedgerEntry[]): Migration[] {
   return entries.map(({ migration }) => migration);
+}
+
+function failingMigrationIdsOf(replay: ReplayedLedger): Set<string> {
+  return new Set(
+    replay.slots
+      .map(({ failure }) => failure?.migrationId)
+      .filter(
+        (migrationId): migrationId is string => migrationId !== undefined,
+      ),
+  );
 }
 
 function schemasOf(revision: RevisionLedger): Map<string, JsonSchema> {

@@ -1,6 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { arr, num, numFormula, obj, str } from '@revisium/schema-toolkit/mocks';
-import type { JsonPatch } from '@revisium/schema-toolkit/types';
+import type {
+  JsonPatch,
+  JsonSchema,
+  JsonValue,
+} from '@revisium/schema-toolkit/types';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -28,6 +32,7 @@ import {
   expectStrictlyAscending,
   givenActiveMigration,
   importMigrations,
+  migratedRowOf,
   initAt,
   lastPublishedMigrationId,
   pendingMigrationIds,
@@ -42,6 +47,7 @@ const GOODS = 'goods';
 const TAGS = 'tags';
 const LABELS = 'labels';
 const NOTES = 'notes';
+const CARDS = 'cards';
 const INVOICES = 'invoices';
 const ALPHAS = 'alphas';
 const BETAS = 'betas';
@@ -59,6 +65,12 @@ const productSchema = obj({
   category: str({ foreignKey: CATEGORIES }),
 });
 const tagSchema = obj({ label: str() });
+const cardSchema = obj({ title: str(), tag: str({ foreignKey: TAGS }) });
+const describedNoteSchema = { ...obj({ text: str() }), description: 'notes' };
+const describedAddressSchema = {
+  ...obj({ city: str() }),
+  description: 'where',
+};
 const noteSchema = obj({ [TEXT]: str() });
 const taggedNoteSchema = obj({
   text: str(),
@@ -79,6 +91,7 @@ const products: TableFixture = {
 const tags: TableFixture = { schema: tagSchema, rows: { t1: { label: 'x' } } };
 
 const addColor = [addField(COLOR, str())];
+const addTagReference = [addField('tag', str({ foreignKey: TAGS }))];
 const addTone = [addField(TONE, str())];
 const addNote = [addField('note', str())];
 
@@ -87,6 +100,15 @@ interface UnrepairableCase {
   readonly given: () => Promise<ChangesScenario>;
   readonly tableId: string;
   readonly outcome: RepairOutcome;
+}
+
+interface ContainerCase {
+  readonly change: string;
+  readonly schema: JsonSchema;
+  readonly damage: JsonPatch[];
+  readonly removedPaths: string[];
+  readonly row: JsonValue;
+  readonly migratedRow: JsonValue;
 }
 
 interface HistoryCase {
@@ -202,21 +224,77 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('validates the repair where it is inserted, before a pending rename of the table its new foreign key names', async () => {
-      const addTag = [addField('tag', str({ foreignKey: TAGS }))];
       const draft = await ChangesScenario.committed(kit, {
         [TAGS]: { schema: tagSchema },
         [NOTES]: { schema: noteSchema },
       });
-      await completeAsyncMigrationInPlace(kit, draft, NOTES, addTag);
+      await completeAsyncMigrationInPlace(kit, draft, NOTES, addTagReference);
       await draft.renameTable(TAGS, LABELS);
 
       const plan = await planRepair(kit, draft, [NOTES]);
 
       expect(repairOf(plan, NOTES)).toMatchObject({
         outcome: 'repaired',
-        patches: addTag,
+        patches: addTagReference,
       });
     });
+
+    it.each<ContainerCase>([
+      {
+        change: 'a container description and a removed child',
+        schema: obj({ text: str(), old: str() }),
+        damage: [
+          removeField('old'),
+          { op: 'replace', path: '', value: describedNoteSchema },
+        ],
+        removedPaths: ['/properties/old'],
+        row: { text: 'a', old: 'b' },
+        migratedRow: { text: 'a' },
+      },
+      {
+        change: 'a container description only',
+        schema: obj({ text: str() }),
+        damage: [{ op: 'replace', path: '', value: describedNoteSchema }],
+        removedPaths: [],
+        row: { text: 'a' },
+        migratedRow: { text: 'a' },
+      },
+      {
+        change: 'a nested container description and a removed nested child',
+        schema: obj({ address: obj({ city: str(), zip: str() }) }),
+        damage: [
+          { op: 'remove', path: '/properties/address/properties/zip' },
+          {
+            op: 'replace',
+            path: '/properties/address',
+            value: describedAddressSchema,
+          },
+        ],
+        removedPaths: ['/properties/address/properties/zip'],
+        row: { address: { city: 'c', zip: 'z' } },
+        migratedRow: { address: { city: 'c' } },
+      },
+    ])(
+      'plans $change as child operations before a metadata replace that rows migrate through',
+      async ({ schema, damage, removedPaths, row, migratedRow }) => {
+        const draft = await ChangesScenario.committed(kit, {
+          [NOTES]: { schema },
+        });
+        await completeAsyncMigrationInPlace(kit, draft, NOTES, damage);
+
+        const plan = await planRepair(kit, draft, [NOTES]);
+
+        const repair = repairOf(plan, NOTES);
+        expect(repair).toMatchObject({
+          outcome: 'repaired',
+          patches: damage,
+          removedPaths,
+        });
+        expect(migratedRowOf(kit, schema, row, repair.patches ?? [])).toEqual(
+          migratedRow,
+        );
+      },
+    );
 
     it('finds a Draft that already records the repair', async () => {
       const draft = await givenUnpublishedInPlaceMigration();
@@ -464,6 +542,27 @@ describe('Schema ledger repair planning', () => {
       ]);
     });
 
+    it('rejects a repair whose new foreign key makes a pending removal of the named table fail', async () => {
+      const draft = await givenRepairNamingRemovedTags();
+
+      const plan = await planRepair(kit, draft, [NOTES]);
+
+      expect(plan.tables).toEqual([
+        { tableId: NOTES, outcome: 'needsDraftStructureRevert' },
+      ]);
+      expect(plan.renumbered).toEqual([]);
+    });
+
+    it('repairs a table while a pending removal it also blocks already failed before the repair', async () => {
+      const draft = await givenRepairNamingTagsWhoseRemovalAlreadyFails();
+
+      const plan = await planRepair(kit, draft, [NOTES]);
+
+      expect(plan.tables).toEqual([
+        expect.objectContaining({ tableId: NOTES, outcome: 'repaired' }),
+      ]);
+    });
+
     it('plans every damaged Head table when no table is named', async () => {
       const draft = await givenUnpublishedInPlaceMigration();
       await recordLedgerRepair(draft, PRODUCTS, addColor);
@@ -612,6 +711,32 @@ describe('Schema ledger repair planning', () => {
   async function givenRecordedRepairBesideTags(): Promise<ChangesScenario> {
     const draft = await givenDamageBesideTags();
     await recordLedgerRepair(draft, PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenRepairNamingRemovedTags(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [TAGS]: { schema: tagSchema },
+      [NOTES]: { schema: noteSchema },
+    });
+    await draft.removeTable(TAGS);
+    await completeAsyncMigrationInPlace(kit, draft, NOTES, addTagReference);
+
+    return draft;
+  }
+
+  async function givenRepairNamingTagsWhoseRemovalAlreadyFails(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [TAGS]: { schema: tagSchema },
+      [NOTES]: { schema: noteSchema },
+      [CARDS]: { schema: cardSchema },
+    });
+    await completeAsyncMigrationInPlace(kit, draft, CARDS, [
+      removeField('tag'),
+    ]);
+    await draft.removeTable(TAGS);
+    await completeAsyncMigrationInPlace(kit, draft, NOTES, addTagReference);
 
     return draft;
   }

@@ -1,16 +1,21 @@
-import { deepEqual } from '@revisium/schema-toolkit/lib';
+import { deepEqual, SchemaTable } from '@revisium/schema-toolkit/lib';
+import { generateDefaultValue } from '@revisium/schema-toolkit/model';
 import {
   type JsonArraySchema,
   type JsonObjectSchema,
   type JsonPatch,
   type JsonSchema,
   JsonSchemaTypeName,
+  type JsonValue,
   type UpdateMigration,
 } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
+import type { SchemaRefs } from 'src/features/share/ledger-replay/native-schema-rules';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import { NativeIdSequence } from './repair-ids';
 import type { RepairLedger } from './repair-ledger';
+
+const SAMPLE_ROW_ID = 'sample';
 
 export interface RepairPatch {
   readonly patches: JsonPatch[];
@@ -39,6 +44,12 @@ export function repairPatchOf(
 
   if (
     !reproducesWhereInserted(ledger, tableId, repair, headSchema) ||
+    !migratesSampleRow(
+      ledger.rules.refs,
+      replayedSchema,
+      headSchema,
+      patches,
+    ) ||
     !validator.validateHistoryPatchesSchema([repair]).result
   ) {
     return undefined;
@@ -64,15 +75,63 @@ export function schemaPatchesBetween(
     return [];
   }
 
-  if (isObject(from) && isObject(to) && sameObjectShell(from, to)) {
-    return propertyPatchesBetween(from.properties, to.properties, path);
+  if (isObject(from) && isObject(to)) {
+    return [
+      ...propertyPatchesBetween(from.properties, to.properties, path),
+      ...metadataPatchesBetween(from, to, path, sameObjectShell),
+    ];
   }
 
-  if (isArray(from) && isArray(to) && sameArrayShell(from, to)) {
-    return schemaPatchesBetween(from.items, to.items, `${path}/items`);
+  if (isArray(from) && isArray(to)) {
+    return [
+      ...schemaPatchesBetween(from.items, to.items, `${path}/items`),
+      ...metadataPatchesBetween(from, to, path, sameArrayShell),
+    ];
   }
 
   return [{ op: 'replace', path, value: to }];
+}
+
+function metadataPatchesBetween<T extends JsonSchema>(
+  from: T,
+  to: T,
+  path: string,
+  sameShell: (from: T, to: T) => boolean,
+): JsonPatch[] {
+  if (sameShell(from, to)) {
+    return [];
+  }
+
+  return [{ op: 'replace', path, value: to }];
+}
+
+function migratesSampleRow(
+  refs: SchemaRefs,
+  replayedSchema: JsonSchema,
+  headSchema: JsonSchema,
+  patches: JsonPatch[],
+): boolean {
+  try {
+    const replayedTable = new SchemaTable(replayedSchema, refs);
+    replayedTable.addRow(SAMPLE_ROW_ID, sampleRowOf(replayedSchema, refs));
+    replayedTable.applyPatches(patches);
+
+    const headTable = new SchemaTable(headSchema, refs);
+    for (const { id, data } of replayedTable.getRows()) {
+      headTable.addRow(id, data);
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sampleRowOf(schema: JsonSchema, refs: SchemaRefs): JsonValue {
+  return generateDefaultValue(schema, {
+    arrayItemCount: 1,
+    refSchemas: { ...refs },
+  }) as JsonValue;
 }
 
 function reproducesWhereInserted(

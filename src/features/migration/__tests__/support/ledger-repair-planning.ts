@@ -1,6 +1,9 @@
+import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import type {
   InitMigration,
+  JsonPatch,
   JsonSchema,
+  JsonValue,
   Migration,
 } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
@@ -161,4 +164,17 @@ async function ledgerIdsOf(
   return snapshot.systemRows.migrations[side]
     .map(({ id }) => id)
     .sort(compareCodePoints);
+}
+
+export function migratedRowOf(
+  kit: PartialChangesTestKit,
+  schema: JsonSchema,
+  row: JsonValue,
+  patches: readonly JsonPatch[],
+): JsonValue | undefined {
+  const table = new SchemaTable(schema, kit.replayRules.refs);
+  table.addRow('row', row);
+  table.applyPatches([...patches]);
+
+  return table.getRows().at(0)?.data;
 }

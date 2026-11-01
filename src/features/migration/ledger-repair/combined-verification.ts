@@ -1,6 +1,9 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
 import type { RenumberedMigration } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
-import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
+import type {
+  ReplayedLedger,
+  ReplayedSlot,
+} from 'src/features/share/ledger-replay/ledger-replay';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
   NativeIdSequence,
@@ -35,6 +38,10 @@ export function verifyCombinedPlan(
   candidates: ReadonlyMap<string, RepairCandidate>,
   rejections: ReadonlyMap<string, Rejection> = new Map(),
 ): VerifiedPlan {
+  if (candidates.size === 0) {
+    return { repairIds: new Map(), renumbered: [], rejections };
+  }
+
   const round = new PlanRound(ledger, candidates);
   const rejected = round.rejections();
 
@@ -56,6 +63,7 @@ export function verifyCombinedPlan(
 class PlanRound {
   public readonly repairIds: ReadonlyMap<string, string>;
   public readonly renumbered: readonly RenumberedMigration[];
+  private readonly previousIds: ReadonlyMap<string, string>;
   private readonly replay: ReplayedLedger;
   private readonly coupling: TableCoupling;
 
@@ -66,6 +74,9 @@ class PlanRound {
     const repairs = numberedRepairsOf(ledger, candidates);
     this.repairIds = new Map(repairs.map(({ tableId, id }) => [tableId, id]));
     this.renumbered = renumberedAfterRepairs(repairs, ledger.pending);
+    this.previousIds = new Map(
+      this.renumbered.map(({ previousId, id }) => [id, previousId]),
+    );
     const pending = withRenumberedIds(ledger.pending, this.renumbered);
 
     this.replay = ledger.replay([...ledger.published, ...repairs, ...pending]);
@@ -82,16 +93,19 @@ class PlanRound {
       rejections.set(tableId, this.rejectionOf(tableId));
     }
 
-    const brokenPassingTables = this.brokenPassingTables();
-    for (const tableId of this.candidatesCoupledTo(brokenPassingTables)) {
+    const brokenTables = [
+      ...this.brokenPassingTables(),
+      ...this.newlyFailingTables(),
+    ];
+    for (const tableId of this.candidatesCoupledTo(brokenTables)) {
       if (!rejections.has(tableId)) {
         rejections.set(tableId, NEEDS_DRAFT_STRUCTURE_REVERT);
       }
     }
 
-    if (rejections.size === 0 && brokenPassingTables.length > 0) {
+    if (rejections.size === 0 && brokenTables.length > 0) {
       throw new Error(
-        `Repair planning broke ${brokenPassingTables.join(', ')} without a coupled candidate`,
+        `Repair planning broke ${brokenTables.join(', ')} without a coupled candidate`,
       );
     }
 
@@ -111,6 +125,26 @@ class PlanRound {
     return [...this.ledger.passingDraftTableIds].filter(
       (tableId) => !this.ledger.reproducesDraftSchema(this.replay, tableId),
     );
+  }
+
+  private newlyFailingTables(): string[] {
+    return this.replay.slots
+      .filter((slot) => this.failsNewly(slot) && !this.isCandidateSlot(slot))
+      .flatMap(({ tableIds }) => tableIds);
+  }
+
+  private failsNewly({ failure }: ReplayedSlot): boolean {
+    if (!failure) {
+      return false;
+    }
+
+    const previousId = this.previousIds.get(failure.migrationId);
+
+    return !this.ledger.baselineFailures.has(previousId ?? failure.migrationId);
+  }
+
+  private isCandidateSlot({ tableIds }: ReplayedSlot): boolean {
+    return tableIds.some((tableId) => this.candidates.has(tableId));
   }
 
   private rejectionOf(tableId: string): Rejection {

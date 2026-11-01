@@ -344,19 +344,23 @@ table (without `tableIds`, each Head table whose ledger does not reproduce its s
 | `blockedByDependency` | The combined plan fails for the table while a damaged table coupled to it is not repaired in the plan (`blockedBy`). |
 | `needsDraftStructureRevert` | Neither baseline reproduces the Draft schema row, or the combined plan fails for the table otherwise. |
 
-The patch is a property-level diff from the replayed schema to the Head schema row: a changed field is replaced, a
-renamed one is removed and added, and `removedPaths` lists the removed fields whose values replicas lose. The diff of
-the schema toolkit compares the nodes of one edited schema, not two schemas, so the planner diffs them itself; a plain
-schema-to-schema diff in the toolkit would replace it. The repairs take one id sequence after the last published
-migration in table id order (the native id rule, so a published timestamp ahead of the clock still gives distinct ids);
-when a pending migration id is not after the last repair, all pending migrations are renumbered after it once
-(`renumbered`). The combined plan replays the published ledger, the repairs and the renumbered pending migrations: each
-candidate and each Draft table the Draft ledger reproduced before must reproduce its Draft schema row, while other
-tables may keep failing as before. A failing candidate is rejected, a broken table rejects the candidates coupled to it
-(a pending migration of one reads the other: a foreign key it names, a removal refused while referenced, a rename that
-rewrites referrers), and planning repeats with the rest. The plan carries a fingerprint of what it validated: per
-validated Draft table version its row count and a digest of row version ids and hashes, and per table version that a
-foreign key of a validated row references a digest of its row ids.
+The patch is a property-level diff from the replayed schema to the Head schema row: child fields are removed, added or
+changed first (a renamed field is removed and added, a field whose type changes is replaced), and only then is a
+container whose own metadata changed replaced with its final schema; `removedPaths` lists the removed fields whose
+values replicas lose. Besides the replay right after the published ledger, the patch must migrate a sample row of the
+replayed schema through the native row migration into the Head schema. The diff of the schema toolkit compares the nodes
+of one edited schema, not two schemas, so the planner diffs them itself; a plain schema-to-schema diff in the toolkit
+would replace it. The repairs take one id sequence after the last published migration in table id order (the native id
+rule, so a published timestamp ahead of the clock still gives distinct ids); when a pending migration id is not after
+the last repair, all pending migrations are renumbered after it once (`renumbered`). The combined plan replays the
+published ledger, the repairs and the renumbered pending migrations: each candidate and each Draft table the Draft
+ledger reproduced before must reproduce its Draft schema row, and no step of any table, closed and transient ones
+included, may fail that did not fail in the replay without repairs; other tables may keep failing as before. A failing
+candidate is rejected, a broken table or a newly failing step rejects the candidates coupled to it (a pending migration
+of one reads the other: a foreign key it names, a removal refused while referenced, a rename that rewrites referrers),
+and planning repeats with the rest. The plan carries a fingerprint of what it validated: per validated Draft table
+version its row count and a digest of row version ids and hashes, and per table version that a foreign key of a
+validated row references a digest of its row ids.
 
 ### Read consistency during migration
 

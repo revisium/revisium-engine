@@ -19,6 +19,7 @@ import {
   ScanRevisionReader,
 } from 'src/features/migration/ledger-scan/scan-revision-reader';
 import {
+  type RowDiagnostics,
   type SchemaLedgerFinding,
   type SchemaLedgerScan,
   ScanSchemaLedgerQuery,
@@ -46,14 +47,17 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
   }: ScanSchemaLedgerQuery): Promise<SchemaLedgerScan> {
     const request = scanRequestOf(data);
     const page = await this.branchPages.readPage(request);
-    const scan = new LedgerScan(this.reader, {
-      refs: this.schemaStore.refs,
-      validator: this.validator,
-    });
+    const scan = new LedgerScan(
+      this.reader,
+      { refs: this.schemaStore.refs, validator: this.validator },
+      request.rowDiagnostics !== 'none',
+    );
     const findings: SchemaLedgerFinding[] = [];
 
     for (const branch of page.branches) {
-      findings.push(...(await this.scanBranch(branch, scan)));
+      findings.push(
+        ...(await this.scanBranch(branch, scan, request.rowDiagnostics)),
+      );
     }
 
     return { findings, nextCursor: page.nextCursor, stats: scan.stats };
@@ -62,8 +66,9 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
   private async scanBranch(
     branch: ScannedBranch,
     scan: LedgerScan,
+    rowDiagnostics: RowDiagnostics,
   ): Promise<SchemaLedgerFinding[]> {
-    const branchScan = new BranchScan(branch, scan);
+    const branchScan = new BranchScan(branch, scan, rowDiagnostics);
     const historyRevisionIds = await this.transactionRunner.runPlanning(() =>
       this.scanHeadAndDraft(branch, scan, branchScan),
     );

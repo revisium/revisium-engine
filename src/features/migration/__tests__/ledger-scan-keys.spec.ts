@@ -29,6 +29,7 @@ describe('Ledger scan evaluation keys', () => {
         'other-schemas': [schemaRow('x/row', productSchema)],
       }),
       { refs, validator },
+      false,
     );
 
     const [ledgered] = await scan.tablesOf(revisionOf('ledger/x', 'schemas'));

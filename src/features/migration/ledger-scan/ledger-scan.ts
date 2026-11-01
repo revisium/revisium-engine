@@ -63,6 +63,7 @@ export class LedgerScan {
   private readonly schemaTables = new Map<string, Row[]>();
   private readonly schemaChecks = new Map<string, SchemaCheck>();
   private readonly rowHashes = new Map<string, RowHashCount[]>();
+  private readonly rowChecks = new Map<string, RowHashCount[]>();
   private readonly schemaHashes = new WeakMap<JsonSchema, string>();
   private readonly counts: ScanCounts = {
     branches: 0,
@@ -76,6 +77,7 @@ export class LedgerScan {
   constructor(
     private readonly reader: ScanReads,
     private readonly rules: ReplayRules,
+    private readonly recordTrail: boolean,
   ) {}
 
   public get stats(): SchemaLedgerScanStats {
@@ -119,6 +121,20 @@ export class LedgerScan {
   public async rowHashesOf(tableVersionId: string): Promise<RowHashCount[]> {
     return this.cached(this.rowHashes, tableVersionId, () =>
       this.readRowHashes(tableVersionId),
+    );
+  }
+
+  public async mismatchedRowHashesOf(
+    tableVersionId: string,
+    schemaHash: string,
+  ): Promise<RowHashCount[]> {
+    return this.cached(
+      this.rowChecks,
+      evaluationKeyOf(tableVersionId, schemaHash),
+      async () =>
+        (await this.rowHashesOf(tableVersionId)).filter(
+          ({ hash }) => hash !== schemaHash,
+        ),
     );
   }
 
@@ -221,6 +237,7 @@ export class LedgerScan {
     const replay = replayLedger({
       ledger: ledgerOf(rows).map(({ migration }) => migration),
       ...this.rules,
+      recordTrail: this.recordTrail,
     });
     const currentSlots = new Map<string, ReplayedSlot>();
 

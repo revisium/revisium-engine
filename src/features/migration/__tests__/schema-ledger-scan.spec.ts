@@ -6,6 +6,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type {
   DamageShape,
+  FindingRole,
   RowDiagnostics,
   ScanSchemaLedgerData,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
@@ -34,17 +35,22 @@ import {
   findingAt,
   findingOf,
   findingsOf,
+  hashOf,
   isStoredLedgerReplay,
   ledgerReplaysDuring,
   pendingMigrationOf,
   removeSchemaRow,
   removeSchemaTable,
+  rowSchemaHashOf,
   scanBranch,
   scanLedgers,
   scanProject,
   scanProjectPages,
+  schemaRowHashOf,
+  sortedByHash,
   storedHeadLedgerOf,
   transactionModesDuring,
+  userTableVersionCountOf,
 } from './support/ledger-scan';
 
 jest.mock('src/features/share/ledger-replay/ledger-replay', () => {
@@ -60,6 +66,7 @@ const PRODUCTS = 'products';
 const GOODS = 'goods';
 const TAGS = 'tags';
 const LABELS = 'labels';
+const GROUPS = 'groups';
 const NOTES = 'notes';
 const LATER_MIGRATION_ID = '2999-01-01T00:00:00.000Z';
 const COLOR = 'color';
@@ -104,7 +111,18 @@ interface LedgeredCase {
 interface ShapeCase {
   readonly rows: string;
   readonly given: () => Promise<ChangesScenario>;
+  readonly rowDiagnostics: RowDiagnostics;
   readonly shape: DamageShape;
+}
+
+interface RowDiagnosticsCase {
+  readonly rowDiagnostics: RowDiagnostics;
+  readonly roles: FindingRole[];
+}
+
+interface TrailCase {
+  readonly rowDiagnostics: RowDiagnostics;
+  readonly recordsTrail: boolean;
 }
 
 interface HeadCounterpartCase {
@@ -238,20 +256,39 @@ describe('Schema ledger scan', () => {
       {
         rows: 'not migrated',
         given: givenUnpublishedInPlaceMigration,
+        rowDiagnostics: 'headAndDraft',
         shape: 'unpublished',
       },
       {
         rows: 'migrated by a later commit',
         given: givenPublishedInPlaceMigration,
+        rowDiagnostics: 'headAndDraft',
         shape: 'published',
       },
-      { rows: 'absent', given: givenDamagedEmptyProducts, shape: 'unknown' },
+      {
+        rows: 'absent',
+        given: givenDamagedEmptyProducts,
+        rowDiagnostics: 'headAndDraft',
+        shape: 'unknown',
+      },
+      {
+        rows: 'not migrated',
+        given: givenUnpublishedInPlaceMigration,
+        rowDiagnostics: 'none',
+        shape: 'unpublished',
+      },
+      {
+        rows: 'absent',
+        given: givenDamagedEmptyProducts,
+        rowDiagnostics: 'none',
+        shape: 'unknown',
+      },
     ])(
-      'reports a damaged Head table whose rows are $rows as $shape',
-      async ({ given, shape }) => {
+      'reports a damaged Head table whose rows are $rows as $shape with rowDiagnostics $rowDiagnostics',
+      async ({ given, rowDiagnostics, shape }) => {
         const draft = await given();
 
-        const scan = await scanBranch(kit, draft);
+        const scan = await scanBranch(kit, draft, { rowDiagnostics });
 
         expect(findingsOf(scan, PRODUCTS)).toContainEqual(
           await findingAt(draft, 'head', {
@@ -355,7 +392,7 @@ describe('Schema ledger scan', () => {
         ledgerReplays: 1,
         schemaTableReads: 1,
         schemaChecks: 2,
-        rowHashReads: 1,
+        rowHashReads: 2,
       });
     });
   });
@@ -396,7 +433,7 @@ describe('Schema ledger scan', () => {
       const draft = await givenUnpublishedInPlaceMigration();
       await givenActiveMigration(kit, draft, CATEGORIES);
 
-      const scan = await scanBranch(kit, draft);
+      const scan = await scanBranch(kit, draft, { rowDiagnostics: 'none' });
 
       expect(scan.findings).toEqual([
         await findingAt(draft, 'head', {
@@ -406,6 +443,128 @@ describe('Schema ledger scan', () => {
         }),
       ]);
     });
+  });
+
+  describe('row schema hashes', () => {
+    it('classifies rows an async migration left behind under the rewritten schema row', async () => {
+      const draft = await givenUnpublishedInPlaceMigration();
+
+      const scan = await scanBranch(kit, draft);
+
+      expect(findingsOf(scan, PRODUCTS)).toEqual([
+        await findingAt(draft, 'head', {
+          code: 'damagedTable',
+          tableId: PRODUCTS,
+          detail: { shape: 'unpublished', repair: 'repaired' },
+        }),
+        await findingAt(draft, 'head', {
+          code: 'rowSchemaHashMismatch',
+          tableId: PRODUCTS,
+          detail: {
+            schemaHash: await schemaRowHashOf(draft, 'head', PRODUCTS),
+            rowHashes: [
+              {
+                hash: hashOf(productSchema),
+                rowCount: 2,
+                reason: 'unmigratedByAsync',
+              },
+            ],
+          },
+        }),
+      ]);
+    });
+
+    it('classifies rows behind an own step and rows behind a referenced table rename in one table', async () => {
+      const draft = await givenRowsBehindOwnStepAndRename();
+      const weightedHash = await rowSchemaHashOf(draft, PRODUCTS, 'p2');
+
+      const scan = await scanBranch(kit, draft);
+
+      expect(scan.findings).toEqual([
+        await findingAt(draft, 'draft', {
+          code: 'rowSchemaHashMismatch',
+          tableId: PRODUCTS,
+          detail: {
+            schemaHash: await schemaRowHashOf(draft, 'draft', PRODUCTS),
+            rowHashes: sortedByHash([
+              {
+                hash: hashOf(productSchema),
+                rowCount: 1,
+                reason: 'unmigratedRows',
+              },
+              { hash: weightedHash, rowCount: 1, reason: 'renamedReference' },
+            ]),
+          },
+        }),
+      ]);
+    });
+
+    it('classifies a row hash outside the ledger trail as unknown', async () => {
+      const draft = await givenCommittedCatalog();
+      await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: '' });
+
+      const scan = await scanBranch(kit, draft);
+
+      expect(scan.findings).toEqual([
+        await findingAt(draft, 'draft', {
+          code: 'rowSchemaHashMismatch',
+          tableId: PRODUCTS,
+          detail: {
+            schemaHash: await schemaRowHashOf(draft, 'draft', PRODUCTS),
+            rowHashes: [{ hash: '', rowCount: 1, reason: 'unknownHash' }],
+          },
+        }),
+      ]);
+    });
+
+    it.each<RowDiagnosticsCase>([
+      { rowDiagnostics: 'none', roles: [] },
+      { rowDiagnostics: 'headAndDraft', roles: ['draft'] },
+      { rowDiagnostics: 'all', roles: ['draft', 'history'] },
+    ])(
+      'checks row schema hashes in the $roles revisions with rowDiagnostics $rowDiagnostics',
+      async ({ rowDiagnostics, roles }) => {
+        const draft = await givenRowMismatchesInDraftAndHistory();
+
+        const scan = await scanBranch(kit, draft, { rowDiagnostics });
+
+        expect(
+          scan.findings
+            .filter(({ code }) => code === 'rowSchemaHashMismatch')
+            .map(({ role }) => role),
+        ).toEqual(roles);
+      },
+    );
+    it('checks the rows of each table version once however many revisions link it', async () => {
+      const draft = await givenDamageSharedByTenCommits();
+
+      const scan = await scanBranch(kit, draft, { rowDiagnostics: 'all' });
+
+      expect(scan.stats.rowHashReads).toBe(
+        await userTableVersionCountOf(kit, draft),
+      );
+    });
+
+    it.each<TrailCase>([
+      { rowDiagnostics: 'none', recordsTrail: false },
+      { rowDiagnostics: 'headAndDraft', recordsTrail: true },
+    ])(
+      'records ledger trails with rowDiagnostics $rowDiagnostics: $recordsTrail',
+      async ({ rowDiagnostics, recordsTrail }) => {
+        const draft = await givenUnpublishedInPlaceMigration();
+        const storedLedger = await storedHeadLedgerOf(draft);
+
+        const { replays } = await ledgerReplaysDuring(() =>
+          scanBranch(kit, draft, { rowDiagnostics }),
+        );
+
+        expect(
+          replays
+            .filter((replay) => isStoredLedgerReplay(replay, storedLedger))
+            .map(({ recordTrail }) => recordTrail === true),
+        ).toEqual([recordsTrail]);
+      },
+    );
   });
 
   describe('paging', () => {
@@ -448,7 +607,7 @@ describe('Schema ledger scan', () => {
       const before = await branchContentsOf(kit, draft);
 
       const modes = await transactionModesDuring(kit, () =>
-        scanBranch(kit, draft),
+        scanBranch(kit, draft, { rowDiagnostics: 'all' }),
       );
 
       expect(await branchContentsOf(kit, draft)).toEqual(before);
@@ -625,6 +784,24 @@ describe('Schema ledger scan', () => {
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
     await completeAsyncMigrationInPlace(kit, draft, TAGS, addTone);
     await writeRowWithoutValidation(kit, draft, TAGS, 't1', { label: 'x' });
+
+    return draft;
+  }
+
+  async function givenRowsBehindOwnStepAndRename(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.updateTable(PRODUCTS, addWeight);
+    await draft.renameTable(CATEGORIES, GROUPS);
+    await draft.writeRowColumns(PRODUCTS, 'p1', {
+      schemaHash: hashOf(productSchema),
+    });
+
+    return draft;
+  }
+
+  async function givenRowMismatchesInDraftAndHistory(): Promise<ChangesScenario> {
+    const draft = await givenPublishedInPlaceMigration();
+    await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: '' });
 
     return draft;
   }

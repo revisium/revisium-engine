@@ -3,6 +3,7 @@ import type {
   DamageShape,
   FindingContent,
   FindingRole,
+  RowDiagnostics,
   SchemaLedgerFinding,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
 import type { ScannedBranch } from './branch-page-reader';
@@ -16,6 +17,7 @@ import {
   lineageOf,
   passesSchemaCheck,
   type ReplayedCheck,
+  rowHashReasonOf,
 } from './schema-checks';
 import type { RevisionTables } from './scan-revision-reader';
 
@@ -33,6 +35,11 @@ type DamageFinding = (
   check: ReplayedCheck,
 ) => FindingContent | undefined | Promise<FindingContent | undefined>;
 
+interface EvaluatedFinding {
+  readonly evaluation: string;
+  readonly content: FindingContent;
+}
+
 interface CollectedFinding {
   readonly finding: SchemaLedgerFinding;
   readonly revisionIds: string[];
@@ -44,6 +51,7 @@ export class BranchScan {
   constructor(
     private readonly branch: ScannedBranch,
     private readonly scan: LedgerScan,
+    private readonly rowDiagnostics: RowDiagnostics,
   ) {}
 
   public all(): SchemaLedgerFinding[] {
@@ -78,33 +86,55 @@ export class BranchScan {
     damageFindingOf: DamageFinding,
   ): Promise<void> {
     for (const table of await this.scan.tablesOf(revision)) {
-      const content = await this.findingOf(table, damageFindingOf);
-
-      if (content) {
-        this.add(revision.revisionId, role, table, content);
+      for (const evaluated of await this.findingsOf(
+        table,
+        role,
+        damageFindingOf,
+      )) {
+        this.add(revision.revisionId, role, table.tableId, evaluated);
       }
     }
   }
 
-  private async findingOf(
+  private async findingsOf(
     table: ScannedTable,
+    role: FindingRole,
     damageFindingOf: DamageFinding,
-  ): Promise<FindingContent | undefined> {
-    const { check } = table;
+  ): Promise<EvaluatedFinding[]> {
+    const { check, schemaEvaluation } = table;
 
     if (check.kind === 'unledgered') {
-      return { code: 'unledgeredTable', detail: check.detail };
+      return evaluatedAs(schemaEvaluation, {
+        code: 'unledgeredTable',
+        detail: check.detail,
+      });
     }
 
     if (check.kind === 'unreplayable') {
-      return { code: 'unreplayableLedger', detail: check.failure };
+      return evaluatedAs(schemaEvaluation, {
+        code: 'unreplayableLedger',
+        detail: check.failure,
+      });
     }
 
-    if (check.passes) {
-      return undefined;
+    const findings: EvaluatedFinding[] = [];
+
+    if (!check.passes) {
+      findings.push(
+        ...evaluatedAs(schemaEvaluation, await damageFindingOf(table, check)),
+      );
     }
 
-    return damageFindingOf(table, check);
+    if (this.checksRowsOf(role)) {
+      findings.push(
+        ...evaluatedAs(
+          evaluationKeyOf(schemaEvaluation, table.tableVersionId),
+          await this.rowHashMismatchOf(table, check),
+        ),
+      );
+    }
+
+    return findings;
   }
 
   private async headDamageOf(
@@ -140,13 +170,53 @@ export class BranchScan {
     );
   }
 
+  private async rowHashMismatchOf(
+    { tableVersionId, schemaRow }: ScannedTable,
+    check: ReplayedCheck,
+  ): Promise<FindingContent | undefined> {
+    if (!schemaRow) {
+      return undefined;
+    }
+
+    const mismatched = await this.scan.mismatchedRowHashesOf(
+      tableVersionId,
+      schemaRow.hash,
+    );
+
+    if (mismatched.length === 0) {
+      return undefined;
+    }
+
+    return {
+      code: 'rowSchemaHashMismatch',
+      detail: {
+        schemaHash: schemaRow.hash,
+        rowHashes: mismatched.map(({ hash, rowCount }) => ({
+          hash,
+          rowCount,
+          reason: rowHashReasonOf(hash, check, (schema) =>
+            this.scan.hashOf(schema),
+          ),
+        })),
+      },
+    };
+  }
+
+  private checksRowsOf(role: FindingRole): boolean {
+    if (this.rowDiagnostics === 'all') {
+      return true;
+    }
+
+    return this.rowDiagnostics === 'headAndDraft' && role !== 'history';
+  }
+
   private add(
     revisionId: string,
     role: FindingRole,
-    { tableId, schemaEvaluation }: ScannedTable,
-    content: FindingContent,
+    tableId: string,
+    { evaluation, content }: EvaluatedFinding,
   ): void {
-    const key = evaluationKeyOf(role, content.code, tableId, schemaEvaluation);
+    const key = evaluationKeyOf(role, content.code, tableId, evaluation);
     const collected = this.findings.get(key);
 
     if (collected) {
@@ -166,6 +236,17 @@ export class BranchScan {
       revisionIds: [revisionId],
     });
   }
+}
+
+function evaluatedAs(
+  evaluation: string,
+  content: FindingContent | undefined,
+): EvaluatedFinding[] {
+  if (!content) {
+    return [];
+  }
+
+  return [{ evaluation, content }];
 }
 
 function draftDamageOf(

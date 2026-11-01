@@ -1,12 +1,23 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
-import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import type { DependencyClosureResult } from 'src/features/partial-changes/closure/dependency-closure';
-import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type {
-  ItemKind,
-  Selection,
-  SelectionItems,
+  AppliedUnits,
+  ChangeOperation,
+} from 'src/features/partial-changes/assembly/outcome-rules';
+import type { AssembledTarget } from 'src/features/partial-changes/assembly/target-assembler';
+import type {
+  ChangeCatalogue,
+  ComparedSnapshot,
+} from 'src/features/partial-changes/catalogue/change-catalogue';
+import type {
+  ClosureSource,
+  DependencyClosureResult,
+} from 'src/features/partial-changes/closure/dependency-closure';
+import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import {
+  isWholeDraftSelection,
+  type ItemKind,
+  type Selection,
+  type SelectionItems,
 } from 'src/features/partial-changes/selection/selection';
 import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import {
@@ -27,6 +38,12 @@ export interface ClosureView {
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly ClosureBlockerView[];
   readonly estimate: Estimate;
+}
+
+export interface ClosedPlan {
+  readonly source: ComparedSnapshot & ClosureSource;
+  readonly choice: AppliedUnits;
+  readonly target: AssembledTarget;
 }
 
 export function readClosedDependencies(
@@ -51,6 +68,33 @@ export function readClosedDependencies(
       estimate: closure.estimate,
     };
   });
+}
+
+export async function closedPlanOf(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  operation: ChangeOperation,
+  selection: Selection,
+): Promise<ClosedPlan> {
+  const source = await readSelectionSource(kit, branch, selection);
+  const closure = await kit.dependencyClosure.close(source, {
+    operation,
+    selection,
+  });
+
+  if (closure.kind !== 'closed') {
+    throw new Error('The closure was refused as too large');
+  }
+
+  return {
+    source,
+    choice: {
+      operation,
+      applied: closure.applied,
+      wholeDraft: isWholeDraftSelection(selection),
+    },
+    target: closure.target,
+  };
 }
 
 export function withSelectorsOf(

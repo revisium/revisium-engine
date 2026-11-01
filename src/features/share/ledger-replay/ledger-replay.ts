@@ -159,7 +159,7 @@ class LedgerReplay {
 
   private createTable(migration: InitMigration, step: SlotStep): void {
     const { tableId, schema } = migration;
-    this.validateSchema(tableId, schema);
+    this.validateSchema(migration, schema);
     this.ensureValidTableId(tableId);
     this.ensureFree(tableId, step.displaced);
     this.rules.ensureValidFieldNames([schema]);
@@ -170,12 +170,12 @@ class LedgerReplay {
 
   private updateTable(migration: UpdateMigration, slot: TableSlot): void {
     const { tableId, patches } = migration;
-    this.validatePatches(tableId, patches);
+    this.validatePatches(migration, patches);
     const schema = this.rules.patchedSchema(
       this.existingSchema(slot, tableId),
       patches,
     );
-    this.validateSchema(tableId, schema);
+    this.validateSchema(migration, schema);
     this.rules.ensureRecordableChange(schema, patches);
 
     this.setSchema(slot, migration, 'ownStep', schema);
@@ -302,16 +302,16 @@ class LedgerReplay {
     }
   }
 
-  private validatePatches(tableId: string, patches: JsonPatch[]): void {
+  private validatePatches(migration: Migration, patches: JsonPatch[]): void {
     this.rules.ensureValidPatches(patches);
 
     for (const value of patchValues(patches)) {
-      this.validateSchema(tableId, value);
+      this.validateSchema(migration, value);
     }
   }
 
-  private validateSchema(tableId: string, schema: JsonSchema): void {
-    this.ensureReferencedTablesExist(tableId, schema);
+  private validateSchema(migration: Migration, schema: JsonSchema): void {
+    this.ensureReferencedTablesExist(migration, schema);
     this.rules.ensureValidSchema(schema);
   }
 
@@ -345,16 +345,16 @@ class LedgerReplay {
   }
 
   private ensureReferencedTablesExist(
-    tableId: string,
+    migration: Migration,
     schema: JsonSchema,
   ): void {
-    const missingTarget = this.rules
-      .foreignKeysOf(schema)
-      .find(
-        (target) => target !== tableId && !this.tableSlots.currentSlot(target),
-      );
+    const missingTargets = this.foreignKeyTargetsOf(migration.tableId, [
+      schema,
+    ]).filter((target) => !this.tableSlots.currentSlot(target));
+    const [missingTarget] = missingTargets;
 
-    if (missingTarget) {
+    if (missingTarget !== undefined) {
+      this.recordReads(migration, missingTargets);
       throw new Error(`Foreign key target "${missingTarget}" does not exist`);
     }
   }

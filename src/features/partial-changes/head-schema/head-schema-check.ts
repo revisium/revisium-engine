@@ -109,28 +109,12 @@ class TableRefusals {
   }
 
   private codeOf(pair: TablePair): RefusalCode | undefined {
-    if (!pair.head) {
-      return this.createdTableCodeOf(publicTableIdOf(pair));
-    }
-
-    return this.headTableCodeOf(pair.head);
-  }
-
-  private headTableCodeOf(head: TableVersion): RefusalCode | undefined {
-    if (!isLedgered(this.headLedger.slots, head.id)) {
+    if (isUnledgered(pair, this.headLedger.slots, this.draftSlots)) {
       return 'unledgeredTable';
     }
 
-    if (!this.replaysToSchemaRow(head)) {
+    if (pair.head && !this.replaysToSchemaRow(pair.head)) {
       return 'headSchemaInconsistent';
-    }
-
-    return undefined;
-  }
-
-  private createdTableCodeOf(tableId: string): RefusalCode | undefined {
-    if (!isLedgered(this.draftSlots, tableId)) {
-      return 'unledgeredTable';
     }
 
     return undefined;
@@ -141,6 +125,18 @@ class TableRefusals {
 
     return replayed !== undefined && schemasEqual(replayed, schema);
   }
+}
+
+export function isUnledgered(
+  pair: TablePair,
+  headSlots: readonly TableSlot[],
+  draftSlots: readonly TableSlot[],
+): boolean {
+  if (!pair.head) {
+    return !isLedgered(draftSlots, publicTableIdOf(pair));
+  }
+
+  return !isLedgered(headSlots, pair.head.id);
 }
 
 function migrationsOf(entries: readonly LedgerEntry[]): Migration[] {

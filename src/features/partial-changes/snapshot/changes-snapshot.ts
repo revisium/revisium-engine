@@ -12,6 +12,7 @@ export interface TableVersion {
   readonly versionId: string;
   readonly createdId: string;
   readonly id: string;
+  readonly readonly: boolean;
   readonly schema: JsonSchema;
   readonly history: readonly HistoryPatches[];
 }

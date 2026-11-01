@@ -119,6 +119,7 @@ function tableVersion(versionId: string): TableVersion {
     versionId,
     createdId: TABLE_IDENTITY,
     id: 'products',
+    readonly: false,
     schema: productSchema,
     history: [],
   };

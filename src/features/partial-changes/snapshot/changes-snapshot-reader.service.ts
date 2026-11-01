@@ -18,6 +18,10 @@ import {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { rowDigestSql } from 'src/features/partial-changes/snapshot/row-digest-sql';
 import {
+  type RowVersionText,
+  rowVersionTextsSql,
+} from 'src/features/partial-changes/snapshot/row-version-texts-sql';
+import {
   pairUserTablesByIdentity,
   type RevisionTables,
   type StoredTable,
@@ -175,6 +179,16 @@ export class ChangesSnapshotReader {
     return result?.digest ?? '';
   }
 
+  public async readRowVersionTexts(
+    versionIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>> {
+    const rows = await this.transaction.$queryRaw<RowVersionText[]>(
+      rowVersionTextsSql(versionIds),
+    );
+
+    return new Map(rows.map(({ versionId, text }) => [versionId, text]));
+  }
+
   private async countChangedRowsOf(table: ComparedTable): Promise<number> {
     const [result] = await this.transaction.$queryRaw<{ count: number }[]>(
       changedRowCountSql(table),
@@ -241,6 +255,7 @@ export class ChangesSnapshotReader {
         versionId: true,
         createdId: true,
         id: true,
+        readonly: true,
         system: true,
       },
     });

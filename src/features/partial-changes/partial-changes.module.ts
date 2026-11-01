@@ -8,9 +8,11 @@ import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-ref
 import { StructureChecks } from 'src/features/partial-changes/closure/structure-checks';
 import { OperationEstimator } from 'src/features/partial-changes/limits/operation-estimator';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
+import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
 import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import { TargetValidator } from 'src/features/partial-changes/validation/target-validator';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
@@ -49,6 +51,8 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
       inject: [StructureChecks, RowReferenceChecks],
     },
     DependencyClosure,
+    TargetValidator,
+    PlanFingerprint,
   ],
 })
 export class PartialChangesModule {}

@@ -27,15 +27,18 @@ import {
   readWholeDraftCatalogue,
 } from './catalogue-reading';
 import { type ClosureView, readClosedDependencies } from './dependency-closing';
+import { type PlanVariant, readPlanFingerprint } from './plan-fingerprinting';
 import {
   readScopedCatalogue,
   type ScopedCatalogueView,
 } from './scoped-reading';
 import {
+  type BlockerView,
   readSelectionResolution,
   type ResolutionView,
 } from './selection-resolving';
 import { readAssembledTarget, type TargetView } from './target-assembling';
+import { readValidationBlockers } from './target-validating';
 import {
   type ChangedRowsView,
   readChangedRows,
@@ -51,6 +54,7 @@ export interface TableFixture {
 export interface RowColumnsEdit {
   readonly meta?: InputJsonValue;
   readonly schemaHash?: string;
+  readonly publishedAt?: string;
 }
 
 export class ChangesScenario {
@@ -214,18 +218,20 @@ export class ChangesScenario {
     );
   }
 
-  public async writeDanglingReference(
+  public writeDanglingReference(
     tableId: string,
     rowId: string,
     data: InputJsonValue,
   ): Promise<void> {
-    await this.writeBelowNativeValidation((revisionId) =>
-      this.kit.draftRevisionApi.updateRows({
-        revisionId,
-        tableId,
-        rows: [{ rowId, data }],
-      }),
-    );
+    return this.writeRowBelowNativeValidation(tableId, rowId, data);
+  }
+
+  public writeInvalidRow(
+    tableId: string,
+    rowId: string,
+    data: InputJsonValue,
+  ): Promise<void> {
+    return this.writeRowBelowNativeValidation(tableId, rowId, data);
   }
 
   public async uploadFile(
@@ -264,6 +270,7 @@ export class ChangesScenario {
             data: row.data as InputJsonValue,
             schemaHash: columns.schemaHash ?? row.schemaHash,
             meta: columns.meta,
+            publishedAt: columns.publishedAt,
           }),
         ),
     );
@@ -391,6 +398,27 @@ export class ChangesScenario {
     );
   }
 
+  public async alterPublishedMigration(
+    changeType: Migration['changeType'],
+    tableId: string,
+    alteration: Partial<Migration>,
+  ): Promise<void> {
+    const migration = await this.draftMigrationOf(changeType, tableId);
+
+    await this.writeBelowNativeValidation((revisionId) =>
+      this.kit.draftRevisionApi.updateRows({
+        revisionId,
+        tableId: SystemTables.Migration,
+        rows: [
+          {
+            rowId: migration.id,
+            data: { ...migration, ...alteration } as unknown as InputJsonValue,
+          },
+        ],
+      }),
+    );
+  }
+
   public async rewriteSchemaHistory(
     tableId: string,
     history: readonly HistoryPatches[],
@@ -442,6 +470,27 @@ export class ChangesScenario {
     selection: Selection,
   ): Promise<ClosureView> {
     return readClosedDependencies(this.kit, this.branch, operation, selection);
+  }
+
+  public validateTarget(
+    operation: ChangeOperation,
+    selection: Selection,
+  ): Promise<BlockerView[]> {
+    return readValidationBlockers(this.kit, this.branch, operation, selection);
+  }
+
+  public fingerprintPlan(
+    operation: ChangeOperation,
+    selection: Selection,
+    variant?: PlanVariant,
+  ): Promise<string> {
+    return readPlanFingerprint(
+      this.kit,
+      this.branch,
+      operation,
+      selection,
+      variant,
+    );
   }
 
   public async readDraftRowDigest(tableId: string): Promise<string> {
@@ -515,6 +564,20 @@ export class ChangesScenario {
 
   private draftRevisionId(): Promise<string> {
     return this.revisionId('draft');
+  }
+
+  private async writeRowBelowNativeValidation(
+    tableId: string,
+    rowId: string,
+    data: InputJsonValue,
+  ): Promise<void> {
+    await this.writeBelowNativeValidation((revisionId) =>
+      this.kit.draftRevisionApi.updateRows({
+        revisionId,
+        tableId,
+        rows: [{ rowId, data }],
+      }),
+    );
   }
 
   private async writeBelowNativeValidation(

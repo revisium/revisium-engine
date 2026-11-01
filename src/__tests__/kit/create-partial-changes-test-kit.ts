@@ -17,8 +17,10 @@ import { TargetAssembler } from 'src/features/partial-changes/assembly/target-as
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import type { LedgerReplayRules } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { PartialChangesModule } from 'src/features/partial-changes/partial-changes.module';
+import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
 import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import { TargetValidator } from 'src/features/partial-changes/validation/target-validator';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
 import { RowModule } from 'src/features/row/row.module';
@@ -51,6 +53,8 @@ export interface PartialChangesTestKit {
   scopedCatalogueReader: ScopedCatalogueReader;
   targetAssembler: TargetAssembler;
   dependencyClosure: DependencyClosure;
+  targetValidator: TargetValidator;
+  planFingerprint: PlanFingerprint;
   schemaRules: NativeSchemaRules;
   replayRules: LedgerReplayRules;
   viewsMigration: ViewsMigrationService;
@@ -118,6 +122,8 @@ export async function createPartialChangesTestKit({
     scopedCatalogueReader: module.get(ScopedCatalogueReader),
     targetAssembler: module.get(TargetAssembler),
     dependencyClosure: module.get(DependencyClosure),
+    targetValidator: module.get(TargetValidator),
+    planFingerprint: module.get(PlanFingerprint),
     schemaRules: module.get(NativeSchemaRules),
     replayRules,
     viewsMigration: module.get(ViewsMigrationService),

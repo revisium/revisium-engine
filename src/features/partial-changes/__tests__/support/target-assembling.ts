@@ -137,16 +137,13 @@ function targetView(
   const views = new Map(
     target.tables.map((plan) => [
       tableIdOf(snapshot, plan.identity),
-      new TablePlanDescription(snapshot, plan).view(),
+      tablePlanViewOf(snapshot, plan),
     ]),
   );
   const systemViews = new Map(
     target.systemTables.map((plan) => [
       plan.tableId,
-      new SystemTablePlanDescription(
-        SYSTEM_ROWS_OF[plan.tableId](snapshot),
-        plan,
-      ).view(),
+      systemTablePlanViewOf(snapshot, plan),
     ]),
   );
 
@@ -159,6 +156,23 @@ function targetView(
     tableOf: (tableId) => views.get(tableId),
     systemTableOf: (tableId) => systemViews.get(tableId),
   };
+}
+
+export function tablePlanViewOf(
+  snapshot: ChangesSnapshot,
+  plan: TablePlan,
+): TablePlanView {
+  return new TablePlanDescription(snapshot, plan).view();
+}
+
+export function systemTablePlanViewOf(
+  snapshot: ChangesSnapshot,
+  plan: SystemTablePlan,
+): SystemTablePlanView {
+  return new SystemTablePlanDescription(
+    SYSTEM_ROWS_OF[plan.tableId](snapshot),
+    plan,
+  ).view();
 }
 
 function deferredView(

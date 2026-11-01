@@ -18,7 +18,9 @@ import type {
   TablePair,
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+
+const EVERY_FIELD: readonly JsonPointer[] = [JsonPointer.root];
 
 export interface HeldRow {
   readonly row: CatalogueRow;
@@ -228,11 +230,19 @@ export class TargetTables {
         structureSide,
         heldRowsOf(this.plans.get(pair.identity), loaded, structureSide),
         loaded,
-        this.changedPointers.get(pair.identity) ?? [],
+        this.changedPointersOf(pair),
         this.rules.baseSide,
         this.refusalOf(pair),
       ),
     ];
+  }
+
+  private changedPointersOf(pair: TablePair): readonly JsonPointer[] {
+    if (!pair.head || !pair.draft) {
+      return EVERY_FIELD;
+    }
+
+    return this.changedPointers.get(pair.identity) ?? [];
   }
 
   private refusalOf({ identity }: TablePair): RefusedTable | undefined {

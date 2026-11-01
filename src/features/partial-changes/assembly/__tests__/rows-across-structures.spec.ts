@@ -216,6 +216,18 @@ describe('TargetAssembler: rows moving between structures', () => {
     },
   );
 
+  it('migrates a restored Head row through a Draft history that renamed a field and then removed it', async () => {
+    const draft = await givenProductsWhosePriceWasRenamedThenRemoved();
+
+    const target = await draft.assembleTarget('revert', {
+      rows: [product('p2')],
+    });
+
+    expect(target.tableOf(PRODUCTS)?.newRows).toEqual([
+      expect.objectContaining({ id: 'p2', data: { title: 'two' } }),
+    ]);
+  });
+
   it('gives a Head row restored into a Draft structure with a new File field the file a native migration gives', async () => {
     const draft = await givenDocumentsWithAddedFile();
     const migrated = await draft.row('draft', DOCUMENTS, 'd1');
@@ -300,6 +312,23 @@ describe('TargetAssembler: rows moving between structures', () => {
       p3: { title: 'three', price: 30, color: 'blue' },
     });
     expectEveryDifferenceOwnedOnce(await draft.readCatalogue([PRODUCTS]));
+
+    return draft;
+  }
+
+  async function givenProductsWhosePriceWasRenamedThenRemoved(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: {
+          p1: { title: 'one', price: 10 },
+          p2: { title: 'two', price: 20 },
+        },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [moveField('price', 'cost')]);
+    await draft.updateTable(PRODUCTS, [removeField('cost')]);
+    await draft.removeRow(PRODUCTS, 'p2');
 
     return draft;
   }

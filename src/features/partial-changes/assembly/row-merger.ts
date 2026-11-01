@@ -108,17 +108,33 @@ export class RowMerger {
     rows: readonly Row[],
     { headSchema, pendingHistory }: DraftStructureMigration,
   ): Row[] {
-    const table = new SchemaTable(headSchema, this.schemaStore.refs);
+    let schema = headSchema;
+    let migrated = [...rows];
+
+    // As in native updateTable, every history entry patches a table of its own: the schema toolkit cannot patch a
+    // field that an earlier entry moved in the same SchemaTable.
+    for (const { patches } of pendingHistory) {
+      const table = this.schemaTableOf(schema, migrated);
+
+      table.applyPatches(patches);
+      schema = table.getSchema();
+      migrated = migrated.map((row) => ({
+        ...row,
+        data: table.getRow(row.id),
+      }));
+    }
+
+    return migrated;
+  }
+
+  private schemaTableOf(schema: JsonSchema, rows: readonly Row[]): SchemaTable {
+    const table = new SchemaTable(schema, this.schemaStore.refs);
 
     for (const row of rows) {
       table.addRow(row.id, row.data as SchemaJsonValue);
     }
 
-    for (const { patches } of pendingHistory) {
-      table.applyPatches(patches);
-    }
-
-    return rows.map((row) => ({ ...row, data: table.getRow(row.id) }));
+    return table;
   }
 
   private withHeadDefaults(

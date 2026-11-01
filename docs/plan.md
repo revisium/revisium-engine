@@ -39,7 +39,7 @@ Each item is delivered by its own pull requests, in this order.
 | `applyMigrations` waits for the async migration ([async SPEC §4](specs/async-row-migration-v2.spec.md#4-applymigrations-above-the-threshold)) | Must | Done (#115) |
 | Async migration fix ([async-row-migration-v2 §3](specs/async-row-migration-v2.spec.md#3-the-fixed-async-migration)) | Must | Done (cleanup: #90, state machine: #97, recovery: #102, atomic swap: #105, guarded start: #109, batches: #112, applyMigrations: #115, exclusive fence: #128) |
 | Detection scan ([async-row-migration-v2 §5](specs/async-row-migration-v2.spec.md#5-detection-scan-scanschemaledger)) | Must | Done (#124, #126, #127); host exposure with the release gate |
-| Forward-only repair tool ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger)) | Must | In progress (planner: #118, #121) |
+| Forward-only repair tool ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger)) | Must | Done (planner: #118, #121; write: #131); host exposure with the release gate |
 | Branch write fence | Must | Done (shared: #92, exclusive escalation: #119) |
 | `createRevision` locking without scanning readonly rows | Should | Done (#91) |
 | Formulas compiled once per schema | Should | Not started |

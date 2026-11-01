@@ -67,13 +67,8 @@ export async function lastPublishedMigrationId(
   return ids.at(-1);
 }
 
-export async function pendingMigrationIds(
-  draft: ChangesScenario,
-): Promise<string[]> {
-  const publishedIds = new Set(await ledgerIdsOf(draft, 'head'));
-  const draftIds = await ledgerIdsOf(draft, 'draft');
-
-  return draftIds.filter((id) => !publishedIds.has(id));
+export function pendingMigrationIds(draft: ChangesScenario): Promise<string[]> {
+  return draft.pendingMigrationIds();
 }
 
 export function initAt(

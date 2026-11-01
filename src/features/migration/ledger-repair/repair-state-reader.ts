@@ -14,18 +14,22 @@ export interface StoredSchema {
 
 export interface RevisionLedger {
   readonly tableVersionIds: ReadonlyMap<string, string>;
+  readonly migrationTableVersionId?: string;
   readonly schemas: ReadonlyMap<string, StoredSchema>;
   readonly migrationRows: readonly Row[];
 }
 
-export interface RepairState {
+interface RepairRevisions {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
+}
+
+export interface RepairState extends RepairRevisions {
   readonly head: RevisionLedger;
   readonly draft: RevisionLedger;
 }
 
-interface RepairBranch {
+export interface RepairBranch {
   readonly projectId: string;
   readonly branchName: string;
 }
@@ -48,10 +52,21 @@ export class RepairStateReader {
     return this.transactionService.getTransaction();
   }
 
-  public async readUnlockedBranch({
+  public async readUnlockedBranch(branch: RepairBranch): Promise<RepairState> {
+    const revisions = await this.readRevisions(branch);
+    await this.migrationLock.checkRevisionLock(revisions.draftRevisionId);
+
+    return this.readLedgers(revisions);
+  }
+
+  public async readBranch(branch: RepairBranch): Promise<RepairState> {
+    return this.readLedgers(await this.readRevisions(branch));
+  }
+
+  private async readRevisions({
     projectId,
     branchName,
-  }: RepairBranch): Promise<RepairState> {
+  }: RepairBranch): Promise<RepairRevisions> {
     const { id: branchId } = await this.shareQueries.findBranchInProjectOrThrow(
       projectId,
       branchName,
@@ -60,13 +75,15 @@ export class RepairStateReader {
       await this.shareQueries.findHeadRevisionInBranchOrThrow(branchId);
     const draft =
       await this.shareQueries.findDraftRevisionInBranchOrThrow(branchId);
-    await this.migrationLock.checkRevisionLock(draft.id);
 
+    return { headRevisionId: head.id, draftRevisionId: draft.id };
+  }
+
+  private async readLedgers(revisions: RepairRevisions): Promise<RepairState> {
     return {
-      headRevisionId: head.id,
-      draftRevisionId: draft.id,
-      head: await this.readRevisionLedger(head.id),
-      draft: await this.readRevisionLedger(draft.id),
+      ...revisions,
+      head: await this.readRevisionLedger(revisions.headRevisionId),
+      draft: await this.readRevisionLedger(revisions.draftRevisionId),
     };
   }
 
@@ -86,6 +103,7 @@ export class RepairStateReader {
       ),
       await this.readSystemRows(tables, SystemTables.Schema),
       await this.readSystemRows(tables, SystemTables.Migration),
+      systemTableOf(tables, SystemTables.Migration)?.versionId,
     );
   }
 
@@ -93,7 +111,7 @@ export class RepairStateReader {
     tables: readonly StoredTable[],
     tableId: SystemTables,
   ): Promise<Row[]> {
-    const table = tables.find(({ id, system }) => system && id === tableId);
+    const table = systemTableOf(tables, tableId);
 
     if (!table) {
       return Promise.resolve([]);
@@ -109,12 +127,21 @@ export function revisionLedgerOf(
   tableVersionIds: ReadonlyMap<string, string>,
   schemaRows: readonly Row[],
   migrationRows: readonly Row[],
+  migrationTableVersionId: string | undefined,
 ): RevisionLedger {
   return {
     tableVersionIds,
+    migrationTableVersionId,
     schemas: new Map(schemaRows.map((row) => [row.id, storedSchemaOf(row)])),
     migrationRows,
   };
+}
+
+function systemTableOf(
+  tables: readonly StoredTable[],
+  tableId: SystemTables,
+): StoredTable | undefined {
+  return tables.find(({ id, system }) => system && id === tableId);
 }
 
 function storedSchemaOf(row: Row): StoredSchema {

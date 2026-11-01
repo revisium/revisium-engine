@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { AbortMigrationCommand } from 'src/features/migration/commands/impl/abort-migration.command';
+import {
+  RepairSchemaLedgerCommand,
+  type RepairSchemaLedgerData,
+  type SchemaLedgerRepair,
+} from 'src/features/migration/commands/impl/repair-schema-ledger.command';
 import { GetMigrationStatusQuery } from 'src/features/migration/queries/impl/get-migration-status.query';
 import { GetActiveMigrationsQuery } from 'src/features/migration/queries/impl/get-active-migrations.query';
 import {
@@ -50,5 +55,11 @@ export class MigrationApiService {
 
   scanSchemaLedger(data: ScanSchemaLedgerData = {}): Promise<SchemaLedgerScan> {
     return this.queryBus.execute(new ScanSchemaLedgerQuery(data));
+  }
+
+  repairSchemaLedger(
+    data: RepairSchemaLedgerData,
+  ): Promise<SchemaLedgerRepair> {
+    return this.commandBus.execute(new RepairSchemaLedgerCommand(data));
   }
 }

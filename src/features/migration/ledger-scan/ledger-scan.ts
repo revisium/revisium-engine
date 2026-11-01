@@ -205,6 +205,7 @@ export class LedgerScan {
       revision.tableVersionIds,
       await this.schemaTableRowsOf(revision),
       ledger?.rows ?? [],
+      revision.migrationTableVersionId,
     );
   }
 

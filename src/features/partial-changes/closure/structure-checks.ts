@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import {
   type AppliedUnits,
   OutcomeRules,
-  type RevisionSide,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { TargetViews } from 'src/features/partial-changes/assembly/system-target-assembler';
 import type { AssembledTarget } from 'src/features/partial-changes/assembly/target-assembler';
@@ -298,13 +298,13 @@ class TargetStructureChecks {
   }
 
   private fitViews(views: TargetViews): Finding {
-    const { tableId, pair, structureSide, viewsSide } = views;
-    const misfit = `${REVISION_NAMES[viewsSide]} views of ${tableId} do not fit its ${REVISION_NAMES[structureSide]} structure`;
+    const { tableId, pair, tableSide, viewsSide } = views;
+    const misfit = `${REVISION_NAMES[viewsSide]} views of ${tableId} do not fit its ${REVISION_NAMES[tableSide]} structure`;
     const unapplied = this.tableUnitsOf(pair).find(
       (unit) => !this.rules.isApplied(unit),
     );
 
-    if (viewsSide === structureSide || unapplied === undefined) {
+    if (viewsSide === tableSide || unapplied === undefined) {
       return blocking({
         code: 'invalidViews',
         tableId,

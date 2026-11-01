@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
 import {
   attributeLedger,
@@ -26,8 +27,6 @@ import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schem
 export interface ComparisonScope {
   readonly wholeDraft: boolean;
 }
-
-type RevisionSide = 'head' | 'draft';
 
 @Injectable()
 export class ComparedSnapshotReader {

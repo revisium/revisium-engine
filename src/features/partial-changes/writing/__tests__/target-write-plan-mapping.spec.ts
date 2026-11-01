@@ -3,13 +3,11 @@ import { arr, obj, ref, str } from '@revisium/schema-toolkit/mocks';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type {
   CommitTargetWritePlan,
+  RevisionSide,
   TableWriteOutcome,
   TableWritePlan,
 } from 'src/features/draft-revision/commands/impl';
-import type {
-  RevisionSide,
-  TableOutcome,
-} from 'src/features/partial-changes/assembly/outcome-rules';
+import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
 import type { TablePlan } from 'src/features/partial-changes/assembly/target-assembler';
@@ -308,7 +306,7 @@ function writableTargetOf({
         tables: pairs,
       },
     },
-    target: { tables, systemTables },
+    assembled: { tables, systemTables },
   };
 }
 

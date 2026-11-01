@@ -1,3 +1,7 @@
+import {
+  oppositeOf,
+  type RevisionSide,
+} from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type {
   RowPair,
@@ -5,8 +9,6 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 export type ChangeOperation = 'commit' | 'revert';
-
-export type RevisionSide = 'head' | 'draft';
 
 export interface AppliedUnits {
   readonly operation: ChangeOperation;
@@ -262,12 +264,4 @@ export class TableOutcomeRules {
 
     return [structure, ...rows];
   }
-}
-
-export function oppositeOf(side: RevisionSide): RevisionSide {
-  if (side === 'head') {
-    return 'draft';
-  }
-
-  return 'head';
 }

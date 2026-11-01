@@ -1,9 +1,11 @@
 import type { Row } from 'src/engine-prisma-types';
 import {
   oppositeOf,
-  type OutcomeRules,
   type RevisionSide,
-  type TableOutcome,
+} from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type {
+  OutcomeRules,
+  TableOutcome,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import {
@@ -22,7 +24,7 @@ import { SystemTables } from 'src/features/share/system-tables.consts';
 export interface TableViews {
   readonly pair: TablePair;
   readonly tableId: string;
-  readonly structureSide: RevisionSide;
+  readonly tableSide: RevisionSide;
   readonly viewsSide: RevisionSide;
   readonly source: Row;
 }
@@ -147,28 +149,25 @@ class SystemTableTargets {
   }
 
   private tableViewsOf(pair: TablePair): TableViews[] {
-    const structureSide = this.sideTakenFor(
+    const tableSide = this.sideTakenFor(
       this.lookup.tableUnitOf('structure', pair)?.key,
     );
-    const viewsSide = this.viewsSideOf(pair, structureSide);
-    const table = pair[structureSide];
+    const viewsSide = this.viewsSideOf(pair, tableSide);
+    const table = pair[tableSide];
     const source = this.tables.viewsRowsOf(pair)[viewsSide];
 
     if (!table || !source) {
       return [];
     }
 
-    return [{ pair, tableId: table.id, structureSide, viewsSide, source }];
+    return [{ pair, tableId: table.id, tableSide, viewsSide, source }];
   }
 
-  private viewsSideOf(
-    pair: TablePair,
-    structureSide: RevisionSide,
-  ): RevisionSide {
+  private viewsSideOf(pair: TablePair, tableSide: RevisionSide): RevisionSide {
     const viewsUnit = this.lookup.tableUnitOf('views', pair);
 
     if (!viewsUnit) {
-      return structureSide;
+      return tableSide;
     }
 
     return this.rules.sideTakenBy(viewsUnit.key);
@@ -218,8 +217,8 @@ function ownersByVersionId(
   return owners;
 }
 
-function followsStructure({ structureSide, viewsSide }: TableViews): boolean {
-  return viewsSide === structureSide;
+function followsStructure({ tableSide, viewsSide }: TableViews): boolean {
+  return viewsSide === tableSide;
 }
 
 function holdsExactly(rows: readonly Row[], versions: readonly Row[]): boolean {

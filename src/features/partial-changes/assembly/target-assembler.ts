@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import {
   type LinkChanges,
   NO_LINK_CHANGES,
@@ -7,13 +8,12 @@ import {
   type AppliedUnits,
   type ChangeOperation,
   OutcomeRules,
-  type RevisionSide,
   type RowOutcome,
   type TableOutcome,
   type TableOutcomeRules,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import {
-  publicIdOf,
+  publicIdOrIdentityOf,
   type ReadTable,
   readTablesOf,
   tableRulesOf,
@@ -394,7 +394,7 @@ function targetRowOf(
     return { pair, kind: 'absent' };
   }
 
-  throw new Error(`Row ${publicIdOf(pair)} was not merged`);
+  throw new Error(`Row ${publicIdOrIdentityOf(pair)} was not merged`);
 }
 
 function collapsedRowOf(
@@ -455,7 +455,7 @@ function deferredValuesOf(
 }
 
 export function unrecordedStructureChangeOf(pair: TablePair): PlanBlocker {
-  const tableId = publicIdOf(pair);
+  const tableId = publicIdOrIdentityOf(pair);
 
   return {
     code: 'unrecordedStructureChange',

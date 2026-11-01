@@ -19,9 +19,9 @@ import {
 } from 'src/features/share/ledger/migration-ledger';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 
-export interface ValidatedTarget {
+export interface AppliedTarget {
   readonly choice: AppliedUnits;
-  readonly target: AssembledTarget;
+  readonly assembled: AssembledTarget;
 }
 
 const PUBLISHED_MIGRATION_ALTERED: PlanBlocker = {
@@ -49,7 +49,7 @@ export class TargetValidator {
   // unique constraints (ADR-0029) exist in the engine.
   public async validate(
     source: AssemblySource,
-    { choice, target }: ValidatedTarget,
+    { choice, assembled }: AppliedTarget,
   ): Promise<PlanBlocker[]> {
     const unrecorded = unrecordedStructureChangesOf(source, choice);
     const ledger = this.ledgerConsistency.blockersOf(source, choice);
@@ -57,7 +57,7 @@ export class TargetValidator {
       this.dataValidator,
       source,
       choice,
-    ).of(target);
+    ).of(assembled);
 
     return distinctBlockers([
       ...unrecorded,

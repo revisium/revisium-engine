@@ -14,7 +14,7 @@ export type UnitKind = (typeof UNIT_KINDS)[number];
 
 export type RowColumn = 'publishedAt' | 'meta' | 'schemaHash';
 
-export type Side = 'head';
+export type HeadQualifier = 'head';
 
 export interface Unit {
   readonly kind: UnitKind;

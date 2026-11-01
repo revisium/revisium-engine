@@ -25,12 +25,12 @@ export interface WritableTarget {
       'branchId' | 'headRevisionId' | 'draftRevisionId' | 'tables'
     >;
   };
-  readonly target: Pick<AssembledTarget, 'tables' | 'systemTables'>;
+  readonly assembled: Pick<AssembledTarget, 'tables' | 'systemTables'>;
 }
 
 export function targetWritePlanOf({
   source: { snapshot },
-  target,
+  assembled,
 }: WritableTarget): TargetWritePlan {
   const pairs = new Map(snapshot.tables.map((pair) => [pair.identity, pair]));
 
@@ -38,10 +38,10 @@ export function targetWritePlanOf({
     headRevisionId: snapshot.headRevisionId,
     draftRevisionId: snapshot.draftRevisionId,
     tables: [
-      ...target.tables.map((plan) =>
+      ...assembled.tables.map((plan) =>
         userTableWritePlanOf(plan, pairOf(pairs, plan.identity)),
       ),
-      ...target.systemTables.map(systemTableWritePlanOf),
+      ...assembled.systemTables.map(systemTableWritePlanOf),
     ],
   };
 }
@@ -50,7 +50,7 @@ export function commitTargetWritePlanOf(
   writable: WritableTarget,
   comment?: string,
 ): CommitTargetWritePlan {
-  assertCommitsNoStructure(writable.target.tables);
+  assertCommitsNoStructure(writable.assembled.tables);
 
   return {
     ...targetWritePlanOf(writable),

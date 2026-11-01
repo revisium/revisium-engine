@@ -21,7 +21,7 @@ export function readValidationBlockers(
     );
     const blockers = await kit.targetValidator.validate(source, {
       choice,
-      target,
+      assembled: target,
     });
 
     return blockers.map((blocker) => blockerView(source.catalogue, blocker));

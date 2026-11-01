@@ -17,7 +17,7 @@ import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/cha
 import type { ChangedRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 interface ScopeCounts {
-  readonly changedRows: number;
+  readonly changedRowCount: number;
   readonly unreadTables: number;
 }
 
@@ -47,12 +47,12 @@ export class ScopedCatalogueReader {
     const scope = this.readScope.scopeOf(selection, compared);
     const counts = await this.countsOf(scope);
 
-    if (counts.changedRows > this.limits.maxChangedRows) {
+    if (counts.changedRowCount > this.limits.maxChangedRows) {
       return {
         ...counts,
         kind: 'tooLarge',
         blocker: changedRowsTooLarge(
-          counts.changedRows,
+          counts.changedRowCount,
           this.limits.maxChangedRows,
         ),
       };
@@ -67,7 +67,7 @@ export class ScopedCatalogueReader {
 
   private async countsOf(scope: TableScope): Promise<ScopeCounts> {
     return {
-      changedRows: await this.snapshotReader.countChangedRows(
+      changedRowCount: await this.snapshotReader.countChangedRows(
         scope.affectedTables,
       ),
       unreadTables: scope.unreadTables,

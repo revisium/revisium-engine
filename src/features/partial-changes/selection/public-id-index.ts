@@ -1,6 +1,5 @@
-import type { Side } from 'src/features/partial-changes/catalogue/unit';
-
-export type VersionSide = 'head' | 'draft';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
 
 interface SidedVersions {
   readonly head?: { readonly id: string };
@@ -25,19 +24,19 @@ export class PublicIdIndex<T> {
     }
   }
 
-  public resolve(id: string, side?: Side): T | undefined {
-    const found = resolveSide(side, (versionSide) =>
-      this.entriesOn(versionSide).has(id),
+  public resolve(id: string, side?: HeadQualifier): T | undefined {
+    const found = resolveSide(side, (revisionSide) =>
+      this.entriesOn(revisionSide).has(id),
     );
 
     return found && this.on(found, id);
   }
 
-  public on(side: VersionSide, id: string): T | undefined {
+  public on(side: RevisionSide, id: string): T | undefined {
     return this.entriesOn(side).get(id);
   }
 
-  private entriesOn(side: VersionSide): ReadonlyMap<string, T> {
+  private entriesOn(side: RevisionSide): ReadonlyMap<string, T> {
     if (side === 'head') {
       return this.head;
     }
@@ -47,9 +46,9 @@ export class PublicIdIndex<T> {
 }
 
 export function resolveSide(
-  side: Side | undefined,
-  holds: (versionSide: VersionSide) => boolean,
-): VersionSide | undefined {
+  side: HeadQualifier | undefined,
+  holds: (revisionSide: RevisionSide) => boolean,
+): RevisionSide | undefined {
   if (side !== 'head' && holds('draft')) {
     return 'draft';
   }

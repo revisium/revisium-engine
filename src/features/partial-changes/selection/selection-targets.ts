@@ -1,12 +1,10 @@
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import { groupRecreations } from 'src/features/partial-changes/catalogue/public-id-groups';
-import type { Side } from 'src/features/partial-changes/catalogue/unit';
+import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { tablesOfRow } from 'src/features/partial-changes/selection/addressed-rows';
-import {
-  PublicIdIndex,
-  type VersionSide,
-} from 'src/features/partial-changes/selection/public-id-index';
+import { PublicIdIndex } from 'src/features/partial-changes/selection/public-id-index';
 import type { RowRef } from 'src/features/partial-changes/selection/selection';
 import type { SelectionSource } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
@@ -23,7 +21,7 @@ import type { TableStructure } from 'src/features/partial-changes/structure/tabl
 export interface AddressedRow {
   readonly table: TablePair;
   readonly rowId: string;
-  readonly side: VersionSide;
+  readonly side: RevisionSide;
 }
 
 export class SelectionTargets {
@@ -43,7 +41,10 @@ export class SelectionTargets {
     }
   }
 
-  public tableNamed(tableId: string, side?: Side): TablePair | undefined {
+  public tableNamed(
+    tableId: string,
+    side?: HeadQualifier,
+  ): TablePair | undefined {
     return this.tables.resolve(tableId, side);
   }
 
@@ -56,7 +57,7 @@ export class SelectionTargets {
   public rowNamed(
     table: TablePair,
     rowId: string,
-    side?: Side,
+    side?: HeadQualifier,
   ): AddressedRow | undefined {
     const rowSide = this.source.addressedRows.sideOf(table, rowId, side);
 
@@ -93,7 +94,11 @@ export class SelectionTargets {
     );
   }
 
-  private holds(table: TablePair, rowId: string, side?: Side): boolean {
+  private holds(
+    table: TablePair,
+    rowId: string,
+    side?: HeadQualifier,
+  ): boolean {
     return this.source.addressedRows.sideOf(table, rowId, side) !== undefined;
   }
 

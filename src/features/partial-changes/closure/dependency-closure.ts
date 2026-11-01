@@ -43,7 +43,7 @@ import {
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 
 export interface ClosureSource extends SelectionSource {
-  readonly changedRows: number;
+  readonly changedRowCount: number;
 }
 
 export interface ClosureRequest {

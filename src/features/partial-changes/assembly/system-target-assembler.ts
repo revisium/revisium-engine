@@ -2,14 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { JsonValue, Row } from 'src/engine-prisma-types';
 import {
+  oppositeOf,
+  type RevisionSide,
+} from 'src/features/draft-revision/commands/impl/target-write-plan';
+import {
   type LinkChanges,
   NO_LINK_CHANGES,
 } from 'src/features/partial-changes/assembly/link-changes';
-import {
-  oppositeOf,
-  type OutcomeRules,
-  type RevisionSide,
-  type TableOutcome,
+import type {
+  OutcomeRules,
+  TableOutcome,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
 import {
@@ -149,13 +151,13 @@ class SystemTargetAssembly {
 
   private documentOf({
     pair,
-    structureSide,
+    tableSide,
     viewsSide,
     source,
   }: TableViews): TableViewsData {
     const document = source.data as unknown as TableViewsData;
 
-    if (viewsSide === structureSide || viewsSide === 'draft' || !pair.head) {
+    if (viewsSide === tableSide || viewsSide === 'draft' || !pair.head) {
       return document;
     }
 

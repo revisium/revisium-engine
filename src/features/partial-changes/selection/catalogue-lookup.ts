@@ -8,10 +8,7 @@ import { PublicIdIndex } from 'src/features/partial-changes/selection/public-id-
 import type { AddressedRow } from 'src/features/partial-changes/selection/selection-targets';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
-const TABLE_LEVEL_KINDS: ReadonlySet<UnitKind> = new Set([
-  'structure',
-  'views',
-]);
+const TABLE_UNIT_KINDS: ReadonlySet<UnitKind> = new Set(['structure', 'views']);
 
 export class CatalogueLookup {
   private readonly rows = new Map<string, PublicIdIndex<CatalogueRow>>();
@@ -98,7 +95,7 @@ export class CatalogueLookup {
   }
 
   private unitsOfTablesFor(kind: UnitKind): Map<string, CatalogueUnit[]> {
-    if (TABLE_LEVEL_KINDS.has(kind)) {
+    if (TABLE_UNIT_KINDS.has(kind)) {
       return this.tableLevelUnits;
     }
 

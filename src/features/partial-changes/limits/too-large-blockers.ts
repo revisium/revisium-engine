@@ -3,12 +3,12 @@ import type { PartialChangesLimits } from 'src/features/partial-changes/limits/p
 import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 
 export function changedRowsTooLarge(
-  changedRows: number,
+  changedRowCount: number,
   maxChangedRows: number,
 ): PlanBlocker {
   return {
     code: 'tooLarge',
-    message: `The affected tables hold ${changedRows} changed rows; the limit for one operation is ${maxChangedRows}`,
+    message: `The affected tables hold ${changedRowCount} changed rows; the limit for one operation is ${maxChangedRows}`,
   };
 }
 

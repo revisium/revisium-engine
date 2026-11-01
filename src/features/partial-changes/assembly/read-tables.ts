@@ -1,6 +1,6 @@
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type {
   OutcomeRules,
-  RevisionSide,
   TableOutcomeRules,
   TableUnits,
 } from 'src/features/partial-changes/assembly/outcome-rules';
@@ -57,13 +57,13 @@ export function versionOn<T extends Version>(
   const version = pair[side];
 
   if (!version) {
-    throw new Error(`${publicIdOf(pair)} has no ${side} version`);
+    throw new Error(`${publicIdOrIdentityOf(pair)} has no ${side} version`);
   }
 
   return version;
 }
 
-export function publicIdOf({
+export function publicIdOrIdentityOf({
   identity,
   head,
   draft,

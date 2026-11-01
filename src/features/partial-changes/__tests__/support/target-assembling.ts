@@ -1,10 +1,12 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import {
-  type ChangeOperation,
   oppositeOf,
   type RevisionSide,
-  type TableOutcome,
+} from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type {
+  ChangeOperation,
+  TableOutcome,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';

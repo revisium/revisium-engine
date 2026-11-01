@@ -8,8 +8,8 @@ import {
   differingLeavesOf,
 } from 'src/features/partial-changes/catalogue/row-differences';
 import type {
+  HeadQualifier,
   RowColumn,
-  Side,
   Unit,
 } from 'src/features/partial-changes/catalogue/unit';
 import {
@@ -130,7 +130,7 @@ class RowUnitsBuilder {
     });
   }
 
-  private sideOfDeletedRow(rowId: string): Side | undefined {
+  private sideOfDeletedRow(rowId: string): HeadQualifier | undefined {
     if (this.idsTakenByRenames.has(rowId)) {
       return 'head';
     }
@@ -237,7 +237,7 @@ class RowUnitsBuilder {
     kind: RowUnitKind,
     rowIdentities: readonly string[],
     fields: RowUnitFields,
-    side?: Side,
+    side?: HeadQualifier,
   ): string {
     return this.addUnit(
       rowUnitKey(kind, this.table.identity, rowIdentities),
@@ -251,7 +251,7 @@ class RowUnitsBuilder {
     key: string,
     rowIdentities: readonly string[],
     unit: Unit,
-    side?: Side,
+    side?: HeadQualifier,
   ): string {
     if (!this.units.has(key)) {
       this.units.set(key, {

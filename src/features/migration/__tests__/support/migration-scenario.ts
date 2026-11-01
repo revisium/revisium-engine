@@ -88,9 +88,7 @@ export async function givenStartedFieldRemoval(
     productSchemaWith(field),
   );
 
-  return startAsyncUpdate(kit, table, field, [
-    { op: 'remove', path: `/properties/${field}` },
-  ]);
+  return startFieldRemoval(kit, table, field);
 }
 
 export async function givenCommittedTable(
@@ -149,6 +147,16 @@ export function importFieldAddition(
       },
     ],
   });
+}
+
+export function startFieldRemoval(
+  kit: MigrationTestKit,
+  table: DraftOwnedTable,
+  field: string,
+): Promise<StartedMigration> {
+  return startAsyncUpdate(kit, table, field, [
+    { op: 'remove', path: `/properties/${field}` },
+  ]);
 }
 
 export function startFieldRename(

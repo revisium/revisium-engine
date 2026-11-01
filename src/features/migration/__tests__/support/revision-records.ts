@@ -80,6 +80,18 @@ export function readRevisionContents(
   });
 }
 
+export async function readDraftState(
+  kit: MigrationTestKit,
+  table: TableInRevision,
+) {
+  return {
+    schemaRow: await readSystemRow(kit, SystemTables.Schema, table),
+    viewsRow: await readSystemRow(kit, SystemTables.Views, table),
+    ledger: await readLedger(kit, table.revisionId),
+    linkedVersions: await readRevisionContents(kit, table.revisionId),
+  };
+}
+
 export async function readDraftTableVersionId(
   kit: MigrationTestKit,
   { revisionId, tableId }: TableInRevision,

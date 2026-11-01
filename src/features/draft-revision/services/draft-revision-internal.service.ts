@@ -11,6 +11,7 @@ import {
   DraftRevisionRecomputeHasChangesCommand,
 } from 'src/features/draft-revision/commands/impl';
 import { RevisionsApiService } from 'src/features/revision/revisions-api.service';
+import { DiffService } from 'src/features/share/diff.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 const RECORD_NOT_FOUND = 'P2025';
@@ -22,6 +23,7 @@ export class DraftRevisionInternalService {
     private readonly transactionService: TransactionPrismaService,
     private readonly revisionsApiService: RevisionsApiService,
     private readonly branchApiService: BranchApiService,
+    private readonly diffService: DiffService,
   ) {}
 
   private get transaction() {
@@ -58,6 +60,21 @@ export class DraftRevisionInternalService {
     await this.commandBus.execute(
       new DraftRevisionRecomputeHasChangesCommand({ revisionId, tableId }),
     );
+  }
+
+  public async updateHasChanges(
+    revisionId: string,
+    parentRevisionId: string,
+  ): Promise<void> {
+    const hasChanges = await this.diffService.hasTableDiffs({
+      fromRevisionId: parentRevisionId,
+      toRevisionId: revisionId,
+    });
+
+    await this.transaction.revision.update({
+      where: { id: revisionId },
+      data: { hasChanges },
+    });
   }
 
   public async findRevisionOrThrow(revisionId: string) {

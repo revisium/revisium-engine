@@ -5,6 +5,7 @@ import { BranchModule } from 'src/features/branch/branch.module';
 import { DRAFT_REVISION_COMMANDS_HANDLERS } from 'src/features/draft-revision/commands/handlers';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
 import {
+  AssembledVersionWriter,
   DraftRevisionInternalService,
   DraftRevisionValidationService,
 } from 'src/features/draft-revision/services';
@@ -137,6 +138,7 @@ export const createDraftRevisionTestingModule = async () => {
       DraftRevisionApiService,
       DraftRevisionInternalService,
       DraftRevisionValidationService,
+      AssembledVersionWriter,
       DiffService,
       ShareTransactionalQueries,
       ...DRAFT_REVISION_COMMANDS_HANDLERS,

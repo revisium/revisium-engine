@@ -14,6 +14,10 @@ import {
   hasRowDiffsBetweenRevisionsSql,
   type HasRowDiffsResult,
 } from 'src/engine-sql-queries';
+import {
+  type TableVersionContentDiff,
+  tableVersionContentDiffSql,
+} from 'src/features/share/table-version-content-diff-sql';
 
 export enum TableDiffChangeType {
   Modified = 'modified',
@@ -194,5 +198,19 @@ export class DiffService {
     );
 
     return Boolean(result[0]?.exists);
+  }
+
+  public async hasTableVersionContentDiffs(options: {
+    fromTableVersionId: string;
+    toTableVersionId: string;
+  }): Promise<boolean> {
+    const result = await this.prisma.$queryRaw<TableVersionContentDiff[]>(
+      tableVersionContentDiffSql(
+        options.fromTableVersionId,
+        options.toTableVersionId,
+      ),
+    );
+
+    return result[0]?.differs ?? true;
   }
 }

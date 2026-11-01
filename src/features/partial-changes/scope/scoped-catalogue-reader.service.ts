@@ -14,7 +14,6 @@ import {
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
-import type { ChangedRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 interface ScopeCounts {
   readonly changedRowCount: number;
@@ -78,22 +77,10 @@ export class ScopedCatalogueReader {
     compared: ComparedSnapshot,
     scope: TableScope,
   ): Promise<ChangeCatalogue> {
-    const loaded = await this.snapshotReader.readChangedRows(
-      scope.loadedTables,
+    const changedRows = await this.snapshotReader.readChangedRows(
+      scope.affectedTables,
     );
 
-    return buildChangeCatalogue(
-      { ...compared, changedRows: changedRowsOfAffectedTables(loaded, scope) },
-      this.headViews,
-    );
+    return buildChangeCatalogue({ ...compared, changedRows }, this.headViews);
   }
-}
-
-function changedRowsOfAffectedTables(
-  loaded: ChangedRows,
-  { affectedTables }: TableScope,
-): ChangedRows {
-  const affected = new Set(affectedTables.map(({ identity }) => identity));
-
-  return new Map([...loaded].filter(([identity]) => affected.has(identity)));
 }

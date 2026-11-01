@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import type { Prisma } from 'src/__generated__/client';
-import type { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
+import type { MigrationRecoveryTestScope } from 'src/features/migration/services/migration-recovery-test-scope';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import type { PrismaService } from 'src/infrastructure/database/prisma.service';
 
@@ -28,9 +28,9 @@ export function ownedBy(lease: MigrationLease) {
 }
 
 export function inRecoveryScope(
-  recoveryScope: MigrationRecoveryScope,
+  testScope: MigrationRecoveryTestScope | undefined,
 ): Prisma.TableMigrationWhereInput {
-  const migrationIds = recoveryScope.restrictedTo();
+  const migrationIds = testScope?.restrictedTo();
 
   return migrationIds ? { id: { in: [...migrationIds] } } : {};
 }

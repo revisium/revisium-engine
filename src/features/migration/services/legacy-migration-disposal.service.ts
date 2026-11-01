@@ -1,6 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { empty, join, sql, type Sql } from 'src/engine-prisma-types';
-import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
+import {
+  MIGRATION_RECOVERY_TEST_SCOPE,
+  type MigrationRecoveryTestScope,
+} from 'src/features/migration/services/migration-recovery-test-scope';
 import {
   ACTIVE_MIGRATION_STATUSES,
   MigrationStatus,
@@ -16,7 +19,9 @@ export class LegacyMigrationDisposalService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly recoveryScope: MigrationRecoveryScope,
+    @Optional()
+    @Inject(MIGRATION_RECOVERY_TEST_SCOPE)
+    private readonly testScope?: MigrationRecoveryTestScope,
   ) {}
 
   async dispose(): Promise<void> {
@@ -76,7 +81,7 @@ export class LegacyMigrationDisposalService {
   }
 
   private inRecoveryScope(): Sql {
-    const migrationIds = this.recoveryScope.restrictedTo();
+    const migrationIds = this.testScope?.restrictedTo();
 
     return migrationIds ? sql`AND "id" = ANY(${migrationIds}::text[])` : empty;
   }

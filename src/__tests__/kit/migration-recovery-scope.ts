@@ -1,12 +1,13 @@
-import type { TestingModuleBuilder } from '@nestjs/testing';
-import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
+import { type DynamicModule, Module } from '@nestjs/common';
+import {
+  MIGRATION_RECOVERY_TEST_SCOPE,
+  type MigrationRecoveryTestScope,
+} from 'src/features/migration/services/migration-recovery-test-scope';
 
-// Recovery acts on every migration record of the shared test database, so a test kit recovers only the records a test names.
-export class ExplicitMigrationRecoveryScope extends MigrationRecoveryScope {
+export class ExplicitMigrationRecoveryScope implements MigrationRecoveryTestScope {
   private readonly migrationIds = new Set<string>();
 
   constructor(migrationIds: readonly string[] = []) {
-    super();
     this.include(...migrationIds);
   }
 
@@ -16,14 +17,21 @@ export class ExplicitMigrationRecoveryScope extends MigrationRecoveryScope {
     }
   }
 
-  override restrictedTo(): readonly string[] {
+  restrictedTo(): readonly string[] {
     return [...this.migrationIds];
   }
 }
 
-export function restrictMigrationRecovery(
-  builder: TestingModuleBuilder,
-  scope: MigrationRecoveryScope = new ExplicitMigrationRecoveryScope(),
-): TestingModuleBuilder {
-  return builder.overrideProvider(MigrationRecoveryScope).useValue(scope);
+@Module({})
+class MigrationRecoveryTestScopeModule {}
+
+export function restrictedMigrationRecovery(
+  scope: MigrationRecoveryTestScope = new ExplicitMigrationRecoveryScope(),
+): DynamicModule {
+  return {
+    module: MigrationRecoveryTestScopeModule,
+    global: true,
+    providers: [{ provide: MIGRATION_RECOVERY_TEST_SCOPE, useValue: scope }],
+    exports: [MIGRATION_RECOVERY_TEST_SCOPE],
+  };
 }

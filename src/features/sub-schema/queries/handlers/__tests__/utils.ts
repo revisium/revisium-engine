@@ -10,7 +10,7 @@ import { ShareModule } from 'src/features/share/share.module';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { MigrationModule } from 'src/features/migration/migration.module';
 import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
-import { restrictMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
+import { restrictedMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
 import { DraftModule } from 'src/features/draft/draft.module';
 import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { SUB_SCHEMA_QUERIES_HANDLERS } from 'src/features/sub-schema/queries/handlers';
@@ -124,6 +124,7 @@ export const createSubSchemaTestingModule = async () => {
       ShareModule,
       PluginModule,
       MigrationModule.forRoot(WITHOUT_RECURRING_SWEEP),
+      restrictedMigrationRecovery(),
       RevisionModule,
       BranchModule,
       TableModule,
@@ -141,8 +142,7 @@ export const createSubSchemaTestingModule = async () => {
   })
     .overrideProvider(STORAGE_SERVICE)
     .useValue(mockStorage);
-  const module: TestingModule =
-    await restrictMigrationRecovery(builder).compile();
+  const module: TestingModule = await builder.compile();
 
   await module.init();
 

@@ -35,7 +35,7 @@ import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-swe
 import { transactionTimeoutSetting } from 'src/__tests__/kit/transaction-timeout-setting';
 import {
   ExplicitMigrationRecoveryScope,
-  restrictMigrationRecovery,
+  restrictedMigrationRecovery,
 } from 'src/__tests__/kit/migration-recovery-scope';
 
 const DEFAULT_MIGRATION_THRESHOLD = 10;
@@ -92,6 +92,7 @@ export async function createMigrationTestKit({
       ShareModule,
       PluginModule,
       MigrationModule.forRoot(),
+      restrictedMigrationRecovery(recoveryScope),
       RevisionModule,
       BranchModule,
       TableModule,
@@ -111,10 +112,7 @@ export async function createMigrationTestKit({
       threshold: options.threshold ?? DEFAULT_MIGRATION_THRESHOLD,
       batchSize: options.batchSize ?? DEFAULT_MIGRATION_BATCH_SIZE,
     });
-  const module = await restrictMigrationRecovery(
-    builder,
-    recoveryScope,
-  ).compile();
+  const module = await builder.compile();
 
   await module.init();
 

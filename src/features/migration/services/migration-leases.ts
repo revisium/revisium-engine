@@ -12,7 +12,10 @@ import {
   replaceSwapOwner,
   type MigrationLease,
 } from 'src/features/migration/services/migration-ownership';
-import { MigrationRecoveryScope } from 'src/features/migration/services/migration-recovery-scope';
+import {
+  MIGRATION_RECOVERY_TEST_SCOPE,
+  type MigrationRecoveryTestScope,
+} from 'src/features/migration/services/migration-recovery-test-scope';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import {
   ACTIVE_MIGRATION_STATUSES,
@@ -27,8 +30,10 @@ export class MigrationLeases {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly recoveryScope: MigrationRecoveryScope,
     @Optional() @Inject(MIGRATION_OPTIONS) options?: MigrationOptions,
+    @Optional()
+    @Inject(MIGRATION_RECOVERY_TEST_SCOPE)
+    private readonly testScope?: MigrationRecoveryTestScope,
   ) {
     this.lockTimeoutMs =
       options?.lockTimeoutMs ?? MIGRATION_DEFAULTS.lockTimeoutMs;
@@ -37,7 +42,7 @@ export class MigrationLeases {
   async findOldestClaimable(): Promise<string | null> {
     const migration = await this.prisma.tableMigration.findFirst({
       where: {
-        ...inRecoveryScope(this.recoveryScope),
+        ...inRecoveryScope(this.testScope),
         status: { in: ACTIVE_MIGRATION_STATUSES },
         ...this.withoutLiveLease(),
       },

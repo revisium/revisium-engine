@@ -136,13 +136,13 @@ function observeLocalDrivers(kit: MigrationTestKit) {
 }
 
 function observeDeadlineChecks(kit: MigrationTestKit) {
-  const transitions = kit.migrationTransitions;
-  const cancelIfStalled = transitions.cancelIfStalled.bind(transitions);
+  const stallRecovery = kit.migrationStallRecovery;
+  const cancelIfStalled = stallRecovery.cancelIfStalled.bind(stallRecovery);
   const waiters: { checks: number; resolve: () => void }[] = [];
   let checks = 0;
 
   jest
-    .spyOn(transitions, 'cancelIfStalled')
+    .spyOn(stallRecovery, 'cancelIfStalled')
     .mockImplementation((migrationId) => {
       checks += 1;
 

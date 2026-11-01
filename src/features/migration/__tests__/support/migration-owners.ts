@@ -1,10 +1,8 @@
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { createBarrier, type Barrier } from 'src/__tests__/utils/barrier';
 import { MigrationImportService } from 'src/features/migration/services/migration-import.service';
-import type {
-  MigrationLease,
-  OwnershipEpoch,
-} from 'src/features/migration/services/migration-transition.service';
+import type { MigrationLease } from 'src/features/migration/services/migration-ownership';
+import type { OwnershipEpoch } from 'src/features/migration/services/migration-stall-recovery';
 import type { MigrationStepResult } from 'src/features/migration/types/migration.types';
 import { expireLease } from './migration-database';
 import type { ObservedImports } from './migration-imports';
@@ -128,7 +126,7 @@ export function stopLeaseRenewals(process: MigrationTestKit): StoppedRenewals {
     markAttempted = resolve;
   });
 
-  jest.spyOn(process.migrationTransitions, 'renew').mockImplementation(() => {
+  jest.spyOn(process.migrationLeases, 'renew').mockImplementation(() => {
     markAttempted();
 
     return Promise.resolve(false);
@@ -172,7 +170,7 @@ export async function findStalledSwapOwner(
   kit: MigrationTestKit,
   migrationId: string,
 ): Promise<OwnershipEpoch | undefined> {
-  const stalledOwners = await kit.migrationTransitions.findStalledSwaps();
+  const stalledOwners = await kit.migrationStallRecovery.findStalledSwaps();
 
   return stalledOwners.find((owner) => owner.migrationId === migrationId);
 }
@@ -254,7 +252,7 @@ export function beforeObservation(
   observation: number,
 ): OwnerHold {
   return holdCall(
-    kit.migrationTransitions,
+    kit.migrationStallRecovery,
     'cancelIfStalled',
     observation,
     'before',
@@ -270,11 +268,11 @@ export function afterSwapBegins(kit: MigrationTestKit): OwnerHold {
 }
 
 export function afterTakeoverWins(kit: MigrationTestKit): OwnerHold {
-  return holdCall(kit.migrationTransitions, 'takeOver', 1, 'after');
+  return holdCall(kit.migrationStallRecovery, 'takeOver', 1, 'after');
 }
 
 export function afterClaimableFound(kit: MigrationTestKit): OwnerHold {
-  return holdCall(kit.migrationTransitions, 'findOldestClaimable', 1, 'after');
+  return holdCall(kit.migrationLeases, 'findOldestClaimable', 1, 'after');
 }
 
 export function afterSwapTransactionCommits(kit: MigrationTestKit): OwnerHold {

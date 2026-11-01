@@ -640,8 +640,14 @@ src/features/migration/
     migration-import.service.ts    applyMigrations support: the active import of a source id; drive and observe a
                                    record until it is no longer active
     migration-drivers.ts           Admission of the drivers the process runs: one per record, takeovers beside it
-    migration-transition.service.ts Guarded transitions of the record (claim, takeover, deadline, renew,
-                                   release, init, checkpoint, swap-begin, swap ownership, fail, retry, cancel)
+    migration-leases.ts            Leases of the record: the oldest claimable record, claim, the owned record,
+                                   renewal, release
+    migration-stall-recovery.ts    Stalled records: stalled swaps and their takeover, deadline cancellation
+    migration-transitions.ts       Guarded transitions of an owned record: init, checkpoint, swap-begin, swap
+                                   ownership, fail, retry; lookup by table and cancel for abort and revert
+    migration-ownership.ts         Shared by leases, stall recovery and transitions: the lease and its token, the
+                                   owner columns, the replacement of a SWAPPING owner within maxRetries, the recovery
+                                   scope filter
     migration-swap.service.ts      The swap transaction: fence, re-checks, relink, native writers, record deletion,
                                    endpoint notification
     swap-recheck.service.ts        Re-checks of the swap and their permanent failure codes

@@ -13,7 +13,9 @@ import { MigrationModule } from 'src/features/migration/migration.module';
 import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { MigrationService } from 'src/features/migration/services/migration.service';
-import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
+import { MigrationLeases } from 'src/features/migration/services/migration-leases';
+import { MigrationStallRecovery } from 'src/features/migration/services/migration-stall-recovery';
+import { MigrationTransitions } from 'src/features/migration/services/migration-transitions';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import { PluginModule } from 'src/features/plugin/plugin.module';
 import { RevisionModule } from 'src/features/revision/revision.module';
@@ -61,7 +63,9 @@ export interface MigrationTestKit {
   migrationBatchService: MigrationBatchService;
   migrationLockService: MigrationLockService;
   migrationService: MigrationService;
-  migrationTransitions: MigrationTransitionService;
+  migrationLeases: MigrationLeases;
+  migrationStallRecovery: MigrationStallRecovery;
+  migrationTransitions: MigrationTransitions;
   transactionService: TransactionPrismaService;
   recoveryScope: ExplicitMigrationRecoveryScope;
   guard: CommittedVersionsGuard;
@@ -127,7 +131,9 @@ export async function createMigrationTestKit({
     migrationBatchService: module.get(MigrationBatchService),
     migrationLockService: module.get(MigrationLockService),
     migrationService: module.get(MigrationService),
-    migrationTransitions: module.get(MigrationTransitionService),
+    migrationLeases: module.get(MigrationLeases),
+    migrationStallRecovery: module.get(MigrationStallRecovery),
+    migrationTransitions: module.get(MigrationTransitions),
     transactionService: module.get(TransactionPrismaService),
     recoveryScope,
     guard: new CommittedVersionsGuard(prisma),

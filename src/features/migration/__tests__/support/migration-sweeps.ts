@@ -58,12 +58,12 @@ function observeRuns(kit: MigrationTestKit) {
 }
 
 function observeSweepStarts(kit: MigrationTestKit) {
-  const transitions = kit.migrationTransitions;
-  const cancelStalled = transitions.cancelStalled.bind(transitions);
+  const stallRecovery = kit.migrationStallRecovery;
+  const cancelStalled = stallRecovery.cancelStalled.bind(stallRecovery);
   const waiters: { starts: number; resolve: () => void }[] = [];
   let starts = 0;
 
-  jest.spyOn(transitions, 'cancelStalled').mockImplementation(() => {
+  jest.spyOn(stallRecovery, 'cancelStalled').mockImplementation(() => {
     starts += 1;
 
     for (const waiter of waiters.filter((each) => each.starts <= starts)) {

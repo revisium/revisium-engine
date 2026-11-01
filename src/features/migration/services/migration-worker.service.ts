@@ -7,7 +7,8 @@ import {
   Optional,
 } from '@nestjs/common';
 import { MigrationService } from 'src/features/migration/services/migration.service';
-import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
+import { MigrationStallRecovery } from 'src/features/migration/services/migration-stall-recovery';
+import { MigrationLeases } from 'src/features/migration/services/migration-leases';
 import { LegacyMigrationDisposalService } from 'src/features/migration/services/legacy-migration-disposal.service';
 import { HeldMigrationLeases } from 'src/features/migration/services/held-migration-leases';
 import { MigrationDrivers } from 'src/features/migration/services/migration-drivers';
@@ -29,7 +30,8 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly migrationService: MigrationService,
-    private readonly transitions: MigrationTransitionService,
+    private readonly stallRecovery: MigrationStallRecovery,
+    private readonly leases: MigrationLeases,
     private readonly legacyMigrations: LegacyMigrationDisposalService,
     private readonly heldLeases: HeldMigrationLeases,
     private readonly drivers: MigrationDrivers,
@@ -111,7 +113,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async cancelStalledMigrations() {
-    const cancelled = await this.transitions.cancelStalled();
+    const cancelled = await this.stallRecovery.cancelStalled();
 
     if (cancelled > 0) {
       this.logger.warn(`Cancelled ${cancelled} stalled migration(s)`);
@@ -119,7 +121,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async takeOverStalledSwaps() {
-    for (const stalledOwner of await this.transitions.findStalledSwaps()) {
+    for (const stalledOwner of await this.stallRecovery.findStalledSwaps()) {
       this.drivers.driveTakeover(stalledOwner.migrationId, () =>
         this.migrationService.takeOverStalledSwap(stalledOwner),
       );
@@ -131,7 +133,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const migrationId = await this.transitions.findOldestClaimable();
+    const migrationId = await this.leases.findOldestClaimable();
 
     if (migrationId && this.heldLeases.isEmpty) {
       this.drivers.driveUnlessDriven(migrationId, () =>
@@ -142,7 +144,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
 
   private async ownsAnyMigration(): Promise<boolean> {
     const held = this.heldLeases.list();
-    const owned = await this.transitions.findStillOwned(held);
+    const owned = await this.leases.findStillOwned(held);
 
     for (const lost of held.filter((lease) => !owned.includes(lease))) {
       this.heldLeases.release(lost);

@@ -7,7 +7,7 @@ import {
   MIGRATION_OPTIONS,
 } from 'src/features/migration/migration.consts';
 import { MigrationDrivers } from 'src/features/migration/services/migration-drivers';
-import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
+import { MigrationStallRecovery } from 'src/features/migration/services/migration-stall-recovery';
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
 import {
@@ -25,7 +25,7 @@ export class MigrationImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly migrationService: MigrationService,
-    private readonly transitions: MigrationTransitionService,
+    private readonly stallRecovery: MigrationStallRecovery,
     private readonly drivers: MigrationDrivers,
     @Optional() @Inject(MIGRATION_OPTIONS) options?: MigrationOptions,
   ) {
@@ -70,7 +70,7 @@ export class MigrationImportService {
   }
 
   private async advance(migrationId: string): Promise<void> {
-    if (await this.transitions.cancelIfStalled(migrationId)) {
+    if (await this.stallRecovery.cancelIfStalled(migrationId)) {
       return;
     }
 
@@ -81,7 +81,7 @@ export class MigrationImportService {
   }
 
   private async takeOverIfStalled(migrationId: string): Promise<void> {
-    const stalledOwner = await this.transitions.findStalledSwap(migrationId);
+    const stalledOwner = await this.stallRecovery.findStalledSwap(migrationId);
 
     if (stalledOwner) {
       this.drivers.driveTakeover(migrationId, () =>

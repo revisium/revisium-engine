@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { MigrationLease } from 'src/features/migration/services/migration-transition.service';
+import type { MigrationLease } from 'src/features/migration/services/migration-ownership';
 
 @Injectable()
 export class HeldMigrationLeases {

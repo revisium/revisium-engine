@@ -15,11 +15,11 @@ import { FileUsageIntegrationService } from 'src/features/file-usage/services/fi
 import { PermanentMigrationFailure } from 'src/features/migration/exceptions/permanent-migration-failure';
 import { PluginService } from 'src/features/plugin/plugin.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
+import type { MigrationLease } from 'src/features/migration/services/migration-ownership';
 import {
-  MigrationTransitionService,
+  MigrationTransitions,
   type MigrationCheckpoint,
-  type MigrationLease,
-} from 'src/features/migration/services/migration-transition.service';
+} from 'src/features/migration/services/migration-transitions';
 import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import {
   JsonPatch,
@@ -56,7 +56,7 @@ export class MigrationBatchService {
     private readonly commandBus: CommandBus,
     private readonly pluginService: PluginService,
     private readonly jsonSchemaStore: JsonSchemaStoreService,
-    private readonly transitions: MigrationTransitionService,
+    private readonly transitions: MigrationTransitions,
     private readonly fileUsage: FileUsageIntegrationService,
   ) {}
 

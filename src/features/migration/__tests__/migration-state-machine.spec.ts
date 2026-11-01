@@ -7,7 +7,7 @@ import {
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import type { TableMigration } from 'src/engine-prisma-types';
 import { decodeMigrationPayload } from 'src/features/migration/migration-payload';
-import type { MigrationCheckpoint } from 'src/features/migration/services/migration-transition.service';
+import type { MigrationCheckpoint } from 'src/features/migration/services/migration-transitions';
 import {
   MigrationPhase,
   MigrationStatus,
@@ -100,9 +100,7 @@ describe('Async migration state machine', () => {
       );
 
       await expireLease(kit.prisma, migration.migrationId, LOCK_TIMEOUT_MS);
-      const otherLease = await kit.migrationTransitions.claim(
-        migration.migrationId,
-      );
+      const otherLease = await kit.migrationLeases.claim(migration.migrationId);
 
       await expect(owner.resume()).resolves.toBe('stopped');
       await expectMigrationState(migration, {
@@ -137,7 +135,7 @@ describe('Async migration state machine', () => {
         migration.migrationId,
         2 * STALL_TIMEOUT_MS,
       );
-      await kit.migrationTransitions.cancelStalled();
+      await kit.migrationStallRecovery.cancelStalled();
 
       await expect(owner.resume()).resolves.toBe('stopped');
       await expectMigrationState(migration, {
@@ -176,7 +174,7 @@ describe('Async migration state machine', () => {
         lockedBy: successor.lease.token,
       });
 
-      await expect(kit.migrationTransitions.renew(stalled.lease)).resolves.toBe(
+      await expect(kit.migrationLeases.renew(stalled.lease)).resolves.toBe(
         false,
       );
       await expect(stalled.resume()).resolves.toBe('stopped');
@@ -328,7 +326,7 @@ describe('Async migration state machine', () => {
       const swapTransaction = insideSwapAfterItsRecordCheck(kit);
       await owner.continueUntil(swapTransaction);
 
-      const otherClaim = kit.migrationTransitions.claim(migration.migrationId);
+      const otherClaim = kit.migrationLeases.claim(migration.migrationId);
       await waitUntilSettledOrBlockedBy(
         kit,
         swapTransaction.backendPid(),
@@ -344,7 +342,7 @@ describe('Async migration state machine', () => {
     it('a claim of an abandoned SWAPPING record counts a retry', async () => {
       const abandoned = await givenAbandonedSwap(1);
 
-      const lease = await kit.migrationTransitions.claim(abandoned.id);
+      const lease = await kit.migrationLeases.claim(abandoned.id);
 
       await expectMigrationState(abandoned, {
         status: MigrationStatus.SWAPPING,
@@ -356,7 +354,7 @@ describe('Async migration state machine', () => {
     it('a claim of an abandoned SWAPPING record at maxRetries fails it SWAP_STALLED', async () => {
       const abandoned = await givenAbandonedSwap(MAX_RETRIES);
 
-      const lease = await kit.migrationTransitions.claim(abandoned.id);
+      const lease = await kit.migrationLeases.claim(abandoned.id);
 
       expect(lease).toBeNull();
       await expectMigrationState(abandoned, {
@@ -654,11 +652,11 @@ describe('Async migration state machine', () => {
   }
 
   function failStateReadAfterFirstBatch(): void {
-    const transitions = kit.migrationTransitions;
-    const findOwned = transitions.findOwned.bind(transitions);
+    const leases = kit.migrationLeases;
+    const findOwned = leases.findOwned.bind(leases);
 
     jest
-      .spyOn(transitions, 'findOwned')
+      .spyOn(leases, 'findOwned')
       .mockImplementationOnce(findOwned)
       .mockImplementationOnce(findOwned)
       .mockRejectedValueOnce(new Error(TRANSIENT_FAILURE));

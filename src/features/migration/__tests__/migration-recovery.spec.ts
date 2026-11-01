@@ -104,7 +104,7 @@ describe('Async migration recovery', () => {
         pastStallTimeout(),
       );
 
-      await kit.migrationTransitions.cancelStalled();
+      await kit.migrationStallRecovery.cancelStalled();
 
       await expectMigrationState(migration, {
         status: MigrationStatus.CANCELLED,
@@ -129,7 +129,7 @@ describe('Async migration recovery', () => {
         pastStallTimeout(),
       );
 
-      await kit.migrationTransitions.cancelStalled();
+      await kit.migrationStallRecovery.cancelStalled();
 
       await expectMigrationState(migration, {
         status: MigrationStatus.CANCELLED,
@@ -156,7 +156,7 @@ describe('Async migration recovery', () => {
         beforeCopyStarts(kit),
       );
 
-      await kit.migrationTransitions.cancelStalled();
+      await kit.migrationStallRecovery.cancelStalled();
 
       await expectMigrationState(migration, {
         status: MigrationStatus.PENDING,
@@ -182,7 +182,7 @@ describe('Async migration recovery', () => {
         pastStallTimeout(),
       );
 
-      await kit.migrationTransitions.cancelStalled();
+      await kit.migrationStallRecovery.cancelStalled();
 
       await expect(
         findStalledSwapOwner(kit, migration.migrationId),

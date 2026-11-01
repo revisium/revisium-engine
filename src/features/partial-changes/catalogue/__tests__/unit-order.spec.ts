@@ -99,5 +99,11 @@ describe('Listing order of units', () => {
 });
 
 function unitOf(unit: Unit, key = JSON.stringify(unit)): CatalogueUnit {
-  return { key, tableIdentity: unit.tableId, rowIdentities: [], unit };
+  return {
+    key,
+    tableIdentities: [unit.tableId],
+    rowIdentities: [],
+    systemRows: [],
+    unit,
+  };
 }

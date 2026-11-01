@@ -4,7 +4,6 @@ import type {
   CatalogueRow,
   CatalogueUnit,
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import { structureUnitKey } from 'src/features/partial-changes/catalogue/unit-key';
 import type {
   ComparedTable,
   RowPair,
@@ -12,6 +11,7 @@ import type {
 import type { WholeColumn } from 'src/features/partial-changes/structure/column-owners';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import type { CatalogueView } from './catalogue-reading';
+import { pendingMigrationViolationsOf } from './pending-migration-ownership';
 
 const EXISTENCE_KINDS: readonly string[] = [
   'rowCreate',
@@ -50,19 +50,25 @@ interface Leaf {
 }
 
 export function expectEveryDifferenceOwnedOnce(view: CatalogueView): void {
-  expect(ownershipViolationsOf(view)).toEqual([]);
+  expect([
+    ...rowOwnershipViolationsOf(view),
+    ...pendingMigrationViolationsOf(view),
+  ]).toEqual([]);
 }
 
-function ownershipViolationsOf(view: CatalogueView): string[] {
+function rowOwnershipViolationsOf(view: CatalogueView): string[] {
   return view.tables.flatMap((table) => {
     const pairs = view.changedRows.get(table.identity) ?? [];
     const rows = view.catalogue.rows.get(table.identity) ?? [];
-    const units = view.catalogue.units.filter(
-      (unit) => unit.tableIdentity === table.identity,
+    const units = view.catalogue.units.filter((unit) =>
+      unit.tableIdentities.includes(table.identity),
     );
+    const structureUnit = units.find(({ unit }) => unit.kind === 'structure');
 
     return [
-      ...pairs.flatMap((pair) => rowViolations(table, pair, rows, units)),
+      ...pairs.flatMap((pair) =>
+        rowViolations(table, pair, rows, units, structureUnit),
+      ),
       ...unitsOfNoChangedRow(units, pairs).map(
         (unit) => `${describeUnit(unit)} belongs to no changed row`,
       ),
@@ -75,6 +81,7 @@ function rowViolations(
   pair: RowPair,
   rows: readonly CatalogueRow[],
   units: readonly CatalogueUnit[],
+  structureUnit: CatalogueUnit | undefined,
 ): string[] {
   const row = rows.find(
     (candidate) => candidate.pair.identity === pair.identity,
@@ -88,7 +95,7 @@ function rowViolations(
     unit.rowIdentities.includes(pair.identity),
   );
 
-  return new RowOwnership(table, row, rowUnits).violations();
+  return new RowOwnership(table, row, rowUnits, structureUnit).violations();
 }
 
 function unitsOfNoChangedRow(
@@ -111,6 +118,7 @@ class RowOwnership {
     private readonly table: ComparedTable,
     private readonly row: CatalogueRow,
     private readonly units: readonly CatalogueUnit[],
+    private readonly structureUnit: CatalogueUnit | undefined,
   ) {
     this.name = rowNameOf(row.pair);
   }
@@ -283,11 +291,11 @@ class RowOwnership {
   }
 
   private structureClaimant(covers: boolean): Claimant[] {
-    if (!covers) {
+    if (!covers || !this.structureUnit) {
       return [];
     }
 
-    return [{ name: 'structure', key: structureUnitKey(this.table.identity) }];
+    return [claimantOf(this.structureUnit)];
   }
 
   private publishedAtPath(): string | undefined {

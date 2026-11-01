@@ -121,7 +121,7 @@ describe('ChangeCatalogue: field units', () => {
     expectEveryDifferenceOwnedOnce(catalogue);
   });
 
-  it('lists only the edits of unchanged fields when the structure changed', async () => {
+  it('lists only the edits of unchanged fields next to the structure unit when the structure changed', async () => {
     const draft = await givenCommittedPoster();
     await draft.updateTable(POSTERS, [addField('color', str())]);
     await draft.updateRow(POSTERS, 'p1', {
@@ -132,6 +132,7 @@ describe('ChangeCatalogue: field units', () => {
     const catalogue = await draft.readCatalogue([POSTERS]);
 
     expect(catalogue.unitsOf(POSTERS)).toEqual([
+      { kind: 'structure', tableId: POSTERS },
       { kind: 'field', tableId: POSTERS, rowId: 'p1', path: '/title' },
     ]);
     expectEveryDifferenceOwnedOnce(catalogue);

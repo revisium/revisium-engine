@@ -23,6 +23,10 @@ const WHOLE_COLUMNS: readonly WholeColumn[] = [
   'schemaHash',
 ];
 
+export function differInContent(head: Row, draft: Row): boolean {
+  return head.hash !== draft.hash || differingColumnsOf(head, draft).length > 0;
+}
+
 export function differingColumnsOf(head: Row, draft: Row): WholeColumn[] {
   return WHOLE_COLUMNS.filter(
     (column) => !WHOLE_COLUMN_EQUALITY[column](head, draft),

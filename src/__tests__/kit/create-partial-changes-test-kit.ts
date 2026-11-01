@@ -21,6 +21,7 @@ import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.ser
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { ShareModule } from 'src/features/share/share.module';
+import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import { TableModule } from 'src/features/table/table.module';
 import { ViewsApiService } from 'src/features/views/views-api.service';
 import { ViewsModule } from 'src/features/views/views.module';
@@ -43,6 +44,7 @@ export interface PartialChangesTestKit {
   viewsApi: ViewsApiService;
   snapshotReader: ChangesSnapshotReader;
   schemaRules: NativeSchemaRules;
+  viewsMigration: ViewsMigrationService;
   guard: CommittedVersionsGuard;
   close(): Promise<void>;
 }
@@ -91,6 +93,7 @@ export async function createPartialChangesTestKit(): Promise<PartialChangesTestK
       module.get(JsonSchemaStoreService).refs,
       module.get(JsonSchemaValidatorService),
     ),
+    viewsMigration: module.get(ViewsMigrationService),
     guard: new CommittedVersionsGuard(prisma),
     async close() {
       await module.close();

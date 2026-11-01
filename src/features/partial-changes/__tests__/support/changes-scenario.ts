@@ -1,4 +1,8 @@
-import type { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
+import type {
+  JsonPatch,
+  JsonSchema,
+  Migration,
+} from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { createExpressImageFile } from 'src/__tests__/utils/file';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
@@ -8,6 +12,7 @@ import type {
   ChangesBranch,
   ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import { type CatalogueView, readCatalogue } from './catalogue-reading';
@@ -222,6 +227,34 @@ export class ChangesScenario {
         });
       },
     );
+  }
+
+  public async recordPendingMigration(migration: Migration): Promise<void> {
+    const revisionId = await this.draftRevisionId();
+
+    await this.kit.draftWriteAdmission.runSerializableRevisionWrite(
+      revisionId,
+      () =>
+        this.kit.draftRevisionApi.createRows({
+          revisionId,
+          tableId: SystemTables.Migration,
+          rows: [
+            {
+              rowId: migration.id,
+              data: migration as unknown as InputJsonValue,
+            },
+          ],
+        }),
+    );
+  }
+
+  public async rewriteSchemaHistory(
+    tableId: string,
+    history: readonly HistoryPatches[],
+  ): Promise<void> {
+    await this.writeRowColumns(SystemTables.Schema, tableId, {
+      meta: history as unknown as InputJsonValue,
+    });
   }
 
   public readSnapshot(): Promise<ChangesSnapshot> {

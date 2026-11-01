@@ -8,6 +8,8 @@ export type RowUnitKind =
   | 'rowRename'
   | 'rowColumns';
 
+const NO_TABLE_IDENTITY = '';
+
 export function rowUnitKey(
   kind: RowUnitKind,
   tableIdentity: string,
@@ -24,8 +26,20 @@ export function fieldUnitKey(
   return keyOf('field', tableIdentity, rowIdentity, pointer.toString());
 }
 
-export function structureUnitKey(tableIdentity: string): string {
-  return keyOf('structure', tableIdentity);
+export function structureUnitKey(...tableIdentities: string[]): string {
+  return keyOf('structure', ...tableIdentities);
+}
+
+export function transientStructureUnitKey(tableId: string): string {
+  return keyOf('structure', NO_TABLE_IDENTITY, tableId);
+}
+
+export function viewsUnitKey(tableIdentity: string): string {
+  return keyOf('views', tableIdentity);
+}
+
+export function sharedSchemaUnitKey(rowIdentity: string): string {
+  return keyOf('sharedSchema', rowIdentity);
 }
 
 function keyOf(kind: UnitKind, ...identities: string[]): string {

@@ -97,6 +97,7 @@ describe('ChangeCatalogue: owners of publishedAt, meta and schemaHash', () => {
       const catalogue = await draft.readCatalogue([ARTICLES]);
 
       expect(catalogue.unitsOf(ARTICLES)).toEqual([
+        { kind: 'structure', tableId: ARTICLES },
         {
           kind: 'rowColumns',
           tableId: ARTICLES,
@@ -107,7 +108,7 @@ describe('ChangeCatalogue: owners of publishedAt, meta and schemaHash', () => {
       expectEveryDifferenceOwnedOnce(catalogue);
     });
 
-    it('lists no row unit for a publishedAt edit of a published-at field the structure added', async () => {
+    it('lists only the structure unit for a publishedAt edit of a published-at field the structure added', async () => {
       const draft = await givenCommittedArticle(articleSchema, {
         title: 'one',
       });
@@ -121,7 +122,9 @@ describe('ChangeCatalogue: owners of publishedAt, meta and schemaHash', () => {
 
       const catalogue = await draft.readCatalogue([ARTICLES]);
 
-      expect(catalogue.unitsOf(ARTICLES)).toEqual([]);
+      expect(catalogue.unitsOf(ARTICLES)).toEqual([
+        { kind: 'structure', tableId: ARTICLES },
+      ]);
       expectEveryDifferenceOwnedOnce(catalogue);
     });
 
@@ -140,6 +143,7 @@ describe('ChangeCatalogue: owners of publishedAt, meta and schemaHash', () => {
       const catalogue = await draft.readCatalogue([ARTICLES]);
 
       expect(catalogue.unitsOf(ARTICLES)).toEqual([
+        { kind: 'structure', tableId: ARTICLES },
         { kind: 'field', tableId: ARTICLES, rowId: 'a1', path: '/title' },
       ]);
       expectEveryDifferenceOwnedOnce(catalogue);

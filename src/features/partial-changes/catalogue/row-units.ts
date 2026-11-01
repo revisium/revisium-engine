@@ -49,6 +49,8 @@ interface RowOnBothSides {
 
 type RowUnitFields = Omit<Unit, 'kind' | 'tableId'>;
 
+const NO_SYSTEM_ROWS: readonly Row[] = [];
+
 export function buildRowUnits(table: ChangedTable): RowUnits {
   return new RowUnitsBuilder(table).build();
 }
@@ -59,8 +61,10 @@ class RowUnitsBuilder {
   private readonly draftOnlyRows: ReadonlyMap<string, RowPair>;
   private readonly idsTakenByRenames: ReadonlySet<string>;
   private readonly ownedLeaves: readonly LeafOwner[];
+  private readonly tableIdentities: readonly string[];
 
   constructor(private readonly table: ChangedTable) {
+    this.tableIdentities = [table.identity];
     this.headOnlyRows = rowsById(table.pairs, headOnlyRowOf);
     this.draftOnlyRows = rowsById(table.pairs, draftOnlyRowOf);
     this.idsTakenByRenames = idsTakenByRenamesOf(table.pairs);
@@ -252,8 +256,9 @@ class RowUnitsBuilder {
     if (!this.units.has(key)) {
       this.units.set(key, {
         key,
-        tableIdentity: this.table.identity,
+        tableIdentities: this.tableIdentities,
         rowIdentities,
+        systemRows: NO_SYSTEM_ROWS,
         side,
         unit,
       });

@@ -1,6 +1,10 @@
-import type { Migration } from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
+import {
+  attributeLedger,
+  type LedgerAttribution,
+  pendingMigrationsOf,
+} from 'src/features/partial-changes/catalogue/ledger-attribution';
 import type {
   ChangedRows,
   ChangesBranch,
@@ -29,6 +33,12 @@ export interface ChangedRowsView {
 
 export type RevisionSide = 'head' | 'draft';
 
+export interface ComparedSnapshot {
+  readonly snapshot: ChangesSnapshot;
+  readonly ledger: LedgerAttribution;
+  readonly tables: readonly ComparedTable[];
+}
+
 export function readInPlanningTransaction<T>(
   kit: PartialChangesTestKit,
   read: () => Promise<T>,
@@ -50,23 +60,45 @@ export function readChangedRows(
   tableIds: readonly string[],
 ): Promise<ChangedRowsView> {
   return readInPlanningTransaction(kit, async () => {
-    const snapshot = await kit.snapshotReader.readSnapshot(branch);
-    const tables = comparedTablesOf(kit, snapshot, tableIds);
-    const count = await kit.snapshotReader.countChangedRows(tables);
-    const changedRows = await kit.snapshotReader.readChangedRows(tables);
+    const { snapshot, tables } = await readComparedSnapshot(kit, branch);
+    const affected = affectedTablesOf(snapshot, tables, tableIds);
+    const count = await kit.snapshotReader.countChangedRows(affected);
+    const changedRows = await kit.snapshotReader.readChangedRows(affected);
 
     return changedRowsView(snapshot, count, changedRows);
   });
 }
 
-export function comparedTablesOf(
+export async function readComparedSnapshot(
   kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+): Promise<ComparedSnapshot> {
+  const snapshot = await kit.snapshotReader.readSnapshot(branch);
+  const ledger = attributeLedger(snapshot);
+
+  return { snapshot, ledger, tables: comparedTablesOf(kit, snapshot, ledger) };
+}
+
+export function affectedTablesOf(
   snapshot: ChangesSnapshot,
+  tables: readonly ComparedTable[],
   tableIds: readonly string[],
 ): ComparedTable[] {
-  return tableIds.flatMap((tableId) => {
-    const { identity, head, draft } = pairOf(snapshot, tableId);
+  const identities = new Set(
+    tableIds.flatMap((tableId) =>
+      pairsNamed(snapshot, tableId).map(({ identity }) => identity),
+    ),
+  );
 
+  return tables.filter(({ identity }) => identities.has(identity));
+}
+
+function comparedTablesOf(
+  kit: PartialChangesTestKit,
+  snapshot: ChangesSnapshot,
+  ledger: LedgerAttribution,
+): ComparedTable[] {
+  return snapshot.tables.flatMap(({ identity, head, draft }) => {
     if (!head || !draft) {
       return [];
     }
@@ -75,7 +107,7 @@ export function comparedTablesOf(
       {
         head: sideOf(snapshot, head, 'head'),
         draft: sideOf(snapshot, draft, 'draft'),
-        pendingMigrations: pendingMigrationsOf(snapshot, [head.id, draft.id]),
+        pendingMigrations: pendingMigrationsOf(ledger, identity),
       },
       kit.schemaRules,
     );
@@ -91,16 +123,16 @@ export function comparedTablesOf(
   });
 }
 
-function pairOf(snapshot: ChangesSnapshot, tableId: string): TablePair {
-  const pair = snapshot.tables.find(
+function pairsNamed(snapshot: ChangesSnapshot, tableId: string): TablePair[] {
+  const pairs = snapshot.tables.filter(
     ({ head, draft }) => draft?.id === tableId || head?.id === tableId,
   );
 
-  if (!pair) {
+  if (pairs.length === 0) {
     throw new Error(`Table ${tableId} is in neither revision`);
   }
 
-  return pair;
+  return pairs;
 }
 
 function sideOf(
@@ -124,19 +156,6 @@ function sideOf(
     history: version.history,
     tableIdentities,
   };
-}
-
-function pendingMigrationsOf(
-  snapshot: ChangesSnapshot,
-  tableIds: readonly string[],
-): Migration[] {
-  const { head, draft } = snapshot.systemRows.migrations;
-  const published = new Set(head.map((row) => row.versionId));
-
-  return draft
-    .filter((row) => !published.has(row.versionId))
-    .map((row) => row.data as unknown as Migration)
-    .filter((migration) => tableIds.includes(migration.tableId));
 }
 
 function changedRowsView(

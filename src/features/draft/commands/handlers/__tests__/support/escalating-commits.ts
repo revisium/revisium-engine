@@ -101,12 +101,15 @@ export function holdEscalatedAttemptsBeforeTheirHolders(
   const acquire = ExclusiveFenceHolder.prototype.acquire;
   jest
     .spyOn(ExclusiveFenceHolder.prototype, 'acquire')
-    .mockImplementation(async function (this: ExclusiveFenceHolder) {
+    .mockImplementation(async function (
+      this: ExclusiveFenceHolder,
+      lockWaitMs: number,
+    ) {
       beforeHolder += 1;
       openWhenNoneCanAdvance();
       await opened.fired;
 
-      return acquire.call(this);
+      return acquire.call(this, lockWaitMs);
     });
 
   const slots = kit.module.get(EscalationSlots);

@@ -5,7 +5,18 @@ import {
   type DatabaseServiceTestKit,
 } from 'src/__tests__/kit/create-database-service-test-kit';
 import { blockEventLoopFor } from 'src/__tests__/utils/event-loop';
+import {
+  type BranchGraph,
+  prepareBranch,
+} from 'src/__tests__/utils/prepareProject';
+import {
+  type BranchFenceLock,
+  holdBranchFenceAsWriter,
+  readBranchFenceLocks,
+} from 'src/features/draft/commands/handlers/__tests__/support/branch-write-fence';
 import { TransactionPrismaClient } from 'src/features/share/types';
+import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
+import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
 import {
   DeadlineHandle,
   OperationDeadline,
@@ -23,6 +34,12 @@ const SHORTER_SESSION_DEFAULT_MS = 300;
 const LONGER_SESSION_DEFAULT_MS = 30 * OPERATION_TIMEOUT_MS;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const CONFIGURED_MAX_ATTEMPTS = 2;
+
+const SHORTER_THAN_FENCE_WAIT_SETTINGS = {
+  TRANSACTION_BASE_DELAY_MS: '1',
+  TRANSACTION_MAX_DELAY_MS: '10',
+  PARTIAL_CHANGES_OPERATION_TIMEOUT_MS: String(OPERATION_TIMEOUT_MS),
+};
 
 const RUNNER_SETTINGS = {
   TRANSACTION_TIMEOUT: String(NATIVE_TRANSACTION_TIMEOUT_MS),
@@ -53,9 +70,9 @@ describe('OperationTransactionRunner', () => {
   describe('write attempts', () => {
     it('retry a serialization failure and commit the next attempt, planned from a fresh snapshot, once', async () => {
       const counter = await givenCounter(kit);
-      const write = countAttempts(conflictingOnFirstAttempt(kit, counter));
+      const write = countAttempts(conflictingOnFirstAttempts(kit, counter, 1));
 
-      await runner.runWrite(write.run);
+      await runner.runWrite(branch, write.run);
 
       expect(write.attempts).toBe(2);
       await expect(readCounter(kit, counter)).resolves.toBe(2);
@@ -67,7 +84,7 @@ describe('OperationTransactionRunner', () => {
         incrementAfterConcurrentIncrement(kit, counter),
       );
 
-      await expect(runner.runWrite(write.run)).rejects.toMatchObject({
+      await expect(runner.runWrite(branch, write.run)).rejects.toMatchObject({
         code: 'P2034',
       });
 
@@ -76,14 +93,39 @@ describe('OperationTransactionRunner', () => {
         DEFAULT_MAX_ATTEMPTS,
       );
     });
+
+    it('run the attempt after two serialization failures under the exclusive branch write fence, admitted in the exclusiveHeld mode, and release the fence', async () => {
+      const counter = await givenCounter(kit);
+      const write = recordingAdmissions(
+        kit,
+        branch,
+        conflictingOnFirstAttempts(kit, counter, 2),
+      );
+
+      await runner.runWrite(branch, write.run);
+
+      expect(write.admissions).toEqual<AttemptAdmission[]>([
+        { exclusiveHeldBranchId: undefined, fenceLocks: [] },
+        { exclusiveHeldBranchId: undefined, fenceLocks: [] },
+        {
+          exclusiveHeldBranchId: branch.branchId,
+          fenceLocks: [{ mode: 'ExclusiveLock', granted: true }],
+        },
+      ]);
+      await expect(readBranchFenceLocks(kit, branch.branchId)).resolves.toEqual(
+        [],
+      );
+    });
   });
 
   describe('failures that are not timeouts', () => {
     it('keep a P2028 of a stale transaction client as it is', async () => {
-      const stale = await transactionOfCommittedOperation(kit, runner);
+      const stale = await transactionOfCommittedOperation(kit, runner, branch);
 
       const failure = await failureOf(
-        runner.runWrite(() => stale.transaction.projectFileUsage.count()),
+        runner.runWrite(branch, () =>
+          stale.transaction.projectFileUsage.count(),
+        ),
       );
 
       expect(failure.error).toMatchObject({ code: 'P2028' });
@@ -93,7 +135,7 @@ describe('OperationTransactionRunner', () => {
       const counter = await givenCounter(kit);
 
       const failure = await failureOf(
-        runner.runWrite(() =>
+        runner.runWrite(branch, () =>
           failWithDuplicateWhileStatementRuns(
             kit,
             counter,
@@ -150,7 +192,9 @@ describe('OperationTransactionRunner', () => {
           ),
         );
 
-        const failure = await failureOf(serverRunner.runWrite(write.run));
+        const failure = await failureOf(
+          serverRunner.runWrite(branch, write.run),
+        );
 
         expect(failure.error).toBeInstanceOf(OperationTimeoutException);
         expect(failure.elapsedMs).toBeLessThan(STATEMENT_BEYOND_TIMEOUT_MS);
@@ -173,7 +217,7 @@ describe('OperationTransactionRunner', () => {
         const counter = await givenCounter(serverKit);
 
         const failure = await failureOf(
-          serverRunner.runWrite(() =>
+          serverRunner.runWrite(branch, () =>
             incrementThenIdleFor(serverKit, counter, IDLE_PAST_DEADLINE_MS),
           ),
         );
@@ -187,7 +231,9 @@ describe('OperationTransactionRunner', () => {
         const counter = await givenCounter(serverKit);
         const operation = continuingPastTheDeadline(serverKit, counter);
 
-        const failure = await failureOf(serverRunner.runWrite(operation.run));
+        const failure = await failureOf(
+          serverRunner.runWrite(branch, operation.run),
+        );
         await untilAbandonedOperationSettles(operation);
 
         expect(failure.error).toBeInstanceOf(OperationTimeoutException);
@@ -200,9 +246,9 @@ describe('OperationTransactionRunner', () => {
         const counter = await givenCounter(serverKit);
         const operation = blockingPastTheDeadline(serverKit, counter);
 
-        await expect(serverRunner.runWrite(operation.run)).rejects.toThrow(
-          OperationTimeoutException,
-        );
+        await expect(
+          serverRunner.runWrite(branch, operation.run),
+        ).rejects.toThrow(OperationTimeoutException);
 
         await expect(
           isBackendAlive(serverKit, operation.backendPid),
@@ -212,7 +258,7 @@ describe('OperationTransactionRunner', () => {
 
       it('covers a statement the operation returns without awaiting it', async () => {
         const failure = await failureOf(
-          serverRunner.runWrite(() =>
+          serverRunner.runWrite(branch, () =>
             statementFor(serverKit, STATEMENT_BEYOND_TIMEOUT_MS),
           ),
         );
@@ -224,14 +270,14 @@ describe('OperationTransactionRunner', () => {
       it('refuses a checkpoint after the deadline with OperationTimeoutException', async () => {
         const operation = checkpointingPastTheDeadline();
 
-        await failureOf(serverRunner.runWrite(operation.run));
+        await failureOf(serverRunner.runWrite(branch, operation.run));
         await untilAbandonedOperationSettles(operation);
 
         expect(operation.checkpoint).toBeInstanceOf(OperationTimeoutException);
       });
 
       it('leaves no setting on the connection of a committed operation', async () => {
-        const backendPid = await serverRunner.runWrite(() =>
+        const backendPid = await serverRunner.runWrite(branch, () =>
           readBackendPid(serverKit),
         );
 
@@ -243,9 +289,9 @@ describe('OperationTransactionRunner', () => {
       it('leaves no setting on the connection of a rolled-back operation', async () => {
         const operation = failingAfterReadingBackendPid(serverKit);
 
-        await expect(serverRunner.runWrite(operation.run)).rejects.toThrow(
-          OPERATION_FAILURE,
-        );
+        await expect(
+          serverRunner.runWrite(branch, operation.run),
+        ).rejects.toThrow(OPERATION_FAILURE);
 
         await expect(
           runTransactionLongerThanOperationTimeout(serverKit),
@@ -279,7 +325,7 @@ describe('OperationTransactionRunner', () => {
 
       try {
         await expect(
-          fallbackRunner.runWrite(() =>
+          fallbackRunner.runWrite(branch, () =>
             incrementThenRunStatementFor(
               fallbackKit,
               counter,
@@ -296,7 +342,7 @@ describe('OperationTransactionRunner', () => {
 
     it('cuts a statement started after a checkpoint at the deadline', async () => {
       const failure = await failureOf(
-        fallbackRunner.runWrite((deadline) =>
+        fallbackRunner.runWrite(branch, (deadline) =>
           runStatementsAroundCheckpoint(fallbackKit, deadline, {
             beforeMs: 0.6 * OPERATION_TIMEOUT_MS,
             afterMs: STATEMENT_BEYOND_TIMEOUT_MS,
@@ -310,7 +356,7 @@ describe('OperationTransactionRunner', () => {
 
     it('keeps a statement cancellation before the deadline as it is', async () => {
       const failure = await failureOf(
-        fallbackRunner.runWrite(() =>
+        fallbackRunner.runWrite(branch, () =>
           runStatementPastOwnStatementTimeout(fallbackKit),
         ),
       );
@@ -391,6 +437,78 @@ describe('OperationTransactionRunner', () => {
     });
   });
 
+  describe('an escalated attempt whose operation timeout is shorter than the native fence wait limit', () => {
+    it('ends at the operation deadline with OperationTimeoutException while every escalation slot is taken, and holds nothing', async () => {
+      const counter = await givenCounter(shortKit);
+      const write = countAttempts(
+        conflictingOnFirstAttempts(shortKit, counter, 2),
+      );
+
+      const failure = await whileEveryEscalationSlotIsTaken(shortKit, () =>
+        failureOf(shortRunner.runWrite(shortBranch, write.run)),
+      );
+
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+      expectEndedAtTheOperationDeadline(failure.elapsedMs);
+      expect(write.attempts).toBe(2);
+      await expect(
+        readBranchFenceLocks(shortKit, shortBranch.branchId),
+      ).resolves.toEqual([]);
+    });
+
+    it('ends at the operation deadline with OperationTimeoutException while a writer keeps the branch fence, and releases its slot and holder', async () => {
+      const counter = await givenCounter(shortKit);
+      const write = countAttempts(
+        conflictingOnFirstAttempts(shortKit, counter, 2),
+      );
+      const freeSlots = await countFreeEscalationSlots(shortKit);
+      const writer = await holdBranchFenceAsWriter(
+        shortKit,
+        shortBranch.branchId,
+      );
+
+      const failure = await failureOf(
+        shortRunner.runWrite(shortBranch, write.run),
+      );
+
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+      expectEndedAtTheOperationDeadline(failure.elapsedMs);
+      expect(write.attempts).toBe(2);
+      await expect(
+        readBranchFenceLocks(shortKit, shortBranch.branchId),
+      ).resolves.toEqual([{ mode: 'ShareLock', granted: true }]);
+      await writer.release();
+      await expect(countFreeEscalationSlots(shortKit)).resolves.toBe(freeSlots);
+    });
+
+    function expectEndedAtTheOperationDeadline(elapsedMs: number): void {
+      expect(elapsedMs).toBeGreaterThanOrEqual(OPERATION_TIMEOUT_MS);
+      expect(elapsedMs).toBeLessThan(nativeFenceWaitLimitMs);
+    }
+
+    let shortKit: DatabaseServiceTestKit;
+    let shortRunner: OperationTransactionRunner;
+    let shortBranch: BranchGraph;
+    let nativeFenceWaitLimitMs: number;
+
+    beforeAll(async () => {
+      shortKit = await createDatabaseServiceTestKit(
+        [],
+        SHORTER_THAN_FENCE_WAIT_SETTINGS,
+      );
+      shortRunner = shortKit.module.get(OperationTransactionRunner);
+      shortBranch = await prepareBranch(shortKit.prismaService);
+      nativeFenceWaitLimitMs = shortKit.module.get(
+        BranchWriteFenceService,
+      ).waitLimitMs;
+      expect(OPERATION_TIMEOUT_MS).toBeLessThan(nativeFenceWaitLimitMs);
+    });
+
+    afterAll(async () => {
+      await shortKit.close();
+    });
+  });
+
   describe('with PARTIAL_CHANGES_MAX_ATTEMPTS configured', () => {
     it('stops after the configured number of attempts', async () => {
       const counter = await givenCounter(configuredKit);
@@ -398,7 +516,9 @@ describe('OperationTransactionRunner', () => {
         incrementAfterConcurrentIncrement(configuredKit, counter),
       );
 
-      await expect(configuredRunner.runWrite(write.run)).rejects.toMatchObject({
+      await expect(
+        configuredRunner.runWrite(branch, write.run),
+      ).rejects.toMatchObject({
         code: 'P2034',
       });
 
@@ -422,10 +542,12 @@ describe('OperationTransactionRunner', () => {
 
   let kit: DatabaseServiceTestKit;
   let runner: OperationTransactionRunner;
+  let branch: BranchGraph;
 
   beforeAll(async () => {
     kit = await createDatabaseServiceTestKit([], RUNNER_SETTINGS);
     runner = kit.module.get(OperationTransactionRunner);
+    branch = await prepareBranch(kit.prismaService);
   });
 
   afterAll(async () => {
@@ -443,6 +565,55 @@ async function failureOf(operation: Promise<unknown>) {
   );
 
   return { error, elapsedMs: performance.now() - startedAt };
+}
+
+async function whileEveryEscalationSlotIsTaken<T>(
+  kit: DatabaseServiceTestKit,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const slots = kit.module.get(EscalationSlots);
+  const taken = await takeFreeEscalationSlots(slots);
+
+  try {
+    return await operation();
+  } finally {
+    releaseEscalationSlots(slots, taken);
+  }
+}
+
+async function countFreeEscalationSlots(
+  kit: DatabaseServiceTestKit,
+): Promise<number> {
+  const slots = kit.module.get(EscalationSlots);
+  const free = await takeFreeEscalationSlots(slots);
+  releaseEscalationSlots(slots, free);
+
+  return free;
+}
+
+async function takeFreeEscalationSlots(
+  slots: EscalationSlots,
+): Promise<number> {
+  let taken = 0;
+
+  while (await takesSlotWithoutWaiting(slots)) {
+    taken += 1;
+  }
+
+  return taken;
+}
+
+function takesSlotWithoutWaiting(slots: EscalationSlots): Promise<boolean> {
+  return slots.acquire(0).then(
+    () => true,
+    () => false,
+  );
+}
+
+function releaseEscalationSlots(slots: EscalationSlots, count: number): void {
+  for (let slot = 0; slot < count; slot++) {
+    slots.release();
+  }
 }
 
 async function createKitWithTransactionTimeoutDefault(
@@ -499,20 +670,46 @@ function countAttempts(attempt: () => Promise<void>) {
   return counted;
 }
 
-function conflictingOnFirstAttempt(
+function conflictingOnFirstAttempts(
   kit: DatabaseServiceTestKit,
   counter: Counter,
+  conflicts: number,
 ): () => Promise<void> {
-  let attempted = false;
+  let attempts = 0;
 
   return () => {
-    if (attempted) {
+    attempts += 1;
+
+    if (attempts > conflicts) {
       return increment(kit, counter);
     }
 
-    attempted = true;
     return incrementAfterConcurrentIncrement(kit, counter);
   };
+}
+
+interface AttemptAdmission {
+  exclusiveHeldBranchId?: string;
+  fenceLocks: BranchFenceLock[];
+}
+
+function recordingAdmissions(
+  kit: DatabaseServiceTestKit,
+  branch: BranchGraph,
+  attempt: () => Promise<void>,
+) {
+  const recorded = {
+    admissions: [] as AttemptAdmission[],
+    async run() {
+      recorded.admissions.push({
+        exclusiveHeldBranchId: kit.transactionService.exclusiveHeldBranchId,
+        fenceLocks: await readBranchFenceLocks(kit, branch.branchId),
+      });
+      await attempt();
+    },
+  };
+
+  return recorded;
 }
 
 interface CheckpointLimits {
@@ -640,8 +837,9 @@ function settlementSignal() {
 async function transactionOfCommittedOperation(
   kit: DatabaseServiceTestKit,
   runner: OperationTransactionRunner,
+  branch: BranchGraph,
 ) {
-  return runner.runWrite(() =>
+  return runner.runWrite(branch, () =>
     Promise.resolve({ transaction: kit.transactionService.getTransaction() }),
   );
 }

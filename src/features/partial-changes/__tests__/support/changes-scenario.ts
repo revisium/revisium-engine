@@ -14,6 +14,7 @@ import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-re
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { ListChangesResult } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
@@ -37,6 +38,7 @@ import {
   type PageWithReads,
 } from './change-listing';
 import { previewChanges, type PreviewOptions } from './change-preview';
+import { revertChanges, type RevertOptions } from './change-reverting';
 import { type ClosureView, readClosedDependencies } from './dependency-closing';
 import { type PlanVariant, readPlanFingerprint } from './plan-fingerprinting';
 import {
@@ -531,6 +533,10 @@ export class ChangesScenario {
     return previewChanges(this.kit, this.branch, options);
   }
 
+  public revertChanges(options: RevertOptions): Promise<RevertChangesResult> {
+    return revertChanges(this.kit, this.branch, options);
+  }
+
   public assembleTarget(
     operation: ChangeOperation,
     selection: Selection,
@@ -582,6 +588,45 @@ export class ChangesScenario {
     const draft = await this.row('draft', tableId, rowId);
 
     return head.versionId !== draft.versionId;
+  }
+
+  public async hasChanges(): Promise<boolean> {
+    const revision = await this.kit.prisma.revision.findUniqueOrThrow({
+      where: { id: await this.draftRevisionId() },
+      select: { hasChanges: true },
+    });
+
+    return revision.hasChanges;
+  }
+
+  public async linkedTableVersionIds(side: RevisionSide): Promise<string[]> {
+    const tables = await this.kit.prisma.table.findMany({
+      where: { revisions: { some: { id: await this.revisionId(side) } } },
+      select: { versionId: true },
+      orderBy: { versionId: 'asc' },
+    });
+
+    return tables.map(({ versionId }) => versionId);
+  }
+
+  public async rowIds(side: RevisionSide, tableId: string): Promise<string[]> {
+    const rows = await this.kit.prisma.row.findMany({
+      where: {
+        tables: {
+          some: { versionId: await this.tableVersionId(side, tableId) },
+        },
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+
+    return rows.map(({ id }) => id);
+  }
+
+  public async ledgerIds(side: RevisionSide): Promise<string[]> {
+    const ledger = await this.ledger(side);
+
+    return ledger.map(({ id }) => id).sort();
   }
 
   public async hasTable(side: RevisionSide, tableId: string): Promise<boolean> {
@@ -668,7 +713,7 @@ export class ChangesScenario {
     changeType: Migration['changeType'],
     tableId: string,
   ): Promise<Migration> {
-    const ledger = await this.draftLedger();
+    const ledger = await this.ledger('draft');
     const migration = ledger.find(
       (candidate) =>
         candidate.changeType === changeType && candidate.tableId === tableId,
@@ -681,9 +726,9 @@ export class ChangesScenario {
     return migration;
   }
 
-  private async draftLedger(): Promise<Migration[]> {
+  private async ledger(side: RevisionSide): Promise<Migration[]> {
     const ledgerTableVersionId = await this.tableVersionId(
-      'draft',
+      side,
       SystemTables.Migration,
     );
     const rows = await this.kit.prisma.row.findMany({

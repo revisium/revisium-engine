@@ -40,11 +40,13 @@ export class CommitTarget {
   }
 
   public write(plan: CommitTargetWritePlan): Promise<CommitResult> {
-    return this.runner.runWrite(() => this.api.commitToTarget(plan));
+    return this.runner.runWrite(this.draft.branch, () =>
+      this.api.commitToTarget(plan),
+    );
   }
 
   public rowTableWorkOf(plan: CommitTargetWritePlan): Promise<RowTableWork> {
-    return this.runner.runWrite(async () => {
+    return this.runner.runWrite(this.draft.branch, async () => {
       const before = await this.rowTableWorkSoFar();
 
       await this.api.commitToTarget(plan);
@@ -58,7 +60,7 @@ export class CommitTarget {
   ): Promise<void> {
     const plan = await this.plan(...targets);
 
-    await this.runner.runWrite(async () => {
+    await this.runner.runWrite(this.draft.branch, async () => {
       await this.api.commitToTarget(plan);
 
       throw new Error('The caller failed after the write');

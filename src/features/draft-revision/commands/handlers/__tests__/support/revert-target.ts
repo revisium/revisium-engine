@@ -23,13 +23,15 @@ export class RevertTarget {
   }
 
   public write(plan: TargetWritePlan): Promise<string> {
-    return this.runner.runWrite(() => this.api.revertToTarget(plan));
+    return this.runner.runWrite(this.draft.branch, () =>
+      this.api.revertToTarget(plan),
+    );
   }
 
   public async revertInFailingCaller(...targets: TableTarget[]): Promise<void> {
     const plan = await this.plan(...targets);
 
-    await this.runner.runWrite(async () => {
+    await this.runner.runWrite(this.draft.branch, async () => {
       await this.api.revertToTarget(plan);
 
       throw new Error('The caller failed after the write');

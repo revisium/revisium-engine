@@ -76,9 +76,17 @@ export class OperationDeadline implements DeadlineHandle {
     return error;
   }
 
+  public remainingMs(): number {
+    return Math.max(Math.ceil(this.endsAt - performance.now()), 0);
+  }
+
+  public exceeded(): OperationTimeoutException {
+    return new OperationTimeoutException(this.timeoutMs);
+  }
+
   private refuseIfPassed(): void {
     if (this.hasPassed()) {
-      throw new OperationTimeoutException(this.timeoutMs);
+      throw this.exceeded();
     }
   }
 
@@ -154,10 +162,6 @@ export class OperationDeadline implements DeadlineHandle {
 
   private hasPassed(): boolean {
     return performance.now() >= this.endsAt;
-  }
-
-  private remainingMs(): number {
-    return Math.max(Math.ceil(this.endsAt - performance.now()), 0);
   }
 
   private remainingBudget(): string {

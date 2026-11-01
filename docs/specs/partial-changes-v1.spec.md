@@ -1100,7 +1100,9 @@ already guaranteed by Serializable):
     writers start to queue behind the fence; the slot wait and the holder's wait for the exclusive lock together take
     at most half of `TRANSACTION_TIMEOUT` (the holder's `lock_timeout` is what the slot wait left), and the attempt's
     own timeout is `TRANSACTION_TIMEOUT` minus the slot wait; past the wait limit the operation fails with
-    `BranchWriteFencedException` (`BRANCH_WRITE_FENCED`, HTTP 423) without a retry, and nothing stays held;
+    `BranchWriteFencedException` (`BRANCH_WRITE_FENCED`, HTTP 423) without a retry, and nothing stays held; for partial
+    operations each wait is also capped by the time left in the operation, and a wait the operation deadline cuts
+    short fails with the operation timeout instead, not retried;
   - the holder transaction stays open until the attempt's transaction has committed or rolled back, even when a
     statement or the COMMIT in flight keeps the attempt past its own timeout; the holder's own timeout is the attempt's
     timeout plus a fixed grace of 30 s and only bounds how long an attempt that never ends keeps the fence;
@@ -1143,7 +1145,12 @@ fingerprint covers applied units only, so it does not depend on which tables wer
 - A commit fingerprint never matches a revert, and the reverse.
 - A repeat of an applied commit or revert resolves to no unit → `empty` with the current ids; if part of the
   selection still resolves, `expected` gives `stale` and a selection with some unmatched selectors is `blocked`.
-  An operation is never applied twice.
+- A request with `expected` is never applied twice: its fingerprint covers the units it applied, so a repeat, also a
+  concurrent one, is `empty`, or `stale` when its selection now resolves to other units.
+- A request without `expected` (internal callers, or exactly `{ all: true }`) re-resolves its selection against the
+  current state on every call. When ids are reused, an identical repeat can address a different unit: after row `a`
+  is renamed to `b` and a new row `a` is created, `rows: [a]` first reverts the new `a`, and the same request again
+  resolves `a` through Head and reverts the rename.
 - A plan refused by a limit returns `blocked` (`tooLarge`), never `stale`, also when the Draft grew past the limit
   after the preview.
 
@@ -1663,6 +1670,12 @@ Deadline enforcement:
   it; `transaction_timeout` is re-armed in each transaction on PostgreSQL 17; older servers renew `statement_timeout`
   and `idle_in_transaction_session_timeout` at deadline checkpoints instead of per-statement budgets; COMMIT never
   starts after the deadline; an error counts as the timeout only with evidence, and `P2028` never does.
+
+Idempotency:
+
+- §9.2: "never applied twice" holds for requests with `expected`; a request without `expected` re-resolves its
+  selection against the current state on every call and can address a different unit when ids are reused
+  (clarification).
 
 Listing:
 

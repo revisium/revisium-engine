@@ -17,11 +17,6 @@ const LOCK_NOT_AVAILABLE = '55P03';
 // PostgreSQL reads a lock_timeout of 0 as "no timeout", so a spent wait budget still sets the smallest one.
 const SMALLEST_LOCK_TIMEOUT_MS = 1;
 
-export interface EscalatedAttemptBudget {
-  fenceWaitSpentMs: number;
-  attemptTimeoutMs: number;
-}
-
 export function branchWriteFenceKey(branchId: string | Sql): Sql {
   return sql`hashtextextended(${branchId}, hashtext('branch-write-fence'))`;
 }
@@ -54,19 +49,19 @@ export class BranchWriteFenceService {
 
   exclusiveHolder(
     branchId: string,
-    { fenceWaitSpentMs, attemptTimeoutMs }: EscalatedAttemptBudget,
+    protectedTransactionTimeoutMs: number,
   ): ExclusiveFenceHolder {
     return new ExclusiveFenceHolder(
       this.prismaService,
-      (holder) =>
+      (holder, lockWaitMs) =>
         this.lockWithinWaitLimit(
           holder,
           sql`pg_advisory_xact_lock(${branchWriteFenceKey(branchId)})`,
-          this.waitLimitMs - fenceWaitSpentMs,
+          lockWaitMs,
         ),
       {
         maxWait: this.transactionService.serializableMaxWaitMs,
-        protectedTransactionTimeoutMs: attemptTimeoutMs,
+        protectedTransactionTimeoutMs,
       },
     );
   }

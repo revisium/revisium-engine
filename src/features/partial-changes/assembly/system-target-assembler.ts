@@ -23,13 +23,17 @@ import type { AssemblySource } from 'src/features/partial-changes/assembly/targe
 import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import type { SystemTableRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type {
+  SystemTableRows,
+  SystemTableVersionIds,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import { HashService } from 'src/infrastructure/database/hash.service';
 
 export interface SystemTablePlan extends LinkChanges {
   readonly tableId: SystemTables;
+  readonly versionIds: SystemTableVersionIds;
   readonly outcome: TableOutcome;
   readonly linkSide: RevisionSide;
   readonly versionId?: string;
@@ -177,6 +181,7 @@ class SystemTargetAssembly {
 
     return {
       tableId,
+      versionIds: rows.versionIds,
       outcome,
       linkSide,
       versionId: linkedVersionIdOf(rows, outcome, linkSide),

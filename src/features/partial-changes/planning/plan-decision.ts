@@ -1,5 +1,5 @@
 import type { ChangePlan } from 'src/features/partial-changes/planning/change-planner';
-import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
+import { hasUnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 
 export type PlanStatus = 'ready' | 'required' | 'blocked' | 'stale' | 'empty';
 
@@ -72,7 +72,7 @@ function isStale(
 }
 
 function isBlocked({ blockers, unmatched }: DecidedPlan): boolean {
-  return blockers.length > 0 || hasSelectors(unmatched);
+  return blockers.length > 0 || hasUnmatchedSelectors(unmatched);
 }
 
 function awaitsRequiredAdditions(
@@ -80,8 +80,4 @@ function awaitsRequiredAdditions(
   { includeRequired }: ApplyTerms,
 ): boolean {
   return required.length > 0 && !includeRequired;
-}
-
-function hasSelectors(unmatched: UnmatchedSelection): boolean {
-  return Object.keys(unmatched).length > 0;
 }

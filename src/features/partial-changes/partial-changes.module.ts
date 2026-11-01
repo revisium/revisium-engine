@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
+import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
+import { DraftModule } from 'src/features/draft/draft.module';
 import { RowMerger } from 'src/features/partial-changes/assembly/row-merger';
 import { SystemTargetAssembler } from 'src/features/partial-changes/assembly/system-target-assembler';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
@@ -8,6 +10,7 @@ import { DependencyClosure } from 'src/features/partial-changes/closure/dependen
 import { TARGET_CHECKS } from 'src/features/partial-changes/closure/findings';
 import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-reference-checks';
 import { StructureChecks } from 'src/features/partial-changes/closure/structure-checks';
+import { PARTIAL_CHANGES_COMMAND_HANDLERS } from 'src/features/partial-changes/commands/handlers';
 import { OperationEstimator } from 'src/features/partial-changes/limits/operation-estimator';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { UnitListing } from 'src/features/partial-changes/listing/unit-listing';
@@ -26,7 +29,15 @@ import { ViewsModule } from 'src/features/views/views.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 
 @Module({
-  imports: [DatabaseModule, CqrsModule, ShareModule, PluginModule, ViewsModule],
+  imports: [
+    DatabaseModule,
+    CqrsModule,
+    ShareModule,
+    PluginModule,
+    ViewsModule,
+    DraftRevisionModule,
+    DraftModule,
+  ],
   providers: [
     ChangesSnapshotReader,
     ComparedSnapshotReader,
@@ -55,6 +66,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     UnitListing,
     PartialChangesApiService,
     ...PARTIAL_CHANGES_QUERY_HANDLERS,
+    ...PARTIAL_CHANGES_COMMAND_HANDLERS,
   ],
 })
 export class PartialChangesModule {}

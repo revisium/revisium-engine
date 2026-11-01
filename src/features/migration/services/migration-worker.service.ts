@@ -64,7 +64,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.workerMode === 'inline') {
-      this.drivers.drive(migrationId, () =>
+      this.drivers.driveUnlessDriven(migrationId, () =>
         this.migrationService.processMigration(migrationId),
       );
     }
@@ -120,7 +120,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
 
   private async takeOverStalledSwaps() {
     for (const stalledOwner of await this.transitions.findStalledSwaps()) {
-      this.drivers.drive(stalledOwner.migrationId, () =>
+      this.drivers.driveTakeover(stalledOwner.migrationId, () =>
         this.migrationService.takeOverStalledSwap(stalledOwner),
       );
     }
@@ -134,7 +134,7 @@ export class MigrationWorkerService implements OnModuleInit, OnModuleDestroy {
     const migrationId = await this.transitions.findOldestClaimable();
 
     if (migrationId && this.heldLeases.isEmpty) {
-      this.drivers.drive(migrationId, () =>
+      this.drivers.driveUnlessDriven(migrationId, () =>
         this.migrationService.processMigration(migrationId),
       );
     }

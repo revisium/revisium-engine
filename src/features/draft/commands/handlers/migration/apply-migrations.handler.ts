@@ -10,6 +10,7 @@ import {
 import { DraftApiService } from 'src/features/draft/draft-api.service';
 import { DraftTransactionalCommands } from 'src/features/draft/draft.transactional.commands';
 import { MigrationContextService } from 'src/features/draft/migration-context.service';
+import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import {
   MigrationImportService,
   type EndedMigration,
@@ -19,6 +20,9 @@ import { JsonSchemaValidatorService } from 'src/features/share/json-schema-valid
 import { Migration, UpdateMigration } from '@revisium/schema-toolkit/types';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { migrationTableOf } from './migration-table-of';
+
+const UPDATE_START_ATTEMPTS = 3;
 
 @CommandHandler(ApplyMigrationsCommand)
 export class ApplyMigrationsHandler implements ICommandHandler<
@@ -108,7 +112,7 @@ export class ApplyMigrationsHandler implements ICommandHandler<
     revisionId: string,
     migration: UpdateMigration,
   ): Promise<ApplyMigrationResult> {
-    const asyncMigrationId = await this.joinOrUpdateTable(
+    const asyncMigrationId = await this.joinOrStartUpdate(
       revisionId,
       migration,
     );
@@ -120,6 +124,31 @@ export class ApplyMigrationsHandler implements ICommandHandler<
     const ended = await this.migrationImport.driveUntilEnded(asyncMigrationId);
 
     return this.asyncUpdateResult(revisionId, migration.id, ended);
+  }
+
+  // Another import of the same ledger can record this update, or start the next
+  // one, between the id check and the start.
+  private async joinOrStartUpdate(
+    revisionId: string,
+    migration: UpdateMigration,
+  ): Promise<string | undefined> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.joinOrUpdateTable(revisionId, migration);
+      } catch (error) {
+        if (!isCompetingWrite(error)) {
+          throw error;
+        }
+
+        if (await this.isRecordedInDraftLedger(revisionId, migration.id)) {
+          return undefined;
+        }
+
+        if (attempt === UPDATE_START_ATTEMPTS) {
+          throw error;
+        }
+      }
+    }
   }
 
   private async joinOrUpdateTable(
@@ -149,7 +178,7 @@ export class ApplyMigrationsHandler implements ICommandHandler<
     id: string,
     ended: EndedMigration | null,
   ): Promise<ApplyMigrationResult> {
-    if (await this.isRecordedInDraftLedger(revisionId)) {
+    if (await this.isRecordedInDraftLedger(revisionId, id)) {
       return appliedResult(id);
     }
 
@@ -160,18 +189,16 @@ export class ApplyMigrationsHandler implements ICommandHandler<
     };
   }
 
-  private async isRecordedInDraftLedger(revisionId: string): Promise<boolean> {
-    try {
-      await this.checkImportedId(revisionId);
+  private async isRecordedInDraftLedger(
+    revisionId: string,
+    migrationId: string,
+  ): Promise<boolean> {
+    const recorded = await this.prisma.row.findFirst({
+      where: { id: migrationId, tables: migrationTableOf(revisionId) },
+      select: { id: true },
+    });
 
-      return false;
-    } catch (error) {
-      if (error instanceof MigrationAlreadyAppliedException) {
-        return true;
-      }
-
-      throw error;
-    }
+    return recorded !== null;
   }
 
   private checkImportedId(revisionId: string) {
@@ -221,6 +248,13 @@ export class ApplyMigrationsHandler implements ICommandHandler<
       });
     }
   }
+}
+
+function isCompetingWrite(error: unknown): boolean {
+  return (
+    error instanceof MigrationLockedException ||
+    error instanceof MigrationAlreadyAppliedException
+  );
 }
 
 function appliedResult(id: string): ApplyMigrationResult {

@@ -45,6 +45,7 @@ type MigrationTestKitOptions = Pick<
   | 'batchSize'
   | 'workerMode'
   | 'pollIntervalMs'
+  | 'heartbeatIntervalMs'
   | 'lockTimeoutMs'
   | 'stallTimeoutMs'
 > & { recoveryScope?: string[]; transactionTimeoutMs?: number };

@@ -76,7 +76,7 @@ export function trackSettlement(operation: Promise<unknown>): () => boolean {
 
 function observeLocalDrivers(kit: MigrationTestKit) {
   const drivers = kit.module.get(MigrationDrivers);
-  const drive = drivers.drive.bind(drivers);
+  const driveUnlessDriven = drivers.driveUnlessDriven.bind(drivers);
   const started: StartedDriver[] = [];
   const awaited: ((driver: StartedDriver) => void)[] = [];
   const running = new Map<string, number>();
@@ -98,14 +98,16 @@ function observeLocalDrivers(kit: MigrationTestKit) {
     awaited.shift()?.(driver);
   };
 
-  jest.spyOn(drivers, 'drive').mockImplementation((migrationId, run) => {
-    drive(migrationId, () => {
-      const result = run();
-      track({ migrationId, result });
+  jest
+    .spyOn(drivers, 'driveUnlessDriven')
+    .mockImplementation((migrationId, run) =>
+      driveUnlessDriven(migrationId, () => {
+        const result = run();
+        track({ migrationId, result });
 
-      return result;
-    });
-  });
+        return result;
+      }),
+    );
 
   const next = (): Promise<StartedDriver> => {
     const driver = started[taken];

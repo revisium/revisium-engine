@@ -21,16 +21,25 @@ import {
   observeImports,
   observeOpenTransactions,
   trackSettlement,
+  type ObservedImports,
 } from './support/migration-imports';
 import {
   expireLease,
   passTimeWithoutProgress,
 } from './support/migration-database';
 import {
+  afterImportAwaited,
+  afterRetry,
+  beforeActiveImportLookup,
   beforeBatchWrite,
+  beforeImportAwaits,
+  beforeObservation,
   drivenByImportUntil,
+  killOwnerProcess,
+  pauseUntil,
   releaseStartedOwners,
   startOwnerUntil,
+  stopLeaseRenewals,
 } from './support/migration-owners';
 import {
   commitDraft,
@@ -41,6 +50,7 @@ import {
   givenDraftOwnedTables,
   givenDraftOwnedTableWith,
   importMigrations,
+  importedTableCreationOf,
   importedUpdatesOf,
   startFieldAddition,
   startFieldRename,
@@ -48,7 +58,8 @@ import {
   type DraftOwnedTable,
   type StartedMigration,
 } from './support/migration-scenario';
-import { readLedger, readSchema } from './support/revision-records';
+import { observeSweepingProcess } from './support/migration-sweeps';
+import { readLedger, readRows, readSchema } from './support/revision-records';
 
 const BATCH_SIZE = 5;
 const ROW_COUNT = 3 * BATCH_SIZE;
@@ -57,8 +68,11 @@ const FIELD = 'price';
 const RENAMED_FIELD = 'cost';
 const IMPORTED_ID = '2999-01-01T00:00:00.000Z';
 const NEXT_IMPORTED_ID = '2999-01-02T00:00:00.000Z';
+const LATER_ID = '2999-01-03T00:00:00.000Z';
+const LATER_TABLE_ID = 'orders';
 
 const OBSERVER_INTERVAL_MS = 50;
+const HEARTBEAT_INTERVAL_MS = 500;
 const LOCK_TIMEOUT_MS = 10_000;
 const STALL_TIMEOUT_MS = 60_000;
 const DEADLINE_MARGIN_MS = STALL_TIMEOUT_MS / 2;
@@ -139,6 +153,30 @@ describe('applyMigrations of an update above the threshold', () => {
     await expectRecordedUpdates(table, migrations);
   });
 
+  it('a repeated import that, after its id check, finds the next migration of a concurrent importer active reports its own migration applied and joins the next one', async () => {
+    const table = await givenDraftOwnedTable(kit, ROW_COUNT);
+    const migrations = additionThenRename(table);
+    const repeated = await pauseUntil(
+      importMigrations(anotherProcess, table, migrations),
+      beforeActiveImportLookup(anotherProcess),
+    );
+    const first = await pauseUntil(
+      importMigrations(kit, table, migrations),
+      beforeImportAwaits(kit, 2),
+    );
+
+    await expect(repeated.resume()).resolves.toEqual([
+      applied(IMPORTED_ID),
+      applied(NEXT_IMPORTED_ID),
+    ]);
+    await expect(first.resume()).resolves.toEqual([
+      applied(IMPORTED_ID),
+      applied(NEXT_IMPORTED_ID),
+    ]);
+    await expectRecordedUpdates(table, migrations);
+    await expectRowsMigratedOnce(table, RENAMED_FIELD);
+  });
+
   it('refuses an update while another migration without its source id is active, with the MIGRATION_LOCKED message, and stops the batch', async () => {
     const draft = await givenDraftOwnedTables(kit, {
       tableIds: ['products', 'orders'],
@@ -177,8 +215,9 @@ describe('applyMigrations of an update above the threshold', () => {
         applied(IMPORTED_ID),
       ]);
 
-      await expect(imports.driverResults()).resolves.toEqual(['completed']);
       await expectRecordedUpdates(table, migrations);
+      await expectRowsMigratedOnce(table, FIELD);
+      await expectCompletedByOneLocalDriverAtATime(imports);
     });
 
     it('(c) after a transient batch failure its driver releases the lease and ends, and the next observation claims again and completes', async () => {
@@ -191,11 +230,13 @@ describe('applyMigrations of an update above the threshold', () => {
         applied(IMPORTED_ID),
       ]);
 
-      await expect(imports.driverResults()).resolves.toEqual([
+      await expect(imports.driverResults()).resolves.toHaveProperty(
+        [0],
         'stopped',
-        'completed',
-      ]);
+      );
       await expectRecordedUpdates(table, migrations);
+      await expectRowsMigratedOnce(table, FIELD);
+      await expectCompletedByOneLocalDriverAtATime(imports);
     });
 
     it('(d) never starts a second local driver of the migration, even when the lease of the running one expired', async () => {
@@ -208,6 +249,7 @@ describe('applyMigrations of an update above the threshold', () => {
         beforeBatchWrite(kit, 2),
       );
 
+      stopLeaseRenewals(kit);
       await expireLease(kit.prisma, driver.lease.migrationId, LOCK_TIMEOUT_MS);
       await imports.observationsWhile(importing, 2);
 
@@ -271,14 +313,19 @@ describe('applyMigrations of an update above the threshold', () => {
         beforeBatchWrite(anotherProcess, 2),
       );
 
-      const imports = observeImports(importer());
-      const importing = importMigrations(importer(), table, migrations);
-      await imports.observationsWhile(importing, 1);
+      const importing = await pauseUntil(
+        importMigrations(importer(), table, migrations),
+        beforeObservation(importer(), 2),
+      );
       await expectMigrationState(started, { lockedBy: owner.lease.token });
 
-      await expireLease(kit.prisma, started.migrationId, LOCK_TIMEOUT_MS);
+      await killOwnerProcess(
+        anotherProcess,
+        started.migrationId,
+        LOCK_TIMEOUT_MS,
+      );
 
-      await expect(importing).resolves.toEqual([applied(IMPORTED_ID)]);
+      await expect(importing.resume()).resolves.toEqual([applied(IMPORTED_ID)]);
       await expect(owner.resume()).resolves.toBe('stopped');
       await expectRecordedUpdates(table, migrations);
     },
@@ -293,9 +340,41 @@ describe('applyMigrations of an update above the threshold', () => {
       importMigrations(inlineKit, table, migrations),
     ).resolves.toEqual([applied(IMPORTED_ID)]);
 
-    await expect(imports.driverResults()).resolves.toEqual(['completed']);
+    await expect(imports.driverResults()).resolves.toHaveProperty(
+      [0],
+      'completed',
+    );
     await expectRecordedUpdates(table, migrations);
+    await expectRowsMigratedOnce(table, FIELD);
+    await expectCompletedByOneLocalDriverAtATime(imports);
   });
+
+  it.each([
+    { mode: 'inline', process: () => inlineKit },
+    { mode: 'polling', process: () => pollingKit },
+  ])(
+    'in $mode mode the sweep starts no second local driver while the driver of an import is still running after releasing the record on a transient failure',
+    async ({ process }) => {
+      const importer = process();
+      const table = await givenDraftOwnedTable(importer, ROW_COUNT);
+      const migrations = fieldAddition(table);
+      const imports = observeImports(importer);
+      const sweeping = observeSweepingProcess(importer);
+      loseConnectionAtBatchWrite(importer, 2);
+
+      const importing = await pauseUntil(
+        importMigrations(importer, table, migrations),
+        afterRetry(importer),
+      );
+      importer.recoveryScope.include((await readMigration(table)).id);
+      await sweeping.sweepsCompleted(2);
+
+      await expect(importing.resume()).resolves.toEqual([applied(IMPORTED_ID)]);
+      expect(imports.mostConcurrentDriversOfOneMigration()).toBe(1);
+      await expectRecordedUpdates(table, migrations);
+      await expectRowsMigratedOnce(table, FIELD);
+    },
+  );
 
   it('AM-42 an abort while the import waits fails it CANCELLED and records nothing', async () => {
     const table = await givenDraftOwnedTable(kit, ROW_COUNT);
@@ -317,6 +396,47 @@ describe('applyMigrations of an update above the threshold', () => {
     await expectRecordedUpdates(table, []);
   });
 
+  describe('an import whose migration ended unrecorded while another writer recorded a later migration', () => {
+    it('reports the ROW_INVALID failure of its migration', async () => {
+      const table = await givenCodesWithOneMalformed();
+      const importing = await pauseUntil(
+        importMigrations(kit, table, codePatternThenAddition(table)),
+        afterImportAwaited(kit),
+      );
+
+      await recordLaterMigration(table);
+
+      await expect(importing.resume()).resolves.toEqual([
+        {
+          id: IMPORTED_ID,
+          status: 'failed',
+          error: expect.stringMatching(/^ROW_INVALID: /),
+        },
+      ]);
+    });
+
+    it('reports an abort as CANCELLED', async () => {
+      const table = await givenDraftOwnedTable(kit, ROW_COUNT);
+      const imports = observeImports(kit);
+      const observedEnd = afterImportAwaited(kit);
+      const importing = importMigrations(kit, table, fieldAddition(table));
+      const driver = await drivenByImportUntil(
+        imports,
+        importing,
+        beforeBatchWrite(kit, 2),
+      );
+      await kit.migrationApi.abortMigration(table);
+      const ended = await pauseUntil(importing, observedEnd);
+
+      await recordLaterMigration(table);
+
+      await expect(ended.resume()).resolves.toEqual([
+        { id: IMPORTED_ID, status: 'failed', error: 'CANCELLED' },
+      ]);
+      await expect(driver.resume()).resolves.toBe('stopped');
+    });
+  });
+
   it('AM-45 a Head-synced replica imports large updates under the source ids, each after its swap, and reproduces the source Head', async () => {
     const source = await givenCommittedTable(kit, { rowCount: ROW_COUNT });
     const replica = await givenHeadSyncedReplica(kit, source.headRevisionId);
@@ -330,10 +450,7 @@ describe('applyMigrations of an update above the threshold', () => {
 
     await replica.syncWith(headRevisionId);
 
-    await expect(imports.driverResults()).resolves.toEqual([
-      'completed',
-      'completed',
-    ]);
+    await expectCompletedByOneLocalDriverAtATime(imports, 2);
     await expect(replica.readHeadLedger()).resolves.toEqual(
       await readLedger(kit, headRevisionId),
     );
@@ -362,6 +479,7 @@ describe('applyMigrations of an update above the threshold', () => {
     jest.restoreAllMocks();
     await kit.guard.verifyAndForget();
     await inlineKit.guard.verifyAndForget();
+    await pollingKit.guard.verifyAndForget();
   });
 
   afterAll(async () => {
@@ -378,6 +496,7 @@ describe('applyMigrations of an update above the threshold', () => {
       batchSize: BATCH_SIZE,
       workerMode,
       pollIntervalMs: OBSERVER_INTERVAL_MS,
+      heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       lockTimeoutMs: LOCK_TIMEOUT_MS,
       stallTimeoutMs: STALL_TIMEOUT_MS,
     });
@@ -401,6 +520,38 @@ describe('applyMigrations of an update above the threshold', () => {
     await expect(
       kit.migrationService.processMigration(migrationId),
     ).resolves.toBe('completed');
+  }
+
+  async function recordLaterMigration(table: DraftOwnedTable): Promise<void> {
+    await expect(
+      importMigrations(kit, table, [
+        importedTableCreationOf(LATER_TABLE_ID, LATER_ID),
+      ]),
+    ).resolves.toEqual([applied(LATER_ID)]);
+  }
+
+  async function expectRowsMigratedOnce(
+    table: DraftOwnedTable,
+    field: string,
+  ): Promise<void> {
+    const rows = await readRows(kit, table);
+
+    expect(rows.map(({ id }) => id)).toEqual(table.rowIds);
+    for (const { data } of rows) {
+      expect(data).toHaveProperty(field);
+    }
+  }
+
+  async function expectCompletedByOneLocalDriverAtATime(
+    imports: ObservedImports,
+    migrations = 1,
+  ): Promise<void> {
+    const completed = (await imports.driverResults()).filter(
+      (result) => result === 'completed',
+    );
+
+    expect(completed).toHaveLength(migrations);
+    expect(imports.mostConcurrentDriversOfOneMigration()).toBe(1);
   }
 
   async function expectRecordedUpdates(

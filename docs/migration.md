@@ -301,7 +301,10 @@ for its swap:
    caller's own timeout, waits for the same record. Any other active migration of the revision fails the update with the
    `MIGRATION_LOCKED` message.
 3. Otherwise the update starts with the id in its payload (see "What does the start check?"); a start error fails it
-   before anything is written.
+   before anything is written. Another import of the same ledger can record the update, or start the next one, between
+   the id check and the start; when the start meets `MIGRATION_LOCKED` or finds the id already applied, the Draft ledger
+   holding the id gives `applied` at once, and otherwise the call looks for an active migration carrying the id again
+   and joins it or starts again, at most three times before the error fails the update.
 4. The call drives and observes the record. Its observer reads the record at once and then every `pollIntervalMs`, and
    in order: cancels it past its progress deadline (T-deadline); when no driver of the record runs in this process,
    starts one; takes over a `SWAPPING` owner past its swap bound and drives the record. A driver claims the record when
@@ -309,10 +312,11 @@ for its swap:
    and ends the driver, and the next observation claims again, up to `maxRetries`. The observer never waits for a
    driver, so a driver stalled outside a transaction cannot hold the call: the deadline ends the wait, and the resumed
    driver stops at its next guard. This works in every worker mode, `disabled` included.
-5. Once the record is no longer active: the Draft ledger holds the id → `applied`; a `FAILED` record → `failed` with its
-   `errorMessage`; otherwise → `failed` with `CANCELLED`, followed by the record's `errorMessage` when it has one (for
-   example `CANCELLED: STALLED: …`). An abort or a revert during the wait gives `CANCELLED`. The batch stops at the
-   first `failed`, so the next migration runs only after the swap released the revision lock.
+5. Once the record is no longer active: the Draft ledger holds a row with the id → `applied`; a `FAILED` record →
+   `failed` with its `errorMessage`, even when another writer has recorded a later migration meanwhile; otherwise →
+   `failed` with `CANCELLED`, followed by the record's `errorMessage` when it has one (for example
+   `CANCELLED: STALLED: …`). An abort or a revert during the wait gives `CANCELLED`. The batch stops at the first
+   `failed`, so the next migration runs only after the swap released the revision lock.
 
 The call holds no transaction and no branch write fence while it waits, so it can last as long as the migration. A
 caller that abandons the call leaves the migration to the sweep of inline and polling modes and to the next call with
@@ -369,9 +373,11 @@ Allowed operations: getRows, getTable, getRevision, searchRows, getMigrationStat
 
 Every process disposes of legacy records when its migration module starts, in every mode, before any sweep runs.
 
-`MigrationDrivers` tracks every driver the process runs, per record: those of the sweep, of the inline trigger and of
-`applyMigrations`. An `applyMigrations` observer starts no driver for a record that already has one in the process. On
-shutdown the process starts no new driver and waits for the running ones.
+`MigrationDrivers` admits every driver the process runs, per record: those of the sweep, of the inline trigger and of
+`applyMigrations`. It refuses a second driver for a record that already has one in the process, so the sweep, the
+inline trigger and an `applyMigrations` observer never drive one record side by side. Only the takeover of a stalled
+`SWAPPING` owner runs beside the stalled local driver; T-takeover's guard on the observed token and `lockedAt` keeps it
+to one replacement. On shutdown the process admits no new driver and waits for the running ones.
 
 Inline and polling modes run the same **sweep** every `pollIntervalMs`. Each sweep, in order:
 
@@ -487,7 +493,7 @@ src/features/migration/
                                    processUntilReleased: one claim, ended by a transient failure
     migration-import.service.ts    applyMigrations support: the active import of a source id; drive and observe a
                                    record until it is no longer active
-    migration-drivers.ts           Drivers the process runs, tracked per record; waited for on shutdown
+    migration-drivers.ts           Admission of the drivers the process runs: one per record, takeovers beside it
     migration-transition.service.ts Guarded transitions of the record (claim, takeover, deadline, renew,
                                    release, init, checkpoint, swap-begin, swap ownership, fail, retry, cancel)
     migration-swap.service.ts      The swap transaction: fence, re-checks, relink, native writers, record deletion,

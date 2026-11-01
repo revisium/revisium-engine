@@ -6,8 +6,8 @@ import {
   MigrationIdOutOfOrderException,
 } from 'src/features/draft/commands/impl/migration';
 import { MigrationContextService } from 'src/features/draft/migration-context.service';
-import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { migrationTableOf } from './migration-table-of';
 
 @CommandHandler(CheckImportedMigrationIdCommand)
 export class CheckImportedMigrationIdHandler implements ICommandHandler<CheckImportedMigrationIdCommand> {
@@ -76,17 +76,4 @@ export class CheckImportedMigrationIdHandler implements ICommandHandler<CheckImp
       },
     });
   }
-}
-
-function migrationTableOf(revisionId: string) {
-  return {
-    some: {
-      id: SystemTables.Migration,
-      revisions: {
-        some: {
-          id: revisionId,
-        },
-      },
-    },
-  };
 }

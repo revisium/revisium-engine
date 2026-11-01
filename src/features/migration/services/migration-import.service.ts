@@ -74,25 +74,17 @@ export class MigrationImportService {
       return;
     }
 
-    this.claimUnlessDrivenLocally(migrationId);
-    await this.takeOverIfStalled(migrationId);
-  }
-
-  private claimUnlessDrivenLocally(migrationId: string): void {
-    if (this.drivers.isDriving(migrationId)) {
-      return;
-    }
-
-    this.drivers.drive(migrationId, () =>
+    this.drivers.driveUnlessDriven(migrationId, () =>
       this.migrationService.processUntilReleased(migrationId),
     );
+    await this.takeOverIfStalled(migrationId);
   }
 
   private async takeOverIfStalled(migrationId: string): Promise<void> {
     const stalledOwner = await this.transitions.findStalledSwap(migrationId);
 
     if (stalledOwner) {
-      this.drivers.drive(migrationId, () =>
+      this.drivers.driveTakeover(migrationId, () =>
         this.migrationService.takeOverStalledSwap(stalledOwner),
       );
     }

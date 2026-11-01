@@ -2,6 +2,7 @@ import { SchemaTable } from '@revisium/schema-toolkit/lib';
 import {
   JsonSchemaTypeName,
   type JsonObjectSchema,
+  type InitMigration,
   type JsonPatch,
   type Migration,
   type UpdateMigration,
@@ -161,6 +162,19 @@ export function importMigrations(
     revisionId: table.revisionId,
     migrations,
   });
+}
+
+export function importedTableCreationOf(
+  tableId: string,
+  migrationId: string,
+): InitMigration {
+  return {
+    changeType: 'init',
+    id: migrationId,
+    tableId,
+    hash: objectHash(productSchema),
+    schema: productSchema,
+  };
 }
 
 export function importedUpdatesOf(

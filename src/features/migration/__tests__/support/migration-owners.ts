@@ -1,10 +1,12 @@
 import type { MigrationTestKit } from 'src/__tests__/kit/create-migration-test-kit';
 import { createBarrier, type Barrier } from 'src/__tests__/utils/barrier';
+import { MigrationImportService } from 'src/features/migration/services/migration-import.service';
 import type {
   MigrationLease,
   OwnershipEpoch,
 } from 'src/features/migration/services/migration-transition.service';
 import type { MigrationStepResult } from 'src/features/migration/types/migration.types';
+import { expireLease } from './migration-database';
 import type { ObservedImports } from './migration-imports';
 import type { SweepingProcess } from './migration-sweeps';
 
@@ -24,6 +26,14 @@ export interface PausedOwner {
 
 export interface PausedAbort {
   resume(): Promise<void>;
+}
+
+export interface PausedOperation<T> {
+  resume(): Promise<T>;
+}
+
+export interface StoppedRenewals {
+  attempted(): Promise<void>;
 }
 
 const startedOwners: { holds: OwnerHold[]; result: Promise<unknown> }[] = [];
@@ -84,6 +94,47 @@ export async function drivenByImportUntil(
   const { migrationId, result } = await imports.nextDriverWhile(importing);
 
   return pauseOwner(imports.kit, migrationId, result, hold);
+}
+
+export async function pauseUntil<T>(
+  operation: Promise<T>,
+  hold: OwnerHold,
+): Promise<PausedOperation<T>> {
+  startedOwners.push({ holds: [hold], result: operation });
+  await hold.barrier.expectReachedBefore(operation);
+
+  return {
+    resume() {
+      hold.barrier.release();
+
+      return operation;
+    },
+  };
+}
+
+export async function killOwnerProcess(
+  process: MigrationTestKit,
+  migrationId: string,
+  lockTimeoutMs: number,
+): Promise<void> {
+  const renewals = stopLeaseRenewals(process);
+  await expireLease(process.prisma, migrationId, lockTimeoutMs);
+  await renewals.attempted();
+}
+
+export function stopLeaseRenewals(process: MigrationTestKit): StoppedRenewals {
+  let markAttempted!: () => void;
+  const attempted = new Promise<void>((resolve) => {
+    markAttempted = resolve;
+  });
+
+  jest.spyOn(process.migrationTransitions, 'renew').mockImplementation(() => {
+    markAttempted();
+
+    return Promise.resolve(false);
+  });
+
+  return { attempted: () => attempted };
 }
 
 export async function startAbortUntil(
@@ -174,6 +225,42 @@ export function beforeRetry(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.migrationTransitions, 'retry', 1, 'before');
 }
 
+export function afterRetry(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.migrationTransitions, 'retry', 1, 'after');
+}
+
+export function beforeActiveImportLookup(kit: MigrationTestKit): OwnerHold {
+  return holdCall(importServiceOf(kit), 'findActiveImport', 1, 'before');
+}
+
+export function beforeImportAwaits(
+  kit: MigrationTestKit,
+  awaitedMigration: number,
+): OwnerHold {
+  return holdCall(
+    importServiceOf(kit),
+    'driveUntilEnded',
+    awaitedMigration,
+    'before',
+  );
+}
+
+export function afterImportAwaited(kit: MigrationTestKit): OwnerHold {
+  return holdCall(importServiceOf(kit), 'driveUntilEnded', 1, 'after');
+}
+
+export function beforeObservation(
+  kit: MigrationTestKit,
+  observation: number,
+): OwnerHold {
+  return holdCall(
+    kit.migrationTransitions,
+    'cancelIfStalled',
+    observation,
+    'before',
+  );
+}
+
 export function beforeSwapBegins(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.migrationTransitions, 'beginSwap', 1, 'before');
 }
@@ -247,6 +334,10 @@ async function pauseOwner(
       return result;
     },
   };
+}
+
+function importServiceOf(kit: MigrationTestKit): MigrationImportService {
+  return kit.module.get(MigrationImportService);
 }
 
 async function readBackendPid(kit: MigrationTestKit): Promise<number> {

@@ -47,7 +47,7 @@ export interface ClosedPlan {
   readonly target: AssembledTarget;
 }
 
-const WITHOUT_DEADLINE: DeadlineHandle = {
+export const WITHOUT_DEADLINE: DeadlineHandle = {
   checkpoint: () => Promise.resolve(),
 };
 
@@ -112,6 +112,12 @@ export function withSelectorsOf(
     (merged, { unit }) => withItems(merged, unit.selector),
     selection,
   );
+}
+
+export function unionOfSelections(
+  selections: readonly SelectionItems[],
+): Selection {
+  return selections.reduce<Selection>(withItems, {});
 }
 
 function withItems(selection: Selection, items: SelectionItems): Selection {

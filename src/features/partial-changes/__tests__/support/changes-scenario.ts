@@ -10,10 +10,14 @@ import {
   prepareBranch,
 } from 'src/__tests__/utils/prepareProject';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
+import { BranchApiService } from 'src/features/branch/branch-api.service';
 import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-revert-changes.command';
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
-import type { ListChangesResult } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type {
+  ListChangesResult,
+  ListedUnit,
+} from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
@@ -23,6 +27,7 @@ import type {
   ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { splitLedger } from 'src/features/share/ledger/migration-ledger';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
@@ -38,6 +43,7 @@ import {
   listEveryPageWithReads,
   type ListingOptions,
   type PageWithReads,
+  unitsOfPages,
 } from './change-listing';
 import { previewChanges, type PreviewOptions } from './change-preview';
 import { revertChanges, type RevertOptions } from './change-reverting';
@@ -64,6 +70,11 @@ import {
 export interface TableFixture {
   readonly schema: JsonSchema;
   readonly rows?: Readonly<Record<string, InputJsonValue>>;
+}
+
+export interface TableIdentity {
+  readonly id: string;
+  readonly createdId: string;
 }
 
 export interface RowColumnsEdit {
@@ -121,6 +132,24 @@ export class ChangesScenario {
     await scenario.commit();
 
     return scenario;
+  }
+
+  public async branchFromHead(branchName: string): Promise<ChangesScenario> {
+    const branch = await this.kit.module
+      .get(BranchApiService)
+      .apiCreateBranchByRevisionId({
+        revisionId: await this.revisionId('head'),
+        branchName,
+      });
+    const twin = new ChangesScenario(
+      this.kit,
+      { projectId: this.branch.projectId, branchName: branch.name },
+      branch.id,
+    );
+
+    await twin.observeCommittedVersions();
+
+    return twin;
   }
 
   public async commit(): Promise<void> {
@@ -523,6 +552,10 @@ export class ChangesScenario {
     return listEveryPage(this.kit, this.branch, options);
   }
 
+  public async listEveryUnit(): Promise<ListedUnit[]> {
+    return unitsOfPages(await this.listEveryPage({}));
+  }
+
   public listEveryPageWithReads(
     options: ListingOptions,
   ): Promise<PageWithReads[]> {
@@ -618,6 +651,30 @@ export class ChangesScenario {
     });
 
     return tables.map(({ versionId }) => versionId);
+  }
+
+  public async userTables(side: RevisionSide): Promise<TableIdentity[]> {
+    const tables = await this.kit.prisma.table.findMany({
+      where: {
+        system: false,
+        revisions: { some: { id: await this.revisionId(side) } },
+      },
+      select: { id: true, createdId: true },
+    });
+
+    return tables.sort((left, right) => compareCodePoints(left.id, right.id));
+  }
+
+  public async rows(side: RevisionSide, tableId: string): Promise<Row[]> {
+    const rows = await this.kit.prisma.row.findMany({
+      where: {
+        tables: {
+          some: { versionId: await this.tableVersionId(side, tableId) },
+        },
+      },
+    });
+
+    return rows.sort((left, right) => compareCodePoints(left.id, right.id));
   }
 
   public async rowIds(side: RevisionSide, tableId: string): Promise<string[]> {

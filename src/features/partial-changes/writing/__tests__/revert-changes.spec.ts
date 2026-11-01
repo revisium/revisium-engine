@@ -307,6 +307,19 @@ describe('revertChanges', () => {
       expect(await draft.hasChanges()).toBe(false);
     });
 
+    it('links the Head version of a table it reads whose Draft holds only a content-equal row version, leaving the Draft without changes', async () => {
+      const draft = await givenCategoryEditNextToContentEqualProduct();
+
+      await expectApplied(
+        draft.revertChanges({
+          selection: { fields: [titleOf(CATEGORIES, 'c1')] },
+        }),
+      );
+
+      await expectDraftLinksHeadVersion(draft, PRODUCTS);
+      expect(await draft.hasChanges()).toBe(false);
+    });
+
     it('reverts a created row', async () => {
       const draft = await givenEditedPrices();
       await draft.createRows(PRODUCTS, { p3: { title: 'three', price: 3 } });
@@ -692,6 +705,21 @@ describe('revertChanges', () => {
     await draft.createSharedSchema(ADDRESS, addressSchema);
     await draft.removeSharedSchema(ADDRESS);
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
+
+    return draft;
+  }
+
+  async function givenCategoryEditNextToContentEqualProduct(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', category: 'c1' } },
+      },
+    });
+    await draft.updateRow(CATEGORIES, 'c1', { title: 'uno' });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c1' });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', category: 'c1' });
 
     return draft;
   }

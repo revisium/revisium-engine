@@ -31,11 +31,21 @@ const shelfSchema = obj({
   categories: arr(str({ foreignKey: CATEGORIES })),
 });
 
+const brandSchema = obj({
+  title: str(),
+  category: str({ foreignKey: CATEGORIES }),
+});
+
 const category = (rowId: string): RowRef => ({ tableId: CATEGORIES, rowId });
 const productsStructure = {
   kind: 'structure',
   tableId: PRODUCTS,
   selector: { tables: [PRODUCTS] },
+};
+const brandsStructure = {
+  kind: 'structure',
+  tableId: BRANDS,
+  selector: { tables: [BRANDS] },
 };
 const product = (rowId: string): RowRef => ({ tableId: PRODUCTS, rowId });
 const categoriesOfS1: FieldRef = {
@@ -496,6 +506,51 @@ describe('DependencyClosure: references and ids of rows', () => {
     });
   });
 
+  describe('a row of a table on one side only that references an id the target loses', () => {
+    it.each<{
+      operation: ChangeOperation;
+      given: Given;
+      selection: Selection;
+      because: string;
+    }>([
+      {
+        operation: 'revert',
+        given: givenCreatedBrandOfCreatedCategory,
+        selection: { rows: [category('c9')] },
+        because:
+          'brands/b1/category references categories/c9, which the reverted Draft loses; the value follows the structure of brands',
+      },
+      {
+        operation: 'commit',
+        given: givenRemovedBrandOfDeletedCategory,
+        selection: { rows: [category('c1')] },
+        because:
+          'brands/b1/category references categories/c1, which the new Head loses; the value follows the structure of brands',
+      },
+    ])(
+      'requires the structure of that table in a $operation',
+      async ({ operation, given, selection, because }) => {
+        const draft = await given(kit);
+
+        const closure = await draft.closeDependencies(operation, selection);
+
+        expect(closure.required).toEqual([
+          {
+            unit: brandsStructure,
+            reason: {
+              code: 'structureBoundData',
+              tableId: BRANDS,
+              rowId: 'b1',
+              path: '/category',
+              because,
+            },
+          },
+        ]);
+        expect(closure.blockers).toEqual([]);
+      },
+    );
+  });
+
   it('blocks a committed value that references a row of neither revision as danglingInSource', async () => {
     const draft = await givenProductReferencingMissingCategory(kit);
 
@@ -866,6 +921,33 @@ async function givenCategoryCreatedForANewKey(
   await draft.updateTable(PRODUCTS, [
     replaceField('category', str({ foreignKey: CATEGORIES })),
   ]);
+
+  return draft;
+}
+
+async function givenCreatedBrandOfCreatedCategory(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await givenCatalogue(kit, ['c1'], {});
+  await draft.createRows(CATEGORIES, { c9: { title: 'c9' } });
+  await draft.createTable(BRANDS, brandSchema);
+  await draft.createRows(BRANDS, { b1: { title: 'b1', category: 'c9' } });
+
+  return draft;
+}
+
+async function givenRemovedBrandOfDeletedCategory(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'c1' } } },
+    [BRANDS]: {
+      schema: brandSchema,
+      rows: { b1: { title: 'b1', category: 'c1' } },
+    },
+  });
+  await draft.removeTable(BRANDS);
+  await draft.removeRow(CATEGORIES, 'c1');
 
   return draft;
 }

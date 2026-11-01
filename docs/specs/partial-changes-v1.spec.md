@@ -1084,17 +1084,24 @@ already guaranteed by Serializable):
     `TRANSACTION_TIMEOUT` for native `createRevision` and revert, which do not use
     `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`; partial commit and revert reuse the holder and the admission mode through
     their operation runner;
-  - the escalated attempt opens its holder before its first statement, so it already has its connection when writers
-    start to queue behind the fence; the holder waits for the exclusive lock at most half of `TRANSACTION_TIMEOUT`
-    (`lock_timeout`), within the attempt's own timeout as a shared writer's wait is; past that the operation fails with
+  - before it checks out any connection, the escalated attempt takes an escalation slot; the process admits at most
+    half of the connection pool (`max` of the pg pool the engine configures, 10 when unset, as pg-pool defaults) of
+    escalated attempts at once, at least one, so escalations that each hold their own connection never all wait for a
+    connection for their holder;
+  - the escalated attempt then opens its holder before its first statement, so it already has its connection when
+    writers start to queue behind the fence; the slot wait and the holder's wait for the exclusive lock together take
+    at most half of `TRANSACTION_TIMEOUT` (the holder's `lock_timeout` is what the slot wait left), and the attempt's
+    own timeout is `TRANSACTION_TIMEOUT` minus the slot wait; past the wait limit the operation fails with
     `BranchWriteFencedException` (`BRANCH_WRITE_FENCED`, HTTP 423) without a retry, and nothing stays held;
-  - the holder transaction stays open until the attempt's transaction ends (commit or rollback), then ends; its own
-    timeout of `TRANSACTION_TIMEOUT` releases the lock if the attempt never ends;
+  - the holder transaction stays open until the attempt's transaction has committed or rolled back, even when a
+    statement or the COMMIT in flight keeps the attempt past its own timeout; the holder's own timeout is the attempt's
+    timeout plus a fixed grace of 30 s and only bounds how long an attempt that never ends keeps the fence;
   - native revert is a Draft writer: its first two attempts take the fence shared, so it waits behind another
     operation's holder like every writer; in every attempt it cancels the branch migrations instead of checking the
     migration lock;
-- connection pool: an escalated attempt holds two connections at once, its own and the holder's, so the pool needs one
-  connection more per escalated operation that runs at the same time;
+- connection pool: an escalated attempt holds two connections at once, its own and the holder's; the escalation slots
+  keep escalated attempts to half of the pool, and writers queued behind a holder hold their connections for at most
+  their wait limit;
 - consequence for native writers: every native writer takes the shared fence, and while an operation holds it
   exclusively, writers wait at most half of `TRANSACTION_TIMEOUT`, then fail with `BranchWriteFencedException`
   ([async-row-migration-v2] §1). The evidence for the fence's effect under load is one benchmark prototype (PoC M3).
@@ -1636,10 +1643,11 @@ Follow-up of [async-row-migration-v2]:
 
 Write fence, part 2:
 
-- §8.4, §17 question 3: escalation after 2 consecutive serialization failures; the holder opens inside the escalated
-  attempt before its first statement, waits at most half of `TRANSACTION_TIMEOUT` and stays open until the attempt's
-  transaction ends; an escalated attempt uses one extra pool connection; native revert takes the fence shared before
-  it escalates; no new settings.
+- §8.4, §17 question 3: escalation after 2 consecutive serialization failures; an escalated attempt takes one of the
+  escalation slots (half of the connection pool) before any connection, then opens the holder before its first
+  statement; the slot wait and the lock wait share half of `TRANSACTION_TIMEOUT`; the holder stays open until the
+  attempt has committed or rolled back, with its own timeout a 30 s grace beyond the attempt's; native revert takes
+  the fence shared before it escalates; no new settings.
 
 Deadline enforcement:
 

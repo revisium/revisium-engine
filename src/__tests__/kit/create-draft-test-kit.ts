@@ -1,7 +1,7 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule } from '@nestjs/config';
 import { CommandBus, CqrsModule, QueryBus } from '@nestjs/cqrs';
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test, TestingModule, TestingModuleBuilder } from '@nestjs/testing';
 import { BranchModule } from 'src/features/branch/branch.module';
 import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
 import { DraftModule } from 'src/features/draft/draft.module';
@@ -60,6 +60,7 @@ export interface DraftTestKit {
 interface DraftTestKitOptions {
   migrationOptions?: MigrationOptions;
   transactionTimeoutMs?: number;
+  connectionPoolSize?: number;
 }
 
 export async function createDraftTestKit(
@@ -93,6 +94,7 @@ export async function createDraftTestKit(
   })
     .overrideProvider(STORAGE_SERVICE)
     .useValue(createStorageMock());
+  constrainConnectionPool(builder, options.connectionPoolSize);
   const module = await restrictMigrationRecovery(builder).compile();
 
   await module.init();
@@ -121,4 +123,21 @@ export async function createDraftTestKit(
       await module.close();
     },
   };
+}
+
+function constrainConnectionPool(
+  builder: TestingModuleBuilder,
+  connectionPoolSize: number | undefined,
+): void {
+  if (connectionPoolSize === undefined) {
+    return;
+  }
+
+  builder.overrideProvider(PrismaService).useFactory({
+    factory: () =>
+      new PrismaService({
+        connectionString: process.env.DATABASE_URL,
+        max: connectionPoolSize,
+      }),
+  });
 }

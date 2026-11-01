@@ -14,6 +14,13 @@ import {
   waitUntilQueuedBehindFence,
   waitUntilWrittenWithoutQueuing,
 } from './branch-write-fence';
+import {
+  type TransactionGate,
+  waitAtGate,
+  waitAtGateOnCommit,
+  waitUntilTransactionIsOlderThan,
+  waitUntilWaitingAtGate,
+} from './transaction-gate';
 
 type HeldStep = 'commit' | 'revert' | 'createTable';
 
@@ -39,10 +46,7 @@ export function startHeldCommit(
   draft: DraftProjectScenario,
 ) {
   return new HeldBranchOperation(kit, draft, 'commit', () =>
-    kit.draftApiService.apiCreateRevision({
-      projectId: draft.projectId,
-      branchName: draft.branchName,
-    }),
+    commitBranchDraft(kit, draft),
   );
 }
 
@@ -139,6 +143,8 @@ export class HeldBranchOperation<T> {
 
   private readonly backendPids = new Map<number, number>();
 
+  private readonly continuations = new Map<number, () => Promise<void>>();
+
   private readonly attempts: jest.SpyInstance;
 
   private readonly result: Promise<T>;
@@ -189,17 +195,30 @@ export class HeldBranchOperation<T> {
   }
 
   async outlivesItsTransaction(): Promise<void> {
-    const backendPid = this.backendPids.get(this.attemptsReached);
-
-    if (backendPid === undefined) {
-      throw new Error('No attempt is held');
-    }
-
+    const backendPid = this.heldBackendPid();
     let isOpen = true;
 
     while (isOpen) {
       isOpen = await isIdleInTransaction(this.kit, backendPid);
     }
+  }
+
+  stallsInCommitAt(gate: TransactionGate): Promise<void> {
+    return this.continuesUntilWaitingAt(gate, () =>
+      waitAtGateOnCommit(this.kit, gate),
+    );
+  }
+
+  stallsInStatementAt(gate: TransactionGate): Promise<void> {
+    return this.continuesUntilWaitingAt(gate, () => waitAtGate(this.kit, gate));
+  }
+
+  staysOpenLongerThan(ageMs: number): Promise<void> {
+    return waitUntilTransactionIsOlderThan(
+      this.kit,
+      this.heldBackendPid(),
+      ageMs,
+    );
   }
 
   outcome(): Promise<T> {
@@ -212,6 +231,27 @@ export class HeldBranchOperation<T> {
     this.attempts.mockRestore();
 
     return this.result;
+  }
+
+  private async continuesUntilWaitingAt(
+    gate: TransactionGate,
+    continuation: () => Promise<void>,
+  ): Promise<void> {
+    const attempt = await this.nextHeldAttempt();
+    this.continuations.set(this.attemptsReached, continuation);
+    attempt.release();
+
+    await waitUntilWaitingAtGate(this.kit, gate, this.heldBackendPid());
+  }
+
+  private heldBackendPid(): number {
+    const backendPid = this.backendPids.get(this.attemptsReached);
+
+    if (backendPid === undefined) {
+      throw new Error('No attempt is held');
+    }
+
+    return backendPid;
   }
 
   private async queues(write: () => Promise<unknown>): Promise<QueuedWrite> {
@@ -245,6 +285,7 @@ export class HeldBranchOperation<T> {
       if (this.isHolding) {
         this.backendPids.set(attempt, await readBackendPid(this.kit));
         await this.barrierOf(attempt).arrive();
+        await this.continuations.get(attempt)?.();
       }
 
       return runStep(data);
@@ -265,7 +306,17 @@ export class HeldBranchOperation<T> {
   }
 }
 
-function revertBranchDraft(
+export function commitBranchDraft(
+  kit: DraftTestKit,
+  draft: DraftProjectScenario,
+) {
+  return kit.draftApiService.apiCreateRevision({
+    projectId: draft.projectId,
+    branchName: draft.branchName,
+  });
+}
+
+export function revertBranchDraft(
   kit: DraftTestKit,
   draft: DraftProjectScenario,
 ): Promise<unknown> {

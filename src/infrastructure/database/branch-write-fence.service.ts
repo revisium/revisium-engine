@@ -14,13 +14,21 @@ const WAIT_PART_OF_TRANSACTION_TIMEOUT = 0.5;
 
 const LOCK_NOT_AVAILABLE = '55P03';
 
+// PostgreSQL reads a lock_timeout of 0 as "no timeout", so a spent wait budget still sets the smallest one.
+const SMALLEST_LOCK_TIMEOUT_MS = 1;
+
+export interface EscalatedAttemptBudget {
+  fenceWaitSpentMs: number;
+  attemptTimeoutMs: number;
+}
+
 export function branchWriteFenceKey(branchId: string | Sql): Sql {
   return sql`hashtextextended(${branchId}, hashtext('branch-write-fence'))`;
 }
 
 @Injectable()
 export class BranchWriteFenceService {
-  private readonly waitLimitMs: number;
+  public readonly waitLimitMs: number;
 
   constructor(
     private readonly prismaService: PrismaService,
@@ -40,20 +48,25 @@ export class BranchWriteFenceService {
     await this.lockWithinWaitLimit(
       this.transactionService.getTransaction(),
       sql`pg_advisory_xact_lock_shared(${branchWriteFenceKey(branchOfRevision(revisionId))})`,
+      this.waitLimitMs,
     );
   }
 
-  exclusiveHolder(branchId: string): ExclusiveFenceHolder {
+  exclusiveHolder(
+    branchId: string,
+    { fenceWaitSpentMs, attemptTimeoutMs }: EscalatedAttemptBudget,
+  ): ExclusiveFenceHolder {
     return new ExclusiveFenceHolder(
       this.prismaService,
       (holder) =>
         this.lockWithinWaitLimit(
           holder,
           sql`pg_advisory_xact_lock(${branchWriteFenceKey(branchId)})`,
+          this.waitLimitMs - fenceWaitSpentMs,
         ),
       {
         maxWait: this.transactionService.serializableMaxWaitMs,
-        timeout: this.transactionService.serializableTimeoutMs,
+        protectedTransactionTimeoutMs: attemptTimeoutMs,
       },
     );
   }
@@ -80,9 +93,14 @@ export class BranchWriteFenceService {
   private async lockWithinWaitLimit(
     transaction: TransactionPrismaClient,
     fenceLock: Sql,
+    lockTimeoutMs: number,
   ): Promise<void> {
     try {
-      await this.lockRestoringLockTimeout(transaction, fenceLock);
+      await this.lockRestoringLockTimeout(
+        transaction,
+        fenceLock,
+        Math.max(lockTimeoutMs, SMALLEST_LOCK_TIMEOUT_MS),
+      );
     } catch (error) {
       if (isLockNotAvailable(error)) {
         throw new BranchWriteFencedException(this.waitLimitMs);
@@ -95,6 +113,7 @@ export class BranchWriteFenceService {
   private async lockRestoringLockTimeout(
     transaction: TransactionPrismaClient,
     fenceLock: Sql,
+    lockTimeoutMs: number,
   ): Promise<void> {
     // Each MATERIALIZED step reads the row of the step before it, which fixes the order:
     // the wait limit bounds only the fence wait and the previous lock_timeout comes back after it.
@@ -103,7 +122,7 @@ export class BranchWriteFenceService {
         SELECT current_setting('lock_timeout') AS lock_timeout
       ),
       wait_limit AS MATERIALIZED (
-        SELECT set_config('lock_timeout', ${String(this.waitLimitMs)}, true)
+        SELECT set_config('lock_timeout', ${String(lockTimeoutMs)}, true)
         FROM previous
       ),
       fence AS MATERIALIZED (

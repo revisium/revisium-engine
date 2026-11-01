@@ -25,8 +25,17 @@ import {
   startHeldRevert,
   startMigration,
 } from './support/held-branch-operation';
+import {
+  EscalatingCommits,
+  holdEscalatedAttemptsBeforeTheirHolders,
+} from './support/escalating-commits';
+import { closeTransactionGate } from './support/transaction-gate';
 
 const SHORT_TRANSACTION_TIMEOUT_MS = 3000;
+const PAST_THE_TRANSACTION_TIMEOUT_MS = SHORT_TRANSACTION_TIMEOUT_MS * 1.5;
+const POOL_FOR_TWO_ESCALATIONS = 4;
+const POOL_FOR_ONE_ESCALATION = 3;
+const CONSTRAINED_POOL_TRANSACTION_TIMEOUT_MS = 6000;
 
 const importedTable: InitMigration = {
   changeType: 'init',
@@ -173,6 +182,44 @@ describe('Native commit and revert behind the exclusive branch write fence', () 
       ).resolves.toBeDefined();
     });
 
+    it('keeps the fence until a COMMIT that outlasts the transaction timeout has committed', async () => {
+      const draft = await givenDraftWithRows(kit, ['row-1', 'row-2']);
+      const gate = await closeTransactionGate(kit);
+      const commit = startHeldCommit(kit, draft);
+
+      await commit.losesAttemptToRemovalOf('row-1');
+      await commit.losesAttemptToRemovalOf('row-2');
+      await commit.stallsInCommitAt(gate);
+      await commit.staysOpenLongerThan(PAST_THE_TRANSACTION_TIMEOUT_MS);
+
+      await expectBranchFenceHeldExclusively(kit, draft);
+      await gate.open();
+      await expect(commit.outcome()).resolves.toMatchObject({
+        id: draft.draftRevisionId,
+        isHead: true,
+      });
+      await expectBranchFenceFree(kit, draft);
+    });
+
+    it('keeps the fence until an attempt whose statement outlasts the transaction timeout has rolled back', async () => {
+      const draft = await givenDraftWithRows(kit, ['row-1', 'row-2']);
+      const gate = await closeTransactionGate(kit);
+      const commit = startHeldCommit(kit, draft);
+
+      await commit.losesAttemptToRemovalOf('row-1');
+      await commit.losesAttemptToRemovalOf('row-2');
+      await commit.stallsInStatementAt(gate);
+      await commit.staysOpenLongerThan(PAST_THE_TRANSACTION_TIMEOUT_MS);
+
+      await expectBranchFenceHeldExclusively(kit, draft);
+      await gate.open();
+      await expect(commit.outcome()).rejects.toMatchObject({ code: 'P2028' });
+      await expect(isDraftRevision(kit, draft.draftRevisionId)).resolves.toBe(
+        true,
+      );
+      await expectBranchFenceFree(kit, draft);
+    });
+
     it('fails with BRANCH_WRITE_FENCED and holds nothing when a writer stays inside the fence past the wait limit', async () => {
       const draft = await givenDraftWithRows(kit, ['row-1', 'row-2']);
       const writerInside = await holdBranchFenceAsWriter(kit, draft.branchId);
@@ -199,6 +246,75 @@ describe('Native commit and revert behind the exclusive branch write fence', () 
       kit = await createDraftTestKit({
         migrationOptions: { workerMode: 'disabled' },
         transactionTimeoutMs: SHORT_TRANSACTION_TIMEOUT_MS,
+      });
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    afterAll(async () => {
+      await kit.close();
+    });
+  });
+
+  describe('escalations on a constrained connection pool', () => {
+    it('more concurrent escalations than the pool admits all apply instead of starving each other of connections', async () => {
+      const drafts = await givenDrafts(kit, 4);
+      const commits = new EscalatingCommits(kit);
+      holdEscalatedAttemptsBeforeTheirHolders(kit, drafts.length);
+
+      const results = await Promise.allSettled(
+        drafts.map((draft) => commits.start(draft)),
+      );
+
+      expect(results).toEqual(
+        drafts.map(() => expect.objectContaining({ status: 'fulfilled' })),
+      );
+    });
+
+    let kit: DraftTestKit;
+
+    beforeAll(async () => {
+      kit = await createDraftTestKit({
+        migrationOptions: { workerMode: 'disabled' },
+        transactionTimeoutMs: CONSTRAINED_POOL_TRANSACTION_TIMEOUT_MS,
+        connectionPoolSize: POOL_FOR_TWO_ESCALATIONS,
+      });
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    afterAll(async () => {
+      await kit.close();
+    });
+  });
+
+  describe('an escalation waiting for a slot', () => {
+    it('fails with BRANCH_WRITE_FENCED when no slot frees within the fence wait limit, while the escalation holding the slot applies', async () => {
+      const holding = await givenDraftWithRows(kit, []);
+      const waiting = await givenDraftWithRows(kit, []);
+      const commits = new EscalatingCommits(kit);
+      const holdingInside = commits.holdEscalatedAttemptOf(holding);
+      const holdingCommit = commits.start(holding);
+      await holdingInside.expectReachedBefore(holdingCommit);
+
+      await expect(commits.start(waiting)).rejects.toThrow(
+        BranchWriteFencedException,
+      );
+      holdingInside.release();
+      await expect(holdingCommit).resolves.toMatchObject({ isHead: true });
+    });
+
+    let kit: DraftTestKit;
+
+    beforeAll(async () => {
+      kit = await createDraftTestKit({
+        migrationOptions: { workerMode: 'disabled' },
+        transactionTimeoutMs: CONSTRAINED_POOL_TRANSACTION_TIMEOUT_MS,
+        connectionPoolSize: POOL_FOR_ONE_ESCALATION,
       });
     });
 
@@ -256,9 +372,31 @@ describe('Native commit and revert behind the exclusive branch write fence', () 
   });
 });
 
+async function expectBranchFenceHeldExclusively(
+  kit: DraftTestKit,
+  draft: DraftProjectScenario,
+): Promise<void> {
+  await expect(readBranchFenceLocks(kit, draft.branchId)).resolves.toEqual([
+    { mode: 'ExclusiveLock', granted: true },
+  ]);
+}
+
 async function expectBranchFenceFree(
   kit: DraftTestKit,
   draft: DraftProjectScenario,
 ): Promise<void> {
   await expect(readBranchFenceLocks(kit, draft.branchId)).resolves.toEqual([]);
+}
+
+async function givenDrafts(
+  kit: DraftTestKit,
+  count: number,
+): Promise<DraftProjectScenario[]> {
+  const drafts: DraftProjectScenario[] = [];
+
+  for (let index = 0; index < count; index++) {
+    drafts.push(await givenDraftWithRows(kit, []));
+  }
+
+  return drafts;
 }

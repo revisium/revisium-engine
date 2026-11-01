@@ -1,21 +1,43 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { PrismaClient, Prisma } from 'src/__generated__/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { configurePrisma } from '@revisium/prisma-pg-json';
 
 configurePrisma(Prisma);
 
+// pg-pool opens at most this many connections when its config sets no max.
+const PG_POOL_DEFAULT_MAX = 10;
+
+export const DATABASE_POOL_CONFIG = Symbol('DATABASE_POOL_CONFIG');
+
+export interface DatabasePoolConfig {
+  connectionString?: string;
+  max?: number;
+}
+
 @Injectable()
 export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
-  constructor() {
-    const adapter = new PrismaPg({
-      connectionString: process.env.DATABASE_URL,
-    });
+  public readonly connectionPoolSize: number;
 
-    super({ adapter });
+  constructor(
+    @Optional()
+    @Inject(DATABASE_POOL_CONFIG)
+    poolConfig: DatabasePoolConfig = {
+      connectionString: process.env.DATABASE_URL,
+    },
+  ) {
+    super({ adapter: new PrismaPg(poolConfig) });
+
+    this.connectionPoolSize = poolConfig.max ?? PG_POOL_DEFAULT_MAX;
   }
 
   async onModuleInit() {

@@ -136,7 +136,7 @@ export function holdBranchFenceAsWriter(
   kit: FenceDatabase,
   branchId: string,
 ): Promise<BranchFenceHolder> {
-  return holdBranchFence(
+  return holdAdvisoryLock(
     kit,
     sql`pg_advisory_xact_lock_shared(${branchWriteFenceKey(branchId)})`,
   );
@@ -177,24 +177,14 @@ export function readBranchFenceLocks(
     ORDER BY mode, granted`;
 }
 
-function holdBranchFenceExclusively(
+export async function holdAdvisoryLock(
   kit: FenceDatabase,
-  branchId: string,
+  lock: Sql,
 ): Promise<BranchFenceHolder> {
-  return holdBranchFence(
-    kit,
-    sql`pg_advisory_xact_lock(${branchWriteFenceKey(branchId)})`,
-  );
-}
-
-async function holdBranchFence(
-  kit: FenceDatabase,
-  fenceLock: Sql,
-): Promise<BranchFenceHolder> {
-  const barrier = createBarrier('The fence holder');
+  const barrier = createBarrier('The lock holder');
   const holding = kit.prismaService.$transaction(
     async (transaction) => {
-      await transaction.$executeRaw`SELECT ${fenceLock}`;
+      await transaction.$executeRaw`SELECT ${lock}`;
       await barrier.arrive();
     },
     { timeout: FENCE_HOLDER_TIMEOUT_MS },
@@ -208,6 +198,16 @@ async function holdBranchFence(
       await holding;
     },
   };
+}
+
+function holdBranchFenceExclusively(
+  kit: FenceDatabase,
+  branchId: string,
+): Promise<BranchFenceHolder> {
+  return holdAdvisoryLock(
+    kit,
+    sql`pg_advisory_xact_lock(${branchWriteFenceKey(branchId)})`,
+  );
 }
 
 async function isQueuedBehindFenceBeforeSettling(

@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { performance } from 'node:perf_hooks';
 import { setTimeout as waitFor } from 'node:timers/promises';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
 import { isSerializationFailure } from 'src/infrastructure/database/database-errors';
+import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { retryDelayMs } from 'src/infrastructure/database/retry-backoff';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -22,6 +24,7 @@ export class EscalatingTransactionRunner {
     private readonly prismaService: PrismaService,
     private readonly transactionService: TransactionPrismaService,
     private readonly branchWriteFence: BranchWriteFenceService,
+    private readonly escalationSlots: EscalationSlots,
   ) {}
 
   public async runSerializable<T>(
@@ -51,7 +54,10 @@ export class EscalatingTransactionRunner {
     operation: Operation<T>,
   ): Promise<T> {
     if (attempt < SERIALIZATION_FAILURES_BEFORE_ESCALATION) {
-      return this.runSerializableAttempt(operation);
+      return this.runSerializableAttempt(
+        operation,
+        this.transactionService.serializableTimeoutMs,
+      );
     }
 
     return this.runUnderExclusiveFence(branch, operation);
@@ -61,8 +67,32 @@ export class EscalatingTransactionRunner {
     branch: ProjectBranch,
     operation: Operation<T>,
   ): Promise<T> {
+    const escalatedAt = performance.now();
+    await this.escalationSlots.acquire(this.branchWriteFence.waitLimitMs);
+
+    try {
+      return await this.runFencedAttempt(
+        branch,
+        operation,
+        Math.ceil(performance.now() - escalatedAt),
+      );
+    } finally {
+      this.escalationSlots.release();
+    }
+  }
+
+  private async runFencedAttempt<T>(
+    branch: ProjectBranch,
+    operation: Operation<T>,
+    fenceWaitSpentMs: number,
+  ): Promise<T> {
     const branchId = await this.findBranchId(branch);
-    const fence = this.branchWriteFence.exclusiveHolder(branchId);
+    const attemptTimeoutMs =
+      this.transactionService.serializableTimeoutMs - fenceWaitSpentMs;
+    const fence = this.branchWriteFence.exclusiveHolder(branchId, {
+      fenceWaitSpentMs,
+      attemptTimeoutMs,
+    });
 
     try {
       return await this.runSerializableAttempt(async () => {
@@ -72,17 +102,20 @@ export class EscalatingTransactionRunner {
           branchId,
           operation,
         );
-      });
+      }, attemptTimeoutMs);
     } finally {
       await fence.release();
     }
   }
 
-  private runSerializableAttempt<T>(operation: Operation<T>): Promise<T> {
+  private runSerializableAttempt<T>(
+    operation: Operation<T>,
+    timeoutMs: number,
+  ): Promise<T> {
     return this.transactionService.run(operation, {
       isolationLevel: TransactionIsolationLevel.Serializable,
       maxWait: this.transactionService.serializableMaxWaitMs,
-      timeout: this.transactionService.serializableTimeoutMs,
+      timeout: timeoutMs,
     });
   }
 

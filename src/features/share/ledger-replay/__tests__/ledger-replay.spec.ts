@@ -899,6 +899,27 @@ describe('replayLedger', () => {
       ]);
     });
 
+    it('records a foreign-key target that does not exist as a read of the step it fails', () => {
+      const initProducts = init('products', productSchema);
+      const addTag = update('categories', [
+        addField('tag', str({ foreignKey: 'tags' })),
+      ]);
+
+      const replay = replayOf(
+        initProducts,
+        init('categories', categorySchema),
+        addTag,
+      );
+
+      expect(slotOf(replay, addTag)?.failure).toEqual(
+        failure(addTag, 'Foreign key target "tags" does not exist'),
+      );
+      expect(replay.reads).toEqual([
+        tableRead(initProducts, 'categories'),
+        tableRead(addTag, 'tags'),
+      ]);
+    });
+
     it('does not record a reference of a table to itself', () => {
       const initNodes = init('nodes', nodeSchema);
       const renameNodes = rename('nodes', 'trees');

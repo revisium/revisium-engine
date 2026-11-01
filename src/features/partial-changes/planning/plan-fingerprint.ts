@@ -169,18 +169,22 @@ class PlanCoverage {
   }
 
   private coveredRowVersionIdsByTable(): string[][] {
-    const versionIds = new Map<string, string[]>();
+    const versionIds = new Map<string, Set<string>>();
 
     for (const unit of this.units.filter(isRowUnit)) {
       const tableIdentity = tableIdentityOf(unit);
+      const tableVersionIds = versionIds.get(tableIdentity) ?? new Set();
+      const coveredVersionIds =
+        this.coveredRowsOf(unit).flatMap(rowVersionIdsOf);
 
-      versionIds.set(tableIdentity, [
-        ...(versionIds.get(tableIdentity) ?? []),
-        ...this.coveredRowsOf(unit).flatMap(rowVersionIdsOf),
-      ]);
+      for (const versionId of coveredVersionIds) {
+        tableVersionIds.add(versionId);
+      }
+
+      versionIds.set(tableIdentity, tableVersionIds);
     }
 
-    return [...versionIds.values()].map((ids) => [...new Set(ids)]);
+    return [...versionIds.values()].map((ids) => [...ids]);
   }
 
   private ownedSystemRowVersionIds(): string[] {

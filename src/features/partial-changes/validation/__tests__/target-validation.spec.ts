@@ -15,16 +15,21 @@ import {
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   completeAsyncMigrationInPlace,
+  describedLedgerOf,
   recordLedgerRepair,
 } from '../../__tests__/support/head-schema-damage';
 
 const PRODUCTS = 'products';
+const ITEMS = 'items';
 const CATEGORIES = 'categories';
+const ORDERS = 'orders';
 const TAGS = 'tags';
 
 const productSchema = obj({ title: str(), price: num() });
 const categorySchema = obj({ title: str() });
 const tagSchema = obj({ label: str() });
+const orderSchema = obj({ note: str() });
+const taggedProductSchema = obj({ product: str({ foreignKey: PRODUCTS }) });
 const labelSchema = obj({ name: str() });
 
 const addColor = [addField('color', str())];
@@ -188,6 +193,23 @@ describe('TargetValidator', () => {
       ]);
     });
 
+    it('blocks a failure that a revert adds to a table whose Draft ledger already mismatches its schema', async () => {
+      const draft = await givenUnrecordedReferrerOfCreatedTags();
+
+      const blockers = await draft.validateTarget('revert', {
+        tables: [TAGS],
+      });
+
+      expect(blockers).toEqual([
+        {
+          code: 'ledgerInconsistent',
+          tableId: PRODUCTS,
+          message:
+            'The migration ledger of the reverted Draft cannot replay products: Foreign key target "tags" does not exist',
+        },
+      ]);
+    });
+
     it('accepts a revert whose resulting ledger replays to its schemas', async () => {
       const draft = await givenForeignKeyAddedAndRemovedAgain();
 
@@ -226,6 +248,20 @@ describe('TargetValidator', () => {
         operation: 'revert',
         selection: { all: true },
       },
+      {
+        source:
+          'a damaged Head table renamed in the Draft, published again by { all: true }',
+        given: givenRenamedHeadDamage,
+        operation: 'commit',
+        selection: { all: true },
+      },
+      {
+        source:
+          'a damaged Head table renamed in the Draft, restored by { all: true }',
+        given: givenRenamedHeadDamage,
+        operation: 'revert',
+        selection: { all: true },
+      },
     ];
 
     it.each(toleranceCases)(
@@ -252,6 +288,34 @@ describe('TargetValidator', () => {
         expect(blockers).toEqual([]);
       },
     );
+
+    it('leaves out the pending steps of a Head table without its init migration', async () => {
+      const draft = await givenUpdatedHeadTableWithoutInit();
+
+      const blockers = await draft.validateTarget('commit', { all: true });
+
+      expect(blockers).toEqual([]);
+    });
+
+    it('leaves out a failure that only follows from reading a table without its init migration', async () => {
+      const draft = await givenUpdatedHeadTableWithoutInit();
+      await draft.updateTable(ORDERS, [
+        addField('product', str({ foreignKey: PRODUCTS })),
+      ]);
+
+      const blockers = await draft.validateTarget('commit', { all: true });
+
+      expect(blockers).toEqual([]);
+    });
+
+    it('leaves out the failure of a table created in the Draft whose foreign key targets a Head table without its init migration', async () => {
+      const draft = await givenHeadTableWithoutInit();
+      await draft.createTable(TAGS, taggedProductSchema);
+
+      const blockers = await draft.validateTarget('commit', { all: true });
+
+      expect(blockers).toEqual([]);
+    });
 
     it('leaves out a table created in the Draft without its init migration', async () => {
       const draft = await givenEditedCatalog();
@@ -308,6 +372,46 @@ describe('TargetValidator', () => {
   async function givenUnpublishedRepair(): Promise<ChangesScenario> {
     const draft = await givenUnpublishedHeadDamage();
     await recordLedgerRepair(draft, PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenRenamedHeadDamage(): Promise<ChangesScenario> {
+    const draft = await givenUnpublishedHeadDamage();
+    await draft.renameTable(PRODUCTS, ITEMS);
+
+    return draft;
+  }
+
+  async function givenUnrecordedReferrerOfCreatedTags(): Promise<ChangesScenario> {
+    const draft = await givenForeignKeyAddedAndRemovedAgain();
+    await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+    expect(
+      (await draft.readCatalogue([PRODUCTS])).structureOf(PRODUCTS),
+    ).toMatchObject({ recorded: false });
+
+    return draft;
+  }
+
+  async function givenHeadTableWithoutInit(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [ORDERS]: { schema: orderSchema },
+    });
+    await draft.createTable(PRODUCTS, productSchema);
+    await draft.dropFromDraftLedger('init', PRODUCTS);
+    await draft.commit();
+    expect(await describedLedgerOf(draft, 'head')).toEqual(['init orders']);
+
+    return draft;
+  }
+
+  async function givenUpdatedHeadTableWithoutInit(): Promise<ChangesScenario> {
+    const draft = await givenHeadTableWithoutInit();
+    await draft.updateTable(PRODUCTS, [addField('weight', num())]);
+    expect(await describedLedgerOf(draft, 'draft')).toEqual([
+      'init orders',
+      'update products',
+    ]);
 
     return draft;
   }

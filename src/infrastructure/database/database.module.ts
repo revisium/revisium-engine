@@ -5,9 +5,11 @@ import { BranchWriteFenceService } from 'src/infrastructure/database/branch-writ
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 import { HashService } from 'src/infrastructure/database/hash.service';
 import { IdService } from 'src/infrastructure/database/id.service';
+import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 import { PostgresqlNotificationService } from 'src/infrastructure/database/postgresql-notification.service';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
 
 @Module({
   imports: [ConfigModule, CqrsModule],
@@ -19,6 +21,8 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
     HashService,
     CleanupService,
     BranchWriteFenceService,
+    TransactionTimeoutSupport,
+    OperationTransactionRunner,
   ],
   exports: [
     PrismaService,
@@ -28,6 +32,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
     HashService,
     CleanupService,
     BranchWriteFenceService,
+    OperationTransactionRunner,
   ],
 })
 export class DatabaseModule {}

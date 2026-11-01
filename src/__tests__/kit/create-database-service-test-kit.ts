@@ -1,4 +1,5 @@
-import type { Provider } from '@nestjs/common';
+import type { InjectionToken, Provider } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
@@ -11,13 +12,29 @@ export interface DatabaseServiceTestKit {
   close(): Promise<void>;
 }
 
+export interface ProviderOverride {
+  provide: InjectionToken;
+  useValue: unknown;
+}
+
 export async function createDatabaseServiceTestKit(
   providers: Provider[],
+  settings: Record<string, string> = {},
+  overrides: ProviderOverride[] = [],
 ): Promise<DatabaseServiceTestKit> {
-  const module = await Test.createTestingModule({
-    imports: [DatabaseModule],
+  const builder = Test.createTestingModule({
+    imports: [
+      ConfigModule.forRoot({ isGlobal: true, load: [() => settings] }),
+      DatabaseModule,
+    ],
     providers,
-  }).compile();
+  });
+
+  for (const { provide, useValue } of overrides) {
+    builder.overrideProvider(provide).useValue(useValue);
+  }
+
+  const module = await builder.compile();
 
   await module.init();
 

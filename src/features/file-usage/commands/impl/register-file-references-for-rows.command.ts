@@ -1,3 +1,4 @@
+import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 
 export interface RegisterFileReferencesRowInput {
@@ -9,6 +10,7 @@ export interface RegisterFileReferencesRowInput {
 export interface RegisterFileReferencesForRowsCommandData {
   revisionId: string;
   tableId: string;
+  tableSchema?: JsonSchema;
   rows: readonly RegisterFileReferencesRowInput[];
 }
 

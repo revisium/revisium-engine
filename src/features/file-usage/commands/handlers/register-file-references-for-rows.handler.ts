@@ -5,6 +5,7 @@ import { JsonValue } from '@revisium/schema-toolkit/types';
 import { CleanupFileBlobsByIdsCommand } from 'src/features/file-usage/commands/impl/cleanup-file-blobs-by-ids.command';
 import {
   RegisterFileReferencesForRowsCommand,
+  RegisterFileReferencesForRowsCommandData,
   RegisterFileReferencesRowInput,
 } from 'src/features/file-usage/commands/impl/register-file-references-for-rows.command';
 import { FileReferenceExtractorService } from 'src/features/file-usage/services/file-reference-extractor.service';
@@ -47,10 +48,7 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
       return;
     }
 
-    const schemaStore = await this.loadSchemaStore(
-      data.revisionId,
-      data.tableId,
-    );
+    const schemaStore = await this.loadSchemaStore(data);
     const references = this.extractReferences(
       projectId,
       data.rows,
@@ -85,10 +83,15 @@ export class RegisterFileReferencesForRowsHandler implements ICommandHandler<
     return revision?.branch.projectId ?? null;
   }
 
-  private async loadSchemaStore(
-    revisionId: string,
-    tableId: string,
-  ): Promise<JsonSchemaStore> {
+  private async loadSchemaStore({
+    revisionId,
+    tableId,
+    tableSchema,
+  }: RegisterFileReferencesForRowsCommandData): Promise<JsonSchemaStore> {
+    if (tableSchema) {
+      return this.jsonSchemaStore.create(tableSchema);
+    }
+
     const schemaResult = await this.shareTransactionalQueries.getTableSchema(
       revisionId,
       tableId,

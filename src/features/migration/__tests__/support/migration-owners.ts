@@ -159,6 +159,10 @@ export function beforeBatchWrite(
   );
 }
 
+export function beforeRetry(kit: MigrationTestKit): OwnerHold {
+  return holdCall(kit.migrationTransitions, 'retry', 1, 'before');
+}
+
 export function beforeSwapBegins(kit: MigrationTestKit): OwnerHold {
   return holdCall(kit.migrationTransitions, 'beginSwap', 1, 'before');
 }

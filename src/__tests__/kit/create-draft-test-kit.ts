@@ -34,6 +34,7 @@ import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { FileUsageApiService } from 'src/features/file-usage/file-usage-api.service';
 import { FileReferenceExtractorService } from 'src/features/file-usage/services/file-reference-extractor.service';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
+import { transactionTimeoutSetting } from 'src/__tests__/kit/transaction-timeout-setting';
 
 export interface DraftTestKit {
   module: TestingModule;
@@ -68,7 +69,7 @@ export async function createDraftTestKit(
     imports: [
       ConfigModule.forRoot({
         isGlobal: true,
-        load: transactionSettings(options),
+        load: transactionTimeoutSetting(options.transactionTimeoutMs),
       }),
       DatabaseModule,
       CqrsModule,
@@ -120,12 +121,4 @@ export async function createDraftTestKit(
       await module.close();
     },
   };
-}
-
-function transactionSettings({ transactionTimeoutMs }: DraftTestKitOptions) {
-  if (transactionTimeoutMs === undefined) {
-    return [];
-  }
-
-  return [() => ({ TRANSACTION_TIMEOUT: String(transactionTimeoutMs) })];
 }

@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import { getObjectSchema, getRefSchema } from '@revisium/schema-toolkit/mocks';
 import { nanoid } from 'nanoid';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import { createDraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
@@ -240,6 +242,29 @@ describe('RegisterFileReferencesForRowsHandler', () => {
     expect(warnings).toContain(
       `FileBlob size mismatch for projectId=${scenario.projectId} hash=${storedFile.hash}: existing=300 incoming=900`,
     );
+  });
+
+  it('reads the files of the rows through a given table schema instead of the schema the revision stores', async () => {
+    const scenario = await givenBranchWithFileTable(kit);
+    const fileValue = makeUploadedFileValue(`given-schema-${nanoid()}`, 64);
+    const row = { rowId: `row-${nanoid()}`, data: { attachment: fileValue } };
+    const rowVersionId = await createRowDirect(kit, {
+      draftTableVersionId: scenario.draftTableVersionId,
+      ...row,
+    });
+
+    await execute({
+      revisionId: scenario.draftRevisionId,
+      tableId: scenario.tableId,
+      tableSchema: getObjectSchema({
+        attachment: getRefSchema(SystemSchemaIds.File),
+      }),
+      rows: [{ ...row, rowVersionId }],
+    });
+
+    expect(await loadLinkedHashes(kit, { row: rowVersionId })).toEqual({
+      row: hashesOf(fileValue),
+    });
   });
 
   describe('a mixed batch of rows', () => {

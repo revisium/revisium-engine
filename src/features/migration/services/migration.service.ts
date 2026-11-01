@@ -321,15 +321,19 @@ export class MigrationService {
       );
     }
 
-    const migratedRows = await this.batchService.migrateAndProcessBatch(
+    const migrated = await this.batchService.migrateAndProcessBatch(
       rows,
       patches,
       migration.previousSchema as unknown as JsonSchema,
       migration.revisionId,
       migration.tableId,
     );
+    await this.batchService.validateMigratedRows(migration, migrated);
     const written = await this.batchService.writeBatch(lease, {
+      revisionId: migration.revisionId,
+      tableId: migration.tableId,
       shadowTableVersionId,
+      targetSchema: migrated.targetSchema,
       targetSchemaHash: migration.targetSchemaHash,
       from: {
         copiedRows: migration.copiedRows,
@@ -339,7 +343,7 @@ export class MigrationService {
         copiedRows: migration.copiedRows + rows.length,
         lastCopiedRowId: lastRow.id,
       },
-      rows: migratedRows,
+      rows: migrated.rows,
     });
 
     return written ? 'continue' : 'stopped';

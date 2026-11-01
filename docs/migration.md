@@ -63,12 +63,15 @@ PHASE 2: INIT (one transaction, T-init)
   ├─ PENDING and token → COPYING, startedAt (first time only)
   └─ create and record the shadow table (createdId, createdAt, system of the source)
 
-PHASE 3: COPY (one transaction per batch, T-batch)
+PHASE 3: COPY (one write transaction per batch, T-batch)
   for each batch:
     ├─ load N rows from source (ORDER BY id, cursor-based), outside the transaction
     ├─ apply schema patches via SchemaTable, run plugin pipeline
-    ├─ advance the checkpoint first: COPYING, token, copiedRows and lastCopiedRowId as read
-    └─ insert the batch into the shadow table; a checkpoint that matches nothing writes nothing
+    ├─ validate the rows as the synchronous path does (see "What does a batch check and write?")
+    └─ one read committed transaction under TRANSACTION_TIMEOUT:
+         ├─ advance the checkpoint first: COPYING, token, copiedRows and lastCopiedRowId as read
+         ├─ insert the batch into the shadow table; a checkpoint that matches nothing writes nothing
+         └─ register the file references of the new row versions against the target schema
 
 PHASE 4: SWAP-BEGIN (T-swap-begin)
   └─ COPYING, token, copiedRows = totalRows → SWAPPING
@@ -136,8 +139,27 @@ After the commit the start triggers the inline worker. A trigger failure is logg
 The copy resumes from the committed checkpoint (`copiedRows`, `lastCopiedRowId`); T-init does not run again.
 
 **Permanent failures** skip the retries: a payload that is neither a patch array nor a version 2 envelope fails with
-`PAYLOAD_UNSUPPORTED`; a failed swap re-check or an unrecorded imported update fails with its code (see below).
-`errorMessage` starts with the code.
+`PAYLOAD_UNSUPPORTED`; a migrated row that the synchronous path would refuse fails with `ROW_INVALID`; a failed swap
+re-check or an unrecorded imported update fails with its code (see below). `errorMessage` starts with the code.
+
+### What does a batch check and write?
+
+Each batch reads its source rows outside any transaction, applies the patches and runs the plugin pipeline. Then it
+validates every migrated row through the synchronous path's data validation (`ValidateDataCommand`): the row against the
+target schema and its foreign keys against the revision. The validation runs in its own repeatable read transaction, so
+the foreign-key lookups see one snapshot of the revision. A row the synchronous `updateTable` would refuse fails the
+migration at once, without retries: `status=FAILED`, `phase=COPYING`, `errorMessage` is `ROW_INVALID: ` followed by the
+message of the synchronous exception. The batches committed before it stay in the shadow table, the Draft keeps linking
+the source table, and the lock is released.
+
+A valid batch is written in one read committed transaction. It advances the checkpoint first, inserts the new row
+versions into the shadow table and registers their file references through the file-usage owner
+(`FileUsageIntegrationService`), reading the files through the target schema because the Draft still stores the previous
+one. The migrated rows link the blobs their data references. Those blobs already belong to the project through the
+source rows, so the registration adds links and leaves the project's file bytes unchanged, and an orphan sweep after the
+swap, which deletes the unlinked source rows, tombstones none of them. Both transactions of a batch run under
+`TRANSACTION_TIMEOUT`, not Prisma's 5 s default; a batch that outlives it is rolled back and retried as a transient
+failure.
 
 ### What happens when a migration makes no progress?
 
@@ -411,7 +433,7 @@ owner's claim token and `lockedAt` the start of its lease. `phase` takes `INIT`,
 
 `previousSchema` and the decoded patches together define the migration. The target schema is never stored explicitly — it is computed on demand as `SchemaTable(previousSchema).applyPatches(patches)`:
 
-- **During copy**: `MigrationBatchService` computes target schema per batch, passes it directly to `PluginService.afterMigrateRows({ targetSchema })` so plugins don't read from DB
+- **During copy**: `MigrationBatchService` computes target schema per batch and passes it directly to `PluginService.afterMigrateRows({ targetSchema })`, the row validation (`ValidateDataCommand`) and the file registration (`registerReferencesForRows({ tableSchema })`), so none of them reads the schema the Draft still stores
 - **During swap**: `SwapRecheckService` applies the same patches to `previousSchema` and checks the result against `targetSchemaHash`; the synchronous schema writer (`UpdateSchemaCommand`) writes it with copy-on-write, appends the history entry with the original patches and records the `update` ledger row — all inside the serializable transaction
 - **Views parity**: if a `revisium_views_table` row exists for the migrated table, the synchronous views writer (`MigrateTableViewsCommand`) migrates it with copy-on-write inside the same swap transaction
 - **At start**: `ValidateTableUpdateCommand` applies the patches to the Draft schema and runs the synchronous validators and dry runs (`dryRun: true`) of `UpdateSchemaCommand` and `MigrateTableViewsCommand`, the writers the swap runs later
@@ -434,7 +456,8 @@ src/features/migration/
     migration-swap.service.ts      The swap transaction: fence, re-checks, relink, native writers, record deletion,
                                    endpoint notification
     swap-recheck.service.ts        Re-checks of the swap and their permanent failure codes
-    migration-batch.service.ts     Row-level: load, patch, plugin, guarded batch write
+    migration-batch.service.ts     Row-level: load, patch, plugin, row validation, guarded batch write with file
+                                   references
     migration-worker.service.ts    Legacy disposal at startup; recurring sweep of inline and polling modes
     legacy-migration-disposal.service.ts Terminal disposition of records without the payload envelope
     held-migration-leases.ts       Leases the drivers of this process hold; the claim capacity of the sweep

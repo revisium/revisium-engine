@@ -92,6 +92,31 @@ export async function readDraftState(
   };
 }
 
+export function readRows(
+  kit: MigrationTestKit,
+  { revisionId, tableId }: TableInRevision,
+) {
+  return kit.prisma.row.findMany({
+    where: {
+      tables: {
+        some: { id: tableId, revisions: { some: { id: revisionId } } },
+      },
+    },
+    orderBy: { id: 'asc' },
+    select: {
+      id: true,
+      createdId: true,
+      createdAt: true,
+      publishedAt: true,
+      meta: true,
+      data: true,
+      hash: true,
+      schemaHash: true,
+      fileBlobs: { orderBy: { hash: 'asc' }, select: { hash: true } },
+    },
+  });
+}
+
 export async function readDraftTableVersionId(
   kit: MigrationTestKit,
   { revisionId, tableId }: TableInRevision,

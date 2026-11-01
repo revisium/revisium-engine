@@ -56,6 +56,7 @@ const categoryOfP1: Selection = {
   fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/category' }],
 };
 const creationOfC9: Selection = { rows: [rowOf(CATEGORIES, 'c9')] };
+const rowP1: Selection = { rows: [rowOf(PRODUCTS, 'p1')] };
 
 describe('revertChanges', () => {
   let kit: PartialChangesTestKit;
@@ -258,6 +259,40 @@ describe('revertChanges', () => {
         unmatched: titleOfP1,
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    });
+
+    it('is stale when repeated with expected after the reverted row freed an id that now resolves to a renamed row', async () => {
+      const draft = await givenRowIdReusedAfterItsRename();
+      const preview = await draft.previewChanges({
+        operation: 'revert',
+        selection: rowP1,
+      });
+      await expectApplied(
+        draft.revertChanges({
+          selection: rowP1,
+          expected: preview.fingerprint,
+        }),
+      );
+      const contents = await branchContentsOf(kit, draft);
+
+      const repeat = await draft.revertChanges({
+        selection: rowP1,
+        expected: preview.fingerprint,
+      });
+
+      expect(repeat).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    });
+
+    it('re-resolves an identical request without expected against the current Draft: the repeat reverts the rename whose Head id the selector now names', async () => {
+      const draft = await givenRowIdReusedAfterItsRename();
+
+      await expectApplied(draft.revertChanges({ selection: rowP1 }));
+      expect(await draft.rowIds('draft', PRODUCTS)).toEqual(['p2', 'p9']);
+
+      await expectApplied(draft.revertChanges({ selection: rowP1 }));
+      expect(await draft.rowIds('draft', PRODUCTS)).toEqual(['p1', 'p2']);
+      await expectDraftLinksHeadRow(draft, PRODUCTS, 'p1');
     });
   });
 
@@ -600,6 +635,14 @@ describe('revertChanges', () => {
         },
       },
     });
+  }
+
+  async function givenRowIdReusedAfterItsRename(): Promise<ChangesScenario> {
+    const draft = await givenCommittedPrices();
+    await draft.renameRow(PRODUCTS, 'p1', 'p9');
+    await draft.createRows(PRODUCTS, { p1: { title: 'new one', price: 5 } });
+
+    return draft;
   }
 
   async function givenEditedPrices(): Promise<ChangesScenario> {

@@ -45,8 +45,8 @@ type AttemptOptions = Omit<TransactionOptions, 'retry'>;
 type Operation<T> = (deadline: DeadlineHandle) => Promise<T>;
 
 interface AttemptStart {
-  readonly timeoutMs: number;
-  beforeSnapshot(): Promise<void>;
+  readonly deadline: OperationDeadline;
+  readonly beforeSnapshot: () => Promise<void>;
 }
 
 @Injectable()
@@ -118,30 +118,40 @@ export class OperationTransactionRunner {
       );
     }
 
-    return this.escalation.runEscalated(
-      branch,
-      this.operationTimeoutMs,
-      (escalated) =>
-        this.runAttempt(
-          TransactionIsolationLevel.Serializable,
-          (deadline) =>
-            this.transactionService.runInExclusiveHeldAdmission(
-              escalated.branchId,
-              () => planAndWrite(deadline),
-            ),
-          {
-            timeoutMs: escalated.timeoutMs,
-            beforeSnapshot: () => escalated.takeFence(),
-          },
-        ),
+    return this.runEscalatedAttempt(branch, planAndWrite);
+  }
+
+  private runEscalatedAttempt<T>(
+    branch: ProjectBranch,
+    planAndWrite: Operation<T>,
+  ): Promise<T> {
+    const deadline = this.startDeadline();
+
+    return this.escalation.runEscalatedBefore(deadline, branch, (escalated) =>
+      this.runAttempt(
+        TransactionIsolationLevel.Serializable,
+        (handle) =>
+          this.transactionService.runInExclusiveHeldAdmission(
+            escalated.branchId,
+            () => planAndWrite(handle),
+          ),
+        { deadline, beforeSnapshot: () => escalated.takeFence() },
+      ),
     );
   }
 
   private unfencedStart(): AttemptStart {
     return {
-      timeoutMs: this.operationTimeoutMs,
+      deadline: this.startDeadline(),
       beforeSnapshot: () => Promise.resolve(),
     };
+  }
+
+  private startDeadline(): OperationDeadline {
+    return new OperationDeadline(
+      this.operationTimeoutMs,
+      this.transactionTimeoutSupport,
+    );
   }
 
   private backOff(attempt: number): Promise<void> {
@@ -163,22 +173,14 @@ export class OperationTransactionRunner {
   private async runAttempt<T>(
     isolationLevel: TransactionIsolationLevel,
     operation: Operation<T>,
-    start: AttemptStart,
+    { deadline, beforeSnapshot }: AttemptStart,
   ): Promise<T> {
-    const deadline = new OperationDeadline(
-      start.timeoutMs,
-      this.transactionTimeoutSupport,
-    );
-
     try {
-      return await this.prismaService.$transaction(
-        async ($prisma) => {
-          await start.beforeSnapshot();
+      return await this.prismaService.$transaction(async ($prisma) => {
+        await beforeSnapshot();
 
-          return this.runBeforeDeadline($prisma, deadline, operation);
-        },
-        this.attemptOptions(isolationLevel, start.timeoutMs),
-      );
+        return this.runBeforeDeadline($prisma, deadline, operation);
+      }, this.attemptOptions(isolationLevel));
     } catch (error) {
       throw deadline.failureOf(error);
     }
@@ -198,12 +200,11 @@ export class OperationTransactionRunner {
 
   private attemptOptions(
     isolationLevel: TransactionIsolationLevel,
-    timeoutMs: number,
   ): AttemptOptions {
     return {
       isolationLevel,
       maxWait: this.transactionService.serializableMaxWaitMs,
-      timeout: timeoutMs + PRISMA_TIMEOUT_GRACE_MS,
+      timeout: this.operationTimeoutMs + PRISMA_TIMEOUT_GRACE_MS,
     };
   }
 }

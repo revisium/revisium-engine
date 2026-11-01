@@ -11,9 +11,12 @@ import {
 } from 'src/__tests__/utils/prepareProject';
 import {
   type BranchFenceLock,
+  holdBranchFenceAsWriter,
   readBranchFenceLocks,
 } from 'src/features/draft/commands/handlers/__tests__/support/branch-write-fence';
 import { TransactionPrismaClient } from 'src/features/share/types';
+import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
+import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
 import {
   DeadlineHandle,
   OperationDeadline,
@@ -31,6 +34,12 @@ const SHORTER_SESSION_DEFAULT_MS = 300;
 const LONGER_SESSION_DEFAULT_MS = 30 * OPERATION_TIMEOUT_MS;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const CONFIGURED_MAX_ATTEMPTS = 2;
+
+const SHORTER_THAN_FENCE_WAIT_SETTINGS = {
+  TRANSACTION_BASE_DELAY_MS: '1',
+  TRANSACTION_MAX_DELAY_MS: '10',
+  PARTIAL_CHANGES_OPERATION_TIMEOUT_MS: String(OPERATION_TIMEOUT_MS),
+};
 
 const RUNNER_SETTINGS = {
   TRANSACTION_TIMEOUT: String(NATIVE_TRANSACTION_TIMEOUT_MS),
@@ -428,6 +437,78 @@ describe('OperationTransactionRunner', () => {
     });
   });
 
+  describe('an escalated attempt whose operation timeout is shorter than the native fence wait limit', () => {
+    it('ends at the operation deadline with OperationTimeoutException while every escalation slot is taken, and holds nothing', async () => {
+      const counter = await givenCounter(shortKit);
+      const write = countAttempts(
+        conflictingOnFirstAttempts(shortKit, counter, 2),
+      );
+
+      const failure = await whileEveryEscalationSlotIsTaken(shortKit, () =>
+        failureOf(shortRunner.runWrite(shortBranch, write.run)),
+      );
+
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+      expectEndedAtTheOperationDeadline(failure.elapsedMs);
+      expect(write.attempts).toBe(2);
+      await expect(
+        readBranchFenceLocks(shortKit, shortBranch.branchId),
+      ).resolves.toEqual([]);
+    });
+
+    it('ends at the operation deadline with OperationTimeoutException while a writer keeps the branch fence, and releases its slot and holder', async () => {
+      const counter = await givenCounter(shortKit);
+      const write = countAttempts(
+        conflictingOnFirstAttempts(shortKit, counter, 2),
+      );
+      const freeSlots = await countFreeEscalationSlots(shortKit);
+      const writer = await holdBranchFenceAsWriter(
+        shortKit,
+        shortBranch.branchId,
+      );
+
+      const failure = await failureOf(
+        shortRunner.runWrite(shortBranch, write.run),
+      );
+
+      expect(failure.error).toBeInstanceOf(OperationTimeoutException);
+      expectEndedAtTheOperationDeadline(failure.elapsedMs);
+      expect(write.attempts).toBe(2);
+      await expect(
+        readBranchFenceLocks(shortKit, shortBranch.branchId),
+      ).resolves.toEqual([{ mode: 'ShareLock', granted: true }]);
+      await writer.release();
+      await expect(countFreeEscalationSlots(shortKit)).resolves.toBe(freeSlots);
+    });
+
+    function expectEndedAtTheOperationDeadline(elapsedMs: number): void {
+      expect(elapsedMs).toBeGreaterThanOrEqual(OPERATION_TIMEOUT_MS);
+      expect(elapsedMs).toBeLessThan(nativeFenceWaitLimitMs);
+    }
+
+    let shortKit: DatabaseServiceTestKit;
+    let shortRunner: OperationTransactionRunner;
+    let shortBranch: BranchGraph;
+    let nativeFenceWaitLimitMs: number;
+
+    beforeAll(async () => {
+      shortKit = await createDatabaseServiceTestKit(
+        [],
+        SHORTER_THAN_FENCE_WAIT_SETTINGS,
+      );
+      shortRunner = shortKit.module.get(OperationTransactionRunner);
+      shortBranch = await prepareBranch(shortKit.prismaService);
+      nativeFenceWaitLimitMs = shortKit.module.get(
+        BranchWriteFenceService,
+      ).waitLimitMs;
+      expect(OPERATION_TIMEOUT_MS).toBeLessThan(nativeFenceWaitLimitMs);
+    });
+
+    afterAll(async () => {
+      await shortKit.close();
+    });
+  });
+
   describe('with PARTIAL_CHANGES_MAX_ATTEMPTS configured', () => {
     it('stops after the configured number of attempts', async () => {
       const counter = await givenCounter(configuredKit);
@@ -484,6 +565,55 @@ async function failureOf(operation: Promise<unknown>) {
   );
 
   return { error, elapsedMs: performance.now() - startedAt };
+}
+
+async function whileEveryEscalationSlotIsTaken<T>(
+  kit: DatabaseServiceTestKit,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const slots = kit.module.get(EscalationSlots);
+  const taken = await takeFreeEscalationSlots(slots);
+
+  try {
+    return await operation();
+  } finally {
+    releaseEscalationSlots(slots, taken);
+  }
+}
+
+async function countFreeEscalationSlots(
+  kit: DatabaseServiceTestKit,
+): Promise<number> {
+  const slots = kit.module.get(EscalationSlots);
+  const free = await takeFreeEscalationSlots(slots);
+  releaseEscalationSlots(slots, free);
+
+  return free;
+}
+
+async function takeFreeEscalationSlots(
+  slots: EscalationSlots,
+): Promise<number> {
+  let taken = 0;
+
+  while (await takesSlotWithoutWaiting(slots)) {
+    taken += 1;
+  }
+
+  return taken;
+}
+
+function takesSlotWithoutWaiting(slots: EscalationSlots): Promise<boolean> {
+  return slots.acquire(0).then(
+    () => true,
+    () => false,
+  );
+}
+
+function releaseEscalationSlots(slots: EscalationSlots, count: number): void {
+  for (let slot = 0; slot < count; slot++) {
+    slots.release();
+  }
 }
 
 async function createKitWithTransactionTimeoutDefault(

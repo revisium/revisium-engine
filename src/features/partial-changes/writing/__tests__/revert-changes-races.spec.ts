@@ -34,6 +34,7 @@ const titleOf = (rowId: string): FieldRef => ({
 const titleOfP1: Selection = { fields: [titleOf('p1')] };
 const titleOfP2: Selection = { fields: [titleOf('p2')] };
 const titlesOfP1AndP2: Selection = { fields: [titleOf('p1'), titleOf('p2')] };
+const rowP1: Selection = { rows: [{ tableId: PRODUCTS, rowId: 'p1' }] };
 
 describe('revertChanges racing other writers', () => {
   let kit: PartialChangesTestKit;
@@ -168,6 +169,44 @@ describe('revertChanges racing other writers', () => {
       expect(overtaken).toEqual<RevertChangesResult>({ status: 'stale' });
       await expectDraftData(draft, 'p2', { title: 'dos', price: 2 });
     });
+
+    it('identical with expected, of a field: one applies and the other finds nothing left to revert', async () => {
+      const draft = await givenEditedPrices();
+      const preview = await draft.previewChanges({
+        operation: 'revert',
+        selection: titleOfP1,
+      });
+      const revert = { selection: titleOfP1, expected: preview.fingerprint };
+
+      const { overtaken, overtaking } = await revertOvertakenByAnotherRevert(
+        kit,
+        draft,
+        { overtaken: revert, overtaking: revert },
+      );
+
+      expect(overtaking).toMatchObject({ status: 'applied' });
+      expect(overtaken).toMatchObject({ status: 'empty' });
+      await expectDraftData(draft, 'p1', { title: 'one', price: 10 });
+    });
+
+    it('identical with expected, of a row whose id a rename freed: one applies and the other is stale instead of reverting the rename', async () => {
+      const draft = await givenRowIdReusedAfterItsRename();
+      const preview = await draft.previewChanges({
+        operation: 'revert',
+        selection: rowP1,
+      });
+      const revert = { selection: rowP1, expected: preview.fingerprint };
+
+      const { overtaken, overtaking } = await revertOvertakenByAnotherRevert(
+        kit,
+        draft,
+        { overtaken: revert, overtaking: revert },
+      );
+
+      expect(overtaking).toMatchObject({ status: 'applied' });
+      expect(overtaken).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(await draft.rowIds('draft', PRODUCTS)).toEqual(['p2', 'p9']);
+    });
   });
 
   describe('the branch write fence', () => {
@@ -234,8 +273,24 @@ describe('revertChanges racing other writers', () => {
     return row.data;
   }
 
+  async function givenRowIdReusedAfterItsRename(): Promise<ChangesScenario> {
+    const draft = await givenCommittedPrices();
+    await draft.renameRow(PRODUCTS, 'p1', 'p9');
+    await draft.createRows(PRODUCTS, { p1: { title: 'new one', price: 5 } });
+
+    return draft;
+  }
+
   async function givenEditedPrices(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
+    const draft = await givenCommittedPrices();
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
+    await draft.updateRow(PRODUCTS, 'p2', { title: 'dos', price: 2 });
+
+    return draft;
+  }
+
+  function givenCommittedPrices(): Promise<ChangesScenario> {
+    return ChangesScenario.committed(kit, {
       [PRODUCTS]: {
         schema: pricedSchema,
         rows: {
@@ -244,9 +299,5 @@ describe('revertChanges racing other writers', () => {
         },
       },
     });
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
-    await draft.updateRow(PRODUCTS, 'p2', { title: 'dos', price: 2 });
-
-    return draft;
   }
 });

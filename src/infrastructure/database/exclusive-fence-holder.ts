@@ -12,7 +12,10 @@ export interface HolderTransactionOptions {
   protectedTransactionTimeoutMs: number;
 }
 
-type ExclusiveLock = (holder: TransactionPrismaClient) => Promise<void>;
+type ExclusiveLock = (
+  holder: TransactionPrismaClient,
+  lockWaitMs: number,
+) => Promise<void>;
 
 // The holder runs in its own transaction on its own connection: the operation it
 // protects must take its snapshot after in-flight writers drained, and the lock
@@ -30,11 +33,11 @@ export class ExclusiveFenceHolder {
     private readonly options: HolderTransactionOptions,
   ) {}
 
-  public async acquire(): Promise<void> {
+  public async acquire(lockWaitMs: number): Promise<void> {
     const acquisition = createSignal();
     const holding = this.prismaService.$transaction(
       async (holder) => {
-        await this.lockExclusively(holder);
+        await this.lockExclusively(holder, lockWaitMs);
         acquisition.fire();
         await this.releaseRequest.fired;
       },

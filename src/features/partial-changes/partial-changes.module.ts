@@ -3,6 +3,7 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { RowMerger } from 'src/features/partial-changes/assembly/row-merger';
 import { SystemTargetAssembler } from 'src/features/partial-changes/assembly/system-target-assembler';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
+import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import { TARGET_CHECKS } from 'src/features/partial-changes/closure/findings';
 import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-reference-checks';
@@ -20,9 +21,6 @@ import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/cha
 import { ComparedSnapshotReader } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import { TargetValidator } from 'src/features/partial-changes/validation/target-validator';
 import { PluginModule } from 'src/features/plugin/plugin.module';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { ShareModule } from 'src/features/share/share.module';
 import { ViewsModule } from 'src/features/views/views.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
@@ -32,14 +30,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
   providers: [
     ChangesSnapshotReader,
     ComparedSnapshotReader,
-    {
-      provide: NativeSchemaRules,
-      useFactory: (
-        schemaStore: JsonSchemaStoreService,
-        validator: JsonSchemaValidatorService,
-      ) => new NativeSchemaRules(schemaStore.refs, validator),
-      inject: [JsonSchemaStoreService, JsonSchemaValidatorService],
-    },
+    HeadViewsMigration,
     ReadScope,
     PartialChangesLimits,
     ScopedCatalogueReader,

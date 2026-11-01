@@ -5,12 +5,8 @@ import type {
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import { prepareBranch } from 'src/__tests__/utils/prepareProject';
 import { RevisionsApiService } from 'src/features/revision/revisions-api.service';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import {
-  replayLedger,
-  type ReplayedLedger,
-} from 'src/features/share/ledger-replay/ledger-replay';
+import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 
 export type DraftSchemas = ReadonlyMap<string, JsonObjectSchema>;
@@ -39,11 +35,7 @@ export function replayWithNativeRules(
   kit: DraftTestKit,
   ledger: Migration[],
 ): ReplayedLedger {
-  return replayLedger({
-    ledger,
-    refs: kit.module.get(JsonSchemaStoreService).refs,
-    validator: kit.module.get(JsonSchemaValidatorService),
-  });
+  return kit.module.get(LedgerReplayer).replay(ledger);
 }
 
 function nativeDraft(kit: DraftTestKit, revisionId: string): NativeDraft {

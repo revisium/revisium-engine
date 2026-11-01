@@ -5,6 +5,7 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
   type LedgerEntry,
+  migrationsOf,
   splitLedger,
 } from 'src/features/share/ledger/migration-ledger';
 import {
@@ -50,9 +51,7 @@ export function pendingMigrationsOf(
   ledger: LedgerAttribution,
   tableIdentity: string,
 ): Migration[] {
-  const entries = ledger.tables.get(tableIdentity)?.entries ?? [];
-
-  return entries.map(({ migration }) => migration);
+  return migrationsOf(ledger.tables.get(tableIdentity)?.entries ?? []);
 }
 
 class PendingAttribution {
@@ -96,7 +95,7 @@ class PendingAttribution {
 
   private slotsWithPendingMigrations(): AttributedSlot[] {
     const attributedSlots = attributePendingLedger(
-      this.pending.map(({ migration }) => migration),
+      migrationsOf(this.pending),
       this.headIdentities.keys(),
       this.draftIdentities,
     );

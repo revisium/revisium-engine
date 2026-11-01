@@ -15,8 +15,6 @@ import type { Selection } from 'src/features/partial-changes/selection/selection
 import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import type { ChangedRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
-import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 
 interface ScopeCounts {
   readonly changedRows: number;
@@ -35,17 +33,12 @@ export type ScopedCatalogue =
 
 @Injectable()
 export class ScopedCatalogueReader {
-  private readonly headViews: HeadViewsMigration;
-
   constructor(
     private readonly snapshotReader: ChangesSnapshotReader,
     private readonly readScope: ReadScope,
     private readonly limits: PartialChangesLimits,
-    viewsMigration: ViewsMigrationService,
-    schemaRules: NativeSchemaRules,
-  ) {
-    this.headViews = new HeadViewsMigration(viewsMigration, schemaRules);
-  }
+    private readonly headViews: HeadViewsMigration,
+  ) {}
 
   public async readCatalogue(
     compared: ComparedSnapshot,

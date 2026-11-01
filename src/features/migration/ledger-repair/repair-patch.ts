@@ -42,6 +42,7 @@ export function repairPatchOf(
   ledger: RepairLedger,
   tableId: string,
   validator: HistoryPatchesValidator,
+  refs: SchemaRefs,
 ): RepairPatch | undefined {
   const replayedSchema = ledger.replayedSchemaOf(tableId);
   const headSchema = ledger.headSchemaOf(tableId);
@@ -55,12 +56,7 @@ export function repairPatchOf(
 
   if (
     !reproducesWhereInserted(ledger, tableId, repair, headSchema) ||
-    !migratesSampleRow(
-      ledger.rules.refs,
-      replayedSchema,
-      headSchema,
-      patches,
-    ) ||
+    !migratesSampleRow(refs, replayedSchema, headSchema, patches) ||
     !validator.validateHistoryPatchesSchema([repair]).result
   ) {
     return undefined;

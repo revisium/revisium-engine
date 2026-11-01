@@ -24,8 +24,7 @@ import {
   type SchemaLedgerScan,
   ScanSchemaLedgerQuery,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 
 @QueryHandler(ScanSchemaLedgerQuery)
@@ -38,8 +37,7 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
     private readonly branchPages: BranchPageReader,
     private readonly reader: ScanRevisionReader,
     private readonly repairPlanning: RepairPlanning,
-    private readonly schemaStore: JsonSchemaStoreService,
-    private readonly validator: JsonSchemaValidatorService,
+    private readonly replayer: LedgerReplayer,
   ) {}
 
   public async execute({
@@ -49,7 +47,7 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
     const page = await this.branchPages.readPage(request);
     const scan = new LedgerScan(
       this.reader,
-      { refs: this.schemaStore.refs, validator: this.validator },
+      this.replayer,
       request.rowDiagnostics !== 'none',
     );
     const findings: SchemaLedgerFinding[] = [];

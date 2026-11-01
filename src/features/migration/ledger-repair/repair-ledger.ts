@@ -1,24 +1,17 @@
 import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import type { RepairOutcome } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import {
-  type LedgerEntry,
   ledgerOf,
+  migrationsOf,
 } from 'src/features/share/ledger/migration-ledger';
-import {
-  type LedgerReplayInput,
-  replayLedger,
-  type ReplayedLedger,
-} from 'src/features/share/ledger-replay/ledger-replay';
+import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
+import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
 import { DraftLedger } from './draft-ledger';
 import { lastPublishedBoundsOf, type MigrationBounds } from './repair-ids';
 import { type HistoryPatchesValidator, isNativeHistory } from './repair-patch';
 import type { RepairState, RevisionLedger } from './repair-state-reader';
-
-export type ReplayRules = Pick<LedgerReplayInput, 'refs'> & {
-  readonly validator: LedgerReplayInput['validator'] & HistoryPatchesValidator;
-};
 
 export interface StoredLedgerReplays {
   readonly head: ReplayedLedger;
@@ -50,7 +43,8 @@ export class RepairLedger {
 
   constructor(
     private readonly state: RepairState,
-    public readonly rules: ReplayRules,
+    private readonly replayer: LedgerReplayer,
+    private readonly historyValidator: HistoryPatchesValidator,
     storedReplays: StoredLedgerReplays,
   ) {
     this.draftLedger = new DraftLedger(state);
@@ -63,10 +57,8 @@ export class RepairLedger {
         isLedgered(this.headReplay.slots, tableId) &&
         !this.replaysToHeadSchema(tableId),
     );
-    this.headSchemaBaseline = replayLedger({
-      ledger: this.pending,
+    this.headSchemaBaseline = replayer.replay(this.pending, {
       schemas: schemasOf(state.head),
-      ...rules,
     });
     this.passingDraftTableIds = this.draftTablesReproducedBy(
       storedReplays.draft,
@@ -76,7 +68,7 @@ export class RepairLedger {
   }
 
   public replay(ledger: readonly Migration[]): ReplayedLedger {
-    return replayLedger({ ledger, ...this.rules });
+    return this.replayer.replay(ledger);
   }
 
   public assess(tableId: string): TableAssessment {
@@ -123,7 +115,7 @@ export class RepairLedger {
       histories === undefined ||
       isNativeHistory(
         [...histories.inherited, ...histories.pending],
-        this.rules.validator,
+        this.historyValidator,
       )
     );
   }
@@ -177,16 +169,9 @@ export class RepairLedger {
 
 export function storedLedgerReplayOf(
   revision: RevisionLedger,
-  rules: ReplayRules,
+  replayer: LedgerReplayer,
 ): ReplayedLedger {
-  return replayLedger({
-    ledger: migrationsOf(ledgerOf(revision.migrationRows)),
-    ...rules,
-  });
-}
-
-function migrationsOf(entries: readonly LedgerEntry[]): Migration[] {
-  return entries.map(({ migration }) => migration);
+  return replayer.replay(migrationsOf(ledgerOf(revision.migrationRows)));
 }
 
 function failingMigrationIdsOf(replay: ReplayedLedger): Set<string> {

@@ -1,10 +1,12 @@
+import { Injectable } from '@nestjs/common';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type { PendingSchemaHistory } from 'src/features/share/ledger/schema-history';
-import type { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
-import type { ViewsMigrationService } from 'src/features/share/views-migration.service';
+import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
+import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import type { TableViewsData } from 'src/features/views/types';
 
+@Injectable()
 export class HeadViewsMigration {
   constructor(
     private readonly viewsMigration: ViewsMigrationService,

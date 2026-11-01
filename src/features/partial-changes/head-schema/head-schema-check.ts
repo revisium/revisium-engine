@@ -1,4 +1,4 @@
-import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
+import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import { publicTableIdOf } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { LedgerAttribution } from 'src/features/partial-changes/catalogue/ledger-attribution';
 import type {
@@ -7,14 +7,11 @@ import type {
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
-  type LedgerEntry,
   ledgerOf,
+  migrationsOf,
 } from 'src/features/share/ledger/migration-ledger';
-import {
-  type LedgerReplayInput,
-  replayLedger,
-  type ReplayedLedger,
-} from 'src/features/share/ledger-replay/ledger-replay';
+import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
+import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import {
   isLedgered,
@@ -29,8 +26,6 @@ export interface RefusedTable {
   readonly tableId: string;
   readonly code: RefusalCode;
 }
-
-export type LedgerReplayRules = Pick<LedgerReplayInput, 'refs' | 'validator'>;
 
 export interface HeadSchemaCheckInput {
   readonly snapshot: ChangesSnapshot;
@@ -51,12 +46,9 @@ interface Refusal {
 
 export function checkHeadSchema(
   input: HeadSchemaCheckInput,
-  rules: LedgerReplayRules,
+  replayer: LedgerReplayer,
 ): HeadSchemaCheck {
-  const headLedger = replayLedger({
-    ledger: migrationsOf(input.ledger.published),
-    ...rules,
-  });
+  const headLedger = replayer.replay(migrationsOf(input.ledger.published));
   const refusals = refusalsOf(input, headLedger);
 
   return {
@@ -137,10 +129,6 @@ export function isUnledgered(
   }
 
   return !isLedgered(headSlots, pair.head.id);
-}
-
-function migrationsOf(entries: readonly LedgerEntry[]): Migration[] {
-  return entries.map(({ migration }) => migration);
 }
 
 function replayedHeadSchemasOf(

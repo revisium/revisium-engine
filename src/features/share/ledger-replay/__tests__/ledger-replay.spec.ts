@@ -17,12 +17,12 @@ import {
   moveField,
   ownStep,
   referrerRewrite,
-  refs,
   remove,
   removeField,
   rename,
   replaceField,
   replayOf,
+  rules,
   schemasOf,
   slotOf,
   tableRead,
@@ -31,7 +31,6 @@ import {
   unattributedOf,
   unreplayableOf,
   update,
-  validator,
 } from './support/ledger-steps';
 
 const categorySchema = obj({ title: str() });
@@ -431,8 +430,7 @@ describe('replayLedger', () => {
     it('replays the ledger on top of the given schemas', () => {
       const replay = replayLedger({
         ledger: [init('products', productSchema)],
-        refs,
-        validator,
+        rules,
         schemas: new Map([['categories', categorySchema]]),
       });
 
@@ -453,8 +451,7 @@ describe('replayLedger', () => {
           rename('categories', 'groups'),
           update('products', [addField('price', num())]),
         ],
-        refs,
-        validator,
+        rules,
         schemas,
       });
 
@@ -510,8 +507,7 @@ describe('replayLedger', () => {
 
       const replay = replayLedger({
         ledger,
-        refs,
-        validator,
+        rules,
         schemas: new Map<string, JsonSchema>([
           ['categories', categorySchema],
           ['products', productSchema],

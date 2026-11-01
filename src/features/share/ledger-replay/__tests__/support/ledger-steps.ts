@@ -19,6 +19,8 @@ import {
   type TableRead,
   type UnattributedFailure,
 } from 'src/features/share/ledger-replay/ledger-replay';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
+import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 
 const UNCHECKED_HASH = '';
 const SCHEMA_VALIDATION_USES_NO_CACHE = {} as Cache;
@@ -30,6 +32,10 @@ export const refs = new JsonSchemaStoreService().refs;
 export const validator = new JsonSchemaValidatorService(
   SCHEMA_VALIDATION_USES_NO_CACHE,
 );
+
+export const rules = new NativeSchemaRules(refs, validator);
+
+export const replayer = new LedgerReplayer(rules);
 
 export function init(tableId: string, schema: JsonSchema): InitMigration {
   return {
@@ -76,11 +82,11 @@ export function moveField(from: string, to: string): JsonPatch {
 }
 
 export function replayOf(...ledger: Migration[]): ReplayedLedger {
-  return replayLedger({ ledger, refs, validator });
+  return replayLedger({ ledger, rules });
 }
 
 export function tracedReplayOf(...ledger: Migration[]): ReplayedLedger {
-  return replayLedger({ ledger, refs, validator, recordTrail: true });
+  return replayLedger({ ledger, rules, recordTrail: true });
 }
 
 export function schemasOf(replay: ReplayedLedger) {

@@ -106,7 +106,7 @@ function migrateTable(
   rows: readonly Row[],
   patches: JsonPatch[],
 ): MigratedTable {
-  const table = new SchemaTable(schema, kit.replayRules.refs);
+  const table = new SchemaTable(schema, kit.schemaRefs);
 
   for (const row of rows) {
     table.addRow(row.id, row.data as JsonValue);

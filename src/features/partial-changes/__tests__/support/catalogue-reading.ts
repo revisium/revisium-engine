@@ -10,7 +10,10 @@ import {
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { LedgerInconsistency } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
 import type { Side, Unit } from 'src/features/partial-changes/catalogue/unit';
-import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
+import type {
+  HeadSchemaCheck,
+  RefusedTable,
+} from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   ChangedRows,
   ChangesBranch,
@@ -30,6 +33,7 @@ export type AddressedUnit = Unit & { readonly side?: Side };
 export interface CatalogueView {
   readonly catalogue: ChangeCatalogue;
   readonly snapshot: ChangesSnapshot;
+  readonly headSchema: HeadSchemaCheck;
   readonly tables: readonly ComparedTable[];
   readonly changedRows: ChangedRows;
   readonly ledgerInconsistencies: readonly LedgerInconsistency[];
@@ -42,6 +46,7 @@ export interface CatalogueView {
 
 type CatalogueScope =
   | { readonly kind: 'tables'; readonly tableIds: readonly string[] }
+  | { readonly kind: 'everyTable' }
   | { readonly kind: 'wholeDraft' };
 
 export function readCatalogue(
@@ -50,6 +55,13 @@ export function readCatalogue(
   tableIds: readonly string[],
 ): Promise<CatalogueView> {
   return readCatalogueIn(kit, branch, { kind: 'tables', tableIds });
+}
+
+export function readCatalogueOfEveryTable(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+): Promise<CatalogueView> {
+  return readCatalogueIn(kit, branch, { kind: 'everyTable' });
 }
 
 export function readWholeDraftCatalogue(
@@ -78,7 +90,7 @@ function readCatalogueIn(
       new HeadViewsMigration(kit.viewsMigration, kit.schemaRules),
     );
 
-    return catalogueView(catalogue, snapshot, tables, changedRows);
+    return catalogueView(catalogue, snapshot, headSchema, tables, changedRows);
   });
 }
 
@@ -87,7 +99,7 @@ function affectedTablesIn(
   snapshot: ChangesSnapshot,
   tables: readonly ComparedTable[],
 ): ComparedTable[] {
-  if (scope.kind === 'wholeDraft') {
+  if (scope.kind !== 'tables') {
     return [...tables];
   }
 
@@ -97,12 +109,14 @@ function affectedTablesIn(
 function catalogueView(
   catalogue: ChangeCatalogue,
   snapshot: ChangesSnapshot,
+  headSchema: HeadSchemaCheck,
   tables: readonly ComparedTable[],
   changedRows: ChangedRows,
 ): CatalogueView {
   return {
     catalogue,
     snapshot,
+    headSchema,
     tables,
     changedRows,
     ledgerInconsistencies: catalogue.ledgerInconsistencies,
@@ -134,7 +148,7 @@ function structureNamed(
   return table.structure;
 }
 
-function addressedUnitOf({ unit, side }: CatalogueUnit): AddressedUnit {
+export function addressedUnitOf({ unit, side }: CatalogueUnit): AddressedUnit {
   if (side === undefined) {
     return unit;
   }

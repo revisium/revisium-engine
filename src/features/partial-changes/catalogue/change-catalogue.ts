@@ -104,7 +104,7 @@ function tablesNotRefused({
   headSchema,
 }: CatalogueSource): ComparedTable[] {
   return tables.filter(
-    ({ identity }) => !headSchema.refusedIdentities.has(identity),
+    ({ identity }) => !headSchema.refusedTablesByIdentity.has(identity),
   );
 }
 
@@ -113,7 +113,7 @@ function holdsRefusedTable(
   headSchema: HeadSchemaCheck,
 ): boolean {
   return unit.tableIdentities.some((identity) =>
-    headSchema.refusedIdentities.has(identity),
+    headSchema.refusedTablesByIdentity.has(identity),
   );
 }
 

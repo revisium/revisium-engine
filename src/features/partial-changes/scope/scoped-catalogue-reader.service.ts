@@ -14,6 +14,7 @@ import {
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import type { ChangedRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 
@@ -73,7 +74,9 @@ export class ScopedCatalogueReader {
 
   private async countsOf(scope: TableScope): Promise<ScopeCounts> {
     return {
-      changedRows: await this.snapshotReader.countChangedRows(scope.readTables),
+      changedRows: await this.snapshotReader.countChangedRows(
+        scope.affectedTables,
+      ),
       unreadTables: scope.unreadTables,
     };
   }
@@ -82,10 +85,22 @@ export class ScopedCatalogueReader {
     compared: ComparedSnapshot,
     scope: TableScope,
   ): Promise<ChangeCatalogue> {
-    const changedRows = await this.snapshotReader.readChangedRows(
-      scope.readTables,
+    const loaded = await this.snapshotReader.readChangedRows(
+      scope.loadedTables,
     );
 
-    return buildChangeCatalogue({ ...compared, changedRows }, this.headViews);
+    return buildChangeCatalogue(
+      { ...compared, changedRows: changedRowsOfAffectedTables(loaded, scope) },
+      this.headViews,
+    );
   }
+}
+
+function changedRowsOfAffectedTables(
+  loaded: ChangedRows,
+  { affectedTables }: TableScope,
+): ChangedRows {
+  const affected = new Set(affectedTables.map(({ identity }) => identity));
+
+  return new Map([...loaded].filter(([identity]) => affected.has(identity)));
 }

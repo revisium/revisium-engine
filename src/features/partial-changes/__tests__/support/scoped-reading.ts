@@ -12,7 +12,13 @@ import type { PlanBlocker } from 'src/features/partial-changes/selection/selecti
 import type {
   ChangesBranch,
   ChangesSnapshot,
+  ComparedTable,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import {
+  refs,
+  validator,
+} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
 import {
   readComparedSnapshot,
@@ -35,16 +41,18 @@ export type ScopedCatalogueView =
       readonly blocker: PlanBlocker;
     };
 
-const readingEveryTable: Pick<ReadScope, 'scopeOf'> = {
-  scopeOf: (_selection, { tables }) => ({
-    readTables: tables,
-    unreadTables: 0,
+const scopedReading = new ReadScope(new NativeSchemaRules(refs, validator));
+
+const loadingEveryTable: Pick<ReadScope, 'scopeOf'> = {
+  scopeOf: (selection, compared) => ({
+    ...scopedReading.scopeOf(selection, compared),
+    loadedTables: compared.tables,
   }),
 };
 
-export const READING_EVERY_TABLE: ProviderOverride = {
+export const LOADING_EVERY_TABLE: ProviderOverride = {
   provide: ReadScope,
-  useValue: readingEveryTable,
+  useValue: loadingEveryTable,
 };
 
 export function readScopedCatalogue(
@@ -71,6 +79,14 @@ export function readComparedSnapshotFor(
   return readComparedSnapshot(kit, branch, {
     wholeDraft: isWholeDraftSelection(selection),
   });
+}
+
+export function loadedDraftVersionIds(
+  loads: jest.SpyInstance<unknown, [readonly ComparedTable[]]>,
+): string[] {
+  return loads.mock.calls.flatMap(([tables]) =>
+    tables.map(({ draftVersionId }) => draftVersionId),
+  );
 }
 
 export function unitsOfTable(

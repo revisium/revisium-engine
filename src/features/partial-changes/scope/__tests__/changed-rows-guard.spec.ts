@@ -6,7 +6,9 @@ import {
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
-  READING_EVERY_TABLE,
+  LOADING_EVERY_TABLE,
+  loadedDraftVersionIds,
+  readScopedCatalogue,
   type ScopedCatalogueView,
 } from '../../__tests__/support/scoped-reading';
 
@@ -38,6 +40,7 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
     await kit.guard.verifyAndForget();
   });
 
@@ -45,18 +48,20 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
     await kit.close();
   });
 
-  it('refuses before the catalogue when the affected tables hold more changed rows than the limit, each table in full', async () => {
+  it('refuses before loading any changed row when the affected tables hold more changed rows than the limit, each table in full', async () => {
     const draft = await givenPriceEdit(kit);
     await editRows(draft, ORDERS, ORDER_IDS, (rowId) => ({
       note: `edited ${rowId}`,
       product: 'p1',
     }));
+    const loads = jest.spyOn(kit.snapshotReader, 'readChangedRows');
 
     const read = await draft.readScopedCatalogue({ fields: [priceOfP1] });
 
     expect(read).toEqual(
       refusedAsTooLarge({ changedRows: 4, unreadTables: 0 }),
     );
+    expect(loads).not.toHaveBeenCalled();
   });
 
   it('reads one field although an unrelated table holds more changed rows than the limit', async () => {
@@ -82,32 +87,33 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
     );
   });
 
-  describe('when every table is read', () => {
-    let everyTableKit: PartialChangesTestKit;
+  describe('the reference read of AS-74: the same affected tables, every table loaded', () => {
+    let referenceKit: PartialChangesTestKit;
 
     beforeAll(async () => {
-      everyTableKit = await createPartialChangesTestKit({
+      referenceKit = await createPartialChangesTestKit({
         settings: LIMITED_CHANGED_ROWS,
-        overrides: [READING_EVERY_TABLE],
+        overrides: [LOADING_EVERY_TABLE],
       });
     });
 
-    afterEach(async () => {
-      await everyTableKit.guard.verifyAndForget();
-    });
-
     afterAll(async () => {
-      await everyTableKit.close();
+      await referenceKit.close();
     });
 
-    it('refuses the same one-field selection', async () => {
-      const draft = await givenPriceEditNextToEditedLogs(everyTableKit);
+    it('loads the unrelated table, yet guards and builds the catalogue of the scoped read', async () => {
+      const draft = await givenPriceEditNextToEditedLogs(kit);
+      const loads = jest.spyOn(referenceKit.snapshotReader, 'readChangedRows');
 
-      const read = await draft.readScopedCatalogue({ fields: [priceOfP1] });
+      const scoped = await draft.readScopedCatalogue({ fields: [priceOfP1] });
+      const reference = await readScopedCatalogue(referenceKit, draft.branch, {
+        fields: [priceOfP1],
+      });
 
-      expect(read).toEqual(
-        refusedAsTooLarge({ changedRows: 1 + LOG_IDS.length, unreadTables: 0 }),
+      expect(loadedDraftVersionIds(loads)).toContain(
+        await draft.tableVersionId('draft', LOGS),
       );
+      expect(reference).toEqual(scoped);
     });
   });
 });

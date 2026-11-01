@@ -14,7 +14,8 @@ import {
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 
 export interface TableScope {
-  readonly readTables: readonly ComparedTable[];
+  readonly affectedTables: readonly ComparedTable[];
+  readonly loadedTables: readonly ComparedTable[];
   readonly unreadTables: number;
 }
 
@@ -27,12 +28,16 @@ export class ReadScope {
     { snapshot, tables }: ComparedSnapshot,
   ): TableScope {
     const affected = this.affectedTablesOf(selection, snapshot.tables);
+    const affectedTables = tables.filter(({ identity }) =>
+      affected.has(identity),
+    );
     const unread = tables.filter(
       (table) => hasDifferentVersions(table) && !affected.has(table.identity),
     );
 
     return {
-      readTables: tables.filter(({ identity }) => affected.has(identity)),
+      affectedTables,
+      loadedTables: affectedTables,
       unreadTables: unread.length,
     };
   }

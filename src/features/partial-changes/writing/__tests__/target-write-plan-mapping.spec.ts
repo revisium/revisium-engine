@@ -2,6 +2,7 @@ import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { arr, obj, ref, str } from '@revisium/schema-toolkit/mocks';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type {
+  CommitTargetWritePlan,
   TableWriteOutcome,
   TableWritePlan,
 } from 'src/features/draft-revision/commands/impl';
@@ -18,10 +19,12 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import {
+  commitTargetWritePlanOf,
   targetWritePlanOf,
   type WritableTarget,
 } from '../target-write-plan-mapping';
 
+const BRANCH = 'branch';
 const HEAD_REVISION = 'head-revision';
 const DRAFT_REVISION = 'draft-revision';
 
@@ -231,6 +234,58 @@ describe('targetWritePlanOf', () => {
       ]);
     });
   });
+
+  describe('commits', () => {
+    it('writes a commit on the branch of the planned snapshot with its comment, each table on its Head side and the next Draft side of its relink candidates', () => {
+      const plan = commitTargetWritePlanOf(
+        writableTargetOf({
+          pairs: [products],
+          tables: [
+            tablePlanOf(products, {
+              outcome: 'mixed',
+              structureSide: 'head',
+              relinkCandidate: true,
+              removedLinks: ['p2-head'],
+              newRows: [mergedP2],
+            }),
+          ],
+        }),
+        'titles',
+      );
+
+      expect(plan).toEqual<CommitTargetWritePlan>({
+        branchId: BRANCH,
+        headRevisionId: HEAD_REVISION,
+        draftRevisionId: DRAFT_REVISION,
+        comment: 'titles',
+        tables: [
+          {
+            identity: products.identity,
+            headVersionId: 'products-head',
+            draftVersionId: 'products-draft',
+            outcome: 'mixed',
+            structureSide: 'head',
+            removedRowVersionIds: ['p2-head'],
+            addedRowVersionIds: [],
+            newRows: [mergedP2],
+            relinkCandidate: true,
+            hasFileFields: false,
+          },
+        ],
+      });
+    });
+
+    it('refuses a commit that takes the structure of a table from the Draft, whose remaining migrations are renumbered only from delivery stage 3', () => {
+      const writable = writableTargetOf({
+        pairs: [products],
+        tables: [tablePlanOf(products, { structureSide: 'draft' })],
+      });
+
+      expect(() => commitTargetWritePlanOf(writable)).toThrow(
+        `The commit takes the structure of table ${products.identity} from the Draft, which is not written before delivery stage 3`,
+      );
+    });
+  });
 });
 
 interface WritableTargetParts {
@@ -247,6 +302,7 @@ function writableTargetOf({
   return {
     source: {
       snapshot: {
+        branchId: BRANCH,
         headRevisionId: HEAD_REVISION,
         draftRevisionId: DRAFT_REVISION,
         tables: pairs,

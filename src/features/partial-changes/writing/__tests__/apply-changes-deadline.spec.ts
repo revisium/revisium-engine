@@ -24,7 +24,7 @@ const titleOfC1: Selection = {
   fields: [{ tableId: CATEGORIES, rowId: 'c1', path: '/title' }],
 };
 
-describe('revertChanges under the operation deadline', () => {
+describe('commitChanges and revertChanges under the operation deadline', () => {
   let kit: PartialChangesTestKit;
 
   beforeAll(async () => {
@@ -42,23 +42,36 @@ describe('revertChanges under the operation deadline', () => {
     await kit.close();
   });
 
-  it('fails with OperationTimeoutException when planning outlasts the deadline, without a retry, and writes and notifies nothing', async () => {
-    const draft = await givenEditedCategory();
-    const contents = await branchContentsOf(kit, draft);
-    const plans = jest.spyOn(kit.module.get(ChangePlanner), 'plan');
-    const notifications = recordEndpointNotifications(kit, () =>
-      Promise.resolve(undefined),
-    );
-    passingTheDeadlineAfterValidation(kit, OPERATION_TIMEOUT_MS);
+  it.each<{
+    operation: string;
+    apply: (draft: ChangesScenario) => Promise<unknown>;
+  }>([
+    {
+      operation: 'commit',
+      apply: (draft) => draft.commitChanges({ selection: titleOfC1 }),
+    },
+    {
+      operation: 'revert',
+      apply: (draft) => draft.revertChanges({ selection: titleOfC1 }),
+    },
+  ])(
+    'fails a $operation with OperationTimeoutException when planning outlasts the deadline, without a retry, and writes and notifies nothing',
+    async ({ apply }) => {
+      const draft = await givenEditedCategory();
+      const contents = await branchContentsOf(kit, draft);
+      const plans = jest.spyOn(kit.module.get(ChangePlanner), 'plan');
+      const notifications = recordEndpointNotifications(kit, () =>
+        Promise.resolve(undefined),
+      );
+      passingTheDeadlineAfterValidation(kit, OPERATION_TIMEOUT_MS);
 
-    await expect(draft.revertChanges({ selection: titleOfC1 })).rejects.toThrow(
-      OperationTimeoutException,
-    );
+      await expect(apply(draft)).rejects.toThrow(OperationTimeoutException);
 
-    expect(plans).toHaveBeenCalledTimes(1);
-    expect(notifications).toEqual([]);
-    expect(await branchContentsOf(kit, draft)).toEqual(contents);
-  });
+      expect(plans).toHaveBeenCalledTimes(1);
+      expect(notifications).toEqual([]);
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    },
+  );
 
   async function givenEditedCategory(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {

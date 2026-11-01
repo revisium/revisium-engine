@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import {
+  type CommitChangesInput,
+  type CommitChangesResult,
+  CommitDraftChangesCommand,
+} from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
+import {
   type RevertChangesInput,
   type RevertChangesResult,
   RevertDraftChangesCommand,
@@ -31,6 +36,10 @@ export class PartialChangesApiService {
     data: PreviewChangesInput,
   ): Promise<PreviewChangesResult> {
     return this.queryBus.execute(new PreviewDraftChangesQuery(data));
+  }
+
+  public commitChanges(data: CommitChangesInput): Promise<CommitChangesResult> {
+    return this.commandBus.execute(new CommitDraftChangesCommand(data));
   }
 
   public revertChanges(data: RevertChangesInput): Promise<RevertChangesResult> {

@@ -14,6 +14,7 @@ import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-re
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { ListChangesResult } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
@@ -30,6 +31,7 @@ import {
   readCatalogue,
   readWholeDraftCatalogue,
 } from './catalogue-reading';
+import { commitChanges, type CommitOptions } from './change-committing';
 import {
   listChanges,
   listEveryPage,
@@ -531,6 +533,15 @@ export class ChangesScenario {
     options: PreviewOptions,
   ): Promise<PreviewChangesResult> {
     return previewChanges(this.kit, this.branch, options);
+  }
+
+  public async commitChanges(
+    options: CommitOptions,
+  ): Promise<CommitChangesResult> {
+    const result = await commitChanges(this.kit, this.branch, options);
+    await this.observeCommittedVersions();
+
+    return result;
   }
 
   public revertChanges(options: RevertOptions): Promise<RevertChangesResult> {

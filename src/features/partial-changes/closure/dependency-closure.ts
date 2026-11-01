@@ -8,12 +8,16 @@ import {
   TargetAssembler,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import {
-  danglingInSource,
-  type Finding,
-  TARGET_CHECKS,
+  CheckContext,
   type TargetCheck,
   type TargetChecking,
+} from 'src/features/partial-changes/closure/check-context';
+import {
+  danglingInSource,
+  type Finding,
 } from 'src/features/partial-changes/closure/findings';
+import { TableSchemas } from 'src/features/partial-changes/closure/table-schemas';
+import { TARGET_CHECKS } from 'src/features/partial-changes/closure/target-checks';
 import {
   type Estimate,
   type OperationEstimation,
@@ -40,6 +44,7 @@ import {
   type RequiredUnit,
   requiredUnitsOf,
 } from 'src/features/partial-changes/selection/unit-refs';
+import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 
 export interface ClosureSource extends SelectionSource {
@@ -71,6 +76,7 @@ interface ClosureSteps {
   readonly deadline: DeadlineHandle;
   readonly estimation: OperationEstimation;
   readonly assembler: TargetAssembler;
+  readonly schemas: TableSchemas;
   readonly checks: readonly TargetChecking[];
 }
 
@@ -79,6 +85,7 @@ export class DependencyClosure {
   constructor(
     private readonly estimator: OperationEstimator,
     private readonly assembler: TargetAssembler,
+    private readonly schemaStore: JsonSchemaStoreService,
     @Inject(TARGET_CHECKS) private readonly checks: readonly TargetCheck[],
   ) {}
 
@@ -95,6 +102,7 @@ export class DependencyClosure {
         deadline,
         estimation: this.estimator.estimationOf(source),
         assembler: this.assembler,
+        schemas: new TableSchemas(this.schemaStore),
         checks: this.checks.map((check) => check.checkingOf(source)),
       },
     ).close();
@@ -162,10 +170,17 @@ class SelectionClosure {
     target: AssembledTarget,
     choice: AppliedUnits,
   ): Promise<Finding[]> {
+    const context = new CheckContext(
+      this.source,
+      this.lookup,
+      this.steps.schemas,
+      target,
+      choice,
+    );
     const findings: Finding[] = [];
 
     for (const check of this.steps.checks) {
-      findings.push(...(await check.findingsOf(target, choice)));
+      findings.push(...(await check.findingsOf(context)));
     }
 
     return findings;

@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { RowMerger } from 'src/features/partial-changes/assembly/row-merger';
 import { SystemTargetAssembler } from 'src/features/partial-changes/assembly/system-target-assembler';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
+import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
+import { TARGET_CHECKS } from 'src/features/partial-changes/closure/findings';
+import { OperationEstimator } from 'src/features/partial-changes/limits/operation-estimator';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
 import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
@@ -31,6 +34,9 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     RowMerger,
     SystemTargetAssembler,
     TargetAssembler,
+    OperationEstimator,
+    { provide: TARGET_CHECKS, useValue: [] },
+    DependencyClosure,
   ],
 })
 export class PartialChangesModule {}

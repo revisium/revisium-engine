@@ -12,21 +12,22 @@ import {
   type TableOutcome,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
-import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import {
-  CatalogueTables,
-  distinctRows,
-} from 'src/features/partial-changes/catalogue/catalogue-tables';
-import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
+  type SystemTableTarget,
+  systemTableOutcomeOf,
+  systemTableTargetsOf,
+  type ViewsRewrite,
+} from 'src/features/partial-changes/assembly/system-table-targets';
+import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
+import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import type {
   SystemTableRows,
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
-import { SystemTables } from 'src/features/share/system-tables.consts';
+import type { SystemTables } from 'src/features/share/system-tables.consts';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import type { TableViewsData } from 'src/features/views/types';
 import { HashService } from 'src/infrastructure/database/hash.service';
@@ -43,15 +44,6 @@ interface DesiredRows {
   readonly versions: readonly Row[];
   readonly newRows: readonly MergedRow[];
 }
-
-interface SystemTableTarget {
-  readonly tableId: SystemTables;
-  readonly rows: SystemTableRows;
-  readonly desired: DesiredRows;
-  readonly ownerKinds: readonly UnitKind[];
-}
-
-const NO_ROWS: DesiredRows = { versions: [], newRows: [] };
 
 @Injectable()
 export class SystemTargetAssembler {
@@ -80,7 +72,6 @@ export class SystemTargetAssembler {
 
 class SystemTargetAssembly {
   private readonly tables: CatalogueTables;
-  private readonly lookup: CatalogueLookup;
 
   constructor(
     private readonly source: AssemblySource,
@@ -89,107 +80,58 @@ class SystemTargetAssembly {
     private readonly hashService: HashService,
   ) {
     this.tables = new CatalogueTables(source.snapshot, source.tables);
-    this.lookup = new CatalogueLookup(source.catalogue);
   }
 
   public async planSystemTables(): Promise<SystemTablePlan[]> {
-    const { schemas, migrations, views, sharedSchemas } =
-      this.source.snapshot.systemRows;
-    const targets: SystemTableTarget[] = [
-      {
-        tableId: SystemTables.Schema,
-        rows: schemas,
-        desired: this.rowsFollowingOwners(schemas, 'structure'),
-        ownerKinds: ['structure'],
-      },
-      {
-        tableId: SystemTables.Migration,
-        rows: migrations,
-        desired: this.rowsFollowingOwners(migrations, 'structure'),
-        ownerKinds: ['structure'],
-      },
-      {
-        tableId: SystemTables.Views,
-        rows: views,
-        desired: await this.targetViewsRows(),
-        ownerKinds: ['structure', 'views'],
-      },
-      {
-        tableId: SystemTables.SharedSchemas,
-        rows: sharedSchemas,
-        desired: this.rowsFollowingOwners(sharedSchemas, 'sharedSchema'),
-        ownerKinds: ['sharedSchema'],
-      },
-    ];
+    const plans: SystemTablePlan[] = [];
 
-    return targets
-      .filter(({ rows }) => existsOnEitherSide(rows))
-      .map((target) => this.planOf(target));
+    for (const target of systemTableTargetsOf(this.source, this.rules)) {
+      plans.push(this.planOf(target, await this.desiredRowsOf(target)));
+    }
+
+    return plans;
   }
 
-  private rowsFollowingOwners(
-    rows: SystemTableRows,
-    kind: UnitKind,
-  ): DesiredRows {
-    const owners = ownersByVersionId(this.source.catalogue.units, kind);
-    const sideOf = (row: Row) => this.sideTakenFor(owners.get(row.versionId));
+  private async desiredRowsOf({
+    versions,
+    rewrites,
+  }: SystemTableTarget): Promise<DesiredRows> {
+    const rewritten: DesiredRows[] = [];
 
-    return {
-      versions: distinctRows([
-        ...rows.head.filter((row) => sideOf(row) === 'head'),
-        ...rows.draft.filter((row) => sideOf(row) === 'draft'),
-      ]),
-      newRows: [],
-    };
-  }
-
-  private async targetViewsRows(): Promise<DesiredRows> {
-    const targets: DesiredRows[] = [];
-
-    for (const pair of this.source.snapshot.tables) {
-      targets.push(await this.targetViewsOf(pair));
+    for (const rewrite of rewrites) {
+      rewritten.push(await this.rewrittenViewsOf(rewrite));
     }
 
     return {
-      versions: targets.flatMap(({ versions }) => versions),
-      newRows: targets.flatMap(({ newRows }) => newRows),
+      versions: [...versions, ...rewritten.flatMap(({ versions }) => versions)],
+      newRows: rewritten.flatMap(({ newRows }) => newRows),
     };
   }
 
-  private async targetViewsOf(pair: TablePair): Promise<DesiredRows> {
-    const structureSide = this.sideTakenFor(
-      this.lookup.tableUnitOf('structure', pair)?.key,
-    );
-    const viewsSide = this.viewsSideOf(pair, structureSide);
-    const table = pair[structureSide];
-    const views = this.tables.viewsRowsOf(pair)[viewsSide];
+  private async rewrittenViewsOf({
+    source,
+    tableId,
+    pair,
+    viewsSide,
+  }: ViewsRewrite): Promise<DesiredRows> {
+    const document = this.viewsDocumentOn(pair, viewsSide, source);
 
-    if (!table || !views) {
-      return NO_ROWS;
+    if (source.id === tableId && deepEqual(source.data, document)) {
+      return { versions: [source], newRows: [] };
     }
 
-    if (viewsSide === structureSide) {
-      return { versions: [views], newRows: [] };
-    }
+    const newRow: MergedRow = {
+      createdId: source.createdId,
+      createdAt: source.createdAt,
+      id: tableId,
+      data: document as unknown as JsonValue,
+      hash: await this.hashService.hashObject(document),
+      schemaHash: source.schemaHash,
+      publishedAt: source.publishedAt,
+      meta: source.meta,
+    };
 
-    return this.viewsRowHolding(
-      views,
-      table.id,
-      this.viewsDocumentOn(pair, viewsSide, views),
-    );
-  }
-
-  private viewsSideOf(
-    pair: TablePair,
-    structureSide: RevisionSide,
-  ): RevisionSide {
-    const viewsUnit = this.lookup.tableUnitOf('views', pair);
-
-    if (!viewsUnit) {
-      return structureSide;
-    }
-
-    return this.rules.sideTakenBy(viewsUnit.key);
+    return { versions: [], newRows: [newRow] };
   }
 
   private viewsDocumentOn(
@@ -212,37 +154,16 @@ class SystemTargetAssembly {
     );
   }
 
-  private async viewsRowHolding(
-    source: Row,
-    tableId: string,
-    document: TableViewsData,
-  ): Promise<DesiredRows> {
-    if (source.id === tableId && deepEqual(source.data, document)) {
-      return { versions: [source], newRows: [] };
-    }
-
-    const newRow: MergedRow = {
-      createdId: source.createdId,
-      createdAt: source.createdAt,
-      id: tableId,
-      data: document as unknown as JsonValue,
-      hash: await this.hashService.hashObject(document),
-      schemaHash: source.schemaHash,
-      publishedAt: source.publishedAt,
-      meta: source.meta,
-    };
-
-    return { versions: [], newRows: [newRow] };
-  }
-
-  private planOf({
-    tableId,
-    rows,
-    desired,
-    ownerKinds,
-  }: SystemTableTarget): SystemTablePlan {
-    const linkSide = this.linkSideOf(rows);
-    const outcome = systemTableOutcomeOf(rows, desired, linkSide);
+  private planOf(
+    target: SystemTableTarget,
+    desired: DesiredRows,
+  ): SystemTablePlan {
+    const { tableId, rows, linkSide, ownerKinds } = target;
+    const outcome = systemTableOutcomeOf(
+      target,
+      desired.versions,
+      desired.newRows.length > 0,
+    );
 
     return {
       tableId,
@@ -254,73 +175,11 @@ class SystemTargetAssembly {
     };
   }
 
-  private linkSideOf(rows: SystemTableRows): RevisionSide {
-    const { baseSide } = this.rules;
-
-    if (rows.versionIds[baseSide] === undefined) {
-      return oppositeOf(baseSide);
-    }
-
-    return baseSide;
-  }
-
   private keepsNoUnitsOf(kinds: readonly UnitKind[]): boolean {
     return this.source.catalogue.units
       .filter(({ unit }) => kinds.includes(unit.kind))
       .every(({ key }) => this.rules.isApplied(key));
   }
-
-  private sideTakenFor(owner: string | undefined): RevisionSide {
-    if (owner === undefined) {
-      return this.rules.unitlessSide;
-    }
-
-    return this.rules.sideTakenBy(owner);
-  }
-}
-
-function ownersByVersionId(
-  units: readonly CatalogueUnit[],
-  kind: UnitKind,
-): ReadonlyMap<string, string> {
-  const owners = new Map<string, string>();
-
-  for (const { key, unit, systemRows } of units) {
-    if (unit.kind === kind) {
-      for (const { versionId } of systemRows) {
-        owners.set(versionId, key);
-      }
-    }
-  }
-
-  return owners;
-}
-
-function systemTableOutcomeOf(
-  rows: SystemTableRows,
-  desired: DesiredRows,
-  linkSide: RevisionSide,
-): TableOutcome {
-  const otherSide = oppositeOf(linkSide);
-  const onBothSides = rows.versionIds[otherSide] !== undefined;
-
-  if (!onBothSides && holdsNoRows(desired)) {
-    return 'absent';
-  }
-
-  if (desired.newRows.length > 0) {
-    return 'mixed';
-  }
-
-  if (holdsExactly(rows[linkSide], desired.versions)) {
-    return 'base';
-  }
-
-  if (onBothSides && holdsExactly(rows[otherSide], desired.versions)) {
-    return 'other';
-  }
-
-  return 'mixed';
 }
 
 function systemLinkChangesOf(
@@ -358,23 +217,6 @@ function linkedVersionIdOf(
   return rows.versionIds[linkSide];
 }
 
-function holdsNoRows({ versions, newRows }: DesiredRows): boolean {
-  return versions.length === 0 && newRows.length === 0;
-}
-
-function holdsExactly(rows: readonly Row[], versions: readonly Row[]): boolean {
-  const versionIds = versionIdsOf(versions);
-
-  return (
-    rows.length === versionIds.size &&
-    rows.every(({ versionId }) => versionIds.has(versionId))
-  );
-}
-
 function versionIdsOf(rows: readonly Row[]): Set<string> {
   return new Set(rows.map(({ versionId }) => versionId));
-}
-
-function existsOnEitherSide({ versionIds }: SystemTableRows): boolean {
-  return versionIds.head !== undefined || versionIds.draft !== undefined;
 }

@@ -26,6 +26,7 @@ import {
   readCatalogue,
   readWholeDraftCatalogue,
 } from './catalogue-reading';
+import { type ClosureView, readClosedDependencies } from './dependency-closing';
 import {
   readScopedCatalogue,
   type ScopedCatalogueView,
@@ -392,6 +393,13 @@ export class ChangesScenario {
     selection: Selection,
   ): Promise<TargetView> {
     return readAssembledTarget(this.kit, this.branch, operation, selection);
+  }
+
+  public closeDependencies(
+    operation: ChangeOperation,
+    selection: Selection,
+  ): Promise<ClosureView> {
+    return readClosedDependencies(this.kit, this.branch, operation, selection);
   }
 
   public async readDraftRowDigest(tableId: string): Promise<string> {

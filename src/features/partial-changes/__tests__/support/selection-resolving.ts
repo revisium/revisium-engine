@@ -4,6 +4,7 @@ import type {
   ChangeCatalogue,
   ComparedSnapshot,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
+import type { ClosureSource } from 'src/features/partial-changes/closure/dependency-closure';
 import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
@@ -62,26 +63,21 @@ export async function readResolvedSelection(
   branch: ChangesBranch,
   selection: Selection,
 ): Promise<ResolvedSelection> {
-  const compared = await readComparedSnapshotFor(kit, branch, selection);
-  const catalogue = await readCatalogueOfSelection(kit, compared, selection);
-  const resolution = resolveSelection(selection, {
-    ...compared,
-    catalogue,
-    addressedRows: await readAddressedRows(
-      kit.snapshotReader,
-      compared.snapshot,
-      selection,
-    ),
-  });
+  const source = await readSelectionSource(kit, branch, selection);
 
-  return { compared, catalogue, resolution };
+  return {
+    compared: source,
+    catalogue: source.catalogue,
+    resolution: resolveSelection(selection, source),
+  };
 }
 
-async function readCatalogueOfSelection(
+export async function readSelectionSource(
   kit: PartialChangesTestKit,
-  compared: ComparedSnapshot,
+  branch: ChangesBranch,
   selection: Selection,
-): Promise<ChangeCatalogue> {
+): Promise<ComparedSnapshot & ClosureSource> {
+  const compared = await readComparedSnapshotFor(kit, branch, selection);
   const scoped = await kit.scopedCatalogueReader.readCatalogue(
     compared,
     selection,
@@ -91,7 +87,16 @@ async function readCatalogueOfSelection(
     throw new Error(`The read was refused: ${scoped.blocker.message}`);
   }
 
-  return scoped.catalogue;
+  return {
+    ...compared,
+    catalogue: scoped.catalogue,
+    changedRows: scoped.changedRows,
+    addressedRows: await readAddressedRows(
+      kit.snapshotReader,
+      compared.snapshot,
+      selection,
+    ),
+  };
 }
 
 function resolutionView(

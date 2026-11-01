@@ -21,11 +21,15 @@ export interface SelectionSource {
 export type RequiredReasonCode =
   | 'structureBoundData'
   | 'wholeRowUnit'
-  | 'atomicValue';
+  | 'atomicValue'
+  | 'referencedRowMissing'
+  | 'referrerStillReferences'
+  | 'idOccupied';
 
 export type BlockerCode =
   | 'notSelectable'
   | 'requiredExcluded'
+  | 'danglingInSource'
   | 'unmatchedSelector'
   | 'tooLarge'
   | 'unrecordedStructureChange'

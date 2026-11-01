@@ -1,4 +1,4 @@
-import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 interface VersionPair {
   readonly identity: string;

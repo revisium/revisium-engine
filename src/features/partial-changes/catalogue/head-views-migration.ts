@@ -1,5 +1,5 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
-import type { PendingSchemaHistory } from 'src/features/partial-changes/structure/pending-schema-history';
+import type { PendingSchemaHistory } from 'src/features/share/ledger/schema-history';
 import type { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import type { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import type { HistoryPatches } from 'src/features/share/queries/impl';

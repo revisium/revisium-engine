@@ -1,7 +1,5 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-
-const LAST_SINGLE_UNIT_CODE_POINT = 0xffff;
-const SURROGATE_PAIR_LENGTH = 2;
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 type OrderedUnit = Pick<CatalogueUnit, 'key' | 'unit'>;
 
@@ -18,24 +16,6 @@ export function compareUnits(
     compareAbsentFirst(left.previousRowId, right.previousRowId) ||
     compareCodePoints(leftKey, rightKey)
   );
-}
-
-export function compareCodePoints(left: string, right: string): number {
-  const length = Math.min(left.length, right.length);
-  let index = 0;
-
-  while (index < length) {
-    const leftCodePoint = left.codePointAt(index) ?? 0;
-    const rightCodePoint = right.codePointAt(index) ?? 0;
-
-    if (leftCodePoint !== rightCodePoint) {
-      return leftCodePoint - rightCodePoint;
-    }
-
-    index += lengthOf(leftCodePoint);
-  }
-
-  return left.length - right.length;
 }
 
 function compareAbsentFirst(
@@ -55,12 +35,4 @@ function compareAbsentFirst(
   }
 
   return compareCodePoints(left, right);
-}
-
-function lengthOf(codePoint: number): number {
-  if (codePoint > LAST_SINGLE_UNIT_CODE_POINT) {
-    return SURROGATE_PAIR_LENGTH;
-  }
-
-  return 1;
 }

@@ -1,19 +1,18 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
-import type { Row } from 'src/engine-prisma-types';
-import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
 import type {
   ChangesSnapshot,
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
-  type TableSlot,
-  traceTableSlots,
-} from 'src/features/share/ledger-replay/table-slots';
-
-export interface LedgerEntry {
-  readonly row: Row;
-  readonly migration: Migration;
-}
+  type LedgerEntry,
+  splitLedger,
+} from 'src/features/share/ledger/migration-ledger';
+import {
+  type AttributedSlot,
+  attributePendingLedger,
+  type PendingSlotOwner,
+} from 'src/features/share/ledger/pending-attribution';
+import type { TableSlot } from 'src/features/share/ledger-replay/table-slots';
 
 export interface TableHistory {
   readonly tableIds: readonly string[];
@@ -38,13 +37,10 @@ const NO_OWNER: SlotOwner = { kind: 'none' };
 
 export function attributeLedger(snapshot: ChangesSnapshot): LedgerAttribution {
   const { head, draft } = snapshot.systemRows.migrations;
-  const publishedVersionIds = new Set(head.map(({ versionId }) => versionId));
-  const pending = ledgerOf(
-    draft.filter(({ versionId }) => !publishedVersionIds.has(versionId)),
-  );
+  const { published, pending } = splitLedger(head, draft);
 
   return {
-    published: ledgerOf(head),
+    published,
     pending,
     ...new PendingAttribution(snapshot.tables, pending).attribute(),
   };
@@ -76,8 +72,11 @@ class PendingAttribution {
     const transientSlots: TableSlot[] = [];
     const unattributableSlots: TableSlot[] = [];
 
-    for (const slot of this.slotsWithPendingMigrations()) {
-      const owner = this.ownerOf(slot);
+    for (const {
+      slot,
+      owner: slotOwner,
+    } of this.slotsWithPendingMigrations()) {
+      const owner = this.identityOwnerOf(slotOwner);
 
       if (owner.kind === 'table') {
         appendTo(tableSlots, owner.tableIdentity, slot);
@@ -95,29 +94,27 @@ class PendingAttribution {
     };
   }
 
-  private slotsWithPendingMigrations(): TableSlot[] {
-    const slots = traceTableSlots(
+  private slotsWithPendingMigrations(): AttributedSlot[] {
+    const attributedSlots = attributePendingLedger(
       this.pending.map(({ migration }) => migration),
       this.headIdentities.keys(),
+      this.draftIdentities,
     );
 
-    return slots.filter(({ migrations }) => migrations.length > 0);
+    return attributedSlots.filter(({ slot }) => slot.migrations.length > 0);
   }
 
-  private ownerOf(slot: TableSlot): SlotOwner {
-    if (slot.brokenBy) {
-      return NO_OWNER;
+  private identityOwnerOf(owner: PendingSlotOwner): SlotOwner {
+    switch (owner.kind) {
+      case 'headTable':
+        return tableOwner(this.headIdentities.get(owner.tableId));
+      case 'draftTable':
+        return tableOwner(this.draftIdentities.get(owner.tableId));
+      case 'transient':
+        return TRANSIENT;
+      case 'none':
+        return NO_OWNER;
     }
-
-    if (slot.startingTableId !== undefined) {
-      return tableOwner(this.headIdentities.get(slot.startingTableId));
-    }
-
-    if (slot.currentTableId === undefined) {
-      return TRANSIENT;
-    }
-
-    return tableOwner(this.draftIdentities.get(slot.currentTableId));
   }
 
   private historiesByTable(
@@ -159,12 +156,6 @@ class PendingAttribution {
 
     return this.pending.filter(({ migration }) => migrations.has(migration));
   }
-}
-
-export function ledgerOf(rows: readonly Row[]): LedgerEntry[] {
-  return [...rows]
-    .sort((left, right) => compareCodePoints(left.id, right.id))
-    .map((row) => ({ row, migration: row.data as unknown as Migration }));
 }
 
 function identitiesByTableId(

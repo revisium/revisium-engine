@@ -1,16 +1,15 @@
 import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import { publicTableIdOf } from 'src/features/partial-changes/catalogue/catalogue-tables';
-import {
-  type LedgerAttribution,
-  type LedgerEntry,
-  ledgerOf,
-} from 'src/features/partial-changes/catalogue/ledger-attribution';
-import { compareCodePoints } from 'src/features/partial-changes/catalogue/unit-order';
+import type { LedgerAttribution } from 'src/features/partial-changes/catalogue/ledger-attribution';
 import type {
   ChangesSnapshot,
   TablePair,
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import {
+  type LedgerEntry,
+  ledgerOf,
+} from 'src/features/share/ledger/migration-ledger';
 import {
   type LedgerReplayInput,
   replayLedger,
@@ -22,6 +21,7 @@ import {
   type TableSlot,
   traceTableSlots,
 } from 'src/features/share/ledger-replay/table-slots';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export type RefusalCode = 'headSchemaInconsistent' | 'unledgeredTable';
 

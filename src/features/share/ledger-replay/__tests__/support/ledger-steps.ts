@@ -15,6 +15,7 @@ import {
   type ReplayedLedger,
   type ReplayedSlot,
   type ReplayFailure,
+  type TableRead,
   type UnattributedFailure,
 } from 'src/features/share/ledger-replay/ledger-replay';
 
@@ -98,6 +99,13 @@ export function slotOf(
 
 export function failure(migration: Migration, error: string): ReplayFailure {
   return { migrationId: migration.id, step: migration.changeType, error };
+}
+
+export function tableRead(
+  migration: Migration,
+  readTableId: string,
+): TableRead {
+  return { migrationId: migration.id, tableId: migration.tableId, readTableId };
 }
 
 export function unattributedFailure(

@@ -4,10 +4,8 @@ import {
 } from 'src/__tests__/kit/create-database-service-test-kit';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { Unit } from 'src/features/partial-changes/catalogue/unit';
-import {
-  compareCodePoints,
-  compareUnits,
-} from 'src/features/partial-changes/catalogue/unit-order';
+import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 const IDS_IN_CODE_POINT_ORDER = [
   '-x',

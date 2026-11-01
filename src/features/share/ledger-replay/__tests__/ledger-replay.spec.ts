@@ -23,6 +23,7 @@ import {
   replayOf,
   schemasOf,
   slotOf,
+  tableRead,
   unattributedFailure,
   unattributedOf,
   unreplayableOf,
@@ -802,6 +803,43 @@ describe('replayLedger', () => {
 
       expect(schemasOf(replay)).toEqual({ categories: tagSchema });
       expect(unreplayableOf(replay)).toEqual({});
+    });
+  });
+
+  describe('reads', () => {
+    it('records the tables a step names as foreign-key targets, rewrites on a rename and is refused for on a removal', () => {
+      const initProducts = init('products', productSchema);
+      const addTag = update('products', [
+        addField('tag', str({ foreignKey: 'tags' })),
+      ]);
+      const renameCategories = rename('categories', 'groups');
+      const removeTags = remove('tags');
+
+      const replay = replayOf(
+        init('categories', categorySchema),
+        init('tags', tagSchema),
+        initProducts,
+        addTag,
+        renameCategories,
+        removeTags,
+      );
+
+      expect(replay.reads).toEqual([
+        tableRead(initProducts, 'categories'),
+        tableRead(addTag, 'tags'),
+        tableRead(addTag, 'categories'),
+        tableRead(renameCategories, 'products'),
+        tableRead(removeTags, 'products'),
+      ]);
+    });
+
+    it('does not record a reference of a table to itself', () => {
+      const initNodes = init('nodes', nodeSchema);
+      const renameNodes = rename('nodes', 'trees');
+
+      const replay = replayOf(initNodes, renameNodes, remove('trees'));
+
+      expect(replay.reads).toEqual([]);
     });
   });
 });

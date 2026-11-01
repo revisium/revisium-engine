@@ -322,6 +322,31 @@ The call holds no transaction and no branch write fence while it waits, so it ca
 caller that abandons the call leaves the migration to the sweep of inline and polling modes and to the next call with
 the same id, which joins it. Updates below the threshold apply synchronously, as before.
 
+### How is the repair of a schema ledger planned?
+
+The old swap rewrote schema rows in place without recording a migration, so a Head table can have a schema row that its
+Head ledger does not reproduce. `MigrationApiService.planSchemaLedgerRepair({ projectId, branchName, tableIds? })` plans
+the forward-only repair ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger))
+and writes nothing; the write step and the engine facade method come later. It reads one `READ ONLY` RepeatableRead
+snapshot, fails with `MIGRATION_LOCKED` while an async migration is active in the Draft, and gives each requested Head
+table (without `tableIds`, each Head table whose ledger does not reproduce its schema row) the first matching outcome:
+
+| Outcome | When |
+| --- | --- |
+| `unledgered` | No intact lineage of the Head ledger ends at the table id. |
+| `ledgerDoesNotReplay` | The Head ledger replay fails for the table. |
+| `notDamaged`, `draftOnlyDamage` | The Head ledger reproduces the Head schema row; the Draft ledger reproduces the Draft schema row, or not. |
+| `ledgerInconsistent` | The Draft lacks or alters a published migration, a pending migration cannot be attributed, or the Draft schema history does not extend the Head one. |
+| `alreadyRepaired` | The Draft ledger reproduces the Draft schema row and the Draft rows are valid. |
+| `rowsNeedMigration` | A baseline reproduces the Draft schema row, but Draft rows fail the synchronous data validation, foreign keys included; `invalidRows` gives their count and up to ten ids. |
+| `needsDraftStructureRevert` | Neither baseline reproduces the Draft schema row. |
+
+A table whose pending migrations, replayed from the Head schema rows, reproduce its Draft schema row and whose Draft rows
+are valid is a repair candidate. Candidates are not reported yet and `renumbered` is empty: their patch, repair ids and
+combined verification (`repaired`, `patchNotReproducible`, `blockedByDependency`) come with the next step. The plan
+carries a fingerprint of what it validated: per validated Draft table version its row count and a digest of row version
+ids and hashes, and per table version a foreign key consulted a digest of its row ids.
+
 ### Read consistency during migration
 
 | What                           | Before migration | During COPY          | After SWAP                            |
@@ -507,9 +532,11 @@ src/features/migration/
     migration-recovery-scope.ts    Records the sweep and the legacy disposal may act on (all in production)
     migration-lock.service.ts      Lock check for Api*Handlers; cancellation of a branch's migrations on revert
     lease-heartbeat.ts             Lease renewal timer of one claim
+  ledger-repair/                   Repair planning: snapshot reader, ledger baselines and outcomes, Draft row
+                                   validation and fingerprint
   migration-payload.ts             Payload envelope encoder and decoder
   commands/                        StartAsyncMigration (admission, validation, record, trigger), AbortMigration
-  queries/                         GetMigrationStatus, GetActiveMigrations
+  queries/                         GetMigrationStatus, GetActiveMigrations, PlanSchemaLedgerRepair
 ```
 
 ## Known Limitations (v1)

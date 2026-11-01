@@ -11,6 +11,7 @@ import {
 } from 'src/__tests__/utils/prepareProject';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
+import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
   ChangesBranch,
@@ -32,6 +33,7 @@ import {
   readSelectionResolution,
   type ResolutionView,
 } from './selection-resolving';
+import { readAssembledTarget, type TargetView } from './target-assembling';
 import {
   type ChangedRowsView,
   readChangedRows,
@@ -378,6 +380,13 @@ export class ChangesScenario {
 
   public resolveSelection(selection: Selection): Promise<ResolutionView> {
     return readSelectionResolution(this.kit, this.branch, selection);
+  }
+
+  public assembleTarget(
+    operation: ChangeOperation,
+    selection: Selection,
+  ): Promise<TargetView> {
+    return readAssembledTarget(this.kit, this.branch, operation, selection);
   }
 
   public async readDraftRowDigest(tableId: string): Promise<string> {

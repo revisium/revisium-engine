@@ -37,6 +37,24 @@ export class JsonPointer {
     );
   }
 
+  public valueIn(data: unknown): unknown {
+    return this.segments.reduce<unknown>(
+      (value, segment) => ownPropertyOf(value, segment),
+      data,
+    );
+  }
+
+  public assignIn(data: unknown, value: unknown): void {
+    const name = this.segments.at(-1);
+    const holder = new JsonPointer(this.segments.slice(0, -1)).valueIn(data);
+
+    if (name === undefined || !isObject(holder)) {
+      throw new Error(`No object holds "${this.toString()}"`);
+    }
+
+    holder[name] = value;
+  }
+
   public toString(): string {
     return this.segments
       .map((segment) => `${SEPARATOR}${escapeSegment(segment)}`)
@@ -50,4 +68,16 @@ function escapeSegment(segment: string): string {
 
 function unescapeSegment(segment: string): string {
   return segment.replaceAll('~1', '/').replaceAll('~0', '~');
+}
+
+function ownPropertyOf(value: unknown, name: string): unknown {
+  if (!isObject(value) || !Object.prototype.hasOwnProperty.call(value, name)) {
+    return undefined;
+  }
+
+  return value[name];
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

@@ -4,16 +4,18 @@ import type {
   LeafOwner,
   WholeColumn,
 } from 'src/features/partial-changes/structure/column-owners';
-import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+import type { ComparedRowColumn } from 'src/features/share/compared-columns';
+
+export type ContentColumns = Pick<Row, ComparedRowColumn>;
 
 const WHOLE_COLUMN_EQUALITY: Readonly<
-  Record<WholeColumn, (head: Row, draft: Row) => boolean>
+  Record<WholeColumn, (left: ContentColumns, right: ContentColumns) => boolean>
 > = {
-  id: (head, draft) => head.id === draft.id,
-  publishedAt: (head, draft) =>
-    head.publishedAt.getTime() === draft.publishedAt.getTime(),
-  meta: (head, draft) => deepEqual(head.meta, draft.meta),
-  schemaHash: (head, draft) => head.schemaHash === draft.schemaHash,
+  id: (left, right) => left.id === right.id,
+  publishedAt: (left, right) =>
+    left.publishedAt.getTime() === right.publishedAt.getTime(),
+  meta: (left, right) => deepEqual(left.meta, right.meta),
+  schemaHash: (left, right) => left.schemaHash === right.schemaHash,
 };
 
 const WHOLE_COLUMNS: readonly WholeColumn[] = [
@@ -23,13 +25,19 @@ const WHOLE_COLUMNS: readonly WholeColumn[] = [
   'schemaHash',
 ];
 
-export function differInContent(head: Row, draft: Row): boolean {
-  return head.hash !== draft.hash || differingColumnsOf(head, draft).length > 0;
+export function differInContent(
+  left: ContentColumns,
+  right: ContentColumns,
+): boolean {
+  return left.hash !== right.hash || differingColumnsOf(left, right).length > 0;
 }
 
-export function differingColumnsOf(head: Row, draft: Row): WholeColumn[] {
+export function differingColumnsOf(
+  left: ContentColumns,
+  right: ContentColumns,
+): WholeColumn[] {
   return WHOLE_COLUMNS.filter(
-    (column) => !WHOLE_COLUMN_EQUALITY[column](head, draft),
+    (column) => !WHOLE_COLUMN_EQUALITY[column](left, right),
   );
 }
 
@@ -40,28 +48,6 @@ export function differingLeavesOf(
 ): LeafOwner[] {
   return leaves.filter(
     ({ pointer }) =>
-      !deepEqual(
-        leafValueOf(head.data, pointer),
-        leafValueOf(draft.data, pointer),
-      ),
+      !deepEqual(pointer.valueIn(head.data), pointer.valueIn(draft.data)),
   );
-}
-
-function leafValueOf(data: unknown, pointer: JsonPointer): unknown {
-  return pointer.segments.reduce<unknown>(
-    (value, segment) => ownPropertyOf(value, segment),
-    data,
-  );
-}
-
-function ownPropertyOf(value: unknown, name: string): unknown {
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    !Object.prototype.hasOwnProperty.call(value, name)
-  ) {
-    return undefined;
-  }
-
-  return (value as Record<string, unknown>)[name];
 }

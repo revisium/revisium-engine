@@ -121,6 +121,16 @@ describe('SelectionValidator', () => {
       },
       message: 'selection.exclude.fields[0].path must be a JSON Pointer',
     },
+    {
+      error: 'a missing entry of a sparse selector array',
+      input: { rows: new Array(1) },
+      message: 'selection.rows[0] must be an object',
+    },
+    {
+      error: 'a missing entry of a sparse id array',
+      input: { exclude: { tableData: new Array(1) } },
+      message: 'selection.exclude.tableData[0] must be a non-empty string',
+    },
   ])('refuses $error with a validation error', ({ input, message }) => {
     expectValidationError(() => validateSelection(input), message);
   });

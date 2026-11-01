@@ -133,7 +133,9 @@ function arrayOf(checkItem: Check): Check {
       throw invalid(`${at} must be an array`);
     }
 
-    value.forEach((item: unknown, index) => checkItem(item, `${at}[${index}]`));
+    for (let index = 0; index < value.length; index += 1) {
+      checkItem(value[index], `${at}[${index}]`);
+    }
   };
 }
 

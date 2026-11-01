@@ -38,25 +38,11 @@ export type ItemSelector<K extends ItemKind> = NonNullable<
   SelectionItems[K]
 >[number];
 
-const ITEM_KINDS: readonly ItemKind[] = [
-  'tables',
-  'tableData',
-  'views',
-  'sharedSchemas',
-  'rows',
-  'renames',
-  'rowColumns',
-  'fields',
-];
+const WHOLE_DRAFT_KEY = 'all';
 
 export function isWholeDraftSelection(selection: Selection): boolean {
   return (
     selection.all === true &&
-    !hasSelectors(selection) &&
-    !hasSelectors(selection.exclude ?? {})
+    Object.keys(selection).every((key) => key === WHOLE_DRAFT_KEY)
   );
-}
-
-function hasSelectors(items: SelectionItems): boolean {
-  return ITEM_KINDS.some((kind) => (items[kind]?.length ?? 0) > 0);
 }

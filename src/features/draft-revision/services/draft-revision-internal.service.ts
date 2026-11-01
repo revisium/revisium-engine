@@ -13,6 +13,8 @@ import {
 import { RevisionsApiService } from 'src/features/revision/revisions-api.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
+const RECORD_NOT_FOUND = 'P2025';
+
 @Injectable()
 export class DraftRevisionInternalService {
   constructor(
@@ -61,28 +63,24 @@ export class DraftRevisionInternalService {
   public async findRevisionOrThrow(revisionId: string) {
     try {
       return await this.revisionsApiService.revision({ revisionId });
-    } catch (err) {
-      if ((err as Error & { code?: string }).code !== 'P2025') {
-        throw err;
-      }
-
-      throw new BadRequestException('Revision not found');
+    } catch (error) {
+      throw notFoundAsBadRequest(error, 'Revision not found');
     }
   }
 
   public async findHeadRevisionOrThrow(branchId: string) {
     try {
       return await this.branchApiService.getHeadRevision(branchId);
-    } catch {
-      throw new BadRequestException('Head revision not found');
+    } catch (error) {
+      throw notFoundAsBadRequest(error, 'Head revision not found');
     }
   }
 
   public async findDraftRevisionOrThrow(branchId: string) {
     try {
       return await this.branchApiService.getDraftRevision(branchId);
-    } catch {
-      throw new BadRequestException('Draft revision not found');
+    } catch (error) {
+      throw notFoundAsBadRequest(error, 'Draft revision not found');
     }
   }
 
@@ -136,4 +134,12 @@ export class DraftRevisionInternalService {
     });
     return table !== null;
   }
+}
+
+function notFoundAsBadRequest(error: unknown, message: string): unknown {
+  if ((error as { code?: string } | undefined)?.code === RECORD_NOT_FOUND) {
+    return new BadRequestException(message);
+  }
+
+  return error;
 }

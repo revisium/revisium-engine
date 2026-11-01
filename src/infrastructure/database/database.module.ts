@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
 import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
+import { EscalatingTransactionRunner } from 'src/infrastructure/database/escalating-transaction-runner';
+import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
 import { HashService } from 'src/infrastructure/database/hash.service';
 import { IdService } from 'src/infrastructure/database/id.service';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
@@ -21,6 +23,8 @@ import { TransactionTimeoutSupport } from 'src/infrastructure/database/transacti
     HashService,
     CleanupService,
     BranchWriteFenceService,
+    EscalationSlots,
+    EscalatingTransactionRunner,
     TransactionTimeoutSupport,
     OperationTransactionRunner,
   ],
@@ -32,6 +36,7 @@ import { TransactionTimeoutSupport } from 'src/infrastructure/database/transacti
     HashService,
     CleanupService,
     BranchWriteFenceService,
+    EscalatingTransactionRunner,
     OperationTransactionRunner,
   ],
 })

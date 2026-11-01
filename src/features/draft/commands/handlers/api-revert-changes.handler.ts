@@ -6,13 +6,13 @@ import {
 } from '@nestjs/cqrs';
 import { GetBranchByIdQuery } from 'src/features/branch/quieries/impl';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import {
   ApiRevertChangesCommand,
   ApiRevertChangesCommandReturnType,
 } from 'src/features/draft/commands/impl/api-revert-changes.command';
 import { RevertChangesCommand } from 'src/features/draft/commands/impl/revert-changes.command';
 import { RevertChangesHandlerReturnType } from 'src/features/draft/commands/types/revert-changes.handler.types';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import { ShareCommands } from 'src/features/share/share.commands';
 
 @CommandHandler(ApiRevertChangesCommand)
@@ -23,15 +23,17 @@ export class ApiRevertChangesHandler implements ICommandHandler<
   constructor(
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
-    private readonly transactionService: TransactionPrismaService,
+    private readonly draftWriteAdmission: DraftWriteAdmissionService,
     private readonly shareCommands: ShareCommands,
     private readonly migrationLockService: MigrationLockService,
   ) {}
 
   async execute({ data }: ApiRevertChangesCommand) {
     const { branchId, draftRevisionId }: RevertChangesHandlerReturnType =
-      await this.transactionService.runSerializable(async () =>
-        this.revertWithinTransaction(data),
+      await this.draftWriteAdmission.runSerializableRevert(
+        data.projectId,
+        data.branchName,
+        async () => this.revertWithinTransaction(data),
       );
 
     await this.shareCommands.notifyEndpoints({ revisionId: draftRevisionId });

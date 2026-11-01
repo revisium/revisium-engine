@@ -1,5 +1,6 @@
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import { createBarrier } from 'src/__tests__/utils/barrier';
+import { Sql, sql } from 'src/engine-prisma-types';
 import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import {
   BranchWriteFenceService,
@@ -18,6 +19,15 @@ export interface WriteQueuedBehindFence<T> {
 export interface LockTimeoutAroundFenceEntry {
   beforeFenceEntry: string;
   duringWrite: string;
+}
+
+export interface BranchFenceHolder {
+  release(): Promise<void>;
+}
+
+export interface BranchFenceLock {
+  mode: string;
+  granted: boolean;
 }
 
 export async function writeWhileBranchIsFenced<T>(
@@ -108,14 +118,73 @@ export function watchFenceEntries(kit: DraftTestKit) {
   return jest.spyOn(fenceOf(kit), 'enterSharedForRevision');
 }
 
-async function holdBranchFenceExclusively(
+export function enterSharedFenceUnderExclusiveHolderOf(
+  kit: DraftTestKit,
+  heldBranchId: string,
+  revisionId: string,
+): Promise<void> {
+  const fence = fenceOf(kit);
+
+  return kit.transactionService.runSerializable(() =>
+    kit.transactionService.runInExclusiveHeldAdmission(heldBranchId, () =>
+      fence.enterSharedForRevision(revisionId),
+    ),
+  );
+}
+
+export function holdBranchFenceAsWriter(
   kit: FenceDatabase,
   branchId: string,
-) {
-  const barrier = createBarrier('The exclusive fence holder');
+): Promise<BranchFenceHolder> {
+  return holdAdvisoryLock(
+    kit,
+    sql`pg_advisory_xact_lock_shared(${branchWriteFenceKey(branchId)})`,
+  );
+}
+
+export async function waitUntilQueuedBehindFence(
+  kit: FenceDatabase,
+  branchId: string,
+  writing: Promise<unknown>,
+): Promise<void> {
+  if (!(await isQueuedBehindFenceBeforeSettling(kit, branchId, writing))) {
+    throw new Error(
+      'The writer settled without queuing behind the branch write fence',
+    );
+  }
+}
+
+export async function waitUntilWrittenWithoutQueuing(
+  kit: FenceDatabase,
+  branchId: string,
+  writing: Promise<unknown>,
+): Promise<void> {
+  if (await isQueuedBehindFenceBeforeSettling(kit, branchId, writing)) {
+    throw new Error('The writer queued behind the branch write fence');
+  }
+
+  await writing;
+}
+
+export function readBranchFenceLocks(
+  kit: FenceDatabase,
+  branchId: string,
+): Promise<BranchFenceLock[]> {
+  return kit.prismaService.$queryRaw<BranchFenceLock[]>`
+    SELECT mode, granted FROM pg_locks
+    WHERE locktype = 'advisory'
+      AND ((classid::bigint << 32) | objid::bigint) = ${branchWriteFenceKey(branchId)}
+    ORDER BY mode, granted`;
+}
+
+export async function holdAdvisoryLock(
+  kit: FenceDatabase,
+  lock: Sql,
+): Promise<BranchFenceHolder> {
+  const barrier = createBarrier('The lock holder');
   const holding = kit.prismaService.$transaction(
     async (transaction) => {
-      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(${branchWriteFenceKey(branchId)})`;
+      await transaction.$executeRaw`SELECT ${lock}`;
       await barrier.arrive();
     },
     { timeout: FENCE_HOLDER_TIMEOUT_MS },
@@ -131,11 +200,21 @@ async function holdBranchFenceExclusively(
   };
 }
 
-async function waitUntilQueuedBehindFence(
+function holdBranchFenceExclusively(
+  kit: FenceDatabase,
+  branchId: string,
+): Promise<BranchFenceHolder> {
+  return holdAdvisoryLock(
+    kit,
+    sql`pg_advisory_xact_lock(${branchWriteFenceKey(branchId)})`,
+  );
+}
+
+async function isQueuedBehindFenceBeforeSettling(
   kit: FenceDatabase,
   branchId: string,
   writing: Promise<unknown>,
-): Promise<void> {
+): Promise<boolean> {
   let isSettled = false;
   const markSettled = () => {
     isSettled = true;
@@ -144,11 +223,11 @@ async function waitUntilQueuedBehindFence(
 
   while (!(await hasWriterQueuedBehindFence(kit, branchId))) {
     if (isSettled) {
-      throw new Error(
-        'The writer settled without queuing behind the branch write fence',
-      );
+      return false;
     }
   }
+
+  return true;
 }
 
 async function hasWriterQueuedBehindFence(

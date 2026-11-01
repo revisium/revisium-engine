@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
+import { EscalatingTransactionRunner } from 'src/infrastructure/database/escalating-transaction-runner';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class DraftWriteAdmissionService {
     private readonly transactionService: TransactionPrismaService,
     private readonly branchWriteFence: BranchWriteFenceService,
     private readonly migrationLockService: MigrationLockService,
+    private readonly escalatingTransactionRunner: EscalatingTransactionRunner,
   ) {}
 
   runSerializableRevisionWrite<T>(
@@ -22,16 +24,34 @@ export class DraftWriteAdmissionService {
     });
   }
 
-  runSerializableBranchWrite<T>(
+  runSerializableCommit<T>(
     projectId: string,
     branchName: string,
-    write: () => Promise<T>,
+    commit: () => Promise<T>,
   ): Promise<T> {
-    return this.transactionService.runSerializable(async () => {
-      await this.admitBranchWrite(projectId, branchName);
+    return this.escalatingTransactionRunner.runSerializable(
+      { projectId, branchName },
+      async () => {
+        await this.admitBranchWrite(projectId, branchName);
 
-      return write();
-    });
+        return commit();
+      },
+    );
+  }
+
+  runSerializableRevert<T>(
+    projectId: string,
+    branchName: string,
+    revert: () => Promise<T>,
+  ): Promise<T> {
+    return this.escalatingTransactionRunner.runSerializable(
+      { projectId, branchName },
+      async () => {
+        await this.enterBranchFence(projectId, branchName);
+
+        return revert();
+      },
+    );
   }
 
   private async admitBranchWrite(
@@ -45,6 +65,20 @@ export class DraftWriteAdmissionService {
 
     if (draftRevisionId) {
       await this.admitRevisionWrite(draftRevisionId);
+    }
+  }
+
+  private async enterBranchFence(
+    projectId: string,
+    branchName: string,
+  ): Promise<void> {
+    const draftRevisionId = await this.findDraftRevisionId(
+      projectId,
+      branchName,
+    );
+
+    if (draftRevisionId) {
+      await this.branchWriteFence.enterSharedForRevision(draftRevisionId);
     }
   }
 

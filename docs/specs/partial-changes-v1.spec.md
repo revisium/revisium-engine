@@ -1078,12 +1078,33 @@ already guaranteed by Serializable):
 - the operation the holder protects runs in the `exclusiveHeld` admission mode of its transaction context for that
   branch: it skips shared admission for the branch (otherwise it would wait for its own holder), still checks the
   migration lock inside its transaction, and the holder is released on every exit (success, error, timeout);
-- an operation takes it only after serialization failures (escalation) and with a `lock_timeout`; parameters are set
-  in stage 0 (§17, question 3);
+- an operation takes it only after serialization failures (escalation), with these parameters (§17, question 3):
+  - after 2 consecutive serialization failures, the next attempt and every later one run under their own holder; the
+    attempt cap and the per-attempt timeout stay those of the operation's runner: `TRANSACTION_MAX_RETRIES` and
+    `TRANSACTION_TIMEOUT` for native `createRevision` and revert, which do not use
+    `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`; partial commit and revert reuse the holder and the admission mode through
+    their operation runner;
+  - before it checks out any connection, the escalated attempt takes an escalation slot; the process admits at most
+    half of the connection pool (`max` of the pg pool the engine configures, 10 when unset, as pg-pool defaults) of
+    escalated attempts at once, at least one, so escalations that each hold their own connection never all wait for a
+    connection for their holder;
+  - the escalated attempt then opens its holder before its first statement, so it already has its connection when
+    writers start to queue behind the fence; the slot wait and the holder's wait for the exclusive lock together take
+    at most half of `TRANSACTION_TIMEOUT` (the holder's `lock_timeout` is what the slot wait left), and the attempt's
+    own timeout is `TRANSACTION_TIMEOUT` minus the slot wait; past the wait limit the operation fails with
+    `BranchWriteFencedException` (`BRANCH_WRITE_FENCED`, HTTP 423) without a retry, and nothing stays held;
+  - the holder transaction stays open until the attempt's transaction has committed or rolled back, even when a
+    statement or the COMMIT in flight keeps the attempt past its own timeout; the holder's own timeout is the attempt's
+    timeout plus a fixed grace of 30 s and only bounds how long an attempt that never ends keeps the fence;
+  - native revert is a Draft writer: its first two attempts take the fence shared, so it waits behind another
+    operation's holder like every writer; in every attempt it cancels the branch migrations instead of checking the
+    migration lock;
+- connection pool: an escalated attempt holds two connections at once, its own and the holder's; the escalation slots
+  keep escalated attempts to half of the pool, and writers queued behind a holder hold their connections for at most
+  their wait limit;
 - consequence for native writers: every native writer takes the shared fence, and while an operation holds it
   exclusively, writers wait at most half of `TRANSACTION_TIMEOUT`, then fail with `BranchWriteFencedException`
-  ([async-row-migration-v2] §1). The evidence for the fence is one benchmark prototype
-  (PoC M3), not a tested implementation.
+  ([async-row-migration-v2] §1). The evidence for the fence's effect under load is one benchmark prototype (PoC M3).
 
 ## 9. Freshness and idempotency
 
@@ -1593,8 +1614,11 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    notifies endpoints; partial revert refuses. Proposal: a partial revert that applies the structure unit of the
    migrating table cancels that migration as native revert does; any other partial operation keeps refusing with
    `MigrationLocked`.
-3. **Write fence parameters** (stage 0): escalation threshold, `lock_timeout`, and whether native `createRevision`
-   shares `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`.
+3. **Write fence parameters** — closed: native `createRevision` and native revert escalate after 2 consecutive
+   serialization failures, so the third attempt runs under the exclusive holder; the holder waits at most half of
+   `TRANSACTION_TIMEOUT`, then the operation fails with `BRANCH_WRITE_FENCED`; the holder stays open until the
+   protected transaction ends; native `createRevision` keeps `TRANSACTION_TIMEOUT` and does not share
+   `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`; no new settings (§8.4). Decided on 2026-11-01.
 4. **False positives of predicate (a)** — closed: the refusal uses predicate (b) only; predicate (a) is a scan
    diagnostic with its known false-positive sources; table rename is not changed; unledgered tables are refused with
    `unledgeredTable`, and their ledger backfill is a stage-0 design item (§6.10, §12).
@@ -1616,6 +1640,14 @@ Follow-up of [async-row-migration-v2]:
 - §12: #85–#92 marked landed; the `applyMigrations` item, the scan and the repair point to async-row-migration-v2;
   ledger backfill and row remediation are decided with the scan results.
 - §13.4: AS-47c, AS-47g and AS-47i use the repair outcomes; AS-49 covers the lineage cases.
+
+Write fence, part 2:
+
+- §8.4, §17 question 3: escalation after 2 consecutive serialization failures; an escalated attempt takes one of the
+  escalation slots (half of the connection pool) before any connection, then opens the holder before its first
+  statement; the slot wait and the lock wait share half of `TRANSACTION_TIMEOUT`; the holder stays open until the
+  attempt has committed or rolled back, with its own timeout a 30 s grace beyond the attempt's; native revert takes
+  the fence shared before it escalates; no new settings.
 
 Deadline enforcement:
 

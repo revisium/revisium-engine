@@ -5,7 +5,7 @@ import { RevertChangesCommand } from 'src/features/draft/commands/impl/revert-ch
 import { GetBranchByIdQuery } from 'src/features/branch/quieries/impl';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { ShareCommands } from 'src/features/share/share.commands';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 
 describe('ApiRevertChangesHandler (unit)', () => {
   it('should cancel migrations inside the serializable transaction before revert', async () => {
@@ -28,19 +28,25 @@ describe('ApiRevertChangesHandler (unit)', () => {
       }),
     } as unknown as MigrationLockService;
 
-    const transactionService = {
-      runSerializable: jest
+    const draftWriteAdmission = {
+      runSerializableRevert: jest
         .fn()
-        .mockImplementation(async (handler: () => Promise<unknown>) => {
-          transactionOpened = true;
-          return handler();
-        }),
-    } as unknown as TransactionPrismaService;
+        .mockImplementation(
+          async (
+            _projectId: string,
+            _branchName: string,
+            handler: () => Promise<unknown>,
+          ) => {
+            transactionOpened = true;
+            return handler();
+          },
+        ),
+    } as unknown as DraftWriteAdmissionService;
 
     const handler = new ApiRevertChangesHandler(
       commandBus,
       queryBus,
-      transactionService,
+      draftWriteAdmission,
       shareCommands,
       migrationLockService,
     );
@@ -52,7 +58,11 @@ describe('ApiRevertChangesHandler (unit)', () => {
       },
     } as ApiRevertChangesCommand);
 
-    expect(transactionService.runSerializable).toHaveBeenCalledTimes(1);
+    expect(draftWriteAdmission.runSerializableRevert).toHaveBeenCalledWith(
+      'project-1',
+      'master',
+      expect.any(Function),
+    );
     expect(migrationLockService.cancelBranchMigrations).toHaveBeenCalledWith(
       'project-1',
       'master',

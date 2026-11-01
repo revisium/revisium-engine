@@ -24,7 +24,7 @@ export class ApiCreateRevisionHandler implements ICommandHandler<
       previousDraftRevisionId,
       previousHeadRevisionId,
     }: CreateRevisionHandlerReturnType =
-      await this.draftWriteAdmission.runSerializableBranchWrite(
+      await this.draftWriteAdmission.runSerializableCommit(
         data.projectId,
         data.branchName,
         async () =>

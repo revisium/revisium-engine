@@ -1,3 +1,4 @@
+import type { Migration } from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import {
   type ChangeOperation,
@@ -6,6 +7,7 @@ import {
   type TableOutcome,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
+import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
 import type {
   AssembledTarget,
   DeferredValues,
@@ -22,8 +24,14 @@ import type { SelectionResolution } from 'src/features/partial-changes/selection
 import type {
   ChangesBranch,
   ChangesSnapshot,
+  SystemTableRows,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
+import { SystemTables } from 'src/features/share/system-tables.consts';
+import {
+  type AddressedUnit,
+  addressedUnitOf,
+  describeMigration,
+} from './catalogue-reading';
 import {
   type BlockerView,
   blockerView,
@@ -51,6 +59,16 @@ export interface TablePlanView {
   readonly relinkCandidate: boolean;
 }
 
+export interface SystemTablePlanView {
+  readonly outcome: TableOutcome;
+  readonly version?: RevisionSide;
+  readonly rows: readonly string[];
+  readonly removedLinks: readonly string[];
+  readonly addedLinks: readonly string[];
+  readonly newRows: readonly MergedRow[];
+  readonly relinkCandidate: boolean;
+}
+
 export interface DeferredView {
   readonly unit: AddressedUnit;
   readonly paths: readonly string[];
@@ -62,7 +80,17 @@ export interface TargetView {
   readonly blockers: readonly BlockerView[];
   readonly deferred: readonly DeferredView[];
   tableOf(tableId: string): TablePlanView | undefined;
+  systemTableOf(tableId: SystemTables): SystemTablePlanView | undefined;
 }
+
+const SYSTEM_ROWS_OF: Readonly<
+  Record<SystemTables, (snapshot: ChangesSnapshot) => SystemTableRows>
+> = {
+  [SystemTables.Schema]: ({ systemRows }) => systemRows.schemas,
+  [SystemTables.Migration]: ({ systemRows }) => systemRows.migrations,
+  [SystemTables.Views]: ({ systemRows }) => systemRows.views,
+  [SystemTables.SharedSchemas]: ({ systemRows }) => systemRows.sharedSchemas,
+};
 
 export function readAssembledTarget(
   kit: PartialChangesTestKit,
@@ -110,6 +138,15 @@ function targetView(
       new TablePlanDescription(snapshot, plan).view(),
     ]),
   );
+  const systemViews = new Map(
+    target.systemTables.map((plan) => [
+      plan.tableId,
+      new SystemTablePlanDescription(
+        SYSTEM_ROWS_OF[plan.tableId](snapshot),
+        plan,
+      ).view(),
+    ]),
+  );
 
   return {
     tableIds: [...views.keys()].sort(compareCodePoints),
@@ -118,6 +155,7 @@ function targetView(
       deferredView(catalogue, deferred),
     ),
     tableOf: (tableId) => views.get(tableId),
+    systemTableOf: (tableId) => systemViews.get(tableId),
   };
 }
 
@@ -216,6 +254,103 @@ class TablePlanDescription {
     }
 
     return name;
+  }
+}
+
+class SystemTablePlanDescription {
+  private readonly otherSide: RevisionSide;
+
+  constructor(
+    private readonly rows: SystemTableRows,
+    private readonly plan: SystemTablePlan,
+  ) {
+    this.otherSide = oppositeOf(plan.linkSide);
+  }
+
+  public view(): SystemTablePlanView {
+    const { plan } = this;
+
+    return {
+      outcome: plan.outcome,
+      version: this.sideOfLinkedVersion(),
+      rows: this.targetRows()
+        .map((row) => describeRowOf(plan.tableId, row))
+        .sort(compareCodePoints),
+      removedLinks: this.namesOn(plan.linkSide, plan.removedLinks),
+      addedLinks: this.namesOn(this.otherSide, plan.addedLinks),
+      newRows: plan.newRows,
+      relinkCandidate: plan.relinkCandidate,
+    };
+  }
+
+  private sideOfLinkedVersion(): RevisionSide | undefined {
+    const { versionId } = this.plan;
+
+    if (versionId === undefined) {
+      return undefined;
+    }
+
+    if (this.rows.versionIds.head === versionId) {
+      return 'head';
+    }
+
+    if (this.rows.versionIds.draft === versionId) {
+      return 'draft';
+    }
+
+    throw new Error(`The plan links an unknown version ${versionId}`);
+  }
+
+  private targetRows(): MergedRow[] {
+    const { plan, rows } = this;
+
+    switch (plan.outcome) {
+      case 'absent':
+        return [];
+      case 'base':
+        return [...rows[plan.linkSide]];
+      case 'other':
+        return [...rows[this.otherSide]];
+      default:
+        return [
+          ...rows[plan.linkSide].filter(
+            ({ versionId }) => !plan.removedLinks.includes(versionId),
+          ),
+          ...rows[this.otherSide].filter(({ versionId }) =>
+            plan.addedLinks.includes(versionId),
+          ),
+          ...plan.newRows,
+        ];
+    }
+  }
+
+  private namesOn(side: RevisionSide, versionIds: readonly string[]): string[] {
+    return versionIds
+      .map((versionId) => {
+        const row = this.rows[side].find(
+          (candidate) => candidate.versionId === versionId,
+        );
+
+        if (!row) {
+          throw new Error(`The plan links an unknown system row ${versionId}`);
+        }
+
+        return `${side} ${describeRowOf(this.plan.tableId, row)}`;
+      })
+      .sort(compareCodePoints);
+  }
+}
+
+function describeRowOf(tableId: SystemTables, row: MergedRow): string {
+  switch (tableId) {
+    case SystemTables.Schema:
+      return `schema ${row.id}`;
+    case SystemTables.Migration:
+      return `migration ${describeMigration(row.data as unknown as Migration)}`;
+    case SystemTables.Views:
+      return `views ${row.id}`;
+    case SystemTables.SharedSchemas:
+      return `sharedSchema ${row.id}`;
   }
 }
 

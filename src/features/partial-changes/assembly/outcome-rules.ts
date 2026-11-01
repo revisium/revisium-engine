@@ -83,6 +83,14 @@ export class OutcomeRules {
     return this.choice.wholeDraft;
   }
 
+  public get unitlessSide(): RevisionSide {
+    if (this.choice.wholeDraft) {
+      return oppositeOf(this.baseSide);
+    }
+
+    return this.baseSide;
+  }
+
   public isApplied(key: string): boolean {
     return this.choice.applied.has(key);
   }

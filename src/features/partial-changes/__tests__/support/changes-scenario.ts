@@ -10,6 +10,7 @@ import {
   prepareBranch,
 } from 'src/__tests__/utils/prepareProject';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
+import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-revert-changes.command';
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
@@ -105,6 +106,10 @@ export class ChangesScenario {
   public async commit(): Promise<void> {
     await this.kit.draftApi.apiCreateRevision(this.branch);
     await this.observeCommittedVersions();
+  }
+
+  public async revertNatively(): Promise<void> {
+    await this.kit.commandBus.execute(new ApiRevertChangesCommand(this.branch));
   }
 
   public async createTable(tableId: string, schema: JsonSchema): Promise<void> {

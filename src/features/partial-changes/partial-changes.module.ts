@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { RowMerger } from 'src/features/partial-changes/assembly/row-merger';
+import { SystemTargetAssembler } from 'src/features/partial-changes/assembly/system-target-assembler';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
@@ -28,6 +29,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     PartialChangesLimits,
     ScopedCatalogueReader,
     RowMerger,
+    SystemTargetAssembler,
     TargetAssembler,
   ],
 })

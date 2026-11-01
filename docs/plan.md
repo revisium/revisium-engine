@@ -36,8 +36,8 @@ Each item is delivered by its own pull requests, in this order.
 | Serializable views writes | Must | Done (#86) |
 | Referrer rewrites and the row-removal guard without the 100 limits | Must | Done (#88) |
 | Table copy-on-write by `INSERT … SELECT` | Must | Done (#85) |
-| `applyMigrations` waits for the async migration ([async SPEC §4](specs/async-row-migration-v2.spec.md#4-applymigrations-above-the-threshold)) | Must | Not started |
-| Async migration fix ([async-row-migration-v2 §3](specs/async-row-migration-v2.spec.md#3-the-fixed-async-migration)) | Must | In progress (cleanup: #90, state machine: #97, recovery: #102, atomic swap: #105, guarded start: #109, batches: #112) |
+| `applyMigrations` waits for the async migration ([async SPEC §4](specs/async-row-migration-v2.spec.md#4-applymigrations-above-the-threshold)) | Must | Done (#115) |
+| Async migration fix ([async-row-migration-v2 §3](specs/async-row-migration-v2.spec.md#3-the-fixed-async-migration)) | Must | In progress (cleanup: #90, state machine: #97, recovery: #102, atomic swap: #105, guarded start: #109, batches: #112, applyMigrations: #115) |
 | Detection scan ([async-row-migration-v2 §5](specs/async-row-migration-v2.spec.md#5-detection-scan-scanschemaledger)) | Must | Not started |
 | Forward-only repair tool ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger)) | Must | Not started |
 | Branch write fence | Must | In progress (shared: #92) |

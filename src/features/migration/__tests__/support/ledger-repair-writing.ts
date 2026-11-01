@@ -1,8 +1,13 @@
 import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { createBarrier, type Barrier } from 'src/__tests__/utils/barrier';
-import type { InputJsonValue } from 'src/engine-prisma-types';
-import type { DraftRevisionCreateRowsCommandData } from 'src/features/draft-revision/commands/impl';
+import type { InputJsonValue, Row } from 'src/engine-prisma-types';
+import type {
+  DraftRevisionCreateRowsCommandData,
+  DraftRevisionUpdateRowsCommandData,
+  TableWritePlan,
+} from 'src/features/draft-revision/commands/impl';
+import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import type {
   RepairSchemaLedgerData,
   SchemaLedgerRepair,
@@ -174,6 +179,55 @@ export function recordRepairsWithoutTheirPatches(
     .mockImplementation((data) => createRows(withoutPatches(data)));
 }
 
+export function renumberMigrationsWithoutTheirPatches(
+  kit: PartialChangesTestKit,
+): void {
+  const targetApi = kit.module.get(DraftRevisionTargetApiService);
+  const revertToTarget = targetApi.revertToTarget.bind(targetApi);
+
+  jest
+    .spyOn(targetApi, 'revertToTarget')
+    .mockImplementation((plan) =>
+      revertToTarget({ ...plan, tables: plan.tables.map(withoutNewPatches) }),
+    );
+}
+
+export function recordHistoriesWithEntry(
+  kit: PartialChangesTestKit,
+  entry: HistoryPatches,
+): void {
+  const draftRevisionApi = kit.draftRevisionApi;
+  const updateRows = draftRevisionApi.updateRows.bind(draftRevisionApi);
+
+  jest
+    .spyOn(draftRevisionApi, 'updateRows')
+    .mockImplementation((data) => updateRows(withHistoryEntry(data, entry)));
+}
+
+export function storedColumnsOf({
+  createdId,
+  createdAt,
+  id,
+  readonly,
+  data,
+  meta,
+  hash,
+  schemaHash,
+  publishedAt,
+}: Row) {
+  return {
+    createdId,
+    createdAt,
+    id,
+    readonly,
+    data,
+    meta,
+    hash,
+    schemaHash,
+    publishedAt,
+  };
+}
+
 export async function expectNoHeadOrDraftDamage(
   kit: PartialChangesTestKit,
   draft: ChangesScenario,
@@ -271,6 +325,29 @@ function holdEachBeforeWriting(
 
       return runWrite(revisionId, write);
     });
+}
+
+function withoutNewPatches(table: TableWritePlan): TableWritePlan {
+  return {
+    ...table,
+    newRows: table.newRows.map((row) => ({
+      ...row,
+      data: { ...(row.data as object), patches: [] },
+    })),
+  };
+}
+
+function withHistoryEntry(
+  data: DraftRevisionUpdateRowsCommandData,
+  entry: HistoryPatches,
+): DraftRevisionUpdateRowsCommandData {
+  return {
+    ...data,
+    rows: data.rows.map((row) => ({
+      ...row,
+      meta: [...(row.meta as unknown[]), entry] as InputJsonValue,
+    })),
+  };
 }
 
 function withoutPatches(

@@ -13,9 +13,12 @@ import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
 import { DraftLedger } from './draft-ledger';
 import { lastPublishedBoundsOf, type MigrationBounds } from './repair-ids';
+import { type HistoryPatchesValidator, isNativeHistory } from './repair-patch';
 import type { RepairState, RevisionLedger } from './repair-state-reader';
 
-export type ReplayRules = Pick<LedgerReplayInput, 'refs' | 'validator'>;
+export type ReplayRules = Pick<LedgerReplayInput, 'refs'> & {
+  readonly validator: LedgerReplayInput['validator'] & HistoryPatchesValidator;
+};
 
 export interface StoredLedgerReplays {
   readonly head: ReplayedLedger;
@@ -91,7 +94,7 @@ export class RepairLedger {
       return { outcome: this.draftDamageOf(draftTableId) };
     }
 
-    if (!this.consistent) {
+    if (!this.consistent || !this.hasNativeHistories(tableId)) {
       return { outcome: 'ledgerInconsistent' };
     }
 
@@ -111,6 +114,18 @@ export class RepairLedger {
     draftTableId: string,
   ): boolean {
     return this.draftLedger.reproducesDraftSchema(replay, draftTableId);
+  }
+
+  private hasNativeHistories(tableId: string): boolean {
+    const histories = this.draftLedger.historiesOf(tableId);
+
+    return (
+      histories === undefined ||
+      isNativeHistory(
+        [...histories.inherited, ...histories.pending],
+        this.rules.validator,
+      )
+    );
   }
 
   private replaysToHeadSchema(tableId: string): boolean {

@@ -14,6 +14,7 @@ export interface StoredSchema {
 
 export interface RevisionLedger {
   readonly tableVersionIds: ReadonlyMap<string, string>;
+  readonly migrationTableVersionId?: string;
   readonly schemas: ReadonlyMap<string, StoredSchema>;
   readonly migrationRows: readonly Row[];
 }
@@ -102,6 +103,7 @@ export class RepairStateReader {
       ),
       await this.readSystemRows(tables, SystemTables.Schema),
       await this.readSystemRows(tables, SystemTables.Migration),
+      systemTableOf(tables, SystemTables.Migration)?.versionId,
     );
   }
 
@@ -109,7 +111,7 @@ export class RepairStateReader {
     tables: readonly StoredTable[],
     tableId: SystemTables,
   ): Promise<Row[]> {
-    const table = tables.find(({ id, system }) => system && id === tableId);
+    const table = systemTableOf(tables, tableId);
 
     if (!table) {
       return Promise.resolve([]);
@@ -125,12 +127,21 @@ export function revisionLedgerOf(
   tableVersionIds: ReadonlyMap<string, string>,
   schemaRows: readonly Row[],
   migrationRows: readonly Row[],
+  migrationTableVersionId: string | undefined,
 ): RevisionLedger {
   return {
     tableVersionIds,
+    migrationTableVersionId,
     schemas: new Map(schemaRows.map((row) => [row.id, storedSchemaOf(row)])),
     migrationRows,
   };
+}
+
+function systemTableOf(
+  tables: readonly StoredTable[],
+  tableId: SystemTables,
+): StoredTable | undefined {
+  return tables.find(({ id, system }) => system && id === tableId);
 }
 
 function storedSchemaOf(row: Row): StoredSchema {

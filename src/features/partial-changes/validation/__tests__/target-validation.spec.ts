@@ -157,6 +157,28 @@ describe('TargetValidator', () => {
     );
   });
 
+  describe('the ids of the migration rows', () => {
+    it('blocks a Draft ledger whose pending rows carry each other’s migration ids as ledgerInconsistent', async () => {
+      const draft = await givenEditedCatalog();
+      await draft.updateTable(PRODUCTS, [addField('weight', num())]);
+      await draft.updateTable(PRODUCTS, [addField('size', num())]);
+      const [firstId, secondId] = await draft.pendingMigrationIds();
+      await draft.exchangeMigrationIds(firstId ?? '', secondId ?? '');
+
+      const blockers = await draft.validateTarget('commit', {
+        fields: [titleOfC1],
+      });
+
+      expect(blockers).toEqual([
+        {
+          code: 'ledgerInconsistent',
+          message:
+            'A migration row is not stored under its own, distinct migration id',
+        },
+      ]);
+    });
+  });
+
   describe('replaying the resulting ledgers', () => {
     it('blocks a revert whose resulting ledger does not replay as ledgerInconsistent', async () => {
       const draft = await givenForeignKeyAddedAndRemovedAgain();

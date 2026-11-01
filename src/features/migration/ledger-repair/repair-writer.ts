@@ -1,21 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import type { JsonPatch, Migration } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
-import type { InputJsonValue, Row } from 'src/engine-prisma-types';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import type {
   DraftRevisionCreateRowsRowData,
   DraftRevisionUpdateRowsRowData,
+  NewRowVersion,
+  TableWritePlan,
 } from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
+import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import type {
   PlannedTableRepair,
   RenumberedMigration,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import { pendingSchemaHistory } from 'src/features/share/ledger/schema-history';
+import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { DraftLedger } from './draft-ledger';
+import { DraftLedger, type TableHistories } from './draft-ledger';
 import { repairMigrationOf } from './repair-patch';
 import { type PlannedRepair, repairedTablesOf } from './repair-planning';
 import type { RepairState, StoredSchema } from './repair-state-reader';
@@ -30,54 +33,66 @@ interface TableRepairRecord {
 export class RepairWriter {
   constructor(
     private readonly draftRevisionApi: DraftRevisionApiService,
+    private readonly targetApi: DraftRevisionTargetApiService,
     private readonly validator: JsonSchemaValidatorService,
   ) {}
 
   public async record({ state, plan }: PlannedRepair): Promise<void> {
+    const draftLedger = new DraftLedger(state);
     const repairs = repairedTablesOf(plan).map(repairRecordOf);
 
-    await this.removeRenumberedMigrations(state, plan.renumbered);
-    await this.recordMigrations(state, [
-      ...repairs.map((repair) => this.repairMigrationRowOf(state, repair)),
-      ...plan.renumbered.map((renumbered) =>
-        renumberedMigrationRowOf(state, renumbered),
-      ),
-    ]);
-    await this.extendSchemaHistories(state, repairs);
+    await this.renumberPendingMigrations(state, draftLedger, plan.renumbered);
+    await this.recordRepairMigrations(state, repairs);
+    await this.extendSchemaHistories(state, draftLedger, repairs);
   }
 
-  private async removeRenumberedMigrations(
+  private async renumberPendingMigrations(
     state: RepairState,
+    draftLedger: DraftLedger,
     renumbered: readonly RenumberedMigration[],
   ): Promise<void> {
     if (renumbered.length === 0) {
       return;
     }
 
-    await this.draftRevisionApi.removeRows({
-      revisionId: state.draftRevisionId,
-      tableId: SystemTables.Migration,
-      rowIds: renumbered.map(({ previousId }) => previousId),
+    const renumberings = renumbered.map(({ previousId, id }) => ({
+      source: pendingEntryOf(draftLedger, previousId),
+      id,
+    }));
+
+    await this.targetApi.revertToTarget({
+      headRevisionId: state.headRevisionId,
+      draftRevisionId: state.draftRevisionId,
+      tables: [
+        draftMigrationTablePlanOf(state, {
+          removedRowVersionIds: renumberings.map(
+            ({ source }) => source.row.versionId,
+          ),
+          addedRowVersionIds: [],
+          newRows: renumberings.map(({ source, id }) =>
+            renumberedRowOf(source, id),
+          ),
+        }),
+      ],
     });
   }
 
-  private async recordMigrations(
+  private async recordRepairMigrations(
     state: RepairState,
-    rows: DraftRevisionCreateRowsRowData[],
+    repairs: readonly TableRepairRecord[],
   ): Promise<void> {
     await this.draftRevisionApi.createRows({
       revisionId: state.draftRevisionId,
       tableId: SystemTables.Migration,
-      rows,
+      rows: repairs.map((repair) => this.repairMigrationRowOf(state, repair)),
     });
   }
 
   private async extendSchemaHistories(
     state: RepairState,
+    draftLedger: DraftLedger,
     repairs: readonly TableRepairRecord[],
   ): Promise<void> {
-    const draftLedger = new DraftLedger(state);
-
     await this.draftRevisionApi.updateRows({
       revisionId: state.draftRevisionId,
       tableId: SystemTables.Schema,
@@ -121,18 +136,39 @@ function repairRecordOf({
   };
 }
 
-function renumberedMigrationRowOf(
+function draftMigrationTablePlanOf(
   state: RepairState,
-  { previousId, id }: RenumberedMigration,
-): DraftRevisionCreateRowsRowData {
-  const source = pendingMigrationRowOf(state, previousId);
-  const migration = source.data as unknown as Migration;
+  changes: Pick<
+    TableWritePlan,
+    'removedRowVersionIds' | 'addedRowVersionIds' | 'newRows'
+  >,
+): TableWritePlan {
+  return {
+    identity: SystemTables.Migration,
+    headVersionId: state.head.migrationTableVersionId,
+    draftVersionId: state.draft.migrationTableVersionId,
+    outcome: 'mixed',
+    structureSide: 'draft',
+    relinkCandidate: false,
+    hasFileFields: false,
+    ...changes,
+  };
+}
+
+function renumberedRowOf(
+  { row, migration }: LedgerEntry,
+  id: string,
+): NewRowVersion {
+  const data = { ...migration, id };
 
   return {
-    rowId: id,
-    data: { ...migration, id } as unknown as InputJsonValue,
-    schemaHash: source.schemaHash,
-    meta: source.meta as unknown as InputJsonValue,
+    createdId: row.createdId,
+    createdAt: row.createdAt,
+    schemaHash: row.schemaHash,
+    meta: row.meta,
+    id,
+    data: data as unknown as NewRowVersion['data'],
+    hash: objectHash(data),
     publishedAt: new Date(id),
   };
 }
@@ -142,41 +178,39 @@ function repairedSchemaRowOf(
   draftLedger: DraftLedger,
   { tableId, patches }: TableRepairRecord,
 ): DraftRevisionUpdateRowsRowData {
-  const draftTableId = requiredOf(
-    draftLedger.draftTableIdOf(tableId),
-    `Draft table of ${tableId}`,
+  const histories = requiredOf(
+    draftLedger.historiesOf(tableId),
+    `Draft schema history of ${tableId}`,
   );
   const head = headSchemaOf(state, tableId);
   const draft = requiredOf(
-    state.draft.schemas.get(draftTableId),
-    `Draft schema row of ${draftTableId}`,
+    state.draft.schemas.get(histories.draftTableId),
+    `Draft schema row of ${histories.draftTableId}`,
   );
 
   return {
-    rowId: draftTableId,
+    rowId: histories.draftTableId,
     data: draft.schema as InputJsonValue,
-    meta: repairedHistoryOf(head, draft, patches) as unknown as InputJsonValue,
+    meta: repairedHistoryOf(
+      head,
+      histories,
+      patches,
+    ) as unknown as InputJsonValue,
   };
 }
 
 function repairedHistoryOf(
   head: StoredSchema,
-  draft: StoredSchema,
+  { inherited, pending }: TableHistories,
   patches: readonly JsonPatch[],
 ): HistoryPatches[] {
-  const pending = pendingSchemaHistory(head.history, draft.history);
-
-  if (!pending.extendsHead) {
-    throw new Error('The repair found a Draft history that leaves its Head');
-  }
-
   const repairEntry: HistoryPatches = {
     patches: [...patches],
     hash: objectHash(head.schema),
     date: new Date().toISOString(),
   };
 
-  return [...head.history, repairEntry, ...pending.entries];
+  return [...inherited, repairEntry, ...pending];
 }
 
 function headSchemaOf(state: RepairState, tableId: string): StoredSchema {
@@ -186,9 +220,12 @@ function headSchemaOf(state: RepairState, tableId: string): StoredSchema {
   );
 }
 
-function pendingMigrationRowOf(state: RepairState, migrationId: string): Row {
+function pendingEntryOf(
+  draftLedger: DraftLedger,
+  migrationId: Migration['id'],
+): LedgerEntry {
   return requiredOf(
-    state.draft.migrationRows.find(({ id }) => id === migrationId),
+    draftLedger.pending.find(({ migration }) => migration.id === migrationId),
     `pending migration ${migrationId}`,
   );
 }

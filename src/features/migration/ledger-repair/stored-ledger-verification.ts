@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { DraftLedger } from './draft-ledger';
 import { storedLedgerReplayOf } from './repair-ledger';
-import { repairedTablesOf } from './repair-planning';
+import { isNativeHistory } from './repair-patch';
+import { type PlannedRepair, repairedTablesOf } from './repair-planning';
 import {
   type RepairBranch,
   type RepairState,
@@ -23,11 +23,11 @@ export class StoredLedgerVerification {
 
   public async verify(
     branch: RepairBranch,
-    plan: SchemaLedgerRepairPlan,
+    planned: PlannedRepair,
   ): Promise<void> {
     const defect = this.defectOf(
       await this.stateReader.readBranch(branch),
-      repairedTablesOf(plan).map(({ tableId }) => tableId),
+      planned,
     );
 
     if (defect !== undefined) {
@@ -36,10 +36,10 @@ export class StoredLedgerVerification {
   }
 
   private defectOf(
-    state: RepairState,
-    repairedTableIds: readonly string[],
+    stored: RepairState,
+    planned: PlannedRepair,
   ): string | undefined {
-    const ledger = new DraftLedger(state);
+    const ledger = new DraftLedger(stored);
 
     if (!ledger.isConsistent()) {
       return 'does not continue the Head ledger and schema histories';
@@ -49,12 +49,17 @@ export class StoredLedgerVerification {
       return 'does not number its pending migrations after the published ones';
     }
 
-    const replay = storedLedgerReplayOf(state.draft, {
-      refs: this.schemaStore.refs,
-      validator: this.validator,
-    });
-    const unreproduced = repairedTableIds.find(
-      (tableId) => !reproducesDraftSchema(ledger, replay, tableId),
+    const refused = repairedTablesOf(planned.plan).find(
+      ({ tableId }) => !this.storesNativeHistory(ledger, tableId),
+    );
+
+    if (refused !== undefined) {
+      return `stores a schema history of ${refused.tableId} that native writes refuse`;
+    }
+
+    const replay = this.replayOf(stored);
+    const unreproduced = this.draftTableIdsToReproduce(planned).find(
+      (draftTableId) => !ledger.reproducesDraftSchema(replay, draftTableId),
     );
 
     if (unreproduced !== undefined) {
@@ -63,6 +68,38 @@ export class StoredLedgerVerification {
 
     return undefined;
   }
+
+  private draftTableIdsToReproduce({ state, plan }: PlannedRepair): string[] {
+    const ledger = new DraftLedger(state);
+    const replay = this.replayOf(state);
+    const reproduced = [...state.draft.tableVersionIds.keys()].filter(
+      (draftTableId) => ledger.reproducesDraftSchema(replay, draftTableId),
+    );
+    const repaired = repairedTablesOf(plan).map(
+      ({ tableId }) => ledger.draftTableIdOf(tableId) ?? tableId,
+    );
+
+    return [...new Set([...reproduced, ...repaired])];
+  }
+
+  private storesNativeHistory(ledger: DraftLedger, tableId: string): boolean {
+    const histories = ledger.historiesOf(tableId);
+
+    return (
+      histories !== undefined &&
+      isNativeHistory(
+        [...histories.inherited, ...histories.pending],
+        this.validator,
+      )
+    );
+  }
+
+  private replayOf(state: RepairState): ReplayedLedger {
+    return storedLedgerReplayOf(state.draft, {
+      refs: this.schemaStore.refs,
+      validator: this.validator,
+    });
+  }
 }
 
 function hasIncreasingIds({ published, pending }: DraftLedger): boolean {
@@ -70,17 +107,4 @@ function hasIncreasingIds({ published, pending }: DraftLedger): boolean {
   const increasingIds = [...new Set(ids)].sort(compareCodePoints);
 
   return ids.every((id, index) => id === increasingIds[index]);
-}
-
-function reproducesDraftSchema(
-  ledger: DraftLedger,
-  replay: ReplayedLedger,
-  headTableId: string,
-): boolean {
-  const draftTableId = ledger.draftTableIdOf(headTableId);
-
-  return (
-    draftTableId !== undefined &&
-    ledger.reproducesDraftSchema(replay, draftTableId)
-  );
 }

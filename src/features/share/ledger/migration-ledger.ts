@@ -16,7 +16,7 @@ export interface SplitLedger {
 export function ledgerOf(rows: readonly Row[]): LedgerEntry[] {
   return [...rows]
     .sort((left, right) => compareCodePoints(left.id, right.id))
-    .map((row) => ({ row, migration: row.data as unknown as Migration }));
+    .map((row) => ({ row, migration: migrationOf(row) }));
 }
 
 export function splitLedger(
@@ -33,6 +33,15 @@ export function splitLedger(
       draftRows.filter(({ versionId }) => !publishedVersionIds.has(versionId)),
     ),
   };
+}
+
+export function storesMigrationsUnderTheirIds(rows: readonly Row[]): boolean {
+  const rowIds = new Set(rows.map(({ id }) => id));
+
+  return (
+    rowIds.size === rows.length &&
+    rows.every((row) => migrationOf(row).id === row.id)
+  );
 }
 
 export function hasIntactPublishedPrefix(
@@ -52,4 +61,8 @@ function isSamePublishedRow(draft: Row | undefined, published: Row): boolean {
     deepEqual(draft.data, published.data) &&
     draft.publishedAt.getTime() === published.publishedAt.getTime()
   );
+}
+
+function migrationOf(row: Row): Migration {
+  return row.data as unknown as Migration;
 }

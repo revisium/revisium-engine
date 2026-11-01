@@ -12,6 +12,7 @@ import {
   addField,
   moveField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import {
@@ -48,13 +49,16 @@ import {
   expectLedgerRowsPublishedAtTheirIds,
   expectNoHeadOrDraftDamage,
   observeEndpointNotifications,
+  recordHistoriesWithEntry,
   recordRepairsWithoutTheirPatches,
   releaseHeldRepairs,
+  renumberMigrationsWithoutTheirPatches,
   repairLedger,
   repairOfPlan,
   repairTwiceConcurrentlyPastTheirPlans,
   repairUntilPlanned,
   storedLedgerOf,
+  storedColumnsOf,
   storedSchemaOf,
   tableOutcomesOf,
   tableRepairOf,
@@ -65,6 +69,7 @@ const SHADE = 'shade';
 const HUE = 'hue';
 
 const addNote = [addField('note', str())];
+const addLabel = [addField('label', str())];
 const addTagReference = [addField('tag', str({ foreignKey: TAGS }))];
 
 const productViews: TableViewsData = {
@@ -72,6 +77,16 @@ const productViews: TableViewsData = {
   defaultViewId: 'default',
   views: [{ id: 'default', name: 'Default' }],
 };
+
+const PENDING_NOTE = { note: 'kept by the repair' };
+const MALFORMED_HISTORY_ENTRY = {
+  hash: 'an entry without patches',
+} as unknown as HistoryPatches;
+
+interface MalformedHistoryCase {
+  readonly entry: string;
+  readonly given: () => Promise<ChangesScenario>;
+}
 
 interface StaleCase {
   readonly change: string;
@@ -173,6 +188,48 @@ describe('Schema ledger repair', () => {
     });
   });
 
+  describe('a Draft ledger the repair refuses', () => {
+    it('refuses a Draft ledger whose pending rows carry each other’s migration ids as ledgerInconsistent and writes nothing', async () => {
+      const draft = await givenUnpublishedInPlaceMigration(kit);
+      await draft.updateTable(CATEGORIES, addNote);
+      await draft.updateTable(CATEGORIES, addLabel);
+      const [firstId, secondId] = await pendingMigrationIds(draft);
+      await draft.exchangeMigrationIds(firstId ?? '', secondId ?? '');
+      const before = await branchContentsOf(kit, draft);
+
+      const repair = await repairLedger(kit, draft, { tableIds: [PRODUCTS] });
+
+      expect(repair.tables).toEqual([
+        { tableId: PRODUCTS, outcome: 'ledgerInconsistent' },
+      ]);
+      expect(await branchContentsOf(kit, draft)).toEqual(before);
+    });
+
+    it.each<MalformedHistoryCase>([
+      {
+        entry: 'an inherited Head history entry',
+        given: givenMalformedInheritedHistory,
+      },
+      {
+        entry: 'a pending Draft history entry',
+        given: givenMalformedPendingHistory,
+      },
+    ])(
+      'refuses a table whose schema history has $entry that native writes refuse as ledgerInconsistent and writes nothing',
+      async ({ given }) => {
+        const draft = await given();
+        const before = await branchContentsOf(kit, draft);
+
+        const repair = await repairLedger(kit, draft, { tableIds: [PRODUCTS] });
+
+        expect(repair.tables).toEqual([
+          { tableId: PRODUCTS, outcome: 'ledgerInconsistent' },
+        ]);
+        expect(await branchContentsOf(kit, draft)).toEqual(before);
+      },
+    );
+  });
+
   describe('what the repair writes', () => {
     it('records the ledger row published at its id and the schema history as the Head history, the repair entry and the pending entries, keeping the Draft schema', async () => {
       const draft = await givenPublishedInPlaceMigration(kit);
@@ -204,6 +261,63 @@ describe('Schema ledger repair', () => {
         ],
       });
       await expectLedgerRowsPublishedAtTheirIds(draft);
+    });
+
+    it('renumbers a pending migration into a new row version that keeps its creation, metadata and schema hash and hashes its renumbered data natively', async () => {
+      const draft = await givenPublishedInPlaceMigration(kit);
+      await draft.updateTable(PRODUCTS, [moveField(COLOR, SHADE)]);
+      const [pendingId = ''] = await pendingMigrationIds(draft);
+      await draft.writeRowColumns(SystemTables.Migration, pendingId, {
+        meta: PENDING_NOTE,
+      });
+      const source = await draft.row(
+        'draft',
+        SystemTables.Migration,
+        pendingId,
+      );
+
+      const repair = await repairLedger(kit, draft, { tableIds: [PRODUCTS] });
+
+      const renumberedId = repair.renumbered.at(0)?.id ?? '';
+      const renumbered = await draft.row(
+        'draft',
+        SystemTables.Migration,
+        renumberedId,
+      );
+      const data = { ...(source.data as object), id: renumberedId };
+      expect(renumbered.versionId).not.toBe(source.versionId);
+      expect(storedColumnsOf(renumbered)).toEqual({
+        ...storedColumnsOf(source),
+        id: renumberedId,
+        data,
+        hash: objectHash(data),
+        publishedAt: new Date(renumberedId),
+      });
+    });
+
+    it('rolls back and raises when the stored Draft ledger no longer reproduces a table that it reproduced before the repair', async () => {
+      const draft = await givenUnpublishedInPlaceMigration(kit);
+      await draft.updateTable(CATEGORIES, addNote);
+      const before = await branchContentsOf(kit, draft);
+      renumberMigrationsWithoutTheirPatches(kit);
+
+      await expect(
+        repairLedger(kit, draft, { tableIds: [PRODUCTS] }),
+      ).rejects.toThrow(`does not reproduce the Draft schema of ${CATEGORIES}`);
+      expect(await branchContentsOf(kit, draft)).toEqual(before);
+    });
+
+    it('rolls back and raises when a stored schema history is one that native writes refuse', async () => {
+      const draft = await givenUnpublishedInPlaceMigration(kit);
+      const before = await branchContentsOf(kit, draft);
+      recordHistoriesWithEntry(kit, MALFORMED_HISTORY_ENTRY);
+
+      await expect(
+        repairLedger(kit, draft, { tableIds: [PRODUCTS] }),
+      ).rejects.toThrow(
+        `stores a schema history of ${PRODUCTS} that native writes refuse`,
+      );
+      expect(await branchContentsOf(kit, draft)).toEqual(before);
     });
 
     it('writes Draft-owned versions of the shared schema row and leaves the views row shared with the Head', async () => {
@@ -396,6 +510,27 @@ describe('Schema ledger repair', () => {
       },
     );
 
+    it('AM-57 finds the plan stale and keeps the concurrent edit when only the metadata of a pending migration row changes between planning and writing', async () => {
+      const draft = await givenUnpublishedInPlaceMigration(kit);
+      await draft.updateTable(CATEGORIES, addNote);
+      const [pendingId = ''] = await pendingMigrationIds(draft);
+      const repair = await repairUntilPlanned(kit, draft, {
+        tableIds: [PRODUCTS],
+      });
+      await draft.writeRowColumns(SystemTables.Migration, pendingId, {
+        meta: PENDING_NOTE,
+      });
+      const before = await branchContentsOf(kit, draft);
+
+      const result = await repair.resume();
+
+      expect(result.tables).toEqual([{ tableId: PRODUCTS, outcome: 'stale' }]);
+      expect(await branchContentsOf(kit, draft)).toEqual(before);
+      expect(
+        (await draft.row('draft', SystemTables.Migration, pendingId)).meta,
+      ).toEqual(PENDING_NOTE);
+    });
+
     it('refuses to write when an async migration starts between planning and writing', async () => {
       const draft = await givenUnpublishedInPlaceMigration(kit);
       const repair = await repairUntilPlanned(kit, draft, {
@@ -470,6 +605,30 @@ describe('Schema ledger repair', () => {
       ).rejects.toThrow(MigrationLockedException);
     });
   });
+
+  async function givenMalformedInheritedHistory(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog(kit);
+    const { history } = await storedSchemaOf(draft, 'draft', PRODUCTS);
+    await draft.rewriteSchemaHistory(PRODUCTS, [
+      ...history,
+      MALFORMED_HISTORY_ENTRY,
+    ]);
+    await draft.commit();
+    await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenMalformedPendingHistory(): Promise<ChangesScenario> {
+    const draft = await givenUnpublishedInPlaceMigration(kit);
+    const { history } = await storedSchemaOf(draft, 'head', PRODUCTS);
+    await draft.rewriteSchemaHistory(PRODUCTS, [
+      ...history,
+      MALFORMED_HISTORY_ENTRY,
+    ]);
+
+    return draft;
+  }
 
   async function givenInPlaceMigrationOfTableWithViews(): Promise<ChangesScenario> {
     const draft = await givenCommittedCatalog(kit);

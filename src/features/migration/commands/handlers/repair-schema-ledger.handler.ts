@@ -88,7 +88,7 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
     }
 
     await this.writer.record(planned);
-    await this.verification.verify(data, planned.plan);
+    await this.verification.verify(data, planned);
 
     return true;
   }

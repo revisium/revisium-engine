@@ -15,7 +15,10 @@ import { InvalidRows } from 'src/features/partial-changes/validation/invalid-row
 import { LedgerConsistency } from 'src/features/partial-changes/validation/ledger-consistency';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import { hasIntactPublishedPrefix } from 'src/features/share/ledger/migration-ledger';
+import {
+  hasIntactPublishedPrefix,
+  storesMigrationsUnderTheirIds,
+} from 'src/features/share/ledger/migration-ledger';
 
 export interface ValidatedTarget {
   readonly choice: AppliedUnits;
@@ -25,6 +28,11 @@ export interface ValidatedTarget {
 const PUBLISHED_MIGRATION_ALTERED: PlanBlocker = {
   code: 'ledgerInconsistent',
   message: 'A published migration is missing or changed in the Draft ledger',
+};
+
+const MIGRATION_MISFILED: PlanBlocker = {
+  code: 'ledgerInconsistent',
+  message: 'A migration row is not stored under its own, distinct migration id',
 };
 
 @Injectable()
@@ -59,6 +67,7 @@ export class TargetValidator {
 
     return distinctBlockers([
       ...unrecorded,
+      ...misfiledMigrationsOf(source.snapshot),
       ...alteredPublishedMigrationsOf(source.snapshot),
       ...unexplainedBy(unrecorded, ledger),
       ...invalidRows,
@@ -92,6 +101,19 @@ function isApplied(
   unit: CatalogueUnit | undefined,
 ): boolean {
   return unit !== undefined && applied.has(unit.key);
+}
+
+function misfiledMigrationsOf({ systemRows }: ChangesSnapshot): PlanBlocker[] {
+  const { head, draft } = systemRows.migrations;
+
+  if (
+    storesMigrationsUnderTheirIds(head) &&
+    storesMigrationsUnderTheirIds(draft)
+  ) {
+    return [];
+  }
+
+  return [MIGRATION_MISFILED];
 }
 
 function alteredPublishedMigrationsOf({

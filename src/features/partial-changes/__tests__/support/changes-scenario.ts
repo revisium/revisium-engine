@@ -20,6 +20,7 @@ import type {
   ChangesBranch,
   ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { splitLedger } from 'src/features/share/ledger/migration-ledger';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
@@ -446,6 +447,25 @@ export class ChangesScenario {
     );
   }
 
+  public async exchangeMigrationIds(
+    firstId: string,
+    secondId: string,
+  ): Promise<void> {
+    const first = await this.row('draft', SystemTables.Migration, firstId);
+    const second = await this.row('draft', SystemTables.Migration, secondId);
+
+    await this.writeBelowNativeValidation((revisionId) =>
+      this.kit.draftRevisionApi.updateRows({
+        revisionId,
+        tableId: SystemTables.Migration,
+        rows: [
+          { rowId: firstId, data: withMigrationId(first, secondId) },
+          { rowId: secondId, data: withMigrationId(second, firstId) },
+        ],
+      }),
+    );
+  }
+
   public async rewriteSchemaHistory(
     tableId: string,
     history: readonly HistoryPatches[],
@@ -453,6 +473,12 @@ export class ChangesScenario {
     await this.writeRowColumns(SystemTables.Schema, tableId, {
       meta: history as unknown as InputJsonValue,
     });
+  }
+
+  public async pendingMigrationIds(): Promise<string[]> {
+    const { head, draft } = (await this.readSnapshot()).systemRows.migrations;
+
+    return splitLedger(head, draft).pending.map(({ row }) => row.id);
   }
 
   public readSnapshot(): Promise<ChangesSnapshot> {
@@ -671,6 +697,10 @@ export class ChangesScenario {
     this.kit.guard.track(this.branchId);
     await this.kit.guard.verify();
   }
+}
+
+function withMigrationId(row: Row, id: string): InputJsonValue {
+  return { ...(row.data as unknown as Migration), id } as InputJsonValue;
 }
 
 function revisionFlagOf(side: RevisionSide) {

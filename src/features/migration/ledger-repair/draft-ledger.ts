@@ -2,6 +2,7 @@ import {
   hasIntactPublishedPrefix,
   type LedgerEntry,
   splitLedger,
+  storesMigrationsUnderTheirIds,
 } from 'src/features/share/ledger/migration-ledger';
 import {
   type AttributedSlot,
@@ -10,7 +11,14 @@ import {
 import { pendingSchemaHistory } from 'src/features/share/ledger/schema-history';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
+import type { HistoryPatches } from 'src/features/share/queries/impl';
 import type { RepairState } from './repair-state-reader';
+
+export interface TableHistories {
+  readonly draftTableId: string;
+  readonly inherited: readonly HistoryPatches[];
+  readonly pending: readonly HistoryPatches[];
+}
 
 export class DraftLedger {
   public readonly published: readonly LedgerEntry[];
@@ -33,6 +41,8 @@ export class DraftLedger {
 
   public isConsistent(): boolean {
     return (
+      storesMigrationsUnderTheirIds(this.state.head.migrationRows) &&
+      storesMigrationsUnderTheirIds(this.state.draft.migrationRows) &&
       hasIntactPublishedPrefix(
         this.state.head.migrationRows,
         this.state.draft.migrationRows,
@@ -67,16 +77,39 @@ export class DraftLedger {
     );
   }
 
+  public historiesOf(headTableId: string): TableHistories | undefined {
+    const draftTableId = this.draftTableIdOf(headTableId);
+
+    if (draftTableId === undefined) {
+      return undefined;
+    }
+
+    return this.historiesBetween(headTableId, draftTableId);
+  }
+
   private continuesHeadHistory({ slot, owner }: AttributedSlot): boolean {
     if (owner.kind !== 'headTable' || slot.currentTableId === undefined) {
       return true;
     }
 
-    const headHistory =
-      this.state.head.schemas.get(owner.tableId)?.history ?? [];
-    const draftHistory =
-      this.state.draft.schemas.get(slot.currentTableId)?.history ?? headHistory;
+    return (
+      this.historiesBetween(owner.tableId, slot.currentTableId) !== undefined
+    );
+  }
 
-    return pendingSchemaHistory(headHistory, draftHistory).extendsHead;
+  private historiesBetween(
+    headTableId: string,
+    draftTableId: string,
+  ): TableHistories | undefined {
+    const inherited = this.state.head.schemas.get(headTableId)?.history ?? [];
+    const draftHistory =
+      this.state.draft.schemas.get(draftTableId)?.history ?? inherited;
+    const pending = pendingSchemaHistory(inherited, draftHistory);
+
+    if (!pending.extendsHead) {
+      return undefined;
+    }
+
+    return { draftTableId, inherited, pending: pending.entries };
   }
 }

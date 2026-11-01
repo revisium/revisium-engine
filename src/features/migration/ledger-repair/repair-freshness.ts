@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { deepEqual } from '@revisium/schema-toolkit/lib';
+import type { Row } from 'src/engine-prisma-types';
 import type { ValidationFingerprint } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { DraftRowsValidation } from './draft-rows-validation';
@@ -54,22 +55,43 @@ function isSameState(planned: RepairState, current: RepairState): boolean {
 
 function contentOf({
   tableVersionIds,
+  migrationTableVersionId,
   schemas,
   migrationRows,
 }: RevisionLedger) {
   return {
     tableVersionIds: sortedEntriesOf(tableVersionIds),
+    migrationTableVersionId,
     schemas: sortedEntriesOf(schemas),
     migrationRows: migrationRows
-      .map(({ versionId, id, data, publishedAt }) => ({
-        versionId,
-        id,
-        data,
-        publishedAt: publishedAt.toISOString(),
-      }))
+      .map(copiedColumnsOf)
       .sort((left, right) =>
         compareCodePoints(left.versionId, right.versionId),
       ),
+  };
+}
+
+function copiedColumnsOf({
+  versionId,
+  createdId,
+  id,
+  data,
+  meta,
+  hash,
+  schemaHash,
+  createdAt,
+  publishedAt,
+}: Row) {
+  return {
+    versionId,
+    createdId,
+    id,
+    data,
+    meta,
+    hash,
+    schemaHash,
+    createdAt: createdAt.toISOString(),
+    publishedAt: publishedAt.toISOString(),
   };
 }
 

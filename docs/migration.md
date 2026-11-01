@@ -354,7 +354,7 @@ table (without `tableIds`, each Head table whose ledger does not reproduce its s
 | `unledgered` | No intact lineage of the Head ledger ends at the table id. |
 | `ledgerDoesNotReplay` | The Head ledger replay fails for the table. |
 | `notDamaged`, `draftOnlyDamage` | The Head ledger reproduces the Head schema row; the Draft ledger reproduces the Draft schema row, or not. |
-| `ledgerInconsistent` | Anywhere on the branch: the Draft lacks or alters a published migration, a pending migration cannot be attributed, or the Draft schema history of a Head table that continues in the Draft (followed through renames) does not extend its Head history. |
+| `ledgerInconsistent` | Anywhere on the branch: a migration row of the Head or the Draft is not stored under its own migration id (`id` equal to `data.id`, no id shared by two rows), the Draft lacks or alters a published migration, a pending migration cannot be attributed, or the Draft schema history of a Head table that continues in the Draft (followed through renames) does not extend its Head history. For the table itself: its inherited (Head) or pending (Draft) schema history entries fail the native history validation of `updateTable`. Partial operations refuse the same misfiled migration rows with `ledgerInconsistent`. |
 | `alreadyRepaired` | The Draft ledger reproduces the Draft schema row and the Draft rows are valid. |
 | `rowsNeedMigration` | A baseline reproduces the Draft schema row, but Draft rows fail the synchronous data validation, foreign keys included; `invalidRows` gives their count and up to ten ids. |
 | `patchNotReproducible` | The patch does not turn the replayed schema into the Head schema row, or the native validation refuses it right after the published ledger. |
@@ -394,22 +394,28 @@ changed before the write. Errors are those of planning: unknown project or branc
    and writes nothing; so does a plan without a `repaired` table.
 2. **Admit** the write in one Serializable transaction of the native runner: the branch write fence shared, then the
    migration-lock check (an async migration started after planning fails the call with `MIGRATION_LOCKED`).
-3. **Re-check freshness** in that transaction: the Head and Draft ids, their user table version ids, schema rows
-   (schema and history) and migration rows must equal what planning read, and the validation fingerprint, recomputed
-   in SQL, must equal the plan's. Any difference (a row written below native validation, a native row or schema
+3. **Re-check freshness** in that transaction: the Head and Draft ids, their user and migration table version ids,
+   schema rows (schema and history) and migration rows (every column the write copies: `versionId`, `createdId`, `id`,
+   `data`, `meta`, `hash`, `schemaHash`, `createdAt`, `publishedAt`) must equal what planning read, and the validation
+   fingerprint, recomputed in SQL, must equal the plan's. Any difference (a row written below native validation, a native row or schema
    change, a commit, a revert, another repair) gives `stale` for every table and writes nothing; rerun the repair.
    Rows are not validated again: the fingerprint proves the validated rows unchanged.
 4. **Write** through the draft-revision writers, which copy a migration table or schema row the Draft shares with the
-   Head before changing it: the renumbered pending migration rows are replaced by new rows under their new ids (`id`,
-   `data.id` and `publishedAt` together; other columns kept); each repair becomes an `update` migration row
+   Head before changing it: the Draft-side target writer (`revertToTarget` with the migration table only) replaces the
+   renumbered pending migration rows, resolved by their migration id, with new mutable row versions under their new ids
+   (`id`, `data.id` and `publishedAt` together, `hash` of the new `data` as native row writers compute it; `createdId`,
+   `createdAt`, `schemaHash` and `meta` kept) in one set-based insert, and leaves the replaced versions to the orphan
+   cleanup; each repair becomes an `update` migration row
    `{ changeType: 'update', tableId, id, hash, patches }` with `publishedAt` at its id and `hash` of the Head schema
    row; the Draft schema row of each repaired table (followed through pending renames) keeps its schema and gets as
    history the Head history, then the repair entry, then the pending entries. The Draft gets `hasChanges`; the views
    row is not touched.
-5. **Verify** the stored Draft ledger in the same transaction: the published prefix equals the Head's, every pending
-   migration is attributable, the ids increase with the pending ones after the published ones, every Draft schema
-   history extends its Head history, and the replayed Draft ledger reproduces the Draft schema of each repaired table.
-   A failure is a defect: the transaction rolls back and the call fails.
+5. **Verify** the stored Draft ledger in the same transaction: every migration row is stored under its own migration
+   id, the published prefix equals the Head's, every pending migration is attributable, the ids increase with the
+   pending ones after the published ones, every Draft schema history extends its Head history, the history of each
+   repaired table passes the native history validation, and the replayed Draft ledger reproduces the Draft schema of
+   each repaired table and of every Draft table it reproduced before the write. A failure is a defect: the
+   transaction rolls back and the call fails.
 6. **Notify** the Draft endpoints after the commit.
 
 A serialization failure retries the transaction from step 2, so of two concurrent repairs one writes and the other

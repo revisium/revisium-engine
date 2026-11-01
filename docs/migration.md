@@ -336,7 +336,7 @@ table (without `tableIds`, each Head table whose ledger does not reproduce its s
 | `unledgered` | No intact lineage of the Head ledger ends at the table id. |
 | `ledgerDoesNotReplay` | The Head ledger replay fails for the table. |
 | `notDamaged`, `draftOnlyDamage` | The Head ledger reproduces the Head schema row; the Draft ledger reproduces the Draft schema row, or not. |
-| `ledgerInconsistent` | The Draft lacks or alters a published migration, a pending migration cannot be attributed, or the Draft schema history does not extend the Head one. |
+| `ledgerInconsistent` | Anywhere on the branch: the Draft lacks or alters a published migration, a pending migration cannot be attributed, or the Draft schema history of a Head table that continues in the Draft (followed through renames) does not extend its Head history. |
 | `alreadyRepaired` | The Draft ledger reproduces the Draft schema row and the Draft rows are valid. |
 | `rowsNeedMigration` | A baseline reproduces the Draft schema row, but Draft rows fail the synchronous data validation, foreign keys included; `invalidRows` gives their count and up to ten ids. |
 | `needsDraftStructureRevert` | Neither baseline reproduces the Draft schema row. |
@@ -345,7 +345,7 @@ A table whose pending migrations, replayed from the Head schema rows, reproduce 
 are valid is a repair candidate. Candidates are not reported yet and `renumbered` is empty: their patch, repair ids and
 combined verification (`repaired`, `patchNotReproducible`, `blockedByDependency`) come with the next step. The plan
 carries a fingerprint of what it validated: per validated Draft table version its row count and a digest of row version
-ids and hashes, and per table version a foreign key consulted a digest of its row ids.
+ids and hashes, and per table version that a foreign key of a validated row references a digest of its row ids.
 
 ### Read consistency during migration
 

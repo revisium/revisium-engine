@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
-import { getForeignKeysFromSchema } from '@revisium/schema-toolkit/lib';
-import type { JsonSchema } from '@revisium/schema-toolkit/types';
+import type { JsonSchema, JsonValue } from '@revisium/schema-toolkit/types';
 import {
   type InputJsonValue,
   SortOrder,
@@ -15,6 +14,7 @@ import type {
   ValidatedTableFingerprint,
   ValidationFingerprint,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import { getForeignKeyReferences } from 'src/features/share/foreign-key-references';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -26,6 +26,11 @@ export interface DraftTable {
   readonly tableId: string;
   readonly versionId: string;
   readonly schema: JsonSchema;
+}
+
+export interface ValidatedRows {
+  readonly invalidRows?: InvalidRows;
+  readonly referencedTableIds: readonly string[];
 }
 
 interface DraftRow {
@@ -45,43 +50,38 @@ export class DraftRowsValidation {
     return this.transactionService.getTransaction();
   }
 
-  public async findInvalidRows(
+  public async validateRows(
     revisionId: string,
     table: DraftTable,
-  ): Promise<InvalidRows | undefined> {
+  ): Promise<ValidatedRows> {
     let invalidRows: InvalidRows = { count: 0, sampleRowIds: [] };
+    const referencedTableIds = new Set<string>();
 
     for await (const rows of this.rowBatchesOf(table.versionId)) {
       invalidRows = withInvalidRowIds(
         invalidRows,
         await this.invalidRowIdsOf(revisionId, table, rows),
       );
+
+      for (const tableId of this.referencedTableIdsOf(table.schema, rows)) {
+        referencedTableIds.add(tableId);
+      }
     }
 
-    if (invalidRows.count === 0) {
-      return undefined;
-    }
-
-    return invalidRows;
+    return validatedRowsOf(invalidRows, referencedTableIds);
   }
 
   public async fingerprintOf(
-    validatedTables: readonly DraftTable[],
-    draftTableVersionIds: ReadonlyMap<string, string>,
+    validatedTableVersionIds: readonly string[],
+    consultedTableVersionIds: readonly string[],
   ): Promise<ValidationFingerprint> {
-    const consultedVersionIds = validatedTables.flatMap(({ schema }) =>
-      this.foreignKeyTargetsOf(schema).flatMap(
-        (tableId) => draftTableVersionIds.get(tableId) ?? [],
-      ),
-    );
-
     return {
       validatedTables: await this.digestsOf<ValidatedTableFingerprint>(
-        validatedTables.map(({ versionId }) => versionId),
+        validatedTableVersionIds,
         rowVersionsDigestSql,
       ),
       consultedTables: await this.digestsOf<ConsultedTableFingerprint>(
-        consultedVersionIds,
+        consultedTableVersionIds,
         rowIdsDigestSql,
       ),
     };
@@ -163,8 +163,17 @@ export class DraftRowsValidation {
     }));
   }
 
-  private foreignKeyTargetsOf(schema: JsonSchema): string[] {
-    return getForeignKeysFromSchema(this.schemaStore.create(schema));
+  private referencedTableIdsOf(
+    schema: JsonSchema,
+    rows: readonly DraftRow[],
+  ): string[] {
+    const schemaStore = this.schemaStore.create(schema);
+
+    return rows.flatMap(({ data }) =>
+      getForeignKeyReferences(schemaStore, data as JsonValue).map(
+        ({ tableId }) => tableId,
+      ),
+    );
   }
 
   private async digestsOf<T>(
@@ -187,6 +196,17 @@ export class DraftRowsValidation {
 
     return digests;
   }
+}
+
+function validatedRowsOf(
+  invalidRows: InvalidRows,
+  referencedTableIds: ReadonlySet<string>,
+): ValidatedRows {
+  if (invalidRows.count === 0) {
+    return { referencedTableIds: [...referencedTableIds] };
+  }
+
+  return { invalidRows, referencedTableIds: [...referencedTableIds] };
 }
 
 function withInvalidRowIds(

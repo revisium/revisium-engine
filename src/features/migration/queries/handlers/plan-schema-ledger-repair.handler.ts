@@ -3,6 +3,7 @@ import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import {
   type DraftTable,
   DraftRowsValidation,
+  type ValidatedRows,
 } from 'src/features/migration/ledger-repair/draft-rows-validation';
 import {
   RepairLedger,
@@ -54,9 +55,12 @@ export class PlanSchemaLedgerRepairHandler implements IQueryHandler<
       ledger,
       requestedTableIdsOf(state, ledger, data.tableIds),
     );
-    const validatedTables = validatedDraftTablesOf(state, assessments);
-    const invalidRows = await this.findInvalidRows(state, validatedTables);
-    const planned = planDecidedRepairs(assessments, invalidRows);
+    const draftTables = validatedDraftTablesOf(state, assessments);
+    const validatedRows = await this.validateDraftRows(state, draftTables);
+    const planned = planDecidedRepairs(
+      assessments,
+      invalidRowsOf(validatedRows),
+    );
 
     return {
       headRevisionId: state.headRevisionId,
@@ -64,30 +68,26 @@ export class PlanSchemaLedgerRepairHandler implements IQueryHandler<
       tables: planned.tables,
       renumbered: planned.renumbered,
       fingerprint: await this.draftRows.fingerprintOf(
-        [...validatedTables.values()],
-        state.draft.tableVersionIds,
+        [...draftTables.values()].map(({ versionId }) => versionId),
+        consultedTableVersionIdsOf(state, validatedRows),
       ),
     };
   }
 
-  private async findInvalidRows(
+  private async validateDraftRows(
     state: RepairState,
-    validatedTables: ReadonlyMap<string, DraftTable>,
-  ): Promise<Map<string, InvalidRows>> {
-    const invalidRows = new Map<string, InvalidRows>();
+    draftTables: ReadonlyMap<string, DraftTable>,
+  ): Promise<Map<string, ValidatedRows>> {
+    const validatedRows = new Map<string, ValidatedRows>();
 
-    for (const [tableId, draftTable] of validatedTables) {
-      const invalid = await this.draftRows.findInvalidRows(
-        state.draftRevisionId,
-        draftTable,
+    for (const [tableId, draftTable] of draftTables) {
+      validatedRows.set(
+        tableId,
+        await this.draftRows.validateRows(state.draftRevisionId, draftTable),
       );
-
-      if (invalid) {
-        invalidRows.set(tableId, invalid);
-      }
     }
 
-    return invalidRows;
+    return validatedRows;
   }
 }
 
@@ -137,6 +137,31 @@ function validatedDraftTablesOf(
   }
 
   return draftTables;
+}
+
+function invalidRowsOf(
+  validatedRows: ReadonlyMap<string, ValidatedRows>,
+): Map<string, InvalidRows> {
+  const invalidRows = new Map<string, InvalidRows>();
+
+  for (const [tableId, { invalidRows: invalid }] of validatedRows) {
+    if (invalid) {
+      invalidRows.set(tableId, invalid);
+    }
+  }
+
+  return invalidRows;
+}
+
+function consultedTableVersionIdsOf(
+  state: RepairState,
+  validatedRows: ReadonlyMap<string, ValidatedRows>,
+): string[] {
+  return [...validatedRows.values()].flatMap(({ referencedTableIds }) =>
+    referencedTableIds.flatMap(
+      (tableId) => state.draft.tableVersionIds.get(tableId) ?? [],
+    ),
+  );
 }
 
 function draftTableOf(

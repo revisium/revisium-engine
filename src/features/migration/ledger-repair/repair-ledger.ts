@@ -76,7 +76,12 @@ export class RepairLedger {
       hasIntactPublishedPrefix(
         state.head.migrationRows,
         state.draft.migrationRows,
-      ) && this.attributedSlots.every(({ owner }) => owner.kind !== 'none');
+      ) &&
+      this.attributedSlots.every(
+        (attributed) =>
+          attributed.owner.kind !== 'none' &&
+          this.continuesHeadHistory(attributed),
+      );
   }
 
   public assess(tableId: string): TableAssessment {
@@ -94,7 +99,7 @@ export class RepairLedger {
       return { outcome: this.draftDamageOf(draftTableId) };
     }
 
-    if (!this.isConsistentFor(tableId, draftTableId)) {
+    if (!this.consistent) {
       return { outcome: 'ledgerInconsistent' };
     }
 
@@ -181,21 +186,15 @@ export class RepairLedger {
     );
   }
 
-  private isConsistentFor(
-    tableId: string,
-    draftTableId: string | undefined,
-  ): boolean {
-    if (draftTableId === undefined) {
-      return this.consistent;
+  private continuesHeadHistory({ slot, owner }: AttributedSlot): boolean {
+    if (owner.kind !== 'headTable' || slot.currentTableId === undefined) {
+      return true;
     }
 
-    return this.consistent && this.historyExtendsHead(tableId, draftTableId);
-  }
-
-  private historyExtendsHead(tableId: string, draftTableId: string): boolean {
-    const headHistory = this.state.head.schemas.get(tableId)?.history ?? [];
+    const headHistory =
+      this.state.head.schemas.get(owner.tableId)?.history ?? [];
     const draftHistory =
-      this.state.draft.schemas.get(draftTableId)?.history ?? headHistory;
+      this.state.draft.schemas.get(slot.currentTableId)?.history ?? headHistory;
 
     return pendingSchemaHistory(headHistory, draftHistory).extendsHead;
   }

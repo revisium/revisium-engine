@@ -8,6 +8,7 @@ import { TargetAssembler } from 'src/features/partial-changes/assembly/target-as
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import { TARGET_CHECKS } from 'src/features/partial-changes/closure/findings';
+import { LedgerDependencyChecks } from 'src/features/partial-changes/closure/ledger-dependency-checks';
 import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-reference-checks';
 import { StructureChecks } from 'src/features/partial-changes/closure/structure-checks';
 import { PARTIAL_CHANGES_COMMAND_HANDLERS } from 'src/features/partial-changes/commands/handlers';
@@ -51,14 +52,16 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     TargetAssembler,
     OperationEstimator,
     StructureChecks,
+    LedgerDependencyChecks,
     RowReferenceChecks,
     {
       provide: TARGET_CHECKS,
       useFactory: (
         structureChecks: StructureChecks,
+        ledgerChecks: LedgerDependencyChecks,
         rowChecks: RowReferenceChecks,
-      ) => [structureChecks, rowChecks],
-      inject: [StructureChecks, RowReferenceChecks],
+      ) => [structureChecks, ledgerChecks, rowChecks],
+      inject: [StructureChecks, LedgerDependencyChecks, RowReferenceChecks],
     },
     DependencyClosure,
     TargetValidator,

@@ -19,7 +19,10 @@ import type {
 } from 'src/features/share/ledger-replay/ledger-replay';
 import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
-import { ledgeredTableIdOf } from 'src/features/share/ledger-replay/table-slots';
+import {
+  ledgeredTableIdOf,
+  type TableSlot,
+} from 'src/features/share/ledger-replay/table-slots';
 
 type Inconsistency =
   | {
@@ -30,7 +33,7 @@ type Inconsistency =
   | { readonly kind: 'schemaMismatch' }
   | { readonly kind: 'missingTable' };
 
-interface SlotInconsistency {
+export interface SlotInconsistency {
   readonly lineage: string;
   readonly tableId: string;
   readonly inconsistency: Inconsistency;
@@ -45,6 +48,10 @@ interface ReplayedRole extends LedgerRole {
   readonly replayed: ReplayedLedger;
 }
 
+export interface ReplayedResultingRole extends ResultingRole {
+  readonly replayed: ReplayedLedger;
+}
+
 type ExistingInconsistencies = Readonly<
   Record<RevisionSide, ReadonlySet<string>>
 >;
@@ -56,18 +63,25 @@ export class LedgerConsistency {
     source: AssemblySource,
     choice: AppliedUnits,
   ): PlanBlocker[] {
-    const head = this.replayOf(sourceRoleOf(source.snapshot, 'head'));
-    const draft = this.replayOf(sourceRoleOf(source.snapshot, 'draft'));
-    const unledgered = unledgeredLineagesOf(source.snapshot, head, draft);
-    const existing: ExistingInconsistencies = {
-      head: keysOf(inconsistenciesOf(head, unledgered)),
-      draft: keysOf(inconsistenciesOf(draft, unledgered)),
-    };
+    const sourceInconsistencies = this.sourceInconsistenciesOf(source.snapshot);
 
     return resultingRolesOf(source, choice).flatMap((role) =>
-      inconsistenciesOf(this.replayOf(role), unledgered)
-        .filter((found) => !keepsExisting(role, existing, found))
+      sourceInconsistencies
+        .newInconsistenciesOf({
+          ...role,
+          replayed: this.replayer.replay(role.ledger),
+        })
         .map((found) => ledgerInconsistentOf(role, found)),
+    );
+  }
+
+  public sourceInconsistenciesOf(
+    snapshot: ChangesSnapshot,
+  ): SourceInconsistencies {
+    return new SourceInconsistencies(
+      snapshot,
+      this.replayOf(sourceRoleOf(snapshot, 'head')),
+      this.replayOf(sourceRoleOf(snapshot, 'draft')),
     );
   }
 
@@ -76,6 +90,31 @@ export class LedgerConsistency {
       ...role,
       replayed: this.replayer.replay(role.ledger),
     };
+  }
+}
+
+export class SourceInconsistencies {
+  private readonly unledgered: UnledgeredLineages;
+  private readonly existing: ExistingInconsistencies;
+
+  constructor(
+    snapshot: ChangesSnapshot,
+    head: ReplayedRole,
+    draft: ReplayedRole,
+  ) {
+    this.unledgered = unledgeredLineagesOf(snapshot, head, draft);
+    this.existing = {
+      head: keysOf(inconsistenciesOf(head, this.unledgered)),
+      draft: keysOf(inconsistenciesOf(draft, this.unledgered)),
+    };
+  }
+
+  public newInconsistenciesOf(
+    role: ReplayedResultingRole,
+  ): SlotInconsistency[] {
+    return inconsistenciesOf(role, this.unledgered).filter(
+      (found) => !keepsExisting(role, this.existing, found),
+    );
   }
 }
 
@@ -278,7 +317,7 @@ function tableIdsOf(slots: readonly ReplayedSlot[]): Set<string> {
   return new Set(slots.flatMap(({ tableIds }) => tableIds));
 }
 
-function readTableIdsByStep({
+export function readTableIdsByStep({
   reads,
 }: ReplayedLedger): ReadonlyMap<string, string[]> {
   const byStep = new Map<string, string[]>();
@@ -324,11 +363,11 @@ function schemasByTableId(
   );
 }
 
-function lineageOf({ migrations }: ReplayedSlot): string {
+export function lineageOf({ migrations }: TableSlot): string {
   const [opening] = migrations;
 
   if (!opening) {
-    throw new Error('A replayed ledger slot was opened by no migration');
+    throw new Error('A ledger slot was opened by no migration');
   }
 
   return opening.id;

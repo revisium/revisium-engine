@@ -40,10 +40,6 @@ export interface RandomDraftTwins {
   readonly twin: ChangesScenario;
 }
 
-export interface RandomDraftOptions {
-  readonly ledgerOnlyDependencies: boolean;
-}
-
 interface VacatedRowId extends TableRow {
   readonly rowId: string;
 }
@@ -85,8 +81,6 @@ type RandomEdit = keyof typeof EDIT_WEIGHTS;
 
 const RANDOM_EDITS = Object.keys(EDIT_WEIGHTS) as RandomEdit[];
 
-const WITH_EVERY_EDIT: RandomDraftOptions = { ledgerOnlyDependencies: true };
-
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
 const NOTES = 'notes';
@@ -122,11 +116,10 @@ const addressSchema = obj({ city: str() });
 export async function givenRandomDraft(
   kit: PartialChangesTestKit,
   seed: number,
-  options: RandomDraftOptions = WITH_EVERY_EDIT,
 ): Promise<ChangesScenario> {
   const draft = await givenCommittedCatalogue(kit);
 
-  await writeRandomEdits(draft, seed, options);
+  await writeRandomEdits(draft, seed);
 
   return draft;
 }
@@ -138,8 +131,8 @@ export async function givenRandomDraftTwins(
   const draft = await givenCommittedCatalogue(kit);
   const twin = await draft.branchFromHead('twin');
 
-  await writeRandomEdits(draft, seed, WITH_EVERY_EDIT);
-  await writeRandomEdits(twin, seed, WITH_EVERY_EDIT);
+  await writeRandomEdits(draft, seed);
+  await writeRandomEdits(twin, seed);
 
   return { draft, twin };
 }
@@ -177,13 +170,11 @@ async function givenCommittedCatalogue(
 async function writeRandomEdits(
   draft: ChangesScenario,
   seed: number,
-  options: RandomDraftOptions,
 ): Promise<void> {
   const writer = new RandomDraftWriter(
     draft,
     seededRandom(seed),
     await readHeadTables(draft),
-    options,
   );
 
   for (let written = 0; written < EDITS_PER_DRAFT; written += 1) {
@@ -199,7 +190,6 @@ class RandomDraftWriter {
     private readonly draft: ChangesScenario,
     private readonly random: SeededRandom,
     private readonly headTables: ReadonlyMap<string, HeadTable>,
-    private readonly options: RandomDraftOptions,
   ) {}
 
   public writeRandomEdit(tables: DraftTables): Promise<void> {
@@ -274,11 +264,7 @@ class RandomDraftWriter {
       case 'renameRowIntoVacatedId':
         return this.vacatedRowIds(tables).length > 0;
       case 'renameTableIntoVacatedId':
-        return (
-          this.options.ledgerOnlyDependencies &&
-          tables.all.length > 0 &&
-          this.vacatedTableIds(tables).length > 0
-        );
+        return tables.all.length > 0 && this.vacatedTableIds(tables).length > 0;
       case 'removeTable':
         return this.removableTables(tables).length > 0;
       case 'removeField':
@@ -478,7 +464,7 @@ class RandomDraftWriter {
   }
 
   private newTableFieldsOf(tables: DraftTables): Record<string, JsonSchema> {
-    const referenceable = this.referenceableTables(tables);
+    const referenceable = tables.withRows();
 
     if (referenceable.length === 0 || this.random.pick([true, false])) {
       return { label: str() };
@@ -488,16 +474,6 @@ class RandomDraftWriter {
       label: str(),
       ref: str({ foreignKey: this.random.pick(referenceable).id }),
     };
-  }
-
-  private referenceableTables(tables: DraftTables): DraftTable[] {
-    return tables
-      .withRows()
-      .filter(
-        (table) =>
-          this.options.ledgerOnlyDependencies ||
-          this.headTableOf(table) !== undefined,
-      );
   }
 
   private publishedAtCandidates(tables: DraftTables): TableRow[] {

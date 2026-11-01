@@ -514,6 +514,15 @@ export class ChangesScenario {
     return splitLedger(head, draft).pending.map(({ row }) => row.id);
   }
 
+  public async migrationIdOf(
+    changeType: Migration['changeType'],
+    tableId: string,
+  ): Promise<string> {
+    const migration = await this.draftMigrationOf(changeType, tableId);
+
+    return migration.id;
+  }
+
   public readSnapshot(): Promise<ChangesSnapshot> {
     return readInPlanningTransaction(this.kit, () =>
       this.kit.snapshotReader.readSnapshot(this.branch),

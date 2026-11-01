@@ -1,5 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { arr, num, obj, str } from '@revisium/schema-toolkit/mocks';
+import { arr, num, numFormula, obj, str } from '@revisium/schema-toolkit/mocks';
+import type {
+  JsonPatch,
+  JsonSchema,
+  JsonValue,
+} from '@revisium/schema-toolkit/types';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -20,29 +25,53 @@ import {
 import {
   addField,
   moveField,
+  removeField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import {
   branchContentsOf,
+  expectStrictlyAscending,
   givenActiveMigration,
+  importMigrations,
+  migratedRowOf,
+  initAt,
+  lastPublishedMigrationId,
+  pendingMigrationIds,
   planRepair,
+  repairOf,
   writeRowWithoutValidation,
 } from './support/ledger-repair-planning';
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
+const GOODS = 'goods';
 const TAGS = 'tags';
 const LABELS = 'labels';
 const NOTES = 'notes';
+const CARDS = 'cards';
+const INVOICES = 'invoices';
+const ALPHAS = 'alphas';
+const BETAS = 'betas';
+const TEXT = 'text';
+const BODY = 'body';
 const COLOR = 'color';
 const SHADE = 'shade';
+const TONE = 'tone';
+const HUE = 'hue';
+const FUTURE_MIGRATION_ID = '2999-01-01T00:00:00.000Z';
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({
   code: str(),
   category: str({ foreignKey: CATEGORIES }),
 });
-
 const tagSchema = obj({ label: str() });
+const cardSchema = obj({ title: str(), tag: str({ foreignKey: TAGS }) });
+const describedNoteSchema = { ...obj({ text: str() }), description: 'notes' };
+const describedAddressSchema = {
+  ...obj({ city: str() }),
+  description: 'where',
+};
+const noteSchema = obj({ [TEXT]: str() });
 const taggedNoteSchema = obj({
   text: str(),
   tags: arr(str({ foreignKey: TAGS })),
@@ -59,10 +88,11 @@ const products: TableFixture = {
     p2: { code: 'two', category: 'c1' },
   },
 };
-
 const tags: TableFixture = { schema: tagSchema, rows: { t1: { label: 'x' } } };
 
 const addColor = [addField(COLOR, str())];
+const addTagReference = [addField('tag', str({ foreignKey: TAGS }))];
+const addTone = [addField(TONE, str())];
 const addNote = [addField('note', str())];
 
 interface UnrepairableCase {
@@ -70,6 +100,15 @@ interface UnrepairableCase {
   readonly given: () => Promise<ChangesScenario>;
   readonly tableId: string;
   readonly outcome: RepairOutcome;
+}
+
+interface ContainerCase {
+  readonly change: string;
+  readonly schema: JsonSchema;
+  readonly damage: JsonPatch[];
+  readonly removedPaths: string[];
+  readonly row: JsonValue;
+  readonly migratedRow: JsonValue;
 }
 
 interface HistoryCase {
@@ -105,6 +144,158 @@ describe('Schema ledger repair planning', () => {
   });
 
   describe('a damaged Head table', () => {
+    it('plans the repair of an unpublished async migration right after the last published migration and renumbers the pending migrations after it', async () => {
+      const draft = await givenUnpublishedInPlaceMigration();
+      await draft.updateTable(CATEGORIES, addNote);
+      const lastPublishedId = await lastPublishedMigrationId(draft);
+      const [pendingId] = await pendingMigrationIds(draft);
+
+      const plan = await planRepair(kit, draft, [PRODUCTS]);
+
+      expect(plan.tables).toEqual([
+        {
+          tableId: PRODUCTS,
+          outcome: 'repaired',
+          migrationId: expect.any(String),
+          patches: addColor,
+          removedPaths: [],
+        },
+      ]);
+      expect(plan.renumbered).toEqual([
+        { previousId: pendingId, id: expect.any(String) },
+      ]);
+      expectStrictlyAscending([
+        lastPublishedId,
+        repairOf(plan, PRODUCTS).migrationId,
+        plan.renumbered.at(0)?.id,
+      ]);
+    });
+
+    it('plans the repair of a published async migration before the pending rename of the field it added', async () => {
+      const draft = await givenPublishedInPlaceMigration();
+      await draft.updateTable(PRODUCTS, [moveField(COLOR, SHADE)]);
+      const [pendingId] = await pendingMigrationIds(draft);
+
+      const plan = await planRepair(kit, draft, [PRODUCTS]);
+
+      expect(plan.tables).toEqual([
+        {
+          tableId: PRODUCTS,
+          outcome: 'repaired',
+          migrationId: expect.any(String),
+          patches: addColor,
+          removedPaths: [],
+        },
+      ]);
+      expect(plan.renumbered).toEqual([
+        { previousId: pendingId, id: expect.any(String) },
+      ]);
+    });
+
+    it('plans an unrecorded field rename as a removal and an addition whose values replicas lose', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [NOTES]: { schema: noteSchema },
+      });
+      await completeAsyncMigrationInPlace(kit, draft, NOTES, [
+        moveField(TEXT, BODY),
+      ]);
+
+      const plan = await planRepair(kit, draft, [NOTES]);
+
+      expect(repairOf(plan, NOTES)).toMatchObject({
+        outcome: 'repaired',
+        patches: [removeField(TEXT), addField(BODY, str())],
+        removedPaths: ['/properties/text'],
+      });
+    });
+
+    it('plans the repair of a table renamed through recorded migrations', async () => {
+      const draft = await givenCommittedCatalog();
+      await draft.renameTable(PRODUCTS, GOODS);
+      await draft.commit();
+      await completeAsyncMigrationInPlace(kit, draft, GOODS, addColor);
+
+      const plan = await planRepair(kit, draft, [GOODS]);
+
+      expect(repairOf(plan, GOODS)).toMatchObject({
+        outcome: 'repaired',
+        patches: addColor,
+      });
+    });
+
+    it('validates the repair where it is inserted, before a pending rename of the table its new foreign key names', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [TAGS]: { schema: tagSchema },
+        [NOTES]: { schema: noteSchema },
+      });
+      await completeAsyncMigrationInPlace(kit, draft, NOTES, addTagReference);
+      await draft.renameTable(TAGS, LABELS);
+
+      const plan = await planRepair(kit, draft, [NOTES]);
+
+      expect(repairOf(plan, NOTES)).toMatchObject({
+        outcome: 'repaired',
+        patches: addTagReference,
+      });
+    });
+
+    it.each<ContainerCase>([
+      {
+        change: 'a container description and a removed child',
+        schema: obj({ text: str(), old: str() }),
+        damage: [
+          removeField('old'),
+          { op: 'replace', path: '', value: describedNoteSchema },
+        ],
+        removedPaths: ['/properties/old'],
+        row: { text: 'a', old: 'b' },
+        migratedRow: { text: 'a' },
+      },
+      {
+        change: 'a container description only',
+        schema: obj({ text: str() }),
+        damage: [{ op: 'replace', path: '', value: describedNoteSchema }],
+        removedPaths: [],
+        row: { text: 'a' },
+        migratedRow: { text: 'a' },
+      },
+      {
+        change: 'a nested container description and a removed nested child',
+        schema: obj({ address: obj({ city: str(), zip: str() }) }),
+        damage: [
+          { op: 'remove', path: '/properties/address/properties/zip' },
+          {
+            op: 'replace',
+            path: '/properties/address',
+            value: describedAddressSchema,
+          },
+        ],
+        removedPaths: ['/properties/address/properties/zip'],
+        row: { address: { city: 'c', zip: 'z' } },
+        migratedRow: { address: { city: 'c' } },
+      },
+    ])(
+      'plans $change as child operations before a metadata replace that rows migrate through',
+      async ({ schema, damage, removedPaths, row, migratedRow }) => {
+        const draft = await ChangesScenario.committed(kit, {
+          [NOTES]: { schema },
+        });
+        await completeAsyncMigrationInPlace(kit, draft, NOTES, damage);
+
+        const plan = await planRepair(kit, draft, [NOTES]);
+
+        const repair = repairOf(plan, NOTES);
+        expect(repair).toMatchObject({
+          outcome: 'repaired',
+          patches: damage,
+          removedPaths,
+        });
+        expect(migratedRowOf(kit, schema, row, repair.patches ?? [])).toEqual(
+          migratedRow,
+        );
+      },
+    );
+
     it('finds a Draft that already records the repair', async () => {
       const draft = await givenUnpublishedInPlaceMigration();
       await recordLedgerRepair(draft, PRODUCTS, addColor);
@@ -115,6 +306,21 @@ describe('Schema ledger repair planning', () => {
         { tableId: PRODUCTS, outcome: 'alreadyRepaired' },
       ]);
       expect(plan.renumbered).toEqual([]);
+    });
+
+    it('refuses a repair whose patch the synchronous path rejects where it would be inserted', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [INVOICES]: { schema: obj({ amount: num() }) },
+      });
+      await completeAsyncMigrationInPlace(kit, draft, INVOICES, [
+        addField('total', numFormula('missing * 2')),
+      ]);
+
+      const plan = await planRepair(kit, draft, [INVOICES]);
+
+      expect(plan.tables).toEqual([
+        { tableId: INVOICES, outcome: 'patchNotReproducible' },
+      ]);
     });
 
     it.each<RowsCase>([
@@ -152,20 +358,17 @@ describe('Schema ledger repair planning', () => {
     it.each<HistoryCase>([
       {
         table: 'keeps its Head history',
-        changeTags: () => Promise.resolve(),
+        changeTags: keepTagsHistory,
         outcome: 'alreadyRepaired',
       },
       {
         table: 'lost its Head history prefix',
-        changeTags: (draft) => draft.rewriteSchemaHistory(TAGS, []),
+        changeTags: dropTagsHistory,
         outcome: 'ledgerInconsistent',
       },
       {
         table: 'lost its Head history prefix after a rename',
-        changeTags: async (draft) => {
-          await draft.renameTable(TAGS, LABELS);
-          await draft.rewriteSchemaHistory(LABELS, []);
-        },
+        changeTags: dropRenamedTagsHistory,
         outcome: 'ledgerInconsistent',
       },
     ])(
@@ -177,6 +380,36 @@ describe('Schema ledger repair planning', () => {
         const plan = await planRepair(kit, draft, [PRODUCTS]);
 
         expect(plan.tables).toEqual([{ tableId: PRODUCTS, outcome }]);
+      },
+    );
+
+    it.each<HistoryCase>([
+      {
+        table: 'keeps its Head history',
+        changeTags: keepTagsHistory,
+        outcome: 'repaired',
+      },
+      {
+        table: 'lost its Head history prefix',
+        changeTags: dropTagsHistory,
+        outcome: 'ledgerInconsistent',
+      },
+      {
+        table: 'lost its Head history prefix after a rename',
+        changeTags: dropRenamedTagsHistory,
+        outcome: 'ledgerInconsistent',
+      },
+    ])(
+      'plans an unrecorded repair as $outcome while an unrelated table $table',
+      async ({ changeTags, outcome }) => {
+        const draft = await givenDamageBesideTags();
+        await changeTags(draft);
+
+        const plan = await planRepair(kit, draft, [PRODUCTS]);
+
+        expect(plan.tables).toEqual([
+          expect.objectContaining({ tableId: PRODUCTS, outcome }),
+        ]);
       },
     );
 
@@ -237,6 +470,99 @@ describe('Schema ledger repair planning', () => {
   });
 
   describe('several damaged tables', () => {
+    it('numbers two independent repairs consecutively after a published timestamp ahead of the clock and renumbers the pending migrations once', async () => {
+      const draft = await givenTwoDamagedTablesAfterFuturePublication();
+      await draft.updateTable(CATEGORIES, addNote);
+
+      const plan = await planRepair(kit, draft, [PRODUCTS, TAGS]);
+
+      expect(plan.tables).toEqual([
+        {
+          tableId: PRODUCTS,
+          outcome: 'repaired',
+          migrationId: '2999-01-01T00:00:00.001Z',
+          patches: addColor,
+          removedPaths: [],
+        },
+        {
+          tableId: TAGS,
+          outcome: 'repaired',
+          migrationId: '2999-01-01T00:00:00.002Z',
+          patches: addTone,
+          removedPaths: [],
+        },
+      ]);
+      expect(plan.renumbered).toEqual([
+        {
+          previousId: '2999-01-01T00:00:00.001Z',
+          id: '2999-01-01T00:00:00.003Z',
+        },
+      ]);
+    });
+
+    it('accepts the repairs of two tables that reference each other together', async () => {
+      const draft = await givenReciprocalDamage();
+
+      const plan = await planRepair(kit, draft, [ALPHAS, BETAS]);
+
+      expect(
+        plan.tables.map(({ tableId, outcome }) => [tableId, outcome]),
+      ).toEqual([
+        [ALPHAS, 'repaired'],
+        [BETAS, 'repaired'],
+      ]);
+      expect(plan.renumbered).toHaveLength(4);
+    });
+
+    it('blocks the repair of a table whose coupled damaged table is not requested', async () => {
+      const draft = await givenReciprocalDamage();
+
+      const plan = await planRepair(kit, draft, [ALPHAS]);
+
+      expect(plan.tables).toEqual([
+        { tableId: ALPHAS, outcome: 'blockedByDependency', blockedBy: [BETAS] },
+      ]);
+      expect(plan.renumbered).toEqual([]);
+    });
+
+    it('repairs a table while an unrelated damaged table keeps failing and only has its pending migrations renumbered', async () => {
+      const draft = await givenCatalogWithTags();
+      await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+      await completeAsyncMigrationInPlace(kit, draft, TAGS, addTone);
+      await draft.updateTable(TAGS, [moveField(TONE, HUE)]);
+      const [tagsPendingId] = await pendingMigrationIds(draft);
+
+      const plan = await planRepair(kit, draft, [PRODUCTS]);
+
+      expect(plan.tables).toEqual([
+        expect.objectContaining({ tableId: PRODUCTS, outcome: 'repaired' }),
+      ]);
+      expect(plan.renumbered).toEqual([
+        { previousId: tagsPendingId, id: expect.any(String) },
+      ]);
+    });
+
+    it('rejects a repair whose new foreign key makes a pending removal of the named table fail', async () => {
+      const draft = await givenRepairNamingRemovedTags();
+
+      const plan = await planRepair(kit, draft, [NOTES]);
+
+      expect(plan.tables).toEqual([
+        { tableId: NOTES, outcome: 'needsDraftStructureRevert' },
+      ]);
+      expect(plan.renumbered).toEqual([]);
+    });
+
+    it('repairs a table while a pending removal it also blocks already failed before the repair', async () => {
+      const draft = await givenRepairNamingTagsWhoseRemovalAlreadyFails();
+
+      const plan = await planRepair(kit, draft, [NOTES]);
+
+      expect(plan.tables).toEqual([
+        expect.objectContaining({ tableId: NOTES, outcome: 'repaired' }),
+      ]);
+    });
+
     it('plans every damaged Head table when no table is named', async () => {
       const draft = await givenUnpublishedInPlaceMigration();
       await recordLedgerRepair(draft, PRODUCTS, addColor);
@@ -255,8 +581,9 @@ describe('Schema ledger repair planning', () => {
       await draft.updateTable(CATEGORIES, addNote);
       const before = await branchContentsOf(kit, draft);
 
-      await planRepair(kit, draft, [PRODUCTS]);
+      const plan = await planRepair(kit, draft, [PRODUCTS]);
 
+      expect(repairOf(plan, PRODUCTS).outcome).toBe('repaired');
       expect(await branchContentsOf(kit, draft)).toEqual(before);
     });
 
@@ -374,10 +701,42 @@ describe('Schema ledger repair planning', () => {
     });
   }
 
-  async function givenRecordedRepairBesideTags(): Promise<ChangesScenario> {
+  async function givenDamageBesideTags(): Promise<ChangesScenario> {
     const draft = await givenCatalogWithTags();
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenRecordedRepairBesideTags(): Promise<ChangesScenario> {
+    const draft = await givenDamageBesideTags();
     await recordLedgerRepair(draft, PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenRepairNamingRemovedTags(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [TAGS]: { schema: tagSchema },
+      [NOTES]: { schema: noteSchema },
+    });
+    await draft.removeTable(TAGS);
+    await completeAsyncMigrationInPlace(kit, draft, NOTES, addTagReference);
+
+    return draft;
+  }
+
+  async function givenRepairNamingTagsWhoseRemovalAlreadyFails(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [TAGS]: { schema: tagSchema },
+      [NOTES]: { schema: noteSchema },
+      [CARDS]: { schema: cardSchema },
+    });
+    await completeAsyncMigrationInPlace(kit, draft, CARDS, [
+      removeField('tag'),
+    ]);
+    await draft.removeTable(TAGS);
+    await completeAsyncMigrationInPlace(kit, draft, NOTES, addTagReference);
 
     return draft;
   }
@@ -397,6 +756,13 @@ describe('Schema ledger repair planning', () => {
   async function givenUnpublishedInPlaceMigration(): Promise<ChangesScenario> {
     const draft = await givenCommittedCatalog();
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenPublishedInPlaceMigration(): Promise<ChangesScenario> {
+    const draft = await givenUnpublishedInPlaceMigration();
+    await draft.commit();
 
     return draft;
   }
@@ -467,4 +833,58 @@ describe('Schema ledger repair planning', () => {
 
     return draft;
   }
+
+  async function givenTwoDamagedTablesAfterFuturePublication(): Promise<ChangesScenario> {
+    const draft = await givenCatalogWithTags();
+    await importMigrations(kit, draft, [
+      initAt(FUTURE_MIGRATION_ID, NOTES, noteSchema),
+    ]);
+    await draft.commit();
+    await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+    await completeAsyncMigrationInPlace(kit, draft, TAGS, addTone);
+
+    return draft;
+  }
+
+  async function givenReciprocalDamage(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [ALPHAS]: { schema: obj({ title: str() }) },
+      [BETAS]: {
+        schema: obj({ title: str(), alpha: str({ foreignKey: ALPHAS }) }),
+      },
+    });
+    await draft.updateTable(ALPHAS, [
+      addField('beta', str({ foreignKey: BETAS })),
+    ]);
+    await draft.commit();
+    await completeAsyncMigrationInPlace(kit, draft, ALPHAS, noteField('alpha'));
+    await completeAsyncMigrationInPlace(kit, draft, BETAS, noteField('beta'));
+    await draft.updateTable(ALPHAS, renamedNoteField('alpha'));
+    await draft.updateTable(BETAS, renamedNoteField('beta'));
+    await draft.renameTable(ALPHAS, 'firsts');
+    await draft.renameTable(BETAS, 'seconds');
+
+    return draft;
+  }
 });
+
+function noteField(prefix: string): JsonPatch[] {
+  return [addField(`${prefix}Note`, str())];
+}
+
+function renamedNoteField(prefix: string): JsonPatch[] {
+  return [moveField(`${prefix}Note`, `${prefix}Remark`)];
+}
+
+function keepTagsHistory(): Promise<void> {
+  return Promise.resolve();
+}
+
+function dropTagsHistory(draft: ChangesScenario): Promise<void> {
+  return draft.rewriteSchemaHistory(TAGS, []);
+}
+
+async function dropRenamedTagsHistory(draft: ChangesScenario): Promise<void> {
+  await draft.renameTable(TAGS, LABELS);
+  await draft.rewriteSchemaHistory(LABELS, []);
+}

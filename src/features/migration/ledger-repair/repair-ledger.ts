@@ -18,6 +18,7 @@ import {
 } from 'src/features/share/ledger-replay/ledger-replay';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
+import { lastPublishedBoundsOf, type MigrationBounds } from './repair-ids';
 import type { RepairState, RevisionLedger } from './repair-state-reader';
 
 export type ReplayRules = Pick<LedgerReplayInput, 'refs' | 'validator'>;
@@ -34,10 +35,12 @@ const NEEDS_DRAFT_STRUCTURE_REVERT: TableAssessment = {
 };
 
 export class RepairLedger {
+  public readonly published: readonly Migration[];
+  public readonly pending: readonly Migration[];
+  public readonly lastPublished: MigrationBounds;
   public readonly damagedTableIds: readonly string[];
-  private readonly published: readonly Migration[];
-  private readonly pending: readonly Migration[];
-  private readonly passingDraftTableIds: ReadonlySet<string>;
+  public readonly passingDraftTableIds: ReadonlySet<string>;
+  public readonly baselineFailures: ReadonlySet<string>;
   private readonly headReplay: ReplayedLedger;
   private readonly headSchemaBaseline: ReplayedLedger;
   private readonly attributedSlots: readonly AttributedSlot[];
@@ -45,7 +48,7 @@ export class RepairLedger {
 
   constructor(
     private readonly state: RepairState,
-    private readonly rules: ReplayRules,
+    public readonly rules: ReplayRules,
   ) {
     const { published, pending } = splitLedger(
       state.head.migrationRows,
@@ -53,6 +56,7 @@ export class RepairLedger {
     );
     this.published = migrationsOf(published);
     this.pending = migrationsOf(pending);
+    this.lastPublished = lastPublishedBoundsOf(published);
     this.headReplay = this.replay(this.published);
     this.damagedTableIds = [...state.head.tableVersionIds.keys()].filter(
       (tableId) =>
@@ -64,9 +68,11 @@ export class RepairLedger {
       schemas: schemasOf(state.head),
       ...rules,
     });
-    this.passingDraftTableIds = this.draftTablesReproducedBy(
-      this.replay(migrationsOf(ledgerOf(state.draft.migrationRows))),
+    const draftReplay = this.replay(
+      migrationsOf(ledgerOf(state.draft.migrationRows)),
     );
+    this.passingDraftTableIds = this.draftTablesReproducedBy(draftReplay);
+    this.baselineFailures = failingMigrationIdsOf(draftReplay);
     this.attributedSlots = attributePendingLedger(
       this.pending,
       state.head.tableVersionIds.keys(),
@@ -82,6 +88,10 @@ export class RepairLedger {
           attributed.owner.kind !== 'none' &&
           this.continuesHeadHistory(attributed),
       );
+  }
+
+  public replay(ledger: readonly Migration[]): ReplayedLedger {
+    return replayLedger({ ledger, ...this.rules });
   }
 
   public assess(tableId: string): TableAssessment {
@@ -106,19 +116,15 @@ export class RepairLedger {
     return this.baselineOf(draftTableId);
   }
 
-  private replay(ledger: readonly Migration[]): ReplayedLedger {
-    return replayLedger({ ledger, ...this.rules });
-  }
-
-  private replayedSchemaOf(tableId: string): JsonSchema | undefined {
+  public replayedSchemaOf(tableId: string): JsonSchema | undefined {
     return this.headReplay.schemas.get(tableId);
   }
 
-  private headSchemaOf(tableId: string): JsonSchema | undefined {
+  public headSchemaOf(tableId: string): JsonSchema | undefined {
     return this.state.head.schemas.get(tableId)?.schema;
   }
 
-  private reproducesDraftSchema(
+  public reproducesDraftSchema(
     replay: ReplayedLedger,
     draftTableId: string,
   ): boolean {
@@ -202,6 +208,16 @@ export class RepairLedger {
 
 function migrationsOf(entries: readonly LedgerEntry[]): Migration[] {
   return entries.map(({ migration }) => migration);
+}
+
+function failingMigrationIdsOf(replay: ReplayedLedger): Set<string> {
+  return new Set(
+    replay.slots
+      .map(({ failure }) => failure?.migrationId)
+      .filter(
+        (migrationId): migrationId is string => migrationId !== undefined,
+      ),
+  );
 }
 
 function schemasOf(revision: RevisionLedger): Map<string, JsonSchema> {

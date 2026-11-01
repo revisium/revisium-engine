@@ -9,7 +9,7 @@ import {
   RepairLedger,
   type TableAssessment,
 } from 'src/features/migration/ledger-repair/repair-ledger';
-import { planDecidedRepairs } from 'src/features/migration/ledger-repair/repair-planner';
+import { RepairPlanner } from 'src/features/migration/ledger-repair/repair-planner';
 import {
   type RepairState,
   RepairStateReader,
@@ -57,7 +57,7 @@ export class PlanSchemaLedgerRepairHandler implements IQueryHandler<
     );
     const draftTables = validatedDraftTablesOf(state, assessments);
     const validatedRows = await this.validateDraftRows(state, draftTables);
-    const planned = planDecidedRepairs(
+    const planned = new RepairPlanner(ledger, this.validator).plan(
       assessments,
       invalidRowsOf(validatedRows),
     );

@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { QueryBus } from '@nestjs/cqrs';
+import { CommandBus, QueryBus } from '@nestjs/cqrs';
+import {
+  type RevertChangesInput,
+  type RevertChangesResult,
+  RevertDraftChangesCommand,
+} from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import {
   type ListChangesInput,
   type ListChangesResult,
@@ -13,7 +18,10 @@ import {
 
 @Injectable()
 export class PartialChangesApiService {
-  constructor(private readonly queryBus: QueryBus) {}
+  constructor(
+    private readonly queryBus: QueryBus,
+    private readonly commandBus: CommandBus,
+  ) {}
 
   public listChanges(data: ListChangesInput): Promise<ListChangesResult> {
     return this.queryBus.execute(new ListDraftChangesQuery(data));
@@ -23,5 +31,9 @@ export class PartialChangesApiService {
     data: PreviewChangesInput,
   ): Promise<PreviewChangesResult> {
     return this.queryBus.execute(new PreviewDraftChangesQuery(data));
+  }
+
+  public revertChanges(data: RevertChangesInput): Promise<RevertChangesResult> {
+    return this.commandBus.execute(new RevertDraftChangesCommand(data));
   }
 }

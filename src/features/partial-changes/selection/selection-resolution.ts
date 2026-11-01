@@ -64,6 +64,10 @@ export type UnmatchedSelection = SelectionItems & {
   readonly exclude?: SelectionItems;
 };
 
+export function hasUnmatchedSelectors(unmatched: UnmatchedSelection): boolean {
+  return Object.keys(unmatched).length > 0;
+}
+
 export interface SelectionResolution {
   readonly selected: ReadonlySet<string>;
   readonly excluded: ReadonlySet<string>;

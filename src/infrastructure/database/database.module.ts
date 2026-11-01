@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
+import { BranchFenceEscalation } from 'src/infrastructure/database/branch-fence-escalation';
 import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 import { EscalatingTransactionRunner } from 'src/infrastructure/database/escalating-transaction-runner';
@@ -24,6 +25,7 @@ import { TransactionTimeoutSupport } from 'src/infrastructure/database/transacti
     CleanupService,
     BranchWriteFenceService,
     EscalationSlots,
+    BranchFenceEscalation,
     EscalatingTransactionRunner,
     TransactionTimeoutSupport,
     OperationTransactionRunner,

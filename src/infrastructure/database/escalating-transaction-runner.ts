@@ -1,30 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { performance } from 'node:perf_hooks';
 import { setTimeout as waitFor } from 'node:timers/promises';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
-import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
+import {
+  BranchFenceEscalation,
+  ProjectBranch,
+} from 'src/infrastructure/database/branch-fence-escalation';
 import { isSerializationFailure } from 'src/infrastructure/database/database-errors';
-import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { retryDelayMs } from 'src/infrastructure/database/retry-backoff';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-
-const SERIALIZATION_FAILURES_BEFORE_ESCALATION = 2;
-
-interface ProjectBranch {
-  projectId: string;
-  branchName: string;
-}
 
 type Operation<T> = () => Promise<T>;
 
 @Injectable()
 export class EscalatingTransactionRunner {
   constructor(
-    private readonly prismaService: PrismaService,
     private readonly transactionService: TransactionPrismaService,
-    private readonly branchWriteFence: BranchWriteFenceService,
-    private readonly escalationSlots: EscalationSlots,
+    private readonly escalation: BranchFenceEscalation,
   ) {}
 
   public async runSerializable<T>(
@@ -53,59 +44,26 @@ export class EscalatingTransactionRunner {
     branch: ProjectBranch,
     operation: Operation<T>,
   ): Promise<T> {
-    if (attempt < SERIALIZATION_FAILURES_BEFORE_ESCALATION) {
+    if (!this.escalation.isDueFor(attempt)) {
       return this.runSerializableAttempt(
         operation,
         this.transactionService.serializableTimeoutMs,
       );
     }
 
-    return this.runUnderExclusiveFence(branch, operation);
-  }
+    return this.escalation.runEscalated(
+      branch,
+      this.transactionService.serializableTimeoutMs,
+      (escalated) =>
+        this.runSerializableAttempt(async () => {
+          await escalated.takeFence();
 
-  private async runUnderExclusiveFence<T>(
-    branch: ProjectBranch,
-    operation: Operation<T>,
-  ): Promise<T> {
-    const escalatedAt = performance.now();
-    await this.escalationSlots.acquire(this.branchWriteFence.waitLimitMs);
-
-    try {
-      return await this.runFencedAttempt(
-        branch,
-        operation,
-        Math.ceil(performance.now() - escalatedAt),
-      );
-    } finally {
-      this.escalationSlots.release();
-    }
-  }
-
-  private async runFencedAttempt<T>(
-    branch: ProjectBranch,
-    operation: Operation<T>,
-    fenceWaitSpentMs: number,
-  ): Promise<T> {
-    const branchId = await this.findBranchId(branch);
-    const attemptTimeoutMs =
-      this.transactionService.serializableTimeoutMs - fenceWaitSpentMs;
-    const fence = this.branchWriteFence.exclusiveHolder(branchId, {
-      fenceWaitSpentMs,
-      attemptTimeoutMs,
-    });
-
-    try {
-      return await this.runSerializableAttempt(async () => {
-        await fence.acquire();
-
-        return this.transactionService.runInExclusiveHeldAdmission(
-          branchId,
-          operation,
-        );
-      }, attemptTimeoutMs);
-    } finally {
-      await fence.release();
-    }
+          return this.transactionService.runInExclusiveHeldAdmission(
+            escalated.branchId,
+            operation,
+          );
+        }, escalated.timeoutMs),
+    );
   }
 
   private runSerializableAttempt<T>(
@@ -117,18 +75,6 @@ export class EscalatingTransactionRunner {
       maxWait: this.transactionService.serializableMaxWaitMs,
       timeout: timeoutMs,
     });
-  }
-
-  private async findBranchId({
-    projectId,
-    branchName,
-  }: ProjectBranch): Promise<string> {
-    const branch = await this.prismaService.branch.findUniqueOrThrow({
-      where: { name_projectId: { name: branchName, projectId } },
-      select: { id: true },
-    });
-
-    return branch.id;
   }
 
   private backOff(attempt: number): Promise<void> {

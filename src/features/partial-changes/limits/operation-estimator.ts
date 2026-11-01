@@ -1,9 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import {
-  type JsonSchema,
-  JsonSchemaTypeName,
-} from '@revisium/schema-toolkit/types';
 import {
   type AppliedUnits,
   type ChangeOperation,
@@ -31,7 +26,7 @@ import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogu
 import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import type { TableVersion } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
+import { hasFormulaOrFileFields } from 'src/features/partial-changes/structure/schema-fields';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface MixedTableEstimate {
@@ -263,26 +258,6 @@ function systemLinksCopied(
 
 function needsPerRowWork({ version }: PlannedTable): boolean {
   return hasFormulaOrFileFields(version.schema);
-}
-
-function hasFormulaOrFileFields(node: JsonSchema): boolean {
-  if ('$ref' in node) {
-    return node.$ref === SystemSchemaIds.File;
-  }
-
-  if (CustomSchemeKeywords.XFormula in node) {
-    return true;
-  }
-
-  if (node.type === JsonSchemaTypeName.Array) {
-    return hasFormulaOrFileFields(node.items);
-  }
-
-  if (node.type === JsonSchemaTypeName.Object) {
-    return Object.values(node.properties).some(hasFormulaOrFileFields);
-  }
-
-  return false;
 }
 
 function editsDraftInPlace(

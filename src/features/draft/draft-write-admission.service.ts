@@ -54,10 +54,7 @@ export class DraftWriteAdmissionService {
     );
   }
 
-  private async admitBranchWrite(
-    projectId: string,
-    branchName: string,
-  ): Promise<void> {
+  async admitBranchWrite(projectId: string, branchName: string): Promise<void> {
     const draftRevisionId = await this.findDraftRevisionId(
       projectId,
       branchName,

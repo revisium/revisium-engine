@@ -3,6 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { setTimeout as waitFor } from 'node:timers/promises';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { TransactionPrismaClient } from 'src/features/share/types';
+import {
+  BranchFenceEscalation,
+  ProjectBranch,
+} from 'src/infrastructure/database/branch-fence-escalation';
 import { isSerializationFailure } from 'src/infrastructure/database/database-errors';
 import {
   NumericSetting,
@@ -40,6 +44,11 @@ type AttemptOptions = Omit<TransactionOptions, 'retry'>;
 
 type Operation<T> = (deadline: DeadlineHandle) => Promise<T>;
 
+interface AttemptStart {
+  readonly timeoutMs: number;
+  beforeSnapshot(): Promise<void>;
+}
+
 @Injectable()
 export class OperationTransactionRunner {
   private readonly logger = new Logger(OperationTransactionRunner.name);
@@ -52,6 +61,7 @@ export class OperationTransactionRunner {
     private readonly prismaService: PrismaService,
     private readonly transactionService: TransactionPrismaService,
     private readonly transactionTimeoutSupport: TransactionTimeoutSupport,
+    private readonly escalation: BranchFenceEscalation,
     configService: ConfigService,
   ) {
     this.maxAttempts = readNumericSetting(
@@ -66,10 +76,15 @@ export class OperationTransactionRunner {
     );
   }
 
-  public async runWrite<T>(planAndWrite: Operation<T>): Promise<T> {
-    for (let attempt = 0; attempt < this.maxAttempts - 1; attempt++) {
+  public async runWrite<T>(
+    branch: ProjectBranch,
+    planAndWrite: Operation<T>,
+  ): Promise<T> {
+    const lastAttempt = this.maxAttempts - 1;
+
+    for (let attempt = 0; attempt < lastAttempt; attempt++) {
       try {
-        return await this.runWriteAttempt(planAndWrite);
+        return await this.runWriteAttempt(attempt, branch, planAndWrite);
       } catch (error) {
         if (!isSerializationFailure(error)) {
           throw error;
@@ -79,21 +94,54 @@ export class OperationTransactionRunner {
       }
     }
 
-    return this.runWriteAttempt(planAndWrite);
+    return this.runWriteAttempt(lastAttempt, branch, planAndWrite);
   }
 
   public runPlanning<T>(plan: Operation<T>): Promise<T> {
     return this.runAttempt(
       TransactionIsolationLevel.RepeatableRead,
       (deadline) => this.planReadOnly(plan, deadline),
+      this.unfencedStart(),
     );
   }
 
-  private runWriteAttempt<T>(planAndWrite: Operation<T>): Promise<T> {
-    return this.runAttempt(
-      TransactionIsolationLevel.Serializable,
-      planAndWrite,
+  private runWriteAttempt<T>(
+    attempt: number,
+    branch: ProjectBranch,
+    planAndWrite: Operation<T>,
+  ): Promise<T> {
+    if (!this.escalation.isDueFor(attempt)) {
+      return this.runAttempt(
+        TransactionIsolationLevel.Serializable,
+        planAndWrite,
+        this.unfencedStart(),
+      );
+    }
+
+    return this.escalation.runEscalated(
+      branch,
+      this.operationTimeoutMs,
+      (escalated) =>
+        this.runAttempt(
+          TransactionIsolationLevel.Serializable,
+          (deadline) =>
+            this.transactionService.runInExclusiveHeldAdmission(
+              escalated.branchId,
+              () => planAndWrite(deadline),
+            ),
+          {
+            timeoutMs: escalated.timeoutMs,
+            beforeSnapshot: () => escalated.takeFence(),
+          },
+        ),
     );
+  }
+
+  private unfencedStart(): AttemptStart {
+    return {
+      timeoutMs: this.operationTimeoutMs,
+      beforeSnapshot: () => Promise.resolve(),
+    };
   }
 
   private backOff(attempt: number): Promise<void> {
@@ -115,16 +163,21 @@ export class OperationTransactionRunner {
   private async runAttempt<T>(
     isolationLevel: TransactionIsolationLevel,
     operation: Operation<T>,
+    start: AttemptStart,
   ): Promise<T> {
     const deadline = new OperationDeadline(
-      this.operationTimeoutMs,
+      start.timeoutMs,
       this.transactionTimeoutSupport,
     );
 
     try {
       return await this.prismaService.$transaction(
-        ($prisma) => this.runBeforeDeadline($prisma, deadline, operation),
-        this.attemptOptions(isolationLevel),
+        async ($prisma) => {
+          await start.beforeSnapshot();
+
+          return this.runBeforeDeadline($prisma, deadline, operation);
+        },
+        this.attemptOptions(isolationLevel, start.timeoutMs),
       );
     } catch (error) {
       throw deadline.failureOf(error);
@@ -145,11 +198,12 @@ export class OperationTransactionRunner {
 
   private attemptOptions(
     isolationLevel: TransactionIsolationLevel,
+    timeoutMs: number,
   ): AttemptOptions {
     return {
       isolationLevel,
       maxWait: this.transactionService.serializableMaxWaitMs,
-      timeout: this.operationTimeoutMs + PRISMA_TIMEOUT_GRACE_MS,
+      timeout: timeoutMs + PRISMA_TIMEOUT_GRACE_MS,
     };
   }
 }

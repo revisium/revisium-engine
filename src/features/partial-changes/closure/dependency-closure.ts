@@ -40,6 +40,7 @@ import {
   type RequiredUnit,
   requiredUnitsOf,
 } from 'src/features/partial-changes/selection/unit-refs';
+import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 
 export interface ClosureSource extends SelectionSource {
   readonly changedRows: number;
@@ -67,6 +68,7 @@ export type DependencyClosureResult =
   | (ClosureOutcome & { readonly kind: 'tooLarge' });
 
 interface ClosureSteps {
+  readonly deadline: DeadlineHandle;
   readonly estimation: OperationEstimation;
   readonly assembler: TargetAssembler;
   readonly checks: readonly TargetChecking[];
@@ -83,12 +85,14 @@ export class DependencyClosure {
   public close(
     source: ClosureSource,
     request: ClosureRequest,
+    deadline: DeadlineHandle,
   ): Promise<DependencyClosureResult> {
     return new SelectionClosure(
       source,
       request,
       resolveSelection(request.selection, source),
       {
+        deadline,
         estimation: this.estimator.estimationOf(source),
         assembler: this.assembler,
         checks: this.checks.map((check) => check.checkingOf(source)),
@@ -117,6 +121,8 @@ class SelectionClosure {
   }
 
   public async close(): Promise<DependencyClosureResult> {
+    await this.steps.deadline.checkpoint();
+
     const choice = this.appliedUnits();
     const guarded = await this.steps.estimation.estimateAndGuard(choice);
 

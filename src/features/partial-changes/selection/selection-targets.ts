@@ -2,10 +2,12 @@ import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogu
 import { groupRecreations } from 'src/features/partial-changes/catalogue/public-id-groups';
 import type { Side } from 'src/features/partial-changes/catalogue/unit';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
+import { tablesOfRow } from 'src/features/partial-changes/selection/addressed-rows';
 import {
   PublicIdIndex,
   type VersionSide,
 } from 'src/features/partial-changes/selection/public-id-index';
+import type { RowRef } from 'src/features/partial-changes/selection/selection';
 import type { SelectionSource } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
   TablePair,
@@ -43,6 +45,12 @@ export class SelectionTargets {
 
   public tableNamed(tableId: string, side?: Side): TablePair | undefined {
     return this.tables.resolve(tableId, side);
+  }
+
+  public tableOfRow({ tableId, rowId, side }: RowRef): TablePair | undefined {
+    const tables = tablesOfRow(this.tables, tableId, side);
+
+    return tables.find((table) => this.holds(table, rowId, side)) ?? tables[0];
   }
 
   public rowNamed(
@@ -83,6 +91,10 @@ export class SelectionTargets {
     return this.leavesOf(versionOn(row)).all.find(({ pointer }) =>
       pointer.isAtOrAbove(path),
     );
+  }
+
+  private holds(table: TablePair, rowId: string, side?: Side): boolean {
+    return this.source.addressedRows.sideOf(table, rowId, side) !== undefined;
   }
 
   private leavesOf({ versionId, schema }: TableVersion): SchemaLeaves {

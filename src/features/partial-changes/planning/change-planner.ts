@@ -45,6 +45,7 @@ import {
   TargetValidator,
   type ValidatedTarget,
 } from 'src/features/partial-changes/validation/target-validator';
+import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 
 export interface SnapshotRequest {
   readonly branch: ChangesBranch;
@@ -94,6 +95,11 @@ interface ValidatedClosure {
   readonly target?: PlannedTarget;
 }
 
+interface ClosedSelection {
+  readonly source: ClosureSource;
+  readonly closure: DependencyClosureResult;
+}
+
 interface PlanParts {
   readonly operation: ChangeOperation;
   readonly source: ClosureSource;
@@ -129,7 +135,12 @@ export class ChangePlanner {
     });
   }
 
-  public async plan(request: PlanRequest): Promise<ChangePlan> {
+  public async plan(
+    request: PlanRequest,
+    deadline: DeadlineHandle,
+  ): Promise<ChangePlan> {
+    await deadline.checkpoint();
+
     const scoped = await this.scopedCatalogueReader.readCatalogue(
       request.compared,
       request.selection,
@@ -139,12 +150,18 @@ export class ChangePlanner {
       return planRefusedBeforeCatalogue(request.compared, scoped);
     }
 
+    await deadline.checkpoint();
+
     const source = await this.closureSourceOf(request, scoped);
-    const closure = await this.dependencyClosure.close(source, request);
+    const closure = await this.dependencyClosure.close(
+      source,
+      request,
+      deadline,
+    );
     const validated = await this.validateAndFingerprint(
       request,
-      source,
-      closure,
+      { source, closure },
+      deadline,
     );
 
     return planOf({
@@ -174,12 +191,14 @@ export class ChangePlanner {
 
   private async validateAndFingerprint(
     { operation, selection }: PlanRequest,
-    source: ClosureSource,
-    closure: DependencyClosureResult,
+    { source, closure }: ClosedSelection,
+    deadline: DeadlineHandle,
   ): Promise<ValidatedClosure> {
     if (closure.kind === 'tooLarge') {
       return REFUSED_BY_LIMIT;
     }
+
+    await deadline.checkpoint();
 
     const target: PlannedTarget = {
       source,
@@ -191,6 +210,9 @@ export class ChangePlanner {
       target: closure.target,
     };
     const blockers = await this.targetValidator.validate(source, target);
+
+    await deadline.checkpoint();
+
     const fingerprint = await this.planFingerprint.fingerprintOf({
       operation,
       snapshot: source.snapshot,

@@ -32,6 +32,7 @@ import type { PlanBlocker } from 'src/features/partial-changes/selection/selecti
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import type { TableVersion } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface MixedTableEstimate {
   readonly tableId: string;
@@ -128,7 +129,10 @@ export class OperationEstimation {
       changedRows: this.source.changedRows,
       mergedRows: convertedRowsIn(mixed),
       perRowWorkRows: convertedRowsIn(mixed.filter(needsPerRowWork)),
-      mixedTables: [...mixedTables, ...this.mixedSystemTables(rules)],
+      mixedTables: inTableIdOrder([
+        ...mixedTables,
+        ...this.mixedSystemTables(rules),
+      ]),
     };
   }
 
@@ -195,6 +199,14 @@ function plannedTableOf(table: ReadTable, rules: OutcomeRules): PlannedTable {
     rows,
     outcome: tableRules.tableOutcomeOf(rows),
   };
+}
+
+function inTableIdOrder(
+  tables: readonly MixedTableEstimate[],
+): MixedTableEstimate[] {
+  return [...tables].sort((left, right) =>
+    compareCodePoints(left.tableId, right.tableId),
+  );
 }
 
 function convertedRowsIn(tables: readonly PlannedTable[]): number {

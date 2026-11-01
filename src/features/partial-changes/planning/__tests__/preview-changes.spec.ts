@@ -5,6 +5,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { branchContentsOf } from 'src/features/migration/__tests__/support/ledger-repair-planning';
 import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type {
   FieldRef,
@@ -19,11 +20,14 @@ import {
   transactionModeOfSnapshotRead,
 } from '../../__tests__/support/change-preview';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
 const TAGS = 'tags';
 const LOGS = 'logs';
+const ALPHA = 'alpha';
+const BETA = 'beta';
 
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
 const SAMPLE_SIZE = 20;
@@ -46,6 +50,10 @@ const titleOf = (tableId: string, rowId: string): FieldRef => ({
 const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
 
 const titleOfC1: Selection = { fields: [titleOf(CATEGORIES, 'c1')] };
+const titleOfP1: Selection = { fields: [titleOf(PRODUCTS, 'p1')] };
+const priceOfP1: Selection = {
+  fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/price' }],
+};
 const titleOfC9: Selection = { fields: [titleOf(CATEGORIES, 'c9')] };
 const categoryOfP1: Selection = {
   fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/category' }],
@@ -63,6 +71,13 @@ const titleOfC1Unit: UnitRef = {
   rowId: 'c1',
   path: '/title',
   selector: titleOfC1,
+};
+
+const headSchemaInconsistentCategories: Blocker = {
+  code: 'headSchemaInconsistent',
+  tableId: CATEGORIES,
+  message:
+    'categories is refused: its Head schema does not match its Head ledger',
 };
 
 const SERIALIZATION_FAILURE = Object.assign(
@@ -244,16 +259,99 @@ describe('previewChanges', () => {
         });
       },
     );
+
+    it.each(OPERATIONS)(
+      'is empty, reporting the unmatched selector, when a %s is repeated and only its exclusion still matches',
+      async (operation) => {
+        const draft = await givenTitleAndPriceEdits();
+        const selection = { ...titleOfP1, exclude: priceOfP1 };
+        await expect(
+          draft.previewChanges({ operation, selection }),
+        ).resolves.toMatchObject({ status: 'ready' });
+        await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 2 });
+
+        const preview = await draft.previewChanges({ operation, selection });
+
+        expect(preview).toMatchObject({
+          status: 'empty',
+          counts: { selected: 0, required: 0, remaining: 1 },
+          blockers: [],
+          sample: [],
+          unmatched: titleOfP1,
+        });
+      },
+    );
+  });
+
+  describe('Head-side selectors', () => {
+    it("addresses with side: 'head' the Head table whose id a rename took over, requiring its restoration and the reversal of the rename", async () => {
+      const draft = await givenTableIdTakenOverByARename();
+
+      const preview = await draft.previewChanges({
+        operation: 'revert',
+        selection: { rows: [{ ...rowOf(ALPHA, 'a1'), side: 'head' }] },
+      });
+
+      expect(preview).toMatchObject({
+        status: 'required',
+        counts: { selected: 0, required: 2 },
+        required: [
+          {
+            unit: {
+              kind: 'structure',
+              tableId: ALPHA,
+              side: 'head',
+              selector: { tables: [{ tableId: ALPHA, side: 'head' }] },
+            },
+            reason: { code: 'structureBoundData', tableId: ALPHA, rowId: 'a1' },
+          },
+          {
+            unit: {
+              kind: 'structure',
+              tableId: ALPHA,
+              previousTableId: BETA,
+              selector: { tables: [ALPHA] },
+            },
+            reason: { code: 'idOccupied', tableId: ALPHA },
+          },
+        ],
+        blockers: [],
+        unmatched: {},
+      });
+    });
+
+    it('keeps resolving a listed Head-side row selector by the Draft id of a renamed table', async () => {
+      const draft = await givenRowIdTakenOverInARenamedTable();
+      const { units } = await draft.listChanges();
+      const deletion = units.find(({ kind }) => kind === 'rowDelete');
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: deletion?.selector ?? {},
+      });
+
+      expect(deletion).toMatchObject({
+        tableId: BETA,
+        rowId: 'b1',
+        side: 'head',
+      });
+      expect(preview).toMatchObject({
+        status: 'ready',
+        sample: [
+          { kind: 'rowDelete', tableId: BETA, rowId: 'b1', side: 'head' },
+        ],
+      });
+    });
   });
 
   describe('validation', () => {
     it('blocks a commit whose merged row fails its target schema with invalidRow', async () => {
       const draft = await givenProductWithInvalidPrice();
-      const priceOfP1 = { tableId: PRODUCTS, rowId: 'p1', path: '/price' };
+      const priceField = { tableId: PRODUCTS, rowId: 'p1', path: '/price' };
 
       const preview = await draft.previewChanges({
         operation: 'commit',
-        selection: { fields: [priceOfP1] },
+        selection: priceOfP1,
       });
 
       expect(preview).toMatchObject({
@@ -263,11 +361,7 @@ describe('previewChanges', () => {
             code: 'invalidRow',
             tableId: PRODUCTS,
             rowId: 'p1',
-            unit: {
-              kind: 'field',
-              ...priceOfP1,
-              selector: { fields: [priceOfP1] },
-            },
+            unit: { kind: 'field', ...priceField, selector: priceOfP1 },
           },
         ],
       });
@@ -321,13 +415,12 @@ describe('previewChanges', () => {
           changedRows: 3,
           mergedRows: 1,
           perRowWorkRows: 0,
-          mixedTables: expect.arrayContaining([
+          mixedTables: [
             { tableId: CATEGORIES, linksCopied: 1, linksAdded: 1 },
             { tableId: PRODUCTS, linksCopied: 1, linksAdded: 1 },
-          ]),
+          ],
         },
       });
-      expect(preview.estimate.mixedTables).toHaveLength(2);
     });
 
     it('requires for a revert of a created row the remaining edit that references it', async () => {
@@ -554,6 +647,57 @@ describe('previewChanges', () => {
     );
   });
 
+  describe('refused tables', () => {
+    it.each<{
+      damage: string;
+      given: () => Promise<ChangesScenario>;
+      refusal: Blocker;
+    }>([
+      {
+        damage: 'an async migration completed in place and not yet published',
+        given: () => givenReferenceToRowCreatedInMigratedCategories(),
+        refusal: headSchemaInconsistentCategories,
+      },
+      {
+        damage: 'an async migration completed in place and published natively',
+        given: () => givenReferenceToRowCreatedInMigratedCategories(true),
+        refusal: headSchemaInconsistentCategories,
+      },
+    ])(
+      'blocks a commit whose required row would come from the table left by $damage with its refusal code',
+      async ({ given, refusal }) => {
+        const draft = await given();
+
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection: categoryOfP1,
+        });
+
+        expect(preview).toMatchObject({
+          status: 'blocked',
+          required: [],
+          blockers: [refusal],
+          refusedTables: [{ tableId: CATEGORIES, code: refusal.code }],
+        });
+      },
+    );
+
+    it('blocks a revert that restores a table whose rows reference a row only the refused table could restore', async () => {
+      const draft =
+        await givenRemovedReferrerOfARowDeletedInMigratedCategories();
+
+      const preview = await draft.previewChanges({
+        operation: 'revert',
+        selection: { tables: [PRODUCTS] },
+      });
+
+      expect(preview).toMatchObject({
+        status: 'blocked',
+        blockers: [headSchemaInconsistentCategories],
+      });
+    });
+  });
+
   describe('fingerprint', () => {
     it.each(OPERATIONS)(
       'is the fingerprint PlanFingerprint computes for the same %s plan',
@@ -677,6 +821,84 @@ describe('previewChanges', () => {
     await draft.createRows(CATEGORIES, { c9: { title: 'nine' } });
     await draft.updateRow(CATEGORIES, 'c1', { title: 'uno' });
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c9' });
+
+    return draft;
+  }
+
+  async function givenTitleAndPriceEdits(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: pricedSchema,
+        rows: { p1: { title: 'one', price: 1 } },
+      },
+    });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 2 });
+
+    return draft;
+  }
+
+  async function givenTableIdTakenOverByARename(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [ALPHA]: { schema: titleSchema, rows: { a1: { title: 'one' } } },
+      [BETA]: { schema: titleSchema, rows: { b1: { title: 'one' } } },
+    });
+    await draft.removeTable(ALPHA);
+    await draft.renameTable(BETA, ALPHA);
+
+    return draft;
+  }
+
+  async function givenRowIdTakenOverInARenamedTable(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [ALPHA]: {
+        schema: titleSchema,
+        rows: { b1: { title: 'one' }, b2: { title: 'two' } },
+      },
+    });
+    await draft.renameTable(ALPHA, BETA);
+    await draft.removeRow(BETA, 'b1');
+    await draft.renameRow(BETA, 'b2', 'b1');
+
+    return draft;
+  }
+
+  async function givenReferenceToRowCreatedInMigratedCategories(
+    published = false,
+  ): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', category: 'c1' } },
+      },
+    });
+    await completeAsyncMigrationInPlace(kit, draft, CATEGORIES, [
+      addField('color', str()),
+    ]);
+
+    if (published) {
+      await draft.commit();
+    }
+
+    await draft.createRows(CATEGORIES, { c9: { title: 'nine', color: '' } });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', category: 'c9' });
+
+    return draft;
+  }
+
+  async function givenRemovedReferrerOfARowDeletedInMigratedCategories(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', category: 'c1' } },
+      },
+    });
+    await completeAsyncMigrationInPlace(kit, draft, CATEGORIES, [
+      addField('color', str()),
+    ]);
+    await draft.removeTable(PRODUCTS);
+    await draft.removeRow(CATEGORIES, 'c1');
 
     return draft;
   }

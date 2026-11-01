@@ -70,21 +70,15 @@ export class SelectorMatcher {
     tableId: string,
     match: (table: TablePair) => SelectorMatch,
   ): SelectorMatch {
-    const table = this.targets.tableNamed(tableId);
-
-    if (!table) {
-      return NO_MATCH;
-    }
-
-    return refusing(this.targets.refusalsOfTable(table)) ?? match(table);
+    return this.inTable(this.targets.tableNamed(tableId), match);
   }
 
   private atRow(
-    { tableId, rowId, side }: RowRef,
+    selector: RowRef,
     match: (row: AddressedRow) => SelectorMatch,
   ): SelectorMatch {
-    return this.atTable(tableId, (table) => {
-      const row = this.targets.rowNamed(table, rowId, side);
+    return this.inTable(this.targets.tableOfRow(selector), (table) => {
+      const row = this.targets.rowNamed(table, selector.rowId, selector.side);
 
       if (!row) {
         return NO_MATCH;
@@ -92,6 +86,17 @@ export class SelectorMatcher {
 
       return match(row);
     });
+  }
+
+  private inTable(
+    table: TablePair | undefined,
+    match: (table: TablePair) => SelectorMatch,
+  ): SelectorMatch {
+    if (!table) {
+      return NO_MATCH;
+    }
+
+    return refusing(this.targets.refusalsOfTable(table)) ?? match(table);
   }
 
   private matchStructure(selector: TableRef): SelectorMatch {

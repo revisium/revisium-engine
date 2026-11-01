@@ -26,6 +26,7 @@ import type {
   ChangesBranch,
   ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 
 interface PreviewRequest {
@@ -53,15 +54,18 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
   }: PreviewDraftChangesQuery): Promise<PreviewChangesResult> {
     const request = previewRequestOf(data);
 
-    return this.transactionRunner.runPlanning(() => this.preview(request));
+    return this.transactionRunner.runPlanning((deadline) =>
+      this.preview(request, deadline),
+    );
   }
 
   private async preview(
     request: PreviewRequest,
+    deadline: DeadlineHandle,
   ): Promise<PreviewChangesResult> {
     const compared = await this.planner.readComparedSnapshot(request);
     const migrationBlockers = await this.readMigrationLock(compared.snapshot);
-    const plan = await this.planner.plan({ ...request, compared });
+    const plan = await this.planner.plan({ ...request, compared }, deadline);
     const preview = {
       ...plan,
       blockers: [...migrationBlockers, ...plan.blockers],

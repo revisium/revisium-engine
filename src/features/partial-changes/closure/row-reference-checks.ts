@@ -4,15 +4,14 @@ import {
   type AppliedUnits,
   OutcomeRules,
 } from 'src/features/partial-changes/assembly/outcome-rules';
-import type {
-  AssembledTarget,
-  AssemblySource,
-} from 'src/features/partial-changes/assembly/target-assembler';
+import type { AssembledTarget } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import {
   blocking,
+  type CheckSource,
   danglingInSource,
   type Finding,
+  refusedBy,
   requiring,
   requiringOrDangling,
   type SideNames,
@@ -63,7 +62,7 @@ interface Covering {
 }
 
 interface OperationContext {
-  readonly source: AssemblySource;
+  readonly source: CheckSource;
   readonly lookup: CatalogueLookup;
   readonly snapshotReader: ChangesSnapshotReader;
   readonly schemas: TableSchemas;
@@ -77,7 +76,7 @@ export class RowReferenceChecks implements TargetCheck {
     private readonly schemaStore: JsonSchemaStoreService,
   ) {}
 
-  public checkingOf(source: AssemblySource): TargetChecking {
+  public checkingOf(source: CheckSource): TargetChecking {
     return new RowReferenceChecking({
       source,
       lookup: new CatalogueLookup(source.catalogue),
@@ -313,6 +312,10 @@ class TargetRowChecks {
           `which exists only in ${this.names.other}`,
         ),
       );
+    }
+
+    if (referenced.refusal) {
+      return refusedBy(referenced.refusal);
     }
 
     const dangling = reasonOf(

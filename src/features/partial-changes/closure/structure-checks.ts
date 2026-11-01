@@ -5,18 +5,17 @@ import {
   type RevisionSide,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { TargetViews } from 'src/features/partial-changes/assembly/system-target-assembler';
-import type {
-  AssembledTarget,
-  AssemblySource,
-} from 'src/features/partial-changes/assembly/target-assembler';
+import type { AssembledTarget } from 'src/features/partial-changes/assembly/target-assembler';
 import {
   CatalogueTables,
   publicTableIdOf,
 } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import {
   blocking,
+  type CheckSource,
   danglingInSource,
   type Finding,
+  refusedBy,
   requiring,
   requiringOrDangling,
   type SideNames,
@@ -41,7 +40,7 @@ import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.ser
 import { ViewValidationService } from 'src/features/views/services';
 
 interface OperationContext {
-  readonly source: AssemblySource;
+  readonly source: CheckSource;
   readonly lookup: CatalogueLookup;
   readonly catalogueTables: CatalogueTables;
   readonly schemas: TableSchemas;
@@ -68,7 +67,7 @@ export class StructureChecks implements TargetCheck {
     private readonly viewValidation: ViewValidationService,
   ) {}
 
-  public checkingOf(source: AssemblySource): TargetChecking {
+  public checkingOf(source: CheckSource): TargetChecking {
     return new StructureChecking({
       source,
       lookup: new CatalogueLookup(source.catalogue),
@@ -390,6 +389,10 @@ class TargetStructureChecks {
         code: 'referencedRowMissing',
         because: `${reference}, which exists only in ${this.names.other}`,
       });
+    }
+
+    if (referenced.refusal) {
+      return refusedBy(referenced.refusal);
     }
 
     return blocking(

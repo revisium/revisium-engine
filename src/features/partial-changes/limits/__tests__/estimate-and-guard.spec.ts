@@ -62,6 +62,7 @@ const SCHEMA_HASH_OF_P1_AND_TITLE_OF_P2: Selection = {
   fields: [{ tableId: PRODUCTS, rowId: 'p2', path: '/title' }],
 };
 const FIVE_IDS = ['1', '2', '3', '4', '5'];
+const MIXED_CASE_TABLE_IDS = ['apple', '_mixed', 'Zebra'];
 
 const titleOf = (tableId: string, rowId: string): FieldRef => ({
   tableId,
@@ -153,6 +154,20 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
       addedLinks: ['draft p2'],
       newRows: [],
     });
+  });
+
+  it('lists the mixed tables in code-point order of their ids', async () => {
+    const draft = await givenEditedTablesWithMixedCaseIds(kit);
+
+    const closure = await draft.closeDependencies('commit', {
+      fields: MIXED_CASE_TABLE_IDS.map((tableId) => titleOf(tableId, 'r1')),
+    });
+
+    expect(closure.estimate.mixedTables.map(({ tableId }) => tableId)).toEqual([
+      'Zebra',
+      '_mixed',
+      'apple',
+    ]);
   });
 
   it('counts nothing for a table that a commit takes whole from the Draft', async () => {
@@ -256,8 +271,8 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
         given: givenFiveTablesWithTwoStructuresEdited,
         selection: { tables: ['t1'] },
         blockers: [
-          tooLargeSystemTable(SystemTables.Schema, 4),
           tooLargeSystemTable(SystemTables.Migration, 5),
+          tooLargeSystemTable(SystemTables.Schema, 4),
         ],
       },
     ])(
@@ -370,6 +385,26 @@ async function givenFiveProductsWithEdits(
   await draft.updateRow(PRODUCTS, 'p1', { title: 'renamed', price: 11 });
   await draft.updateRow(PRODUCTS, 'p2', { title: 'p2', price: 12 });
   await draft.createRows(PRODUCTS, { p6: { title: 'p6', price: 13 } });
+
+  return draft;
+}
+
+async function givenEditedTablesWithMixedCaseIds(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(
+    kit,
+    Object.fromEntries(
+      MIXED_CASE_TABLE_IDS.map((tableId) => [
+        tableId,
+        { schema: productSchema, rows: { r1: { title: 'one', price: 1 } } },
+      ]),
+    ),
+  );
+
+  for (const tableId of MIXED_CASE_TABLE_IDS) {
+    await draft.updateRow(tableId, 'r1', { title: 'uno', price: 2 });
+  }
 
   return draft;
 }

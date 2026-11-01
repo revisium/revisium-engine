@@ -1,5 +1,7 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import { blockEventLoopFor } from 'src/__tests__/utils/event-loop';
 import { sql } from 'src/engine-prisma-types';
+import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-reference-checks';
 import type {
   PreviewChangesInput,
   PreviewChangesResult,
@@ -58,6 +60,46 @@ export function failingFirstSnapshotRead(
   return jest
     .spyOn(kit.snapshotReader, 'readSnapshot')
     .mockRejectedValueOnce(failure);
+}
+
+export function passingTheDeadlineAfterValidation(
+  kit: PartialChangesTestKit,
+  durationMs: number,
+): jest.SpyInstance {
+  const validator = kit.targetValidator;
+  const validate = validator.validate.bind(validator);
+
+  return jest
+    .spyOn(validator, 'validate')
+    .mockImplementation(async (source, validated) => {
+      const blockers = await validate(source, validated);
+
+      blockEventLoopFor(durationMs);
+
+      return blockers;
+    });
+}
+
+export function passingTheDeadlineAfterRowChecks(
+  kit: PartialChangesTestKit,
+  durationMs: number,
+): jest.SpyInstance {
+  const checks = kit.module.get(RowReferenceChecks);
+  const checkingOf = checks.checkingOf.bind(checks);
+
+  return jest.spyOn(checks, 'checkingOf').mockImplementation((source) => {
+    const checking = checkingOf(source);
+
+    return {
+      async findingsOf(target, choice) {
+        const findings = await checking.findingsOf(target, choice);
+
+        blockEventLoopFor(durationMs);
+
+        return findings;
+      },
+    };
+  });
 }
 
 async function readTransactionMode(

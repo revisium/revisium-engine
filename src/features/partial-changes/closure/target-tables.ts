@@ -7,11 +7,12 @@ import {
 import { versionOn } from 'src/features/partial-changes/assembly/read-tables';
 import type {
   AssembledTarget,
-  AssemblySource,
   TablePlan,
   TargetRow,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import type { CheckSource } from 'src/features/partial-changes/closure/findings';
+import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import type {
   TablePair,
@@ -45,6 +46,7 @@ export class TargetTable {
     private readonly loaded: readonly CatalogueRow[],
     private readonly changedPointers: readonly JsonPointer[],
     private readonly baseSide: RevisionSide,
+    public readonly refusal: RefusedTable | undefined,
   ) {
     this.version = versionOn(pair, structureSide);
     this.tableId = this.version.id;
@@ -144,7 +146,7 @@ export class TargetTables {
   private readonly changedPointers: ReadonlyMap<string, readonly JsonPointer[]>;
 
   constructor(
-    private readonly source: AssemblySource,
+    private readonly source: CheckSource,
     target: AssembledTarget,
     private readonly rules: OutcomeRules,
     private readonly lookup: CatalogueLookup,
@@ -215,6 +217,7 @@ export class TargetTables {
         loaded,
         this.changedPointers.get(pair.identity) ?? [],
         this.rules.baseSide,
+        this.source.headSchema.refusedTablesByIdentity.get(pair.identity),
       ),
     ];
   }

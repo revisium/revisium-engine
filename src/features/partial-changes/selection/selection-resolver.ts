@@ -58,17 +58,18 @@ class SelectionResolver {
 
   public resolve(): SelectionResolution {
     const selected = this.selectedKeys();
+    const required = this.requiredAdditions(selected);
 
     return {
       selected,
       excluded: this.excluded,
-      required: this.requiredAdditions(selected),
+      required,
       blockers: distinctBlockers([
         ...this.refusalsOfEveryTable(),
         ...this.included.blockers,
         ...this.exclusions.blockers,
         ...this.excludedRequiredUnits(),
-        ...this.unmatchedSelectors(),
+        ...this.unmatchedSelectors(selected.size + required.size),
       ]),
       unmatched: this.unmatched(),
     };
@@ -112,8 +113,8 @@ class SelectionResolver {
       .map(([key, reason]) => requiredExcluded(this.lookup.unit(key), reason));
   }
 
-  private unmatchedSelectors(): PlanBlocker[] {
-    if (!this.anySelectorUnmatched() || !this.anySelectorMatched()) {
+  private unmatchedSelectors(appliedUnits: number): PlanBlocker[] {
+    if (!this.anySelectorUnmatched() || appliedUnits === 0) {
       return [];
     }
 
@@ -122,13 +123,6 @@ class SelectionResolver {
 
   private anySelectorUnmatched(): boolean {
     return this.included.hasUnmatched || this.exclusions.hasUnmatched;
-  }
-
-  private anySelectorMatched(): boolean {
-    const allMatched =
-      this.selection.all === true && this.source.catalogue.units.length > 0;
-
-    return allMatched || this.included.hasMatched || this.exclusions.hasMatched;
   }
 
   private unmatched(): UnmatchedSelection {

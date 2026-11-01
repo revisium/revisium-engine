@@ -6,10 +6,13 @@ import type {
   AssembledTarget,
   AssemblySource,
 } from 'src/features/partial-changes/assembly/target-assembler';
+import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   PlanBlocker,
   Reason,
+  SelectionSource,
 } from 'src/features/partial-changes/selection/selection-resolution';
+import { refusalBlocker } from 'src/features/partial-changes/selection/selector-match';
 
 export type Finding =
   | {
@@ -23,8 +26,10 @@ export type Site = Pick<Reason, 'tableId' | 'rowId' | 'path'>;
 
 export const TARGET_CHECKS = Symbol('TARGET_CHECKS');
 
+export type CheckSource = AssemblySource & Pick<SelectionSource, 'headSchema'>;
+
 export interface TargetCheck {
-  checkingOf(source: AssemblySource): TargetChecking;
+  checkingOf(source: CheckSource): TargetChecking;
 }
 
 export interface TargetChecking {
@@ -47,6 +52,10 @@ export function requiring(unitKey: string, reason: Reason): Finding {
 
 export function blocking(blocker: PlanBlocker): Finding {
   return { kind: 'blocks', blocker };
+}
+
+export function refusedBy(refusal: RefusedTable): Finding {
+  return blocking(refusalBlocker(refusal));
 }
 
 export function requiringOrDangling(

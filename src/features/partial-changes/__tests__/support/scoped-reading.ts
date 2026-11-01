@@ -50,9 +50,22 @@ const loadingEveryTable: Pick<ReadScope, 'scopeOf'> = {
   }),
 };
 
+const readingEveryTable: Pick<ReadScope, 'scopeOf'> = {
+  scopeOf: (_selection, compared) => ({
+    affectedTables: compared.tables,
+    loadedTables: compared.tables,
+    unreadTables: 0,
+  }),
+};
+
 export const LOADING_EVERY_TABLE: ProviderOverride = {
   provide: ReadScope,
   useValue: loadingEveryTable,
+};
+
+export const READING_EVERY_TABLE: ProviderOverride = {
+  provide: ReadScope,
+  useValue: readingEveryTable,
 };
 
 export function readScopedCatalogue(

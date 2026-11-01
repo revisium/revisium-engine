@@ -36,6 +36,8 @@ export type BlockerCode =
   | 'unmatchedSelector'
   | 'tooLarge'
   | 'unrecordedStructureChange'
+  | 'ledgerInconsistent'
+  | 'invalidRow'
   | RefusalCode;
 
 export interface Reason {

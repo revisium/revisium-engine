@@ -251,8 +251,9 @@ describe('TargetAssembler: rows moving between structures', () => {
   });
 
   describe('a Draft structure that its history does not record', () => {
-    it('blocks a commit of the structure', async () => {
+    it('blocks a commit that would migrate a Head row into it', async () => {
       const draft = await givenUnrecordedDraftStructure();
+      await draft.removeRow(PRODUCTS, 'p2');
 
       const target = await draft.assembleTarget('commit', {
         tables: [PRODUCTS],

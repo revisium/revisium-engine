@@ -11,6 +11,7 @@ export interface StoredTable {
   readonly versionId: string;
   readonly createdId: string;
   readonly id: string;
+  readonly readonly: boolean;
   readonly system: boolean;
 }
 
@@ -62,6 +63,7 @@ function withSchema(
     versionId: table.versionId,
     createdId: table.createdId,
     id: table.id,
+    readonly: table.readonly,
     schema: schemaRow.data as unknown as JsonSchema,
     history: schemaRow.meta as unknown as HistoryPatches[],
   };

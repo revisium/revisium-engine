@@ -318,7 +318,7 @@ class ReadTableAssembly {
     return (
       this.rules.structureSide === 'draft' &&
       !this.draftStructure &&
-      (this.context.operation === 'commit' || this.rowsMoving().length > 0)
+      this.rowsMoving().length > 0
     );
   }
 
@@ -454,7 +454,7 @@ function deferredValuesOf(
   return [{ unitKey: existence, paths, structureKey }];
 }
 
-function unrecordedStructureChangeOf(pair: TablePair): PlanBlocker {
+export function unrecordedStructureChangeOf(pair: TablePair): PlanBlocker {
   const tableId = publicIdOf(pair);
 
   return {

@@ -4,10 +4,8 @@ import type { TableMigration } from 'src/engine-prisma-types';
 import { MigrateTableViewsCommand } from 'src/features/draft/commands/impl/transactional/migrate-table-views.command';
 import { UpdateSchemaCommand } from 'src/features/draft/commands/impl/transactional/update-schema.command';
 import { PermanentMigrationFailure } from 'src/features/migration/exceptions/permanent-migration-failure';
-import {
-  MigrationTransitionService,
-  type MigrationLease,
-} from 'src/features/migration/services/migration-transition.service';
+import type { MigrationLease } from 'src/features/migration/services/migration-ownership';
+import { MigrationTransitions } from 'src/features/migration/services/migration-transitions';
 import {
   SwapRecheckService,
   type VerifiedSwap,
@@ -24,7 +22,7 @@ export class MigrationSwapService {
   constructor(
     private readonly transactionService: TransactionPrismaService,
     private readonly branchWriteFence: BranchWriteFenceService,
-    private readonly transitions: MigrationTransitionService,
+    private readonly transitions: MigrationTransitions,
     private readonly rechecks: SwapRecheckService,
     private readonly commandBus: CommandBus,
     private readonly shareCommands: ShareCommands,

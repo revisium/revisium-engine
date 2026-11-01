@@ -10,7 +10,9 @@ import { MigrationLockService } from 'src/features/migration/services/migration-
 import { MigrationService } from 'src/features/migration/services/migration.service';
 import { MigrationWorkerService } from 'src/features/migration/services/migration-worker.service';
 import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
-import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
+import { MigrationLeases } from 'src/features/migration/services/migration-leases';
+import { MigrationStallRecovery } from 'src/features/migration/services/migration-stall-recovery';
+import { MigrationTransitions } from 'src/features/migration/services/migration-transitions';
 import { MigrationSwapService } from 'src/features/migration/services/migration-swap.service';
 import { SwapRecheckService } from 'src/features/migration/services/swap-recheck.service';
 import { LegacyMigrationDisposalService } from 'src/features/migration/services/legacy-migration-disposal.service';
@@ -37,7 +39,9 @@ const SERVICES = [
   MigrationService,
   MigrationBatchService,
   MigrationWorkerService,
-  MigrationTransitionService,
+  MigrationLeases,
+  MigrationStallRecovery,
+  MigrationTransitions,
   MigrationSwapService,
   SwapRecheckService,
   LegacyMigrationDisposalService,

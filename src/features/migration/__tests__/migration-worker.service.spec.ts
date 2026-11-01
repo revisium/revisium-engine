@@ -26,18 +26,19 @@ describe('MigrationWorkerService', () => {
     );
 
     it('sweeps only after the legacy records are disposed', async () => {
-      const { worker, legacyMigrations, transitions } = createWorker('inline');
+      const { worker, legacyMigrations, stallRecovery } =
+        createWorker('inline');
       const disposal = deferred<void>();
       legacyMigrations.dispose.mockReturnValue(disposal.promise);
 
       const startup = worker.onModuleInit();
       await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
-      expect(transitions.cancelStalled).not.toHaveBeenCalled();
+      expect(stallRecovery.cancelStalled).not.toHaveBeenCalled();
 
       disposal.resolve();
       await startup;
       await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
-      expect(transitions.cancelStalled).toHaveBeenCalledTimes(1);
+      expect(stallRecovery.cancelStalled).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -45,27 +46,28 @@ describe('MigrationWorkerService', () => {
     it.each<WorkerMode>(['inline', 'polling'])(
       'runs every pollIntervalMs in %s mode',
       async (workerMode) => {
-        const { worker, transitions } = createWorker(workerMode);
+        const { worker, stallRecovery } = createWorker(workerMode);
         await worker.onModuleInit();
 
         await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
 
-        expect(transitions.cancelStalled).toHaveBeenCalledTimes(3);
+        expect(stallRecovery.cancelStalled).toHaveBeenCalledTimes(3);
       },
     );
 
     it('never runs in disabled mode', async () => {
-      const { worker, transitions } = createWorker('disabled');
+      const { worker, stallRecovery } = createWorker('disabled');
       await worker.onModuleInit();
 
       await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
 
-      expect(transitions.cancelStalled).not.toHaveBeenCalled();
+      expect(stallRecovery.cancelStalled).not.toHaveBeenCalled();
     });
 
     it('cancels stalled migrations and looks for stalled swaps before it claims the oldest abandoned migration', async () => {
-      const { worker, transitions, migrationService } = createWorker('polling');
-      transitions.findOldestClaimable.mockResolvedValueOnce('mig-abandoned');
+      const { worker, stallRecovery, leases, migrationService } =
+        createWorker('polling');
+      leases.findOldestClaimable.mockResolvedValueOnce('mig-abandoned');
       await worker.onModuleInit();
 
       await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
@@ -73,18 +75,19 @@ describe('MigrationWorkerService', () => {
       expect(migrationService.processMigration).toHaveBeenCalledWith(
         'mig-abandoned',
       );
-      expect(callOrderOf(transitions.cancelStalled)).toBeLessThan(
-        callOrderOf(transitions.findStalledSwaps),
+      expect(callOrderOf(stallRecovery.cancelStalled)).toBeLessThan(
+        callOrderOf(stallRecovery.findStalledSwaps),
       );
-      expect(callOrderOf(transitions.findStalledSwaps)).toBeLessThan(
-        callOrderOf(transitions.findOldestClaimable),
+      expect(callOrderOf(stallRecovery.findStalledSwaps)).toBeLessThan(
+        callOrderOf(leases.findOldestClaimable),
       );
     });
 
     it('drives every stalled swap it takes over', async () => {
-      const { worker, transitions, migrationService } = createWorker('polling');
+      const { worker, stallRecovery, migrationService } =
+        createWorker('polling');
       const otherStalledSwap = { ...STALLED_SWAP, migrationId: 'mig-other' };
-      transitions.findStalledSwaps.mockResolvedValueOnce([
+      stallRecovery.findStalledSwaps.mockResolvedValueOnce([
         STALLED_SWAP,
         otherStalledSwap,
       ]);
@@ -100,28 +103,28 @@ describe('MigrationWorkerService', () => {
 
     it('keeps cancelling and taking over while it owns a migration, and claims no other', async () => {
       const worker = createWorker('polling');
-      worker.transitions.findOldestClaimable.mockResolvedValue('mig-abandoned');
+      worker.leases.findOldestClaimable.mockResolvedValue('mig-abandoned');
       driveWithoutEnd(worker);
       await worker.worker.onModuleInit();
 
       await jest.advanceTimersByTimeAsync(3 * POLL_INTERVAL_MS);
 
-      expect(worker.transitions.cancelStalled).toHaveBeenCalledTimes(3);
-      expect(worker.transitions.findStalledSwaps).toHaveBeenCalledTimes(3);
-      expect(worker.transitions.findOldestClaimable).toHaveBeenCalledTimes(1);
+      expect(worker.stallRecovery.cancelStalled).toHaveBeenCalledTimes(3);
+      expect(worker.stallRecovery.findStalledSwaps).toHaveBeenCalledTimes(3);
+      expect(worker.leases.findOldestClaimable).toHaveBeenCalledTimes(1);
       expect(worker.migrationService.processMigration).toHaveBeenCalledTimes(1);
     });
 
     it('claims the next migration once the one it still drives is no longer owned', async () => {
       const worker = createWorker('polling');
-      worker.transitions.findOldestClaimable
+      worker.leases.findOldestClaimable
         .mockResolvedValueOnce('mig-suspended')
         .mockResolvedValueOnce('mig-next');
       driveWithoutEnd(worker);
       await worker.worker.onModuleInit();
       await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
 
-      worker.transitions.findStillOwned.mockResolvedValue([]);
+      worker.leases.findStillOwned.mockResolvedValue([]);
       await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
 
       expect(worker.migrationService.processMigration.mock.calls).toEqual([
@@ -134,15 +137,15 @@ describe('MigrationWorkerService', () => {
     });
 
     it('sweeps again on the next tick after a failed sweep', async () => {
-      const { worker, transitions } = createWorker('polling');
-      transitions.cancelStalled.mockRejectedValueOnce(
+      const { worker, stallRecovery, leases } = createWorker('polling');
+      stallRecovery.cancelStalled.mockRejectedValueOnce(
         new Error('connection lost'),
       );
       await worker.onModuleInit();
 
       await jest.advanceTimersByTimeAsync(2 * POLL_INTERVAL_MS);
 
-      expect(transitions.findOldestClaimable).toHaveBeenCalledTimes(1);
+      expect(leases.findOldestClaimable).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -171,7 +174,8 @@ describe('MigrationWorkerService', () => {
 
   describe('shutdown', () => {
     it('stops sweeping and waits for the migrations it drives', async () => {
-      const { worker, transitions, migrationService } = createWorker('inline');
+      const { worker, stallRecovery, migrationService } =
+        createWorker('inline');
       const drive = deferred<string>();
       migrationService.processMigration.mockReturnValue(drive.promise);
       await worker.onModuleInit();
@@ -186,7 +190,7 @@ describe('MigrationWorkerService', () => {
 
       drive.resolve('completed');
       await destroying;
-      expect(transitions.cancelStalled).not.toHaveBeenCalled();
+      expect(stallRecovery.cancelStalled).not.toHaveBeenCalled();
     });
 
     it('completes after a migration it drives fails', async () => {
@@ -214,10 +218,12 @@ function createWorker(workerMode: WorkerMode) {
     processMigration: jest.fn().mockResolvedValue('completed'),
     takeOverStalledSwap: jest.fn().mockResolvedValue('completed'),
   };
-  const transitions = {
+  const stallRecovery = {
     cancelStalled: jest.fn().mockResolvedValue(0),
     findStalledSwaps: jest.fn().mockResolvedValue([]),
-    findStillOwned: jest.fn((leases: unknown[]) => Promise.resolve(leases)),
+  };
+  const leases = {
+    findStillOwned: jest.fn((held: unknown[]) => Promise.resolve(held)),
     findOldestClaimable: jest.fn().mockResolvedValue(null),
   };
   const legacyMigrations = {
@@ -226,7 +232,8 @@ function createWorker(workerMode: WorkerMode) {
   const heldLeases = new HeldMigrationLeases();
   const worker = new MigrationWorkerService(
     migrationService as never,
-    transitions as never,
+    stallRecovery as never,
+    leases as never,
     legacyMigrations as never,
     heldLeases,
     new MigrationDrivers(),
@@ -236,7 +243,8 @@ function createWorker(workerMode: WorkerMode) {
   return {
     worker,
     migrationService,
-    transitions,
+    stallRecovery,
+    leases,
     legacyMigrations,
     heldLeases,
   };

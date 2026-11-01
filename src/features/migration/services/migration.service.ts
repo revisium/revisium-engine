@@ -4,11 +4,13 @@ import { PrismaService } from 'src/infrastructure/database/prisma.service';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { MigrationBatchService } from 'src/features/migration/services/migration-batch.service';
 import { MigrationSwapService } from 'src/features/migration/services/migration-swap.service';
+import { MigrationLeases } from 'src/features/migration/services/migration-leases';
+import type { MigrationLease } from 'src/features/migration/services/migration-ownership';
 import {
-  MigrationTransitionService,
-  type MigrationLease,
+  MigrationStallRecovery,
   type OwnershipEpoch,
-} from 'src/features/migration/services/migration-transition.service';
+} from 'src/features/migration/services/migration-stall-recovery';
+import { MigrationTransitions } from 'src/features/migration/services/migration-transitions';
 import {
   MigrationStatus,
   type MigrationStepResult,
@@ -43,7 +45,9 @@ export class MigrationService {
     private readonly transactionService: TransactionPrismaService,
     private readonly batchService: MigrationBatchService,
     private readonly swapService: MigrationSwapService,
-    private readonly transitions: MigrationTransitionService,
+    private readonly leases: MigrationLeases,
+    private readonly stallRecovery: MigrationStallRecovery,
+    private readonly transitions: MigrationTransitions,
     private readonly heldLeases: HeldMigrationLeases,
     @Optional() @Inject(MIGRATION_OPTIONS) migrationOptions?: MigrationOptions,
   ) {
@@ -183,13 +187,13 @@ export class MigrationService {
   ): Promise<MigrationStepResult> {
     return this.runUntilSettled(
       await this.heldLeases.acquire(() =>
-        this.transitions.takeOver(stalledOwner),
+        this.stallRecovery.takeOver(stalledOwner),
       ),
     );
   }
 
   private claim(migrationId: string): Promise<MigrationLease | null> {
-    return this.heldLeases.acquire(() => this.transitions.claim(migrationId));
+    return this.heldLeases.acquire(() => this.leases.claim(migrationId));
   }
 
   private async runUntilSettled(
@@ -214,7 +218,7 @@ export class MigrationService {
     lease: MigrationLease,
   ): Promise<ClaimedRunResult> {
     const heartbeat = new LeaseHeartbeat(
-      () => this.transitions.renew(lease),
+      () => this.leases.renew(lease),
       this.options.heartbeatIntervalMs,
       (error) => this.logHeartbeatFailure(lease, error),
     );
@@ -224,7 +228,7 @@ export class MigrationService {
     } finally {
       heartbeat.stop();
       this.heldLeases.release(lease);
-      await this.transitions.release(lease);
+      await this.leases.release(lease);
     }
   }
 
@@ -240,7 +244,7 @@ export class MigrationService {
 
   private async runNextStep(lease: MigrationLease): Promise<ClaimedRunResult> {
     try {
-      const migration = await this.transitions.findOwned(lease);
+      const migration = await this.leases.findOwned(lease);
 
       if (!migration) {
         return 'stopped';

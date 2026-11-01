@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { AbortMigrationCommand } from 'src/features/migration/commands/impl/abort-migration.command';
-import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
+import { MigrationTransitions } from 'src/features/migration/services/migration-transitions';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -12,7 +12,7 @@ export class AbortMigrationHandler implements ICommandHandler<
 > {
   constructor(
     private readonly transactionService: TransactionPrismaService,
-    private readonly transitions: MigrationTransitionService,
+    private readonly transitions: MigrationTransitions,
   ) {}
 
   async execute({ data }: AbortMigrationCommand): Promise<void> {

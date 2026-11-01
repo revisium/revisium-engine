@@ -4,7 +4,7 @@ import {
   MigrationLockedDetails,
 } from 'src/features/migration/exceptions/migration-locked.exception';
 import { PERCENTAGE_MULTIPLIER } from 'src/features/migration/migration.consts';
-import { MigrationTransitionService } from 'src/features/migration/services/migration-transition.service';
+import { MigrationTransitions } from 'src/features/migration/services/migration-transitions';
 import {
   ACTIVE_MIGRATION_STATUSES,
   MigrationStatus,
@@ -15,7 +15,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 export class MigrationLockService {
   constructor(
     private readonly transactionService: TransactionPrismaService,
-    private readonly transitions: MigrationTransitionService,
+    private readonly transitions: MigrationTransitions,
   ) {}
 
   async cancelBranchMigrations(

@@ -1,17 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import type { Migration } from '@revisium/schema-toolkit/types';
-import {
-  type AppliedUnits,
-  OutcomeRules,
-} from 'src/features/partial-changes/assembly/outcome-rules';
+import type { OutcomeRules } from 'src/features/partial-changes/assembly/outcome-rules';
 import { ownersByVersionId } from 'src/features/partial-changes/assembly/system-table-targets';
-import type { AssembledTarget } from 'src/features/partial-changes/assembly/target-assembler';
+import type {
+  CheckContext,
+  TargetCheck,
+  TargetChecking,
+} from 'src/features/partial-changes/closure/check-context';
 import {
   type CheckSource,
   type Finding,
   requiring,
-  type TargetCheck,
-  type TargetChecking,
 } from 'src/features/partial-changes/closure/findings';
 import { TableIdTimeline } from 'src/features/partial-changes/closure/table-id-timeline';
 import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
@@ -71,12 +70,7 @@ class LedgerDependencyChecking implements TargetChecking {
     this.unitsWithPendingMigrations = new Set(this.owners.values());
   }
 
-  public findingsOf(
-    _target: AssembledTarget,
-    choice: AppliedUnits,
-  ): Promise<Finding[]> {
-    const rules = new OutcomeRules(choice);
-
+  public findingsOf({ choice, rules }: CheckContext): Promise<Finding[]> {
     if (!this.movesPendingMigrations(rules)) {
       return Promise.resolve([]);
     }

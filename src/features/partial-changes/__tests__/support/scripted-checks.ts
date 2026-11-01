@@ -1,15 +1,13 @@
 import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { AppliedUnits } from 'src/features/partial-changes/assembly/outcome-rules';
-import type {
-  AssembledTarget,
-  AssemblySource,
-} from 'src/features/partial-changes/assembly/target-assembler';
+import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type {
-  Finding,
+  CheckContext,
   TargetCheck,
   TargetChecking,
-} from 'src/features/partial-changes/closure/findings';
+} from 'src/features/partial-changes/closure/check-context';
+import type { Finding } from 'src/features/partial-changes/closure/findings';
 import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
 import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
 
@@ -30,7 +28,7 @@ export class ScriptedCheck implements TargetCheck {
 
   public checkingOf(source: AssemblySource): TargetChecking {
     return {
-      findingsOf: (_target: AssembledTarget, choice: AppliedUnits) =>
+      findingsOf: ({ choice }: CheckContext) =>
         Promise.resolve(
           this.script(new ScriptedPass(source.catalogue, choice)),
         ),

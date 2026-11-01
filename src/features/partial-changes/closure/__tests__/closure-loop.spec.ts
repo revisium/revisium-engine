@@ -3,7 +3,7 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import { TARGET_CHECKS } from 'src/features/partial-changes/closure/findings';
+import { TARGET_CHECKS } from 'src/features/partial-changes/closure/target-checks';
 import { OperationEstimation } from 'src/features/partial-changes/limits/operation-estimator';
 import type {
   FieldRef,

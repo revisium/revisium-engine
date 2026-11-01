@@ -1,11 +1,5 @@
-import type {
-  AppliedUnits,
-  ChangeOperation,
-} from 'src/features/partial-changes/assembly/outcome-rules';
-import type {
-  AssembledTarget,
-  AssemblySource,
-} from 'src/features/partial-changes/assembly/target-assembler';
+import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   PlanBlocker,
@@ -24,17 +18,7 @@ export type Finding =
 
 export type Site = Pick<Reason, 'tableId' | 'rowId' | 'path'>;
 
-export const TARGET_CHECKS = Symbol('TARGET_CHECKS');
-
 export type CheckSource = AssemblySource & Pick<SelectionSource, 'headSchema'>;
-
-export interface TargetCheck {
-  checkingOf(source: CheckSource): TargetChecking;
-}
-
-export interface TargetChecking {
-  findingsOf(target: AssembledTarget, choice: AppliedUnits): Promise<Finding[]>;
-}
 
 export interface SideNames {
   readonly target: string;

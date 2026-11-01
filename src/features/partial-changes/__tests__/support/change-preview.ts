@@ -1,7 +1,7 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { blockEventLoopFor } from 'src/__tests__/utils/event-loop';
 import { sql } from 'src/engine-prisma-types';
-import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-reference-checks';
+import { UnchangedReferrersOfLostIds } from 'src/features/partial-changes/closure/unchanged-referrers-of-lost-ids';
 import type {
   PreviewChangesInput,
   PreviewChangesResult,
@@ -84,15 +84,15 @@ export function passingTheDeadlineAfterRowChecks(
   kit: PartialChangesTestKit,
   durationMs: number,
 ): jest.SpyInstance {
-  const checks = kit.module.get(RowReferenceChecks);
-  const checkingOf = checks.checkingOf.bind(checks);
+  const lastCheck = kit.module.get(UnchangedReferrersOfLostIds);
+  const checkingOf = lastCheck.checkingOf.bind(lastCheck);
 
-  return jest.spyOn(checks, 'checkingOf').mockImplementation((source) => {
-    const checking = checkingOf(source);
+  return jest.spyOn(lastCheck, 'checkingOf').mockImplementation(() => {
+    const checking = checkingOf();
 
     return {
-      async findingsOf(target, choice) {
-        const findings = await checking.findingsOf(target, choice);
+      async findingsOf(context) {
+        const findings = await checking.findingsOf(context);
 
         blockEventLoopFor(durationMs);
 

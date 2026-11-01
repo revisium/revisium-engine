@@ -7,10 +7,11 @@ import { SystemTargetAssembler } from 'src/features/partial-changes/assembly/sys
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
-import { TARGET_CHECKS } from 'src/features/partial-changes/closure/findings';
-import { LedgerDependencyChecks } from 'src/features/partial-changes/closure/ledger-dependency-checks';
-import { RowReferenceChecks } from 'src/features/partial-changes/closure/row-reference-checks';
-import { StructureChecks } from 'src/features/partial-changes/closure/structure-checks';
+import type { TargetCheck } from 'src/features/partial-changes/closure/check-context';
+import {
+  TARGET_CHECKS,
+  TARGET_CHECKS_IN_SPEC_ORDER,
+} from 'src/features/partial-changes/closure/target-checks';
 import { PARTIAL_CHANGES_COMMAND_HANDLERS } from 'src/features/partial-changes/commands/handlers';
 import { OperationEstimator } from 'src/features/partial-changes/limits/operation-estimator';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
@@ -51,17 +52,11 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     SystemTargetAssembler,
     TargetAssembler,
     OperationEstimator,
-    StructureChecks,
-    LedgerDependencyChecks,
-    RowReferenceChecks,
+    ...TARGET_CHECKS_IN_SPEC_ORDER,
     {
       provide: TARGET_CHECKS,
-      useFactory: (
-        structureChecks: StructureChecks,
-        ledgerChecks: LedgerDependencyChecks,
-        rowChecks: RowReferenceChecks,
-      ) => [structureChecks, ledgerChecks, rowChecks],
-      inject: [StructureChecks, LedgerDependencyChecks, RowReferenceChecks],
+      useFactory: (...checks: TargetCheck[]) => checks,
+      inject: TARGET_CHECKS_IN_SPEC_ORDER,
     },
     DependencyClosure,
     TargetValidator,

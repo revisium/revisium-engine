@@ -5,13 +5,21 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { removeField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
+import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 
 const PRODUCTS = 'products';
 const ADDRESS = 'address';
+const PHONE = 'phone';
+const CONTACT = 'contact';
+const EMAIL = 'email';
 
 const productSchema = obj({ code: str(), price: num() });
+const addressSchema = obj({ city: str() });
+const editedAddressSchema = obj({ city: str(), street: str() });
+const phoneSchema = obj({ number: str() });
+const emailSchema = obj({ address: str() });
 
 describe('ChangeCatalogue: views and shared schema units', () => {
   let kit: PartialChangesTestKit;
@@ -67,20 +75,97 @@ describe('ChangeCatalogue: views and shared schema units', () => {
   });
 
   describe('shared schemas', () => {
-    it('lists a shared schema created in the Draft as its sharedSchema unit', async () => {
-      const draft = await ChangesScenario.committed(kit, {
-        [PRODUCTS]: { schema: productSchema },
-      });
-      await draft.createSharedSchema(ADDRESS, obj({ city: str() }));
+    it.each<{
+      change: string;
+      edit: (draft: ChangesScenario) => Promise<void>;
+      units: AddressedUnit[];
+    }>([
+      {
+        change: 'a created shared schema',
+        edit: (draft) => draft.createSharedSchema(EMAIL, emailSchema),
+        units: [{ kind: 'sharedSchema', tableId: EMAIL }],
+      },
+      {
+        change: 'an edited shared schema',
+        edit: (draft) => draft.updateSharedSchema(ADDRESS, editedAddressSchema),
+        units: [{ kind: 'sharedSchema', tableId: ADDRESS }],
+      },
+      {
+        change: 'a removed shared schema',
+        edit: (draft) => draft.removeSharedSchema(ADDRESS),
+        units: [{ kind: 'sharedSchema', tableId: ADDRESS }],
+      },
+      {
+        change: 'a shared schema removed and created again at its id',
+        edit: async (draft) => {
+          await draft.removeSharedSchema(ADDRESS);
+          await draft.createSharedSchema(ADDRESS, editedAddressSchema);
+        },
+        units: [{ kind: 'sharedSchema', tableId: ADDRESS }],
+      },
+      {
+        change: 'a shared schema renamed with the low-level row API',
+        edit: (draft) => draft.renameSharedSchema(PHONE, CONTACT),
+        units: [{ kind: 'sharedSchema', tableId: CONTACT }],
+      },
+      {
+        change:
+          'a shared schema renamed into the id of a removed one with the low-level row API',
+        edit: async (draft) => {
+          await draft.removeSharedSchema(ADDRESS);
+          await draft.renameSharedSchema(PHONE, ADDRESS);
+        },
+        units: [{ kind: 'sharedSchema', tableId: ADDRESS }],
+      },
+    ])('lists one sharedSchema unit for $change', async ({ edit, units }) => {
+      const draft = await givenCommittedSharedSchemas();
+      await edit(draft);
 
       const catalogue = await draft.readCatalogue([]);
 
-      expect(catalogue.units()).toEqual([
-        { kind: 'sharedSchema', tableId: ADDRESS },
-      ]);
+      expect(catalogue.units()).toEqual(units);
       expectEveryDifferenceOwnedOnce(catalogue);
     });
+
+    it('covers the removed and the created version of a shared schema created again at its id', async () => {
+      const draft = await givenCommittedSharedSchemas();
+      await draft.removeSharedSchema(ADDRESS);
+      await draft.createSharedSchema(ADDRESS, editedAddressSchema);
+
+      const catalogue = await draft.readCatalogue([]);
+
+      expect(
+        catalogue.systemRowsOf({ kind: 'sharedSchema', tableId: ADDRESS }),
+      ).toEqual(['sharedSchema address', 'sharedSchema address']);
+    });
+
+    it('covers every version that held the id a renamed shared schema took over from a removed one', async () => {
+      const draft = await givenCommittedSharedSchemas();
+      await draft.removeSharedSchema(ADDRESS);
+      await draft.renameSharedSchema(PHONE, ADDRESS);
+
+      const catalogue = await draft.readCatalogue([]);
+
+      expect(
+        catalogue.systemRowsOf({ kind: 'sharedSchema', tableId: ADDRESS }),
+      ).toEqual([
+        'sharedSchema address',
+        'sharedSchema address',
+        'sharedSchema phone',
+      ]);
+    });
   });
+
+  async function givenCommittedSharedSchemas(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: { schema: productSchema },
+    });
+    await draft.createSharedSchema(ADDRESS, addressSchema);
+    await draft.createSharedSchema(PHONE, phoneSchema);
+    await draft.commit();
+
+    return draft;
+  }
 
   async function givenCommittedProductsWithViews(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {

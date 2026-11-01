@@ -63,12 +63,6 @@ export function previousTableIdOf({
   return head.id;
 }
 
-export function tableIdsOf({ head, draft }: TablePair): string[] {
-  return [head?.id, draft?.id].filter(
-    (tableId): tableId is string => tableId !== undefined,
-  );
-}
-
 export function distinctRows(rows: readonly (Row | undefined)[]): Row[] {
   const distinct = new Map<string, Row>();
 

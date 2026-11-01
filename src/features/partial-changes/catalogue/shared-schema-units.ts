@@ -1,6 +1,10 @@
 import type { Row } from 'src/engine-prisma-types';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import { distinctRows } from 'src/features/partial-changes/catalogue/catalogue-tables';
+import {
+  groupBySharedPublicId,
+  publicIdOf,
+} from 'src/features/partial-changes/catalogue/public-id-groups';
 import { differInContent } from 'src/features/partial-changes/catalogue/row-differences';
 import { sharedSchemaUnitKey } from 'src/features/partial-changes/catalogue/unit-key';
 import type {
@@ -11,25 +15,21 @@ import type {
 export function buildSharedSchemaUnits(
   sharedSchemaRows: RevisionRows,
 ): CatalogueUnit[] {
-  return pairsByIdentity(sharedSchemaRows).flatMap(
-    ({ identity, head, draft }) => {
-      const sharedSchema = draft ?? head;
-
-      if (!sharedSchema || !sharedSchemaDiffers(head, draft)) {
-        return [];
-      }
-
-      return [
-        {
-          key: sharedSchemaUnitKey(identity),
-          tableIdentities: [],
-          rowIdentities: [],
-          systemRows: distinctRows([head, draft]),
-          unit: { kind: 'sharedSchema', tableId: sharedSchema.id },
-        },
-      ];
-    },
+  const changed = pairsByIdentity(sharedSchemaRows).filter(({ head, draft }) =>
+    sharedSchemaDiffers(head, draft),
   );
+
+  return groupBySharedPublicId(changed).map(sharedSchemaUnitOf);
+}
+
+function sharedSchemaUnitOf(pairs: readonly RowPair[]): CatalogueUnit {
+  return {
+    key: sharedSchemaUnitKey(...pairs.map(({ identity }) => identity)),
+    tableIdentities: [],
+    rowIdentities: [],
+    systemRows: distinctRows(pairs.flatMap(({ head, draft }) => [head, draft])),
+    unit: { kind: 'sharedSchema', tableId: publicIdOf(pairs) },
+  };
 }
 
 function pairsByIdentity(rows: RevisionRows): RowPair[] {

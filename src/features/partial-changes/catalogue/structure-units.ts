@@ -5,13 +5,17 @@ import {
   distinctRows,
   previousTableIdOf,
   publicTableIdOf,
-  tableIdsOf,
 } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type {
   LedgerAttribution,
   LedgerEntry,
-  TransientGroup,
+  TableHistory,
 } from 'src/features/partial-changes/catalogue/ledger-attribution';
+import {
+  groupRecreations,
+  publicIdOf,
+  publicIdsOf,
+} from 'src/features/partial-changes/catalogue/public-id-groups';
 import type { Side, Unit } from 'src/features/partial-changes/catalogue/unit';
 import {
   structureUnitKey,
@@ -20,11 +24,6 @@ import {
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
-interface StructureTables {
-  readonly table: TablePair;
-  readonly recreated?: TablePair;
-}
-
 interface StructureUnitParts {
   readonly key: string;
   readonly unit: Unit;
@@ -32,6 +31,8 @@ interface StructureUnitParts {
   readonly tables: readonly TablePair[];
   readonly transientEntries: LedgerEntry[];
 }
+
+const NO_PENDING_HISTORY: TableHistory = { tableIds: [], entries: [] };
 
 export function buildStructureUnits(
   tables: CatalogueTables,
@@ -61,7 +62,7 @@ class StructureUnitsBuilder {
     );
     const takenOverTableIds = takenOverTableIdsOf(changed);
 
-    return structureTablesOf(changed)
+    return groupRecreations(changed)
       .map((tables) => tableStructureUnit(tables, takenOverTableIds))
       .sort(compareUnits);
   }
@@ -80,7 +81,7 @@ class StructureUnitsBuilder {
     const transientUnits: StructureUnitParts[] = [];
 
     for (const group of this.ledger.transientGroups) {
-      const joined = tableUnits.find((unit) => sharesTableId(unit, group));
+      const joined = tableUnits.find((unit) => this.sharesTableId(unit, group));
 
       if (joined) {
         joined.transientEntries.push(...group.entries);
@@ -90,6 +91,22 @@ class StructureUnitsBuilder {
     }
 
     return transientUnits;
+  }
+
+  private sharesTableId(
+    unit: StructureUnitParts,
+    group: TableHistory,
+  ): boolean {
+    return this.tableIdsHeldBy(unit).some((tableId) =>
+      group.tableIds.includes(tableId),
+    );
+  }
+
+  private tableIdsHeldBy({ tables }: StructureUnitParts): string[] {
+    return tables.flatMap((pair) => [
+      ...publicIdsOf(pair),
+      ...this.pendingHistoryOf(pair).tableIds,
+    ]);
   }
 
   private catalogueUnitOf(parts: StructureUnitParts): CatalogueUnit {
@@ -118,62 +135,36 @@ class StructureUnitsBuilder {
   private systemRowsOf(pair: TablePair): (Row | undefined)[] {
     const schema = this.tables.schemaRowsOf(pair);
     const views = this.tables.viewsRowsOf(pair);
-    const pending = this.ledger.tables.get(pair.identity) ?? [];
+    const { entries } = this.pendingHistoryOf(pair);
 
     return [
       schema.head,
       schema.draft,
       views.head,
       views.draft,
-      ...pending.map(({ row }) => row),
+      ...entries.map(({ row }) => row),
     ];
   }
-}
 
-function structureTablesOf(pairs: readonly TablePair[]): StructureTables[] {
-  const recreations = recreationsOf(pairs);
-  const recreated = new Set(recreations.values());
-
-  return pairs
-    .filter((pair) => !recreated.has(pair))
-    .map((table) => ({ table, recreated: recreations.get(table) }));
-}
-
-function recreationsOf(
-  pairs: readonly TablePair[],
-): ReadonlyMap<TablePair, TablePair> {
-  const removedById = new Map(
-    pairs.filter(isRemoved).map((pair) => [publicTableIdOf(pair), pair]),
-  );
-  const recreations = new Map<TablePair, TablePair>();
-
-  for (const created of pairs.filter(isCreated)) {
-    const removed = removedById.get(publicTableIdOf(created));
-
-    if (removed) {
-      recreations.set(removed, created);
-    }
+  private pendingHistoryOf({ identity }: TablePair): TableHistory {
+    return this.ledger.tables.get(identity) ?? NO_PENDING_HISTORY;
   }
-
-  return recreations;
 }
 
 function tableStructureUnit(
-  structureTables: StructureTables,
+  tables: readonly TablePair[],
   takenOverTableIds: ReadonlySet<string>,
 ): StructureUnitParts {
-  const tables = tablesOf(structureTables);
-
   return {
     key: structureUnitKey(...tables.map(({ identity }) => identity)),
-    unit: structureUnitAddressOf(structureTables.table),
-    side: sideOfRemovedTable(structureTables.table, takenOverTableIds),
+    unit: structureUnitAddressOf(tables),
+    side: sideOfRemovedTable(tables, takenOverTableIds),
     tables,
     transientEntries: [],
   };
 }
 
-function transientStructureUnit(group: TransientGroup): StructureUnitParts {
+function transientStructureUnit(group: TableHistory): StructureUnitParts {
   const tableId = addressedTableIdOf(group);
 
   return {
@@ -184,17 +175,11 @@ function transientStructureUnit(group: TransientGroup): StructureUnitParts {
   };
 }
 
-function tablesOf({ table, recreated }: StructureTables): TablePair[] {
-  if (recreated) {
-    return [table, recreated];
-  }
-
-  return [table];
-}
-
-function structureUnitAddressOf(table: TablePair): Unit {
-  const tableId = publicTableIdOf(table);
-  const previousTableId = previousTableIdOf(table);
+function structureUnitAddressOf(tables: readonly TablePair[]): Unit {
+  const tableId = publicIdOf(tables);
+  const previousTableId = tables
+    .map(previousTableIdOf)
+    .find((tableId) => tableId !== undefined);
 
   if (previousTableId !== undefined) {
     return { kind: 'structure', tableId, previousTableId };
@@ -204,17 +189,17 @@ function structureUnitAddressOf(table: TablePair): Unit {
 }
 
 function sideOfRemovedTable(
-  table: TablePair,
+  tables: readonly TablePair[],
   takenOverTableIds: ReadonlySet<string>,
 ): Side | undefined {
-  if (isRemoved(table) && takenOverTableIds.has(publicTableIdOf(table))) {
+  if (tables.every(isRemoved) && takenOverTableIds.has(publicIdOf(tables))) {
     return 'head';
   }
 
   return undefined;
 }
 
-function addressedTableIdOf(group: TransientGroup): string {
+function addressedTableIdOf(group: TableHistory): string {
   const [tableId] = group.tableIds;
 
   if (tableId === undefined) {
@@ -232,19 +217,6 @@ function takenOverTableIdsOf(pairs: readonly TablePair[]): Set<string> {
   );
 }
 
-function sharesTableId(
-  unit: StructureUnitParts,
-  group: TransientGroup,
-): boolean {
-  return unit.tables.some((pair) =>
-    tableIdsOf(pair).some((tableId) => group.tableIds.includes(tableId)),
-  );
-}
-
 function isRemoved({ head, draft }: TablePair): boolean {
   return head !== undefined && draft === undefined;
-}
-
-function isCreated({ head, draft }: TablePair): boolean {
-  return head === undefined && draft !== undefined;
 }

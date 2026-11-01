@@ -15,7 +15,7 @@ export interface LedgerEntry {
   readonly migration: Migration;
 }
 
-export interface TransientGroup {
+export interface TableHistory {
   readonly tableIds: readonly string[];
   readonly entries: readonly LedgerEntry[];
 }
@@ -23,8 +23,8 @@ export interface TransientGroup {
 export interface LedgerAttribution {
   readonly published: readonly LedgerEntry[];
   readonly pending: readonly LedgerEntry[];
-  readonly tables: ReadonlyMap<string, readonly LedgerEntry[]>;
-  readonly transientGroups: readonly TransientGroup[];
+  readonly tables: ReadonlyMap<string, TableHistory>;
+  readonly transientGroups: readonly TableHistory[];
   readonly unattributable: readonly LedgerEntry[];
 }
 
@@ -54,9 +54,9 @@ export function pendingMigrationsOf(
   ledger: LedgerAttribution,
   tableIdentity: string,
 ): Migration[] {
-  return (ledger.tables.get(tableIdentity) ?? []).map(
-    ({ migration }) => migration,
-  );
+  const entries = ledger.tables.get(tableIdentity)?.entries ?? [];
+
+  return entries.map(({ migration }) => migration);
 }
 
 class PendingAttribution {
@@ -89,7 +89,7 @@ class PendingAttribution {
     }
 
     return {
-      tables: this.entriesByTable(tableSlots),
+      tables: this.historiesByTable(tableSlots),
       transientGroups: this.groupByTableIds(transientSlots),
       unattributable: this.entriesOf(unattributableSlots),
     };
@@ -120,19 +120,19 @@ class PendingAttribution {
     return tableOwner(this.draftIdentities.get(slot.currentTableId));
   }
 
-  private entriesByTable(
+  private historiesByTable(
     tableSlots: ReadonlyMap<string, readonly TableSlot[]>,
-  ): Map<string, LedgerEntry[]> {
-    const entries = new Map<string, LedgerEntry[]>();
+  ): Map<string, TableHistory> {
+    const histories = new Map<string, TableHistory>();
 
     for (const [tableIdentity, slots] of tableSlots) {
-      entries.set(tableIdentity, this.entriesOf(slots));
+      histories.set(tableIdentity, this.historyOf(slots));
     }
 
-    return entries;
+    return histories;
   }
 
-  private groupByTableIds(slots: readonly TableSlot[]): TransientGroup[] {
+  private groupByTableIds(slots: readonly TableSlot[]): TableHistory[] {
     let groups: TableSlot[][] = [];
 
     for (const slot of slots) {
@@ -142,14 +142,16 @@ class PendingAttribution {
       groups = [...separate, [...sharing.flat(), slot]];
     }
 
-    return groups.map((group) => {
-      const ordered = slots.filter((slot) => group.includes(slot));
+    return groups.map((group) =>
+      this.historyOf(slots.filter((slot) => group.includes(slot))),
+    );
+  }
 
-      return {
-        tableIds: [...new Set(ordered.flatMap(({ tableIds }) => tableIds))],
-        entries: this.entriesOf(ordered),
-      };
-    });
+  private historyOf(slots: readonly TableSlot[]): TableHistory {
+    return {
+      tableIds: [...new Set(slots.flatMap(({ tableIds }) => tableIds))],
+      entries: this.entriesOf(slots),
+    };
   }
 
   private entriesOf(slots: readonly TableSlot[]): LedgerEntry[] {

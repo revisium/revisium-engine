@@ -38,8 +38,8 @@ export function viewsUnitKey(tableIdentity: string): string {
   return keyOf('views', tableIdentity);
 }
 
-export function sharedSchemaUnitKey(rowIdentity: string): string {
-  return keyOf('sharedSchema', rowIdentity);
+export function sharedSchemaUnitKey(...rowIdentities: string[]): string {
+  return keyOf('sharedSchema', ...rowIdentities);
 }
 
 function keyOf(kind: UnitKind, ...identities: string[]): string {

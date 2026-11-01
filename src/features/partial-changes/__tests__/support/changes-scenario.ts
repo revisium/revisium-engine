@@ -210,22 +210,57 @@ export class ChangesScenario {
     id: string,
     schema: JsonSchema,
   ): Promise<void> {
-    const revisionId = await this.draftRevisionId();
+    const hasSharedSchemas = await this.hasDraftTable(
+      SystemTables.SharedSchemas,
+    );
 
-    await this.kit.draftWriteAdmission.runSerializableRevisionWrite(
-      revisionId,
-      async () => {
+    await this.writeSharedSchemas(async (revisionId) => {
+      if (!hasSharedSchemas) {
         await this.kit.draftRevisionApi.createTable({
           revisionId,
           tableId: SystemTables.SharedSchemas,
           system: true,
         });
-        await this.kit.draftRevisionApi.createRows({
-          revisionId,
-          tableId: SystemTables.SharedSchemas,
-          rows: [{ rowId: id, data: schema as InputJsonValue }],
-        });
-      },
+      }
+
+      await this.kit.draftRevisionApi.createRows({
+        revisionId,
+        tableId: SystemTables.SharedSchemas,
+        rows: [{ rowId: id, data: schema as InputJsonValue }],
+      });
+    });
+  }
+
+  public async updateSharedSchema(
+    id: string,
+    schema: JsonSchema,
+  ): Promise<void> {
+    await this.writeSharedSchemas((revisionId) =>
+      this.kit.draftRevisionApi.updateRows({
+        revisionId,
+        tableId: SystemTables.SharedSchemas,
+        rows: [{ rowId: id, data: schema as InputJsonValue }],
+      }),
+    );
+  }
+
+  public async renameSharedSchema(id: string, nextId: string): Promise<void> {
+    await this.writeSharedSchemas((revisionId) =>
+      this.kit.draftRevisionApi.renameRows({
+        revisionId,
+        tableId: SystemTables.SharedSchemas,
+        renames: [{ rowId: id, nextRowId: nextId }],
+      }),
+    );
+  }
+
+  public async removeSharedSchema(id: string): Promise<void> {
+    await this.writeSharedSchemas((revisionId) =>
+      this.kit.draftRevisionApi.removeRows({
+        revisionId,
+        tableId: SystemTables.SharedSchemas,
+        rowIds: [id],
+      }),
     );
   }
 
@@ -332,6 +367,29 @@ export class ChangesScenario {
 
   private draftRevisionId(): Promise<string> {
     return this.revisionId('draft');
+  }
+
+  private async writeSharedSchemas(
+    write: (revisionId: string) => Promise<unknown>,
+  ): Promise<void> {
+    const revisionId = await this.draftRevisionId();
+
+    await this.kit.draftWriteAdmission.runSerializableRevisionWrite(
+      revisionId,
+      () => write(revisionId),
+    );
+  }
+
+  private async hasDraftTable(tableId: string): Promise<boolean> {
+    const table = await this.kit.prisma.table.findFirst({
+      where: {
+        id: tableId,
+        revisions: { some: { id: await this.draftRevisionId() } },
+      },
+      select: { versionId: true },
+    });
+
+    return table !== null;
   }
 
   private async observeCommittedVersions(): Promise<void> {

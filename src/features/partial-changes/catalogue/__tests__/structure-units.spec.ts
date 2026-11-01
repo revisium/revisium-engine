@@ -19,6 +19,7 @@ const TAGS = 'tags';
 const IMPORTS = 'imports';
 const STAGING = 'staging';
 const SWAPPING = 'swapping';
+const TEMPORARY = 'tmp';
 
 const productSchema = obj({ code: str(), price: num() });
 const categorySchema = obj({ title: str() });
@@ -148,6 +149,19 @@ describe('ChangeCatalogue: structure units', () => {
     },
     {
       change:
+        'a table created and removed inside the Draft at an id a renamed table passed through',
+      edit: async (draft) => {
+        await draft.renameTable(CATEGORIES, TEMPORARY);
+        await draft.renameTable(TEMPORARY, GROUPS);
+        await draft.createTable(TEMPORARY, tagSchema);
+        await draft.removeTable(TEMPORARY);
+      },
+      units: [
+        { kind: 'structure', tableId: GROUPS, previousTableId: CATEGORIES },
+      ],
+    },
+    {
+      change:
         'a table created and removed inside the Draft at the id of a created table',
       edit: async (draft) => {
         await draft.createTable(TAGS, categorySchema);
@@ -211,6 +225,34 @@ describe('ChangeCatalogue: structure units', () => {
       'migration init categories',
       'migration remove categories',
       'migration rename categories to groups',
+      'schema categories',
+      'schema groups',
+    ]);
+  });
+
+  it('records the migrations of a table created and removed at an id a renamed table later passed through in the structure unit of the renamed table', async () => {
+    const draft = await givenCommittedCatalog();
+    await draft.createTable(TEMPORARY, tagSchema);
+    await draft.removeTable(TEMPORARY);
+    await draft.renameTable(CATEGORIES, TEMPORARY);
+    await draft.renameTable(TEMPORARY, GROUPS);
+
+    const catalogue = await draft.readCatalogue([]);
+
+    expect(catalogue.units()).toEqual([
+      { kind: 'structure', tableId: GROUPS, previousTableId: CATEGORIES },
+    ]);
+    expect(
+      catalogue.systemRowsOf({
+        kind: 'structure',
+        tableId: GROUPS,
+        previousTableId: CATEGORIES,
+      }),
+    ).toEqual([
+      'migration init tmp',
+      'migration remove tmp',
+      'migration rename categories to tmp',
+      'migration rename tmp to groups',
       'schema categories',
       'schema groups',
     ]);

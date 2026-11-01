@@ -211,7 +211,7 @@ export function tableIdOf(snapshot: ChangesSnapshot, identity: string): string {
   return tableId;
 }
 
-function pairIdsOf({ head, draft }: RowPair): RowPairIds {
+export function pairIdsOf({ head, draft }: RowPair): RowPairIds {
   if (!head) {
     return { draft: draft?.id };
   }

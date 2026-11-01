@@ -35,26 +35,46 @@ export interface ResolutionView {
   readonly unmatched: UnmatchedSelection;
 }
 
+export interface ResolvedSelection {
+  readonly compared: ComparedSnapshot;
+  readonly catalogue: ChangeCatalogue;
+  readonly resolution: SelectionResolution;
+}
+
 export function readSelectionResolution(
   kit: PartialChangesTestKit,
   branch: ChangesBranch,
   selection: Selection,
 ): Promise<ResolutionView> {
   return readInPlanningTransaction(kit, async () => {
-    const compared = await readComparedSnapshotFor(kit, branch, selection);
-    const catalogue = await readCatalogueOfSelection(kit, compared, selection);
-    const resolution = resolveSelection(selection, {
-      ...compared,
-      catalogue,
-      addressedRows: await readAddressedRows(
-        kit.snapshotReader,
-        compared.snapshot,
-        selection,
-      ),
-    });
+    const { catalogue, resolution } = await readResolvedSelection(
+      kit,
+      branch,
+      selection,
+    );
 
     return resolutionView(catalogue, resolution);
   });
+}
+
+export async function readResolvedSelection(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  selection: Selection,
+): Promise<ResolvedSelection> {
+  const compared = await readComparedSnapshotFor(kit, branch, selection);
+  const catalogue = await readCatalogueOfSelection(kit, compared, selection);
+  const resolution = resolveSelection(selection, {
+    ...compared,
+    catalogue,
+    addressedRows: await readAddressedRows(
+      kit.snapshotReader,
+      compared.snapshot,
+      selection,
+    ),
+  });
+
+  return { compared, catalogue, resolution };
 }
 
 async function readCatalogueOfSelection(

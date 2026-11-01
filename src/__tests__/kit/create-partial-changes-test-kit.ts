@@ -13,6 +13,7 @@ import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admis
 import { DraftModule } from 'src/features/draft/draft.module';
 import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
 import { MigrationModule } from 'src/features/migration/migration.module';
+import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import type { LedgerReplayRules } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { PartialChangesModule } from 'src/features/partial-changes/partial-changes.module';
 import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
@@ -47,6 +48,7 @@ export interface PartialChangesTestKit {
   viewsApi: ViewsApiService;
   snapshotReader: ChangesSnapshotReader;
   scopedCatalogueReader: ScopedCatalogueReader;
+  targetAssembler: TargetAssembler;
   schemaRules: NativeSchemaRules;
   replayRules: LedgerReplayRules;
   viewsMigration: ViewsMigrationService;
@@ -112,6 +114,7 @@ export async function createPartialChangesTestKit({
     viewsApi: module.get(ViewsApiService),
     snapshotReader: module.get(ChangesSnapshotReader),
     scopedCatalogueReader: module.get(ScopedCatalogueReader),
+    targetAssembler: module.get(TargetAssembler),
     schemaRules: module.get(NativeSchemaRules),
     replayRules,
     viewsMigration: module.get(ViewsMigrationService),

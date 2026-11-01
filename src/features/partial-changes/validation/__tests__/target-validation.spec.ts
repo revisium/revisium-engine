@@ -185,6 +185,7 @@ describe('TargetValidator', () => {
 
       const blockers = await draft.validateTarget('revert', {
         tables: [TAGS],
+        exclude: { tables: [PRODUCTS] },
       });
 
       expect(blockers).toEqual([
@@ -220,6 +221,7 @@ describe('TargetValidator', () => {
 
       const blockers = await draft.validateTarget('revert', {
         tables: [TAGS],
+        exclude: { tables: [PRODUCTS] },
       });
 
       expect(blockers).toEqual([

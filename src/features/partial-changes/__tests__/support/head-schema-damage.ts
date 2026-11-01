@@ -3,12 +3,10 @@ import type {
   JsonPatch,
   JsonSchema,
   JsonValue,
-  Migration,
 } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
-import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
   replayOf,
   update,
@@ -18,6 +16,7 @@ import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { describeMigration } from './catalogue-reading';
 import type { ChangesScenario } from './changes-scenario';
+import { ledgerOf } from './ledger-replaying';
 import type { RevisionSide } from './snapshot-reading';
 
 interface MigratedRow {
@@ -87,17 +86,6 @@ export async function replayedHeadLedgerOf(
   draft: ChangesScenario,
 ): Promise<ReplayedLedger> {
   return replayOf(...(await ledgerOf(draft, 'head')));
-}
-
-async function ledgerOf(
-  draft: ChangesScenario,
-  side: RevisionSide,
-): Promise<Migration[]> {
-  const snapshot = await draft.readSnapshot();
-
-  return snapshot.systemRows.migrations[side]
-    .map(({ data }) => data as unknown as Migration)
-    .sort((left, right) => compareCodePoints(left.id, right.id));
 }
 
 function migrateTable(

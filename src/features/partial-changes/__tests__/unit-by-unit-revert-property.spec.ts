@@ -13,11 +13,14 @@ import { givenRandomDraft, RANDOM_DRAFT_SEEDS } from './support/random-draft';
 import { comparedColumnsOf } from './support/revision-contents';
 import { UnitKindCoverage } from './support/unit-kind-coverage';
 
-// The closure (SPEC §6.6) follows dependencies between the tables of the target, not between ledger steps: when a
-// pending migration needs a table id that only another unit's pending migration provides (a table renamed into a
-// vacated id, a table created with a reference to a table created or renamed in the Draft), reverting that other unit
-// alone is blocked as ledgerInconsistent (§6.9). These Drafts make no such steps until the SPEC closes that gap.
-const WITHOUT_LEDGER_ONLY_DEPENDENCIES = { ledgerOnlyDependencies: false };
+// A Draft in which reverting a unit alone requires reverting another unit whose pending migration needs a table id at
+// its ledger step (SPEC §6.6); the random revert order of this seed reaches that state.
+const SEEDS_WITH_LEDGER_DEPENDENCIES = [5_767_684];
+
+// A structure revert can change the form of the remaining units (row columns become field units), so the number of
+// listed units does not shrink with every revert.
+const REVERTS_PER_LISTED_UNIT = 3;
+const EXTRA_REVERTS = 10;
 
 describe('reverting listed units one by one over random Drafts (AS-65a)', () => {
   let kit: PartialChangesTestKit;
@@ -35,14 +38,10 @@ describe('reverting listed units one by one over random Drafts (AS-65a)', () => 
     await kit.close();
   });
 
-  it.each(RANDOM_DRAFT_SEEDS)(
+  it.each([...RANDOM_DRAFT_SEEDS, ...SEEDS_WITH_LEDGER_DEPENDENCIES])(
     'leaves the Draft equal to Head in every compared column, without changes (seed %i)',
     async (seed) => {
-      const draft = await givenRandomDraft(
-        kit,
-        seed,
-        WITHOUT_LEDGER_ONLY_DEPENDENCIES,
-      );
+      const draft = await givenRandomDraft(kit, seed);
       coverage.record(await draft.listEveryUnit());
 
       await revertListedUnitsOneByOne(draft, seededRandom(seed));
@@ -62,24 +61,25 @@ describe('reverting listed units one by one over random Drafts (AS-65a)', () => 
     draft: ChangesScenario,
     random: SeededRandom,
   ): Promise<void> {
-    const listedAtStart = await draft.listEveryUnit();
+    let units = await draft.listEveryUnit();
+    const maxReverts = REVERTS_PER_LISTED_UNIT * units.length + EXTRA_REVERTS;
 
-    for (let reverted = 0; reverted < listedAtStart.length; reverted += 1) {
-      const units = await draft.listEveryUnit();
-
-      if (units.length === 0) {
-        return;
-      }
-
+    for (
+      let reverted = 0;
+      units.length > 0 && reverted < maxReverts;
+      reverted += 1
+    ) {
       const unit = random.pick(units);
 
       expect({ unit, result: await revertAsReviewed(draft, unit) }).toEqual({
         unit,
         result: expect.objectContaining({ status: 'applied' }),
       });
+
+      units = await draft.listEveryUnit();
     }
 
-    expect(await draft.listEveryUnit()).toEqual([]);
+    expect(units).toEqual([]);
   }
 
   async function revertAsReviewed(

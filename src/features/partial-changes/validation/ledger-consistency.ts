@@ -278,7 +278,7 @@ function tableIdsOf(slots: readonly ReplayedSlot[]): Set<string> {
   return new Set(slots.flatMap(({ tableIds }) => tableIds));
 }
 
-function readTableIdsByStep({
+export function readTableIdsByStep({
   reads,
 }: ReplayedLedger): ReadonlyMap<string, string[]> {
   const byStep = new Map<string, string[]>();

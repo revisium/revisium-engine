@@ -200,7 +200,7 @@ class SystemTableTargets {
   }
 }
 
-function ownersByVersionId(
+export function ownersByVersionId(
   units: readonly CatalogueUnit[],
   kind: UnitKind,
 ): ReadonlyMap<string, string> {

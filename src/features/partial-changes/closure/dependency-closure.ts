@@ -1,8 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  AppliedUnits,
-  ChangeOperation,
-} from 'src/features/partial-changes/assembly/outcome-rules';
 import {
   type AssembledTarget,
   TargetAssembler,
@@ -23,23 +19,26 @@ import {
   type OperationEstimation,
   OperationEstimator,
 } from 'src/features/partial-changes/limits/operation-estimator';
-import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
+import type {
+  AppliedUnits,
+  ChangeOperation,
+} from 'src/features/partial-changes/plan/change-operation';
+import {
+  distinctBlockers,
+  type PlanBlocker,
+  requiredExcluded,
+} from 'src/features/partial-changes/plan/plan-blocker';
+import type { Reason } from 'src/features/partial-changes/plan/reason';
 import {
   isWholeDraftSelection,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type {
-  PlanBlocker,
-  Reason,
   SelectionResolution,
   SelectionSource,
   UnmatchedSelection,
 } from 'src/features/partial-changes/selection/selection-resolution';
-import {
-  distinctBlockers,
-  requiredExcluded,
-  resolveSelection,
-} from 'src/features/partial-changes/selection/selection-resolver';
+import { resolveSelection } from 'src/features/partial-changes/selection/selection-resolver';
 import {
   type RequiredUnit,
   requiredUnitsOf,
@@ -110,7 +109,6 @@ export class DependencyClosure {
 }
 
 class SelectionClosure {
-  private readonly lookup: CatalogueLookup;
   private readonly applied: Set<string>;
   private readonly required: Map<string, Reason>;
 
@@ -120,7 +118,6 @@ class SelectionClosure {
     private readonly resolution: SelectionResolution,
     private readonly steps: ClosureSteps,
   ) {
-    this.lookup = new CatalogueLookup(source.catalogue);
     this.applied = new Set([
       ...resolution.selected,
       ...resolution.required.keys(),
@@ -172,7 +169,6 @@ class SelectionClosure {
   ): Promise<Finding[]> {
     const context = new CheckContext(
       this.source,
-      this.lookup,
       this.steps.schemas,
       target,
       choice,
@@ -211,7 +207,10 @@ class SelectionClosure {
     const { unitKey, reason } = finding;
 
     if (this.resolution.excluded.has(unitKey)) {
-      return requiredExcluded(this.lookup.unit(unitKey), reason);
+      return requiredExcluded(
+        this.source.catalogue.lookup.unit(unitKey),
+        reason,
+      );
     }
 
     return danglingInSource(reason.because, reason, unitKey);

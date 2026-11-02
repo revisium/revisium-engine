@@ -4,12 +4,7 @@ import {
   type CatalogueTables,
   distinctRows,
   previousTableIdOf,
-  publicTableIdOf,
 } from 'src/features/partial-changes/catalogue/catalogue-tables';
-import type {
-  LedgerAttribution,
-  TableHistory,
-} from 'src/features/partial-changes/catalogue/ledger-attribution';
 import {
   groupPublicIdOf,
   groupRecreations,
@@ -24,7 +19,14 @@ import {
   transientStructureUnitKey,
 } from 'src/features/partial-changes/catalogue/unit-key';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
-import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import {
+  publicTableIdOf,
+  type TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type {
+  LedgerAttribution,
+  TableHistory,
+} from 'src/features/partial-changes/snapshot/ledger-attribution';
 import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
 
 interface StructureUnitParts {

@@ -7,7 +7,7 @@ import {
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import type { MigrationOptions } from 'src/features/migration/types/migration-options.types';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';

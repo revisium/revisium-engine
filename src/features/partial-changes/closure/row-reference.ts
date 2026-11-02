@@ -4,13 +4,13 @@ import {
   type Finding,
   refusedBy,
   requiring,
-  type SideNames,
 } from 'src/features/partial-changes/closure/findings';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
+import type { SideNames } from 'src/features/partial-changes/plan/change-operation';
 import type {
   Reason,
   RequiredReasonCode,
-} from 'src/features/partial-changes/selection/selection-resolution';
+} from 'src/features/partial-changes/plan/reason';
 
 export interface ReferringSite {
   readonly tableId: string;

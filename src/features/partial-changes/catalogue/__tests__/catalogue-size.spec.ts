@@ -5,7 +5,6 @@ import {
   type CatalogueSource,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
-import { attributeLedger } from 'src/features/partial-changes/catalogue/ledger-attribution';
 import { checkHeadSchema } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   ChangesSnapshot,
@@ -13,6 +12,7 @@ import type {
   SystemTableRows,
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { attributeLedger } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import {
   refs,
   replayer,

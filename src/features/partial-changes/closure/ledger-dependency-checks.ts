@@ -13,7 +13,7 @@ import {
   requiring,
 } from 'src/features/partial-changes/closure/findings';
 import { TableIdTimeline } from 'src/features/partial-changes/closure/table-id-timeline';
-import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
+import type { Reason } from 'src/features/partial-changes/plan/reason';
 import {
   LedgerConsistency,
   lineageOf,

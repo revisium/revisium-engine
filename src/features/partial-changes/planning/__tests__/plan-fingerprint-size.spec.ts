@@ -59,8 +59,6 @@ function givenAppliedFieldUnits(count: number): FingerprintedPlan {
     catalogue: {
       units,
       rows: new Map([[TABLE_IDENTITY, rows]]),
-      ledgerInconsistencies: [],
-      refusedTables: [],
     },
     applied: new Set(units.map(({ key }) => key)),
   };

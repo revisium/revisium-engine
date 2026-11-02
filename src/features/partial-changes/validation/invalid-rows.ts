@@ -1,9 +1,5 @@
 import type { ErrorObject } from 'ajv/dist/2020';
-import {
-  type AppliedUnits,
-  OutcomeRules,
-} from 'src/features/partial-changes/assembly/outcome-rules';
-import { versionOn } from 'src/features/partial-changes/assembly/read-tables';
+import { OutcomeRules } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
 import type {
   AssembledTarget,
@@ -13,12 +9,15 @@ import type {
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
-import { sideNamesOf } from 'src/features/partial-changes/closure/findings';
-import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
-import type {
-  RowPair,
-  TableVersion,
+import {
+  type AppliedUnits,
+  sideNamesOf,
+} from 'src/features/partial-changes/plan/change-operation';
+import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import {
+  type RowPair,
+  type TableVersion,
+  versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 
@@ -29,7 +28,6 @@ interface MergedTargetRow {
 
 export class InvalidRows {
   private readonly rules: OutcomeRules;
-  private readonly lookup: CatalogueLookup;
   private readonly targetName: string;
 
   constructor(
@@ -38,7 +36,6 @@ export class InvalidRows {
     choice: AppliedUnits,
   ) {
     this.rules = new OutcomeRules(choice);
-    this.lookup = new CatalogueLookup(source.catalogue);
     this.targetName = sideNamesOf(choice.operation).target;
   }
 
@@ -96,7 +93,7 @@ export class InvalidRows {
   private unitTakingOtherSideOf(plan: TablePlan, pair: RowPair): string {
     const [unit] = unitKeysOf(this.catalogueRowOf(plan, pair))
       .filter((key) => this.rules.sideTakenBy(key) !== plan.structureSide)
-      .map((key) => this.lookup.unit(key))
+      .map((key) => this.source.catalogue.lookup.unit(key))
       .sort(compareUnits);
 
     if (!unit) {

@@ -1,8 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import {
-  type AppliedUnits,
-  type ChangeOperation,
   OutcomeRules,
   type RowOutcomeKind,
   type RowWithOutcome,
@@ -12,7 +10,6 @@ import {
   type ReadTable,
   readTablesOf,
   tableRulesOf,
-  versionOn,
 } from 'src/features/partial-changes/assembly/read-tables';
 import {
   type SystemTableTarget,
@@ -22,10 +19,16 @@ import {
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { estimateTooLarge } from 'src/features/partial-changes/limits/too-large-blockers';
-import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
+import type {
+  AppliedUnits,
+  ChangeOperation,
+} from 'src/features/partial-changes/plan/change-operation';
+import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
-import type { TableVersion } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import {
+  type TableVersion,
+  versionOn,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { hasFormulaOrFileFields } from 'src/features/partial-changes/structure/schema-fields';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
@@ -93,7 +96,7 @@ export class OperationEstimation {
     private readonly snapshotReader: ChangesSnapshotReader,
     private readonly limits: PartialChangesLimits,
   ) {
-    this.tables = readTablesOf(source, new CatalogueLookup(source.catalogue));
+    this.tables = readTablesOf(source);
   }
 
   public async estimateAndGuard(

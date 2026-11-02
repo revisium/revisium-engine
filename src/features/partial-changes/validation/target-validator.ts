@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import type { AppliedUnits } from 'src/features/partial-changes/assembly/outcome-rules';
-import {
-  type AssembledTarget,
-  type AssemblySource,
-  unrecordedStructureChangeOf,
+import type {
+  AssembledTarget,
+  AssemblySource,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
-import { distinctBlockers } from 'src/features/partial-changes/selection/selection-resolver';
+import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
+import {
+  distinctBlockers,
+  type PlanBlocker,
+  unrecordedStructureChangeOf,
+} from 'src/features/partial-changes/plan/plan-blocker';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { InvalidRows } from 'src/features/partial-changes/validation/invalid-rows';
 import { LedgerConsistency } from 'src/features/partial-changes/validation/ledger-consistency';
@@ -81,7 +82,6 @@ function unrecordedStructureChangesOf(
     return [];
   }
 
-  const lookup = new CatalogueLookup(catalogue);
   const unrecorded = new Set(
     tables
       .filter(({ structure }) => !structure.recorded)
@@ -90,7 +90,9 @@ function unrecordedStructureChangesOf(
 
   return snapshot.tables
     .filter((pair) => unrecorded.has(pair.identity))
-    .filter((pair) => isApplied(applied, lookup.tableUnitOf('structure', pair)))
+    .filter((pair) =>
+      isApplied(applied, catalogue.lookup.tableUnitOf('structure', pair)),
+    )
     .map(unrecordedStructureChangeOf);
 }
 

@@ -4,10 +4,8 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import type {
-  ChangeOperation,
-  TableOutcome,
-} from 'src/features/partial-changes/assembly/outcome-rules';
+import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { removeField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';

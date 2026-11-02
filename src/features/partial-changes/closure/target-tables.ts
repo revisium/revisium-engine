@@ -4,7 +4,6 @@ import {
   type RevisionSide,
 } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { OutcomeRules } from 'src/features/partial-changes/assembly/outcome-rules';
-import { versionOn } from 'src/features/partial-changes/assembly/read-tables';
 import type {
   AssembledTarget,
   TablePlan,
@@ -13,10 +12,10 @@ import type {
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { CheckSource } from 'src/features/partial-changes/closure/findings';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
-import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
-import type {
-  TablePair,
-  TableVersion,
+import {
+  type TablePair,
+  type TableVersion,
+  versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
@@ -151,7 +150,6 @@ export class TargetTables {
     private readonly source: CheckSource,
     target: AssembledTarget,
     private readonly rules: OutcomeRules,
-    private readonly lookup: CatalogueLookup,
   ) {
     this.plans = new Map(target.tables.map((plan) => [plan.identity, plan]));
     this.changedPointers = new Map(
@@ -215,7 +213,7 @@ export class TargetTables {
 
   private targetTablesOf(pair: TablePair): TargetTable[] {
     const structureSide = this.rules.structureSideOf(
-      this.lookup.tableUnitOf('structure', pair)?.key,
+      this.source.catalogue.lookup.tableUnitOf('structure', pair)?.key,
     );
 
     if (!pair[structureSide]) {

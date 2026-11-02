@@ -1,31 +1,29 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type {
-  AppliedUnits,
-  ChangeOperation,
-} from 'src/features/partial-changes/assembly/outcome-rules';
 import type { AssembledTarget } from 'src/features/partial-changes/assembly/target-assembler';
-import type {
-  ChangeCatalogue,
-  ComparedSnapshot,
-} from 'src/features/partial-changes/catalogue/change-catalogue';
+import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type {
   ClosureSource,
   DependencyClosureResult,
 } from 'src/features/partial-changes/closure/dependency-closure';
 import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import type {
+  AppliedUnits,
+  ChangeOperation,
+} from 'src/features/partial-changes/plan/change-operation';
+import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
   isWholeDraftSelection,
   type ItemKind,
   type Selection,
   type SelectionItems,
 } from 'src/features/partial-changes/selection/selection';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import {
   type RequiredUnit,
   type UnitRef,
   unitRefOf,
 } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { readSelectionSource, unitKeyed } from './selection-resolving';
 import { readInPlanningTransaction } from './snapshot-reading';

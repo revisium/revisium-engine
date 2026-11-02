@@ -1,14 +1,19 @@
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type {
   CatalogueRow,
   CatalogueUnit,
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
+import { PublicIdIndex } from 'src/features/partial-changes/catalogue/public-id-index';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import { PublicIdIndex } from 'src/features/partial-changes/selection/public-id-index';
-import type { AddressedRow } from 'src/features/partial-changes/selection/selection-targets';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 const TABLE_UNIT_KINDS: ReadonlySet<UnitKind> = new Set(['structure', 'views']);
+
+export interface AddressedRow {
+  readonly table: TablePair;
+  readonly rowId: string;
+  readonly side: RevisionSide;
+}
 
 export class CatalogueLookup {
   private readonly rows = new Map<string, PublicIdIndex<CatalogueRow>>();
@@ -17,12 +22,15 @@ export class CatalogueLookup {
   private readonly rowLevelUnits = new Map<string, CatalogueUnit[]>();
   private readonly unitsWithoutTable = new Map<string, CatalogueUnit[]>();
 
-  constructor(catalogue: ChangeCatalogue) {
-    for (const [identity, rows] of catalogue.rows) {
-      this.rows.set(identity, new PublicIdIndex(rows, ({ pair }) => pair));
+  constructor(
+    units: readonly CatalogueUnit[],
+    rows: ReadonlyMap<string, readonly CatalogueRow[]>,
+  ) {
+    for (const [identity, tableRows] of rows) {
+      this.rows.set(identity, new PublicIdIndex(tableRows, ({ pair }) => pair));
     }
 
-    for (const unit of catalogue.units) {
+    for (const unit of units) {
       this.index(unit);
     }
   }

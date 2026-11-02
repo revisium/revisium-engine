@@ -1,15 +1,12 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type {
-  ChangeCatalogue,
-  ComparedSnapshot,
-} from 'src/features/partial-changes/catalogue/change-catalogue';
+import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { ClosureSource } from 'src/features/partial-changes/closure/dependency-closure';
+import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { Reason } from 'src/features/partial-changes/plan/reason';
 import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
-  PlanBlocker,
-  Reason,
   SelectionResolution,
   UnmatchedSelection,
 } from 'src/features/partial-changes/selection/selection-resolution';
@@ -18,6 +15,7 @@ import type { ChangesBranch } from 'src/features/partial-changes/snapshot/change
 import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
 import { readComparedSnapshotFor } from './scoped-reading';
 import { readInPlanningTransaction } from './snapshot-reading';
+import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 
 export interface RequiredUnitView {
   readonly unit: AddressedUnit;

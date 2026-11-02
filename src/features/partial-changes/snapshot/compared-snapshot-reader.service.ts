@@ -1,11 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
-import {
-  attributeLedger,
-  type LedgerAttribution,
-  pendingMigrationsOf,
-} from 'src/features/partial-changes/catalogue/ledger-attribution';
 import {
   checkHeadSchema,
   type HeadSchemaCheck,
@@ -18,11 +12,23 @@ import type {
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
+  attributeLedger,
+  type LedgerAttribution,
+  pendingMigrationsOf,
+} from 'src/features/partial-changes/snapshot/ledger-attribution';
+import {
   analyzeTableStructure,
   type TableSide,
 } from 'src/features/partial-changes/structure/table-structure';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
+
+export interface ComparedSnapshot {
+  readonly snapshot: ChangesSnapshot;
+  readonly ledger: LedgerAttribution;
+  readonly headSchema: HeadSchemaCheck;
+  readonly tables: readonly ComparedTable[];
+}
 
 export interface ComparisonScope {
   readonly wholeDraft: boolean;

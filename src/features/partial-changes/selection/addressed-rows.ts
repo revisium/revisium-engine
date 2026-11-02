@@ -1,9 +1,9 @@
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
 import {
   PublicIdIndex,
   resolveSide,
-} from 'src/features/partial-changes/selection/public-id-index';
+} from 'src/features/partial-changes/catalogue/public-id-index';
+import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
 import type {
   Selection,
   SelectionItems,

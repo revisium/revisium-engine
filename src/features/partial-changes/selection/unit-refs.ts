@@ -4,12 +4,12 @@ import type {
   HeadQualifier,
   Unit,
 } from 'src/features/partial-changes/catalogue/unit';
+import type { Reason } from 'src/features/partial-changes/plan/reason';
 import type {
   RowRef,
   Selection,
   TableRef,
 } from 'src/features/partial-changes/selection/selection';
-import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
 
 export type UnitRef = Unit & {
   readonly side?: HeadQualifier;

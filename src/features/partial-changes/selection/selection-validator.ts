@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 

@@ -1,11 +1,11 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import {
   type ChangesSnapshot,
   type ComparedTable,
   hasDifferentVersions,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface ListingTable {

@@ -4,10 +4,7 @@ import {
   oppositeOf,
   type RevisionSide,
 } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import type {
-  ChangeOperation,
-  TableOutcome,
-} from 'src/features/partial-changes/assembly/outcome-rules';
+import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
 import type {
@@ -17,6 +14,7 @@ import type {
   TargetRow,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
   isWholeDraftSelection,

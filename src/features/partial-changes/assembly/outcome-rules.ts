@@ -4,17 +4,13 @@ import {
 } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type {
+  AppliedUnits,
+  ChangeOperation,
+} from 'src/features/partial-changes/plan/change-operation';
+import type {
   RowPair,
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-
-export type ChangeOperation = 'commit' | 'revert';
-
-export interface AppliedUnits {
-  readonly operation: ChangeOperation;
-  readonly applied: ReadonlySet<string>;
-  readonly wholeDraft: boolean;
-}
 
 export type OtherSideColumn = 'publishedAt' | 'meta' | 'schemaHash';
 

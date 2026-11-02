@@ -1,5 +1,8 @@
+import type {
+  AddressedRow,
+  CatalogueLookup,
+} from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import {
   isCreatedOrRemoved,
   requireStructureOfCreatedOrRemoved,
@@ -11,10 +14,7 @@ import {
   type TableRef,
   tableRefOf,
 } from 'src/features/partial-changes/selection/selection';
-import type {
-  AddressedRow,
-  SelectionTargets,
-} from 'src/features/partial-changes/selection/selection-targets';
+import type { SelectionTargets } from 'src/features/partial-changes/selection/selection-targets';
 import {
   ItemsResolution,
   NO_MATCH,

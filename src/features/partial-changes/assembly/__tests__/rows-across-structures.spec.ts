@@ -4,7 +4,7 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type { JsonPatch } from '@revisium/schema-toolkit/types';
 import type { InputJsonValue } from 'src/engine-prisma-types';

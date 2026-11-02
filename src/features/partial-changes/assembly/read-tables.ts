@@ -1,12 +1,11 @@
-import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type {
   OutcomeRules,
   TableOutcomeRules,
   TableUnits,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
+import type { CatalogueLookup } from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 
@@ -17,27 +16,18 @@ export interface ReadTable {
   readonly rows: readonly CatalogueRow[];
 }
 
-interface Version {
-  readonly id: string;
-}
-
-interface VersionPair<T extends Version> {
-  readonly identity: string;
-  readonly head?: T;
-  readonly draft?: T;
-}
-
-export function readTablesOf(
-  { snapshot, tables, catalogue }: AssemblySource,
-  lookup: CatalogueLookup,
-): ReadTable[] {
+export function readTablesOf({
+  snapshot,
+  tables,
+  catalogue,
+}: AssemblySource): ReadTable[] {
   return [...catalogue.rows].map(([identity, rows]) => {
     const pair = requiredOf(snapshot.tables, identity);
 
     return {
       pair,
       structure: requiredOf(tables, identity).structure,
-      units: unitsOf(pair, lookup),
+      units: unitsOf(pair, catalogue.lookup),
       rows,
     };
   });
@@ -48,27 +38,6 @@ export function tableRulesOf(
   { units, structure }: ReadTable,
 ): TableOutcomeRules {
   return rules.forTable({ units, structureDiffers: structure.differs });
-}
-
-export function versionOn<T extends Version>(
-  pair: VersionPair<T>,
-  side: RevisionSide,
-): T {
-  const version = pair[side];
-
-  if (!version) {
-    throw new Error(`${publicIdOrIdentityOf(pair)} has no ${side} version`);
-  }
-
-  return version;
-}
-
-export function publicIdOrIdentityOf({
-  identity,
-  head,
-  draft,
-}: VersionPair<Version>): string {
-  return draft?.id ?? head?.id ?? identity;
 }
 
 function unitsOf(pair: TablePair, lookup: CatalogueLookup): TableUnits {

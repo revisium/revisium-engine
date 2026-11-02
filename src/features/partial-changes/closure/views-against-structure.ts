@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { TargetViews } from 'src/features/partial-changes/assembly/system-target-assembler';
-import {
-  CatalogueTables,
-  publicTableIdOf,
-} from 'src/features/partial-changes/catalogue/catalogue-tables';
+import type { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type {
   CheckContext,
   TargetCheck,
@@ -18,7 +15,10 @@ import {
   requiringOrDangling,
 } from 'src/features/partial-changes/closure/findings';
 import { ViewsFit } from 'src/features/partial-changes/closure/views-fit';
-import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import {
+  publicTableIdOf,
+  type TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { ViewValidationService } from 'src/features/views/services';
 
 const REVISION_NAMES: Readonly<Record<RevisionSide, string>> = {
@@ -32,7 +32,7 @@ export class ViewsAgainstStructure implements TargetCheck {
 
   public checkingOf(source: CheckSource): TargetChecking {
     return new ViewsAgainstStructureChecking(
-      new CatalogueTables(source.snapshot, source.tables),
+      source.catalogue.tables,
       new ViewsFit(this.viewValidation, source.snapshot),
     );
   }
@@ -61,8 +61,8 @@ class ViewsAgainstStructureChecking implements TargetChecking {
     context: CheckContext,
     pair: TablePair,
   ): Finding[] {
-    const { lookup, rules, names } = context;
-    const views = lookup.tableUnitOf('views', pair)?.key;
+    const { source, rules, names } = context;
+    const views = source.catalogue.lookup.tableUnitOf('views', pair)?.key;
 
     if (views === undefined) {
       return [];
@@ -139,7 +139,7 @@ class ViewsAgainstStructureChecking implements TargetChecking {
 
   private tableUnitsOf(context: CheckContext, pair: TablePair): string[] {
     return [
-      context.lookup.tableUnitOf('views', pair)?.key,
+      context.source.catalogue.lookup.tableUnitOf('views', pair)?.key,
       context.structureOf(pair),
     ].filter((unit): unit is string => unit !== undefined);
   }

@@ -1,20 +1,19 @@
-import {
-  type AppliedUnits,
-  OutcomeRules,
-} from 'src/features/partial-changes/assembly/outcome-rules';
+import { OutcomeRules } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { AssembledTarget } from 'src/features/partial-changes/assembly/target-assembler';
-import {
-  type CheckSource,
-  type Finding,
-  type SideNames,
-  sideNamesOf,
+import type {
+  CheckSource,
+  Finding,
 } from 'src/features/partial-changes/closure/findings';
 import type { TableSchemas } from 'src/features/partial-changes/closure/table-schemas';
 import {
   type TargetTable,
   TargetTables,
 } from 'src/features/partial-changes/closure/target-tables';
-import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
+import {
+  type AppliedUnits,
+  type SideNames,
+  sideNamesOf,
+} from 'src/features/partial-changes/plan/change-operation';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
@@ -33,18 +32,17 @@ export class CheckContext {
 
   constructor(
     public readonly source: CheckSource,
-    public readonly lookup: CatalogueLookup,
     public readonly schemas: TableSchemas,
     public readonly target: AssembledTarget,
     public readonly choice: AppliedUnits,
   ) {
     this.rules = new OutcomeRules(choice);
-    this.tables = new TargetTables(source, target, this.rules, lookup);
+    this.tables = new TargetTables(source, target, this.rules);
     this.names = sideNamesOf(choice.operation);
   }
 
   public structureOf(pair: TablePair): string | undefined {
-    return this.lookup.tableUnitOf('structure', pair)?.key;
+    return this.source.catalogue.lookup.tableUnitOf('structure', pair)?.key;
   }
 
   public unappliedStructureHolding(

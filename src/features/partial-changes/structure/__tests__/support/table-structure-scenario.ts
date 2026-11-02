@@ -12,11 +12,7 @@ import {
   analyzeTableStructure,
   type TableStructure,
 } from 'src/features/partial-changes/structure/table-structure';
-import {
-  refs,
-  update,
-  validator,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { refs, update, validator } from 'src/__tests__/fixtures/ledger-steps';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 

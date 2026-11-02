@@ -1,7 +1,6 @@
-import type { Migration } from '@revisium/schema-toolkit/types';
+import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
-import { replayOf } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import {
   type LedgerEntry,
@@ -10,6 +9,8 @@ import {
   splitLedger,
 } from 'src/features/share/ledger/migration-ledger';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
+import { replayOf } from './ledger-steps';
 import type { BranchScenario } from './branch-scenario';
 
 type ChangeType = Migration['changeType'];
@@ -28,6 +29,17 @@ export async function ledgerIdsOf(
   const rows = await ledgerRowsOf(draft, side);
 
   return rows.map(({ id }) => id);
+}
+
+export async function storedSchemasOf(
+  draft: BranchScenario,
+  side: RevisionSide,
+): Promise<Record<string, JsonSchema>> {
+  const schemaRows = await draft.rows(side, SystemTables.Schema);
+
+  return Object.fromEntries(
+    schemaRows.map(({ id, data }) => [id, data as unknown as JsonSchema]),
+  );
 }
 
 export async function describedLedgerOf(
@@ -91,6 +103,14 @@ export async function migrationIdOf(
   const migration = await draftMigrationOf(draft, changeType, tableId);
 
   return migration.id;
+}
+
+export function expectStrictlyAscending(
+  ids: readonly (string | undefined)[],
+): void {
+  const definedIds = ids.filter((id): id is string => id !== undefined);
+
+  expect(ids).toEqual([...new Set(definedIds)].sort(compareCodePoints));
 }
 
 export function describeMigration(migration: Migration): string {

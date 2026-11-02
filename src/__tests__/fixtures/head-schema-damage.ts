@@ -8,9 +8,9 @@ import objectHash from 'object-hash';
 import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
-import { update } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { update } from './ledger-steps';
 import type { BranchScenario } from './branch-scenario';
 
 interface MigratedRow {

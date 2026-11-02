@@ -11,10 +11,7 @@ import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
 import { branchContentOf } from 'src/__tests__/fixtures/branch-content';
 import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
-import {
-  addField,
-  removeField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import {
   type CommitResult,

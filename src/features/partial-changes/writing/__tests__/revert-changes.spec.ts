@@ -5,10 +5,8 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
-import {
-  branchContentsOf,
-  givenActiveMigration,
-} from 'src/features/migration/__tests__/support/ledger-repair-planning';
+import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
+import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
@@ -18,7 +16,7 @@ import type {
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
-import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import {

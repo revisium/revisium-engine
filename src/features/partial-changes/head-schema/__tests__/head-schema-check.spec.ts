@@ -4,10 +4,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
-import {
-  addField,
-  moveField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, moveField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableFixture } from 'src/__tests__/fixtures/branch-scenario';
 import {

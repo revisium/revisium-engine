@@ -7,8 +7,10 @@ import {
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { TableIdentity } from 'src/__tests__/fixtures/branch-scenario';
-import type { ChangesScenario } from './changes-scenario';
+import type {
+  BranchScenario,
+  TableIdentity,
+} from 'src/__tests__/fixtures/branch-scenario';
 
 export interface HeadTable extends TableIdentity {
   readonly rows: readonly Row[];
@@ -27,7 +29,7 @@ export interface TableRow {
 }
 
 export async function readHeadTables(
-  draft: ChangesScenario,
+  draft: BranchScenario,
 ): Promise<ReadonlyMap<string, HeadTable>> {
   const tables = new Map<string, HeadTable>();
 
@@ -44,7 +46,7 @@ export async function readHeadTables(
 export class DraftTables {
   private constructor(public readonly all: readonly DraftTable[]) {}
 
-  public static async read(draft: ChangesScenario): Promise<DraftTables> {
+  public static async read(draft: BranchScenario): Promise<DraftTables> {
     const tables: DraftTable[] = [];
 
     for (const table of await draft.userTables('draft')) {

@@ -1,7 +1,7 @@
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-import type { ChangesScenario } from './changes-scenario';
+import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import type { RevisionSide } from './snapshot-reading';
 
 export interface ComparedColumns {
@@ -25,8 +25,8 @@ export interface VersionedTable {
 }
 
 export async function comparedColumnsOf(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   side: RevisionSide,
 ): Promise<Record<string, readonly ComparedColumns[]>> {
   const tables = await versionedContentsOf(kit, draft, side);
@@ -46,8 +46,8 @@ export async function comparedColumnsOf(
 }
 
 export async function versionedContentsOf(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   side: RevisionSide,
 ): Promise<Record<string, VersionedTable>> {
   const tables = await kit.prisma.table.findMany({

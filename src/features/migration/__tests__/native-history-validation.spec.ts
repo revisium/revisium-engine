@@ -3,10 +3,7 @@ import {
   passesNativeHistoryValidation,
   type TableHistories,
 } from 'src/features/migration/ledger-repair/draft-ledger';
-import {
-  addField,
-  validator,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, validator } from 'src/__tests__/fixtures/ledger-steps';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 
 const NATIVE_ENTRY: HistoryPatches = {

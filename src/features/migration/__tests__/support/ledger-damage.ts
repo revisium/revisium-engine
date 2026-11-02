@@ -6,11 +6,9 @@ import {
   type TableFixture,
 } from 'src/__tests__/fixtures/branch-scenario';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
-import {
-  addField,
-  moveField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
-import { importMigrations, initAt } from './ledger-repair-planning';
+import { addField, moveField } from 'src/__tests__/fixtures/ledger-steps';
+import { importMigrations } from 'src/__tests__/fixtures/ledger-replicas';
+import { initAt } from './ledger-repair-planning';
 
 export const CATEGORIES = 'categories';
 export const PRODUCTS = 'products';

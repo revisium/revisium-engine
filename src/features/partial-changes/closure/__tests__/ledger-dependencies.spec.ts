@@ -9,15 +9,15 @@ import {
   addField,
   moveField,
   removeField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+} from 'src/__tests__/fixtures/ledger-steps';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
-import { migrationIdOf } from 'src/__tests__/fixtures/stored-ledger';
+import {
+  migrationIdOf,
+  storedSchemasOf,
+} from 'src/__tests__/fixtures/stored-ledger';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
-import {
-  replayedSchemasOf,
-  schemasOf,
-} from '../../__tests__/support/ledger-replaying';
+import { replayedSchemasOf } from '../../__tests__/support/ledger-replaying';
 
 const NOTES = 'notes';
 const MEMOS = 'memos';
@@ -463,7 +463,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       expect(result.status).toBe('applied');
       expect(await draft.hasTable('draft', TAGS)).toBe(true);
       expect(await replayedSchemasOf(draft, 'draft')).toEqual(
-        await schemasOf(draft, 'draft'),
+        await storedSchemasOf(draft, 'draft'),
       );
     },
   );
@@ -501,10 +501,10 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       expect(preview.status).toBe('required');
       expect(result.status).toBe('applied');
       expect(await replayedSchemasOf(draft, 'head')).toEqual(
-        await schemasOf(draft, 'head'),
+        await storedSchemasOf(draft, 'head'),
       );
       expect(await replayedSchemasOf(draft, 'draft')).toEqual(
-        await schemasOf(draft, 'draft'),
+        await storedSchemasOf(draft, 'draft'),
       );
     },
   );

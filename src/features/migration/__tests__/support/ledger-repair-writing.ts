@@ -21,15 +21,14 @@ import type {
 } from 'src/features/migration/commands/impl/repair-schema-ledger.command';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
-import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
-import { replayOf } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
+import { replayOf } from 'src/__tests__/fixtures/ledger-steps';
 import type { StoredSchema } from 'src/features/share/ledger/migration-ledger';
 import type { ReplayFailure } from 'src/features/share/ledger-replay/ledger-replay';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-import { importMigrations } from './ledger-repair-planning';
 import { scanBranch } from './ledger-scan';
 
 export type RepairOptions = Pick<RepairSchemaLedgerData, 'tableIds' | 'dryRun'>;
@@ -239,17 +238,6 @@ export async function expectNoHeadOrDraftDamage(
   expect(scan.findings.filter(({ role }) => role !== 'history')).toEqual([]);
 }
 
-export async function expectHeadSyncedReplicaToReproduceTheHead(
-  kit: BranchScenarioTestKit,
-  draft: BranchScenario,
-): Promise<void> {
-  const replica = await BranchScenario.committed(kit, {});
-  await importMigrations(kit, replica, await storedLedgerOf(draft, 'head'));
-  await replica.commit();
-
-  expect(await headSchemasOf(replica)).toEqual(await headSchemasOf(draft));
-}
-
 export async function expectLedgerRowsPublishedAtTheirIds(
   draft: BranchScenario,
 ): Promise<void> {
@@ -285,14 +273,6 @@ export async function draftReplayFailureOf(
   const replay = replayOf(...(await storedLedgerOf(draft, 'draft')));
 
   return replay.unreplayable.get(tableId);
-}
-
-async function headSchemasOf(
-  draft: BranchScenario,
-): Promise<Record<string, unknown>> {
-  const schemaRows = await draft.rows('head', SystemTables.Schema);
-
-  return Object.fromEntries(schemaRows.map(({ id, data }) => [id, data]));
 }
 
 function holdEachBeforeWriting(

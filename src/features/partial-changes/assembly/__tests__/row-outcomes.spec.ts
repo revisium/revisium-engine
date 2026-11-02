@@ -15,7 +15,7 @@ import {
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
-import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 

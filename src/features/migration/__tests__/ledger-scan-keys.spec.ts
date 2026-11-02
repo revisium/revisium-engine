@@ -10,10 +10,7 @@ import type {
   RowHashCount,
   ScannedRevision,
 } from 'src/features/migration/ledger-scan/scan-revision-reader';
-import {
-  init,
-  replayer,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { init, replayer } from 'src/__tests__/fixtures/ledger-steps';
 
 const PRODUCTS = 'products';
 const productSchema = obj({ code: str() });

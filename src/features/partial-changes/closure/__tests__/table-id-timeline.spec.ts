@@ -1,9 +1,6 @@
 import { obj, str } from '@revisium/schema-toolkit/mocks';
 import type { Migration } from '@revisium/schema-toolkit/types';
-import {
-  init,
-  rename,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { init, rename } from 'src/__tests__/fixtures/ledger-steps';
 import { TableIdTimeline } from '../table-id-timeline';
 
 const ALPHA = 'alpha';

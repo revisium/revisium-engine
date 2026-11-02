@@ -6,7 +6,13 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue, Row } from 'src/engine-prisma-types';
-import { expectStrictlyAscending } from 'src/features/migration/__tests__/support/ledger-repair-planning';
+import {
+  describedLedgerOf,
+  expectStrictlyAscending,
+  ledgerIdsOf,
+  pendingMigrationIds,
+  storedSchemasOf,
+} from 'src/__tests__/fixtures/stored-ledger';
 import type {
   CommitChangesResult,
   CommittedDraft,
@@ -20,24 +26,16 @@ import {
   addField,
   moveField,
   replaceField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+} from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
-import {
-  describedLedgerOf,
-  ledgerIdsOf,
-  pendingMigrationIds,
-} from 'src/__tests__/fixtures/stored-ledger';
-import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   DraftSyncedReplica,
   expectPendingMigrationsAfterPublished,
   HeadSyncedReplica,
-} from '../../__tests__/support/ledger-replicas';
-import {
-  replayedSchemasOf,
-  schemasOf,
-} from '../../__tests__/support/ledger-replaying';
+} from 'src/__tests__/fixtures/ledger-replicas';
+import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { replayedSchemasOf } from '../../__tests__/support/ledger-replaying';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const PRODUCTS = 'products';
@@ -678,10 +676,10 @@ describe('commitChanges of structure units', () => {
     draft: ChangesScenario,
   ): Promise<void> {
     expect(await replayedSchemasOf(draft, 'head')).toEqual(
-      await schemasOf(draft, 'head'),
+      await storedSchemasOf(draft, 'head'),
     );
     expect(await replayedSchemasOf(draft, 'draft')).toEqual(
-      await schemasOf(draft, 'draft'),
+      await storedSchemasOf(draft, 'draft'),
     );
   }
 

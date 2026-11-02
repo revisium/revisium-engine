@@ -9,7 +9,12 @@ import {
 } from '@revisium/schema-toolkit/types';
 import type { DraftTestKit } from 'src/__tests__/kit/create-draft-test-kit';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import { init, remove, rename, update } from './ledger-steps';
+import {
+  init,
+  remove,
+  rename,
+  update,
+} from 'src/__tests__/fixtures/ledger-steps';
 import {
   givenNativeDraft,
   type DraftSchemas,

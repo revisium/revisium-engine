@@ -21,16 +21,10 @@ import {
   pendingMigrationOf,
   storedLedgerOf,
 } from 'src/__tests__/fixtures/stored-ledger';
-import {
-  addField,
-  moveField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
-import {
-  branchContentsOf,
-  givenActiveMigration,
-  initAt,
-  planRepair,
-} from './support/ledger-repair-planning';
+import { addField, moveField } from 'src/__tests__/fixtures/ledger-steps';
+import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
+import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
+import { initAt, planRepair } from './support/ledger-repair-planning';
 import {
   committedRevisionIds,
   createBranchFromHead,

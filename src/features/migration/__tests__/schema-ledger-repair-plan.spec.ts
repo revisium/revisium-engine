@@ -19,6 +19,7 @@ import {
 } from 'src/__tests__/fixtures/head-schema-damage';
 import {
   describedLedgerOf,
+  expectStrictlyAscending,
   pendingMigrationIds,
   replayedHeadLedgerOf,
 } from 'src/__tests__/fixtures/stored-ledger';
@@ -26,13 +27,12 @@ import {
   addField,
   moveField,
   removeField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+} from 'src/__tests__/fixtures/ledger-steps';
+import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
+import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
 import {
-  branchContentsOf,
-  expectStrictlyAscending,
-  givenActiveMigration,
-  migratedRowOf,
   lastPublishedMigrationId,
+  migratedRowOf,
   planRepair,
   repairOf,
 } from './support/ledger-repair-planning';

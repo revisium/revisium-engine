@@ -4,10 +4,7 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import {
-  addField,
-  replaceField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, replaceField } from 'src/__tests__/fixtures/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import type { RowPairIds } from '../../__tests__/support/snapshot-reading';
 

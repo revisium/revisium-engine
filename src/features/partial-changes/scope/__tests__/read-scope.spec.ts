@@ -11,7 +11,7 @@ import {
   addField,
   removeField,
   replaceField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+} from 'src/__tests__/fixtures/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { unitsOfTable } from '../../__tests__/support/scoped-reading';
 

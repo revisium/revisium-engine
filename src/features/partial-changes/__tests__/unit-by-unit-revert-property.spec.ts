@@ -9,7 +9,11 @@ import {
   type SeededRandom,
 } from 'src/features/share/ledger-replay/__tests__/support/seeded-random';
 import type { ChangesScenario } from './support/changes-scenario';
-import { givenRandomDraft, RANDOM_DRAFT_SEEDS } from './support/random-draft';
+import {
+  givenRandomDraft,
+  RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  RANDOM_DRAFT_SEEDS,
+} from './support/random-draft';
 import { comparedColumnsOf } from './support/revision-contents';
 import { UnitKindCoverage } from './support/unit-kind-coverage';
 
@@ -51,6 +55,7 @@ describe('reverting listed units one by one over random Drafts (AS-65a)', () => 
       );
       expect(await draft.hasChanges()).toBe(false);
     },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
   it('reverts every unit kind across its seeds', () => {

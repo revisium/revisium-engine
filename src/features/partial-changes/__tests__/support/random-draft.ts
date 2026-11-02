@@ -55,6 +55,10 @@ export const RANDOM_DRAFT_SEEDS = Array.from(
 
 const EDITS_PER_DRAFT = 24;
 
+// One seed builds and applies a whole random Draft; under a loaded CI host it can take several times its usual
+// 5–25 s, well past the default test timeout.
+export const RANDOM_DRAFT_SEED_TIMEOUT_MS = 120_000;
+
 const EDIT_WEIGHTS = {
   editValue: 4,
   editReference: 2,

@@ -16,8 +16,12 @@ const PACKAGE_ENTRY = join(__dirname, '..', '..', 'index.ts');
 const PARTIAL_CHANGES_MODULES = './features/partial-changes/';
 
 const PUBLIC_PARTIAL_CHANGE_TYPES = [
+  'ApplyResult',
+  'ApplyStatus',
   'Blocker',
   'BlockerCode',
+  'ChangeOperation',
+  'ChangedField',
   'ChangesBlocked',
   'ChangesBranch',
   'ChangesRequireAdditions',
@@ -28,6 +32,7 @@ const PUBLIC_PARTIAL_CHANGE_TYPES = [
   'Counts',
   'Deferred',
   'Estimate',
+  'FieldChange',
   'HeadQualifier',
   'ListChangesInput',
   'ListChangesResult',
@@ -35,19 +40,39 @@ const PUBLIC_PARTIAL_CHANGE_TYPES = [
   'NothingToApply',
   'PreviewChangesInput',
   'PreviewChangesResult',
+  'PreviewStatus',
   'Reason',
+  'RefusalCode',
   'RefusedTable',
   'RequiredReasonCode',
   'RequiredUnit',
   'RevertChangesInput',
   'RevertChangesResult',
   'RevertedDraft',
+  'RowColumn',
   'RowRef',
   'Selection',
+  'SelectionInput',
   'SelectionItems',
+  'StructureChange',
+  'TableChange',
   'Unit',
   'UnitKind',
   'UnitRef',
+];
+
+const PUBLIC_PARTIAL_CHANGE_CODE_LISTS = [
+  'APPLY_STATUSES',
+  'BLOCKER_CODES',
+  'CHANGE_OPERATIONS',
+  'FIELD_CHANGES',
+  'HEAD_QUALIFIERS',
+  'PREVIEW_STATUSES',
+  'REFUSAL_CODES',
+  'REQUIRED_REASON_CODES',
+  'ROW_COLUMNS',
+  'TABLE_CHANGES',
+  'UNIT_KINDS',
 ];
 
 const PRODUCTS = 'products';
@@ -95,10 +120,13 @@ describe('EngineApiService.changes', () => {
       });
     });
 
-    it('exports the public partial-change types and no values from the package entry', () => {
+    it('exports the public partial-change types and code lists from the package entry', () => {
       expect(
         namesReExportedFrom(PACKAGE_ENTRY, PARTIAL_CHANGES_MODULES),
-      ).toEqual({ types: PUBLIC_PARTIAL_CHANGE_TYPES, values: [] });
+      ).toEqual({
+        types: PUBLIC_PARTIAL_CHANGE_TYPES,
+        values: PUBLIC_PARTIAL_CHANGE_CODE_LISTS,
+      });
     });
   });
 

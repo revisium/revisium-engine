@@ -204,15 +204,27 @@ export { REPAIR_OUTCOMES } from './features/migration/queries/impl/plan-schema-l
 export { TABLE_REPAIR_OUTCOMES } from './features/migration/commands/impl/repair-schema-ledger.command';
 
 // Partial Changes (EngineApiService.changes)
-export type {
-  ListChangesInput,
-  ListChangesResult,
-  ListedUnit,
+export {
+  TABLE_CHANGES,
+  type ChangedField,
+  type ListChangesInput,
+  type ListChangesResult,
+  type ListedUnit,
+  type StructureChange,
+  type TableChange,
 } from './features/partial-changes/queries/impl/list-draft-changes.query';
+export {
+  FIELD_CHANGES,
+  type FieldChange,
+} from './features/partial-changes/structure/table-structure';
 export type {
   PreviewChangesInput,
   PreviewChangesResult,
 } from './features/partial-changes/queries/impl/preview-draft-changes.query';
+export {
+  PREVIEW_STATUSES,
+  type PreviewStatus,
+} from './features/partial-changes/planning/plan-decision';
 export type {
   CommitChangesInput,
   CommitChangesResult,
@@ -223,31 +235,47 @@ export type {
   RevertChangesResult,
   RevertedDraft,
 } from './features/partial-changes/commands/impl/revert-draft-changes.command';
-export type {
-  ChangesBlocked,
-  ChangesRequireAdditions,
-  ChangesStale,
-  NothingToApply,
+export {
+  APPLY_STATUSES,
+  type ApplyResult,
+  type ApplyStatus,
+  type ChangesBlocked,
+  type ChangesRequireAdditions,
+  type ChangesStale,
+  type NothingToApply,
 } from './features/partial-changes/commands/impl/apply-changes';
+export {
+  CHANGE_OPERATIONS,
+  type ChangeOperation,
+} from './features/partial-changes/plan/change-operation';
 export type { ChangesBranch } from './features/partial-changes/snapshot/changes-snapshot';
 export type {
   RowRef,
   Selection,
+  SelectionInput,
   SelectionItems,
 } from './features/partial-changes/selection/selection';
-export type {
-  HeadQualifier,
-  Unit,
-  UnitKind,
+export {
+  HEAD_QUALIFIERS,
+  ROW_COLUMNS,
+  UNIT_KINDS,
+  type HeadQualifier,
+  type RowColumn,
+  type Unit,
+  type UnitKind,
 } from './features/partial-changes/catalogue/unit';
 export type {
   RequiredUnit,
   UnitRef,
 } from './features/partial-changes/selection/unit-refs';
-export type { BlockerCode } from './features/partial-changes/plan/plan-blocker';
-export type {
-  Reason,
-  RequiredReasonCode,
+export {
+  BLOCKER_CODES,
+  type BlockerCode,
+} from './features/partial-changes/plan/plan-blocker';
+export {
+  REQUIRED_REASON_CODES,
+  type Reason,
+  type RequiredReasonCode,
 } from './features/partial-changes/plan/reason';
 export type {
   Blocker,
@@ -255,7 +283,11 @@ export type {
 } from './features/partial-changes/planning/plan-refs';
 export type { Counts } from './features/partial-changes/planning/change-planner';
 export type { Estimate } from './features/partial-changes/limits/operation-estimator';
-export type { RefusedTable } from './features/partial-changes/head-schema/head-schema-check';
+export {
+  REFUSAL_CODES,
+  type RefusalCode,
+  type RefusedTable,
+} from './features/partial-changes/head-schema/head-schema-check';
 
 // Draft Command Data Types
 export type { ApiCreateRevisionCommandData } from './features/draft/commands/impl/api-create-revision.command';

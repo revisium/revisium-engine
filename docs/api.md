@@ -571,6 +571,13 @@ type RowRef = { tableId: string; rowId: string; side?: 'head' };
 
 `side: 'head'` addresses a Head-side unit whose id a rename took over.
 
+An optional input field given as `null` is treated as absent (GraphQL clients send `null` for omitted arguments); the
+input types accept `null` there (`SelectionInput` for a selection). Unknown fields stay refused.
+
+Every code union of these operations is also exported as a runtime list, so a host can build its own enums from them:
+`UNIT_KINDS`, `ROW_COLUMNS`, `HEAD_QUALIFIERS`, `REQUIRED_REASON_CODES`, `BLOCKER_CODES`, `REFUSAL_CODES`,
+`PREVIEW_STATUSES`, `APPLY_STATUSES`, `TABLE_CHANGES`, `FIELD_CHANGES`, `CHANGE_OPERATIONS`.
+
 ### changes.list
 
 Pages the selectable units with exact selectors. Read-only.
@@ -587,6 +594,13 @@ engine.changes.list({
 Returns: `{ headRevisionId, draftRevisionId, units: ListedUnit[], nextCursor: string | null, refusedTables }`
 
 - Each unit carries a `selector` that selects exactly that unit; the caller adds it to a selection or to `exclude`.
+- A row, field or views unit of a table that has a structure unit carries `structure`: that structure unit as a
+  `UnitRef`, with its own exact `selector`.
+- A structure unit carries `structureChange: { table, fields }`. `table` is `created`, `removed`, `replaced` (removed
+  and created again at the same id), `transient` (created and removed inside the Draft) or `changed`. For a `changed`
+  table, `fields` lists every changed field as `{ path, change }`: a data JSON Pointer marked `added`, `removed` or
+  `changed` (a moved field reads as `removed` + `added`). The values of new or changed fields in every row travel with
+  the structure unit; rows that differ only there have no units of their own.
 - A page can hold fewer than `pageSize` units, or none. Only `nextCursor: null` ends the listing.
 - Each page reads its own snapshot and returns its Head and Draft ids, so concurrent edits can move units between
   pages. What a commit or revert applies is bound by `expected`, not by the listing.

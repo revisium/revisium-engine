@@ -42,7 +42,9 @@ export type PublishedAtOwner =
   | { readonly owner: 'structure' }
   | { readonly owner: 'rowColumns' };
 
-export type FieldChange = 'added' | 'removed' | 'changed';
+export const FIELD_CHANGES = ['added', 'removed', 'changed'] as const;
+
+export type FieldChange = (typeof FIELD_CHANGES)[number];
 
 export interface ChangedLeaf {
   readonly pointer: JsonPointer;

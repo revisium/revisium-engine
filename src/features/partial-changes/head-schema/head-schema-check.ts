@@ -14,7 +14,12 @@ import {
 import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
-export type RefusalCode = 'headSchemaInconsistent' | 'unledgeredTable';
+export const REFUSAL_CODES = [
+  'headSchemaInconsistent',
+  'unledgeredTable',
+] as const;
+
+export type RefusalCode = (typeof REFUSAL_CODES)[number];
 
 export interface RefusedTable {
   readonly tableId: string;

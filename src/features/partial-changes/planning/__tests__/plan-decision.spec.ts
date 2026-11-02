@@ -4,6 +4,7 @@ import {
   type DecidedPlan,
   decidePlanStatus,
   type PlanStatus,
+  PREVIEW_STATUSES,
   type PreviewTerms,
 } from 'src/features/partial-changes/planning/plan-decision';
 import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
@@ -40,7 +41,7 @@ interface DecisionCase {
 }
 
 describe('decidePlanStatus: the status decision of SPEC §5.6 in its order', () => {
-  it.each<DecisionCase>([
+  const decisions: DecisionCase[] = [
     {
       when: 'a limit refused the plan, before every other step, whatever expected is',
       plan: { refusedByLimit: true, applied: true, required: true },
@@ -107,8 +108,21 @@ describe('decidePlanStatus: the status decision of SPEC §5.6 in its order', () 
       terms: PREVIEW,
       decides: 'ready',
     },
-  ])('decides $decides when $when', ({ plan, terms, decides }) => {
-    expect(decidePlanStatus(decidedPlanOf(plan), terms)).toBe(decides);
+  ];
+
+  it.each(decisions)(
+    'decides $decides when $when',
+    ({ plan, terms, decides }) => {
+      expect(decidePlanStatus(decidedPlanOf(plan), terms)).toBe(decides);
+    },
+  );
+
+  it('covers every value of PREVIEW_STATUSES, and stale', () => {
+    const statuses = decisions.map(({ decides }) => decides);
+
+    expect(new Set(statuses)).toEqual(
+      new Set<PlanStatus>([...PREVIEW_STATUSES, 'stale']),
+    );
   });
 });
 

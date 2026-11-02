@@ -521,6 +521,23 @@ added (§6.9).
   `commitChanges` or `revertChanges` without `expected`; only the exact selection `{ all: true }` may omit it. The
   engine operations keep `expected` optional for internal callers.
 - Paths are JSON Pointers at every boundary; native dot paths stay internal to the patch APIs.
+- Every code union of the operations (§5.11) has one runtime list in the engine, next to its type, and the type is
+  derived from the list. A transport builds its enums from these lists instead of copying the values, so a code the
+  engine adds reaches it without a hand-kept mirror:
+
+| List | Values of |
+| --- | --- |
+| `CHANGE_OPERATIONS` | `PreviewChangesInput.operation` |
+| `UNIT_KINDS` | `UnitKind` (§3.4) |
+| `ROW_COLUMNS` | `Unit.columns` |
+| `HEAD_QUALIFIERS` | `Side` |
+| `TABLE_CHANGES` | `TableChange` (§5.2) |
+| `FIELD_CHANGES` | `ChangedField.change` (§5.2) |
+| `REQUIRED_REASON_CODES` | `RequiredReasonCode` (§5.7) |
+| `BLOCKER_CODES` | `BlockerCode` (§5.8) |
+| `REFUSAL_CODES` | `RefusedTable.code` (§6.10) |
+| `PREVIEW_STATUSES` | `PreviewChangesResult.status` (§5.6) |
+| `APPLY_STATUSES` | `ApplyChangesResult.status` (§5.6) |
 
 **Transport contract (delivery stage 4).** Names are proposals; they avoid the native `revertChanges`.
 
@@ -1753,6 +1770,11 @@ Optional inputs:
   when given as `null`. The input types accept `null` in exactly those fields (`SelectionInput`). GraphQL clients
   send `null` for omitted optional arguments, which the engine took as values (`cursor: null` was a malformed cursor,
   `expected: null` made a commit `stale`).
+
+Code lists:
+
+- §5.10: every code union of the operations has one runtime list next to its type, and the type is derived from it,
+  so a transport builds its enums from the engine instead of a hand-kept copy that drifts.
 
 ### Version 1.1 (2026-10-31)
 

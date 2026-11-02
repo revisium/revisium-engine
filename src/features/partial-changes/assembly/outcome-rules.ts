@@ -3,6 +3,10 @@ import {
   type RevisionSide,
 } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import {
+  ROW_COLUMNS,
+  type RowColumn,
+} from 'src/features/partial-changes/catalogue/unit';
 import type {
   AppliedUnits,
   ChangeOperation,
@@ -13,7 +17,7 @@ import type {
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
-export type OtherSideColumn = 'publishedAt' | 'meta' | 'schemaHash';
+export type OtherSideColumn = RowColumn;
 
 type VersionAccess = Pick<TableVersion, 'readonly'>;
 
@@ -59,11 +63,7 @@ const ABSENT: RowOutcome = { kind: 'absent' };
 const STRUCTURE_SIDE: RowOutcome = { kind: 'structureSide' };
 const OTHER_SIDE: RowOutcome = { kind: 'otherSide' };
 const MOVE: RowOutcome = { kind: 'move' };
-const OTHER_SIDE_COLUMNS: readonly OtherSideColumn[] = [
-  'publishedAt',
-  'meta',
-  'schemaHash',
-];
+const OTHER_SIDE_COLUMNS: readonly OtherSideColumn[] = ROW_COLUMNS;
 const BASE_SIDES: Readonly<Record<ChangeOperation, RevisionSide>> = {
   commit: 'head',
   revert: 'draft',

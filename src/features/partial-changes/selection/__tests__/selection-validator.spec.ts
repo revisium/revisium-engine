@@ -1,5 +1,6 @@
 import {
   SelectionValidationError,
+  validateOperation,
   validateRequiredAdditionsAcceptance,
   validateSelection,
 } from 'src/features/partial-changes/selection/selection-validator';
@@ -197,6 +198,13 @@ describe('SelectionValidator', () => {
     },
   ])('refuses $error with a validation error', ({ input, message }) => {
     expectValidationError(() => validateSelection(input), message);
+  });
+
+  it('refuses an operation other than commit and revert', () => {
+    expectValidationError(
+      () => validateOperation('publish'),
+      "operation must be 'commit' or 'revert'",
+    );
   });
 
   it('refuses to include required additions without an expected fingerprint', () => {

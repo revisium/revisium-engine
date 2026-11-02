@@ -11,10 +11,12 @@ import {
   replaceField,
 } from 'src/__tests__/fixtures/ledger-steps';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import type {
-  ChangedField,
-  ListedUnit,
+import {
+  type ChangedField,
+  type ListedUnit,
+  TABLE_CHANGES,
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import { FIELD_CHANGES } from 'src/features/partial-changes/structure/table-structure';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
@@ -64,7 +66,7 @@ describe('listChanges: structure changes', () => {
   });
 
   describe('fields of a changed table', () => {
-    it.each<{ change: string; patches: JsonPatch[]; fields: ChangedField[] }>([
+    const fieldCases: FieldCase[] = [
       {
         change: 'an added field',
         patches: [addField('sku', str())],
@@ -100,13 +102,26 @@ describe('listChanges: structure changes', () => {
         patches: [addSizeToVariantItems],
         fields: [{ path: '/variants', change: 'changed' }],
       },
-    ])('describes $change by its data pointer', async ({ patches, fields }) => {
-      const draft = await givenCommittedProducts();
-      await draft.updateTable(PRODUCTS, patches);
+    ];
 
-      const structure = await listedStructureOf(draft, PRODUCTS);
+    it.each(fieldCases)(
+      'describes $change by its data pointer',
+      async ({ patches, fields }) => {
+        const draft = await givenCommittedProducts();
+        await draft.updateTable(PRODUCTS, patches);
 
-      expect(structure.structureChange).toEqual({ table: 'changed', fields });
+        const structure = await listedStructureOf(draft, PRODUCTS);
+
+        expect(structure.structureChange).toEqual({ table: 'changed', fields });
+      },
+    );
+
+    it('covers every value of FIELD_CHANGES', () => {
+      const changes = fieldCases.flatMap(({ fields }) =>
+        fields.map(({ change }) => change),
+      );
+
+      expect(new Set(changes)).toEqual(new Set(FIELD_CHANGES));
     });
 
     it.each<{ change: string; updates: JsonPatch[][]; fields: ChangedField[] }>(
@@ -160,11 +175,7 @@ describe('listChanges: structure changes', () => {
   });
 
   describe('tables', () => {
-    it.each<{
-      change: string;
-      edit: (draft: ChangesScenario) => Promise<void>;
-      listed: ListedUnit;
-    }>([
+    const tableCases: TableCase[] = [
       {
         change: 'a created table as a whole',
         edit: (draft) => draft.createTable(TAGS, labelSchema),
@@ -228,13 +239,23 @@ describe('listChanges: structure changes', () => {
           structureChange: { table: 'transient', fields: [] },
         },
       },
-    ])('describes $change', async ({ edit, listed }) => {
+    ];
+
+    it.each(tableCases)('describes $change', async ({ edit, listed }) => {
       const draft = await givenCommittedCategories();
       await edit(draft);
 
       const page = await draft.listChanges();
 
       expect(page.units).toEqual([listed]);
+    });
+
+    it('covers every value of TABLE_CHANGES', () => {
+      const changes = tableCases.map(
+        ({ listed }) => listed.structureChange?.table,
+      );
+
+      expect(new Set(changes)).toEqual(new Set(TABLE_CHANGES));
     });
   });
 
@@ -354,6 +375,18 @@ describe('listChanges: structure changes', () => {
     });
   }
 });
+
+interface FieldCase {
+  readonly change: string;
+  readonly patches: JsonPatch[];
+  readonly fields: ChangedField[];
+}
+
+interface TableCase {
+  readonly change: string;
+  readonly edit: (draft: ChangesScenario) => Promise<void>;
+  readonly listed: ListedUnit;
+}
 
 function unitOfKind(units: readonly ListedUnit[], kind: UnitKind): ListedUnit {
   const unit = units.find((listed) => listed.kind === kind);

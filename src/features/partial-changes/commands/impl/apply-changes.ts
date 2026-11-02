@@ -11,28 +11,42 @@ export interface ApplyChangesInput {
   readonly expected?: string | null;
 }
 
+export const APPLY_STATUSES = [
+  'applied',
+  'required',
+  'blocked',
+  'stale',
+  'empty',
+] as const;
+
+export type ApplyStatus = (typeof APPLY_STATUSES)[number];
+
+export interface ApplyResult {
+  readonly status: ApplyStatus;
+}
+
 export interface AppliedCounts {
   readonly applied: { readonly selected: number; readonly required: number };
   readonly remaining: { readonly units: number; readonly unreadTables: number };
 }
 
-export interface ChangesRequireAdditions {
+export interface ChangesRequireAdditions extends ApplyResult {
   readonly status: 'required';
   readonly required: readonly RequiredUnit[];
 }
 
-export interface ChangesBlocked {
+export interface ChangesBlocked extends ApplyResult {
   readonly status: 'blocked';
   readonly blockers: readonly Blocker[];
   readonly required: readonly RequiredUnit[];
   readonly unmatched?: UnmatchedSelection;
 }
 
-export interface ChangesStale {
+export interface ChangesStale extends ApplyResult {
   readonly status: 'stale';
 }
 
-export interface NothingToApply {
+export interface NothingToApply extends ApplyResult {
   readonly status: 'empty';
   readonly headRevisionId: string;
   readonly draftRevisionId: string;

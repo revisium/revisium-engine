@@ -1,9 +1,10 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { LedgerInconsistency } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
 import type { Unit } from 'src/features/partial-changes/catalogue/unit';
-import type {
-  RefusalCode,
-  RefusedTable,
+import {
+  REFUSAL_CODES,
+  type RefusalCode,
+  type RefusedTable,
 } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
 import {
@@ -11,18 +12,21 @@ import {
   type TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
-export type BlockerCode =
-  | 'notSelectable'
-  | 'requiredExcluded'
-  | 'danglingInSource'
-  | 'invalidViews'
-  | 'unmatchedSelector'
-  | 'tooLarge'
-  | 'unrecordedStructureChange'
-  | 'ledgerInconsistent'
-  | 'invalidRow'
-  | 'migrationInProgress'
-  | RefusalCode;
+export const BLOCKER_CODES = [
+  'notSelectable',
+  'requiredExcluded',
+  'danglingInSource',
+  'invalidViews',
+  'unmatchedSelector',
+  'tooLarge',
+  'unrecordedStructureChange',
+  'ledgerInconsistent',
+  'invalidRow',
+  'migrationInProgress',
+  ...REFUSAL_CODES,
+] as const;
+
+export type BlockerCode = (typeof BLOCKER_CODES)[number];
 
 export interface PlanBlocker {
   readonly code: BlockerCode;

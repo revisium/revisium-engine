@@ -4,7 +4,7 @@ import type { Row } from 'src/engine-prisma-types';
 import type { ValidationFingerprint } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { DraftRowsValidation } from './draft-rows-validation';
-import type { PlannedRepair } from './repair-planning';
+import type { PlannedRepair } from './ledger-repair-plan.service';
 import {
   type RepairBranch,
   type RepairState,

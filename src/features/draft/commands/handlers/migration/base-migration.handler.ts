@@ -13,7 +13,7 @@ import { SystemTables } from 'src/features/share/system-tables.consts';
 import { Migration } from '@revisium/schema-toolkit/types';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 import { MigrationContextService } from 'src/features/draft/migration-context.service';
-import { nextNativeMigrationId } from './native-migration-id';
+import { nextNativeMigrationId } from 'src/features/share/ledger/native-migration-id';
 
 export abstract class BaseMigrationHandler<
   T extends { data: { revisionId: string } },

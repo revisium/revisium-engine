@@ -17,3 +17,9 @@ export function pendingSchemaHistory(
 
   return { extendsHead: true, entries: draftHistory.slice(headHistory.length) };
 }
+
+export function historyDiffersFromHead(
+  pendingHistory: PendingSchemaHistory,
+): boolean {
+  return !pendingHistory.extendsHead || pendingHistory.entries.length > 0;
+}

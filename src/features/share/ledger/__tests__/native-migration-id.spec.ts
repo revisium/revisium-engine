@@ -1,4 +1,4 @@
-import { nextNativeMigrationId } from '../native-migration-id';
+import { nextNativeMigrationId } from 'src/features/share/ledger/native-migration-id';
 
 describe('Native migration ID range', () => {
   const diagnostic =

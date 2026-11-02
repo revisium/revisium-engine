@@ -7,10 +7,10 @@ import {
 } from 'src/features/migration/commands/impl/repair-schema-ledger.command';
 import { RepairFreshness } from 'src/features/migration/ledger-repair/repair-freshness';
 import {
+  LedgerRepairPlanService,
   type PlannedRepair,
   repairedTablesOf,
-  RepairPlanning,
-} from 'src/features/migration/ledger-repair/repair-planning';
+} from 'src/features/migration/ledger-repair/ledger-repair-plan.service';
 import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-state-reader';
 import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
 import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
@@ -26,7 +26,7 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
   constructor(
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly stateReader: RepairStateReader,
-    private readonly repairPlanning: RepairPlanning,
+    private readonly repairPlanService: LedgerRepairPlanService,
     private readonly writeAdmission: DraftWriteAdmissionService,
     private readonly freshness: RepairFreshness,
     private readonly writer: RepairWriter,
@@ -56,7 +56,9 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
 
     return {
       state,
-      plan: await this.repairPlanning.plan(state, { tableIds: data.tableIds }),
+      plan: await this.repairPlanService.plan(state, {
+        tableIds: data.tableIds,
+      }),
     };
   }
 

@@ -6,6 +6,8 @@ import {
   DraftRevisionCommitToTargetCommandReturnType,
   DraftRevisionRevertToTargetCommand,
   DraftRevisionRevertToTargetCommandData,
+  DraftRowVersionsReplacement,
+  TargetWritePlan,
 } from 'src/features/draft-revision/commands/impl';
 
 @Injectable()
@@ -27,4 +29,41 @@ export class DraftRevisionTargetApiService {
       new DraftRevisionCommitToTargetCommand(data),
     );
   }
+
+  public replaceDraftRowVersions(
+    replacement: DraftRowVersionsReplacement,
+  ): Promise<string> {
+    return this.commandBus.execute(
+      new DraftRevisionRevertToTargetCommand(
+        draftRowVersionsPlanOf(replacement),
+      ),
+    );
+  }
+}
+
+function draftRowVersionsPlanOf({
+  headRevisionId,
+  draftRevisionId,
+  tableId,
+  draftTableVersionId,
+  replacedRowVersionIds,
+  newRows,
+}: DraftRowVersionsReplacement): TargetWritePlan {
+  return {
+    headRevisionId,
+    draftRevisionId,
+    tables: [
+      {
+        identity: tableId,
+        draftVersionId: draftTableVersionId,
+        outcome: 'mixed',
+        structureSide: 'draft',
+        relinkCandidate: false,
+        hasFileFields: false,
+        removedRowVersionIds: replacedRowVersionIds,
+        addedRowVersionIds: [],
+        newRows,
+      },
+    ],
+  };
 }

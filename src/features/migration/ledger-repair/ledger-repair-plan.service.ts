@@ -18,10 +18,10 @@ import {
   storedLedgerReplayOf,
   type TableAssessment,
 } from './repair-ledger';
-import { RepairPlanner } from './repair-planner';
+import { RepairOutcomeDecider } from './repair-outcome-decider';
 import type { RepairState } from './repair-state-reader';
 
-export interface RepairPlanningOptions {
+export interface LedgerRepairPlanOptions {
   readonly tableIds?: readonly string[];
   readonly storedReplays?: Partial<StoredLedgerReplays>;
 }
@@ -32,7 +32,7 @@ export interface PlannedRepair {
 }
 
 @Injectable()
-export class RepairPlanning {
+export class LedgerRepairPlanService {
   constructor(
     private readonly draftRows: DraftRowsValidation,
     private readonly schemaStore: JsonSchemaStoreService,
@@ -42,7 +42,7 @@ export class RepairPlanning {
 
   public async plan(
     state: RepairState,
-    { tableIds, storedReplays = {} }: RepairPlanningOptions = {},
+    { tableIds, storedReplays = {} }: LedgerRepairPlanOptions = {},
   ): Promise<SchemaLedgerRepairPlan> {
     const ledger = new RepairLedger(state, this.replayer, this.validator, {
       head:
@@ -56,17 +56,17 @@ export class RepairPlanning {
     );
     const draftTables = validatedDraftTablesOf(state, assessments);
     const validatedRows = await this.validateDraftRows(state, draftTables);
-    const planned = new RepairPlanner(
+    const decided = new RepairOutcomeDecider(
       ledger,
       this.validator,
       this.schemaStore.refs,
-    ).plan(assessments, invalidRowsOf(validatedRows));
+    ).decide(assessments, invalidRowsOf(validatedRows));
 
     return {
       headRevisionId: state.headRevisionId,
       draftRevisionId: state.draftRevisionId,
-      tables: planned.tables,
-      renumbered: planned.renumbered,
+      tables: decided.tables,
+      renumbered: decided.renumbered,
       fingerprint: await this.draftRows.fingerprintOf(
         [...draftTables.values()].map(({ versionId }) => versionId),
         consultedTableVersionIdsOf(state, validatedRows),

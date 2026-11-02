@@ -9,10 +9,11 @@ import {
   type AttributedSlot,
   attributePendingLedger,
 } from 'src/features/share/ledger/pending-attribution';
-import { pendingSchemaHistory } from 'src/features/share/ledger/schema-history';
+import { pendingSchemaHistory } from 'src/features/share/ledger/pending-schema-history';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
+import type { HistoryPatchesValidator } from './repair-patch';
 import type { RepairState } from './repair-state-reader';
 
 export interface TableHistories {
@@ -113,4 +114,21 @@ export class DraftLedger {
 
     return { draftTableId, inherited, pending: pending.entries };
   }
+}
+
+export function passesNativeHistoryValidation(
+  histories: TableHistories | undefined,
+  validator: HistoryPatchesValidator,
+  { missingHistory }: { readonly missingHistory: 'passes' | 'fails' },
+): boolean {
+  if (histories === undefined) {
+    return missingHistory === 'passes';
+  }
+
+  const history = [...histories.inherited, ...histories.pending];
+
+  return (
+    history.length === 0 ||
+    validator.validateHistoryPatchesSchema(history).result
+  );
 }

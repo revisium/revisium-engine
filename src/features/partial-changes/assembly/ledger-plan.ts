@@ -1,7 +1,5 @@
-import objectHash from 'object-hash';
 import type { Row } from 'src/engine-prisma-types';
 import type { NewRowVersion } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import { nextNativeMigrationId } from 'src/features/draft/commands/handlers/migration/native-migration-id';
 import type { OutcomeRules } from 'src/features/partial-changes/assembly/outcome-rules';
 import { targetLedgerRowsOf } from 'src/features/partial-changes/assembly/system-table-targets';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
@@ -9,6 +7,12 @@ import {
   type LedgerEntry,
   ledgerOf,
 } from 'src/features/share/ledger/migration-ledger';
+import {
+  type MigrationBounds,
+  nextNativeMigrationId,
+  publishedAtOf,
+  renumberedMigrationRowOf,
+} from 'src/features/share/ledger/native-migration-id';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface RenumberedMigrationRow {
@@ -18,11 +22,6 @@ export interface RenumberedMigrationRow {
 
 export interface LedgerPlan {
   readonly renumbered: readonly RenumberedMigrationRow[];
-}
-
-interface MigrationBounds {
-  readonly id: string;
-  readonly publishedAt: Date;
 }
 
 const NOTHING_RENUMBERED: LedgerPlan = { renumbered: [] };
@@ -76,7 +75,7 @@ function boundsOf(target: readonly LedgerEntry[]): MigrationBounds | undefined {
 }
 
 function follows(id: string, bounds: MigrationBounds): boolean {
-  return compareCodePoints(id, bounds.id) > 0;
+  return bounds.id === null || compareCodePoints(id, bounds.id) > 0;
 }
 
 function renumberedAfter(
@@ -89,28 +88,9 @@ function renumberedAfter(
   for (const source of remaining) {
     const id = nextNativeMigrationId(bounds);
 
-    renumbered.push({ source, row: renumberedMigrationRowOf(source, id) });
-    bounds = { id, publishedAt: new Date(id) };
+    renumbered.push({ source, row: renumberedMigrationRowOf(source.row, id) });
+    bounds = { id, publishedAt: publishedAtOf(id) };
   }
 
   return renumbered;
-}
-
-// Mirrors the renumbering of the ledger repair (ledger-repair/repair-writer.ts, renumberedRowOf).
-function renumberedMigrationRowOf(
-  { row, migration }: LedgerEntry,
-  newId: string,
-): NewRowVersion {
-  const data = { ...migration, id: newId };
-
-  return {
-    createdId: row.createdId,
-    createdAt: row.createdAt,
-    schemaHash: row.schemaHash,
-    meta: row.meta,
-    id: newId,
-    data: data as unknown as NewRowVersion['data'],
-    hash: objectHash(data),
-    publishedAt: new Date(newId),
-  };
 }

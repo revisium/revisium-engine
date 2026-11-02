@@ -7,18 +7,16 @@ import type {
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { normalizedLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
-  hasPendingEntries,
-  isStructureRecorded,
-} from 'src/features/partial-changes/structure/pending-schema-history';
-import {
   dataPointerOfSchemaPath,
   type SchemaLeaf,
   SchemaLeaves,
 } from 'src/features/partial-changes/structure/schema-leaves';
+import { isStructureRecorded } from 'src/features/partial-changes/structure/structure-recorded';
 import {
+  historyDiffersFromHead,
   pendingSchemaHistory,
   type PendingSchemaHistory,
-} from 'src/features/share/ledger/schema-history';
+} from 'src/features/share/ledger/pending-schema-history';
 import type { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
@@ -95,7 +93,7 @@ function structureDiffers(
   return (
     input.head.tableId !== input.draft.tableId ||
     input.pendingMigrations.length > 0 ||
-    hasPendingEntries(pendingHistory) ||
+    historyDiffersFromHead(pendingHistory) ||
     !schemasEqual(input.head.schema, input.draft.schema) ||
     changedPointers.length > 0
   );

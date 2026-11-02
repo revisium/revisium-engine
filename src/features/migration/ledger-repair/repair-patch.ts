@@ -12,7 +12,6 @@ import {
 import objectHash from 'object-hash';
 import type { SchemaRefs } from 'src/features/share/ledger-replay/native-schema-rules';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
-import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { NativeIdSequence } from './repair-ids';
 import type { RepairLedger } from './repair-ledger';
 
@@ -26,16 +25,6 @@ export interface RepairPatch {
 
 export interface HistoryPatchesValidator {
   validateHistoryPatchesSchema(data: unknown): { result: boolean };
-}
-
-export function isNativeHistory(
-  history: readonly HistoryPatches[],
-  validator: HistoryPatchesValidator,
-): boolean {
-  return (
-    history.length === 0 ||
-    validator.validateHistoryPatchesSchema(history).result
-  );
 }
 
 export function repairPatchOf(

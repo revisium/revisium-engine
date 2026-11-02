@@ -22,7 +22,7 @@ import { MigrationImportService } from 'src/features/migration/services/migratio
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-state-reader';
 import { DraftRowsValidation } from 'src/features/migration/ledger-repair/draft-rows-validation';
-import { RepairPlanning } from 'src/features/migration/ledger-repair/repair-planning';
+import { LedgerRepairPlanService } from 'src/features/migration/ledger-repair/ledger-repair-plan.service';
 import { RepairFreshness } from 'src/features/migration/ledger-repair/repair-freshness';
 import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
 import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
@@ -50,7 +50,7 @@ const SERVICES = [
   MigrationApiService,
   RepairStateReader,
   DraftRowsValidation,
-  RepairPlanning,
+  LedgerRepairPlanService,
   RepairFreshness,
   RepairWriter,
   StoredLedgerVerification,

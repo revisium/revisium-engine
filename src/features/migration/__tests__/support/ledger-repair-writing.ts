@@ -5,7 +5,7 @@ import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import type {
   DraftRevisionCreateRowsCommandData,
   DraftRevisionUpdateRowsCommandData,
-  TableWritePlan,
+  DraftRowVersionsReplacement,
 } from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import type {
@@ -183,12 +183,13 @@ export function renumberMigrationsWithoutTheirPatches(
   kit: PartialChangesTestKit,
 ): void {
   const targetApi = kit.module.get(DraftRevisionTargetApiService);
-  const revertToTarget = targetApi.revertToTarget.bind(targetApi);
+  const replaceDraftRowVersions =
+    targetApi.replaceDraftRowVersions.bind(targetApi);
 
   jest
-    .spyOn(targetApi, 'revertToTarget')
-    .mockImplementation((plan) =>
-      revertToTarget({ ...plan, tables: plan.tables.map(withoutNewPatches) }),
+    .spyOn(targetApi, 'replaceDraftRowVersions')
+    .mockImplementation((replacement) =>
+      replaceDraftRowVersions(withoutNewPatches(replacement)),
     );
 }
 
@@ -327,10 +328,12 @@ function holdEachBeforeWriting(
     });
 }
 
-function withoutNewPatches(table: TableWritePlan): TableWritePlan {
+function withoutNewPatches(
+  replacement: DraftRowVersionsReplacement,
+): DraftRowVersionsReplacement {
   return {
-    ...table,
-    newRows: table.newRows.map((row) => ({
+    ...replacement,
+    newRows: replacement.newRows.map((row) => ({
       ...row,
       data: { ...(row.data as object), patches: [] },
     })),

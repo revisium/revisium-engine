@@ -13,7 +13,7 @@ import {
 import type { RepairLedger, TableAssessment } from './repair-ledger';
 import { type HistoryPatchesValidator, repairPatchOf } from './repair-patch';
 
-export interface PlannedRepairs {
+export interface DecidedRepairs {
   readonly tables: readonly PlannedTableRepair[];
   readonly renumbered: readonly RenumberedMigration[];
 }
@@ -22,17 +22,17 @@ type PreliminaryOutcome =
   | { readonly decided: PlannedTableRepair }
   | { readonly candidate: RepairCandidate };
 
-export class RepairPlanner {
+export class RepairOutcomeDecider {
   constructor(
     private readonly ledger: RepairLedger,
     private readonly historyValidator: HistoryPatchesValidator,
     private readonly refs: SchemaRefs,
   ) {}
 
-  public plan(
+  public decide(
     assessments: ReadonlyMap<string, TableAssessment>,
     invalidRows: ReadonlyMap<string, InvalidRows>,
-  ): PlannedRepairs {
+  ): DecidedRepairs {
     const decided: PlannedTableRepair[] = [];
     const candidates = new Map<string, RepairCandidate>();
 

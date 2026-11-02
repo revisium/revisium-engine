@@ -62,7 +62,7 @@ export class UnitListing {
     return {
       headRevisionId: compared.snapshot.headRevisionId,
       draftRevisionId: compared.snapshot.draftRevisionId,
-      units: listedUnitsOf(page.units, tableLevel.units),
+      units: listedUnitsOf(page.units, tableLevel),
       nextCursor: encodedCursorOf(page.nextCursor()),
       refusedTables: tableLevel.refusedTables,
     };

@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.1 |
+| Version | 1.2 |
 | Status | Accepted |
-| Date | 2026-10-31 |
+| Date | 2026-11-02 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
 | Evidence | [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md) (PoC v2, `c86e86c`, tag `archive/partial-changes-poc-v2`) |
@@ -323,13 +323,37 @@ Output:
 | `nextCursor` | string or `null` | Cursor of the next page; `null` only at the end of the listing. |
 | `refusedTables` | `{ tableId: string; code: 'headSchemaInconsistent' \| 'unledgeredTable' }[]` | Every refused table of the branch (§6.10); their units are not computed or listed. |
 
-**ListedUnit** = UnitRef (§5.1) plus `structure`:
+**ListedUnit** = UnitRef (§5.1) plus `structure` and `structureChange`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `side` | `'head'`, optional | The selector needs `side: 'head'` (an id taken over by a rename). |
-| `structure` | Unit, optional | The structure unit of the same table, for other units of a table that has one. |
+| `structure` | UnitRef, optional | The structure unit of the same table, for other units of a table that has one. Its `selector` resolves to exactly that structure unit, so a caller adds the structure without building a selector. |
+| `structureChange` | StructureChange, structure units only | What the structure unit consists of (below). |
 | `selector` | Selection | Resolves to exactly this unit with no required units, blockers or unmatched items: `fields` for a field, `rows` for row lifecycle units, `renames` for a rename, `rowColumns` for row columns, `tables` for a structure, `views`, `sharedSchemas`. |
+
+**StructureChange** `{ table: TableChange; fields: ChangedField[] }` describes a structure unit. The listing computes it
+from the structure analysis that every page already runs (§6.2 step 3) and reads nothing more for it.
+
+| `table` | The structure unit holds |
+| --- | --- |
+| `created` | A table that exists only in the Draft. |
+| `removed` | A table that exists only in Head. |
+| `replaced` | A removed table and the table created at its id (§3.7). |
+| `transient` | Only the pending migrations of tables created and removed inside the Draft (§3.5). |
+| `changed` | A table on both sides whose structure differs (§3.4); a renamed table keeps `previousTableId`. |
+
+**ChangedField** `{ path: string; change: 'added' | 'removed' | 'changed' }`. For a `changed` table, `fields` holds
+every changed leaf of §3.3, input and computed alike, as a data JSON Pointer, in code-point order of `path`. A leaf
+only in the Draft schema is `added`; a leaf only in the Head schema is `removed`, at its Head pointer; a leaf in both
+is `changed`, because its leaf schema differs or a pending patch touches it. A moved field therefore reads as
+`removed` at its Head pointer and `added` at its Draft pointer, and a change inside an array or File value reads as
+the pointer of the whole value (§3.2). For every other `table` value, `fields` is empty: the whole table is the unit.
+The values of these fields in every row travel with the structure unit; a row that differs only there has no unit of
+its own (§3.1).
+
+Only the listing carries `structureChange`. It is not part of a unit's identity, internal key or selector, of the
+preview `sample`, `required`, `deferred` or blocker units, or of the fingerprint (§9.1).
 
 Order: `tableId`, `rowId` (table-level units first), `kind`, `path`, `previousTableId`, `previousRowId`, in code-point
 order, and finally the internal unit key (carried in the cursor) so the order is total. The cursor carries the sort
@@ -539,7 +563,10 @@ type Unit = {
   path?: string; columns?: Array<'publishedAt' | 'meta' | 'schemaHash'>;
 };
 type UnitRef = Unit & { side?: Side; selector: Selection };   // selector resolves to exactly this unit
-type ListedUnit = UnitRef & { structure?: Unit };
+type TableChange = 'created' | 'removed' | 'replaced' | 'transient' | 'changed';
+type ChangedField = { path: string; change: 'added' | 'removed' | 'changed' }; // JSON Pointer
+type StructureChange = { table: TableChange; fields: ChangedField[] };
+type ListedUnit = UnitRef & { structure?: UnitRef; structureChange?: StructureChange };
 
 type Reason = { code: RequiredReasonCode; tableId: string; rowId?: string; path?: string; because: string };
 type RequiredUnit = { unit: UnitRef; reason: Reason };
@@ -1495,8 +1522,13 @@ versions unchanged" (§14) holds in every scenario.
 
 ### 13.6 REQ-001.BR-001, REQ-001.BR-009 — listing, preview, freshness
 
-- AS-60 `listChanges` lists every unit kind with public ids, `side: 'head'` where needed, the structure link, and a
-  selector that previews exactly that unit; paging with the cursor; read-only.
+- AS-60 `listChanges` lists every unit kind with public ids, `side: 'head'` where needed, the structure link as a
+  UnitRef whose selector resolves to exactly that structure unit (also in a table that took over the id of a removed
+  table), and a selector that previews exactly that unit; paging with the cursor; read-only.
+- AS-60a Every listed structure unit carries its `structureChange`: an added, a removed and a type-changed field, a
+  moved field (`removed` + `added`), a field of a nested object and a field of array items (the array's pointer), input
+  and computed fields in code-point order; `created`, `removed`, `replaced` and `transient` tables with empty `fields`;
+  a renamed table with a field change as `changed` with `previousTableId`.
 - AS-61 Property over random Drafts: each listed selector alone previews one unit with no `unmatched` or
   `notSelectable`; the union of the listed selectors previews with the same status, counts and fingerprint as
   `all: true`, for commit and revert.
@@ -1691,6 +1723,18 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    `unledgeredTable`, and their ledger backfill is a stage-0 design item (§6.10, §12).
 
 ## Changelog
+
+### Version 1.2 (2026-11-02)
+
+Listing of structure units:
+
+- §5.2, §5.11: `ListedUnit.structure` is a UnitRef with `side` and a selector that resolves to exactly that structure
+  unit, instead of a plain Unit.
+- §5.2, §5.11: a listed structure unit carries `structureChange`: whether its table is created, removed, replaced,
+  transient or changed, and for a changed table every changed leaf as a data JSON Pointer marked `added`, `removed` or
+  `changed`. Only the listing carries it; unit identities, selectors, preview results and the fingerprint do not
+  change.
+- §13.6: AS-60 covers the structure UnitRef; AS-60a covers `structureChange`.
 
 ### Version 1.1 (2026-10-31)
 

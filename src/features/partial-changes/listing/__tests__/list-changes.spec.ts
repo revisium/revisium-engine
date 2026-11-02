@@ -12,6 +12,7 @@ import { ListingValidationError } from 'src/features/partial-changes/listing/lis
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
+import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
 import {
   addressedUnitOfListed,
   unitsOfPages,
@@ -215,6 +216,7 @@ describe('listChanges', () => {
             kind: 'structure',
             tableId: PRODUCTS,
             selector: { tables: [PRODUCTS] },
+            structureChange: { table: 'changed', fields: [] },
           },
         ],
         nextCursor: null,
@@ -486,14 +488,18 @@ describe('listChanges', () => {
   }
 });
 
-function withoutSelector(listed: ListedUnit): Omit<ListedUnit, 'selector'> {
-  const { structure } = listed;
-
+function withoutSelector({
+  structure,
+  ...listed
+}: ListedUnit): AddressedUnit & { readonly structure?: AddressedUnit } {
   if (structure === undefined) {
     return addressedUnitOfListed(listed);
   }
 
-  return { ...addressedUnitOfListed(listed), structure };
+  return {
+    ...addressedUnitOfListed(listed),
+    structure: addressedUnitOfListed(structure),
+  };
 }
 
 function describeUnit({ kind, tableId, rowId, path }: ListedUnit): string {

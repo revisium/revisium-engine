@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { Row } from 'src/engine-prisma-types';
 import type { ValidationFingerprint } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import type { BranchRef } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { DraftRowsValidation } from './draft-rows-validation';
 import type { PlannedRepair } from './ledger-repair-plan.service';
 import {
-  type RepairBranch,
   type RepairState,
   RepairStateReader,
   type RevisionLedger,
@@ -20,7 +20,7 @@ export class RepairFreshness {
   ) {}
 
   public async isFresh(
-    branch: RepairBranch,
+    branch: BranchRef,
     { state, plan }: PlannedRepair,
   ): Promise<boolean> {
     if (!isSameState(state, await this.stateReader.readBranch(branch))) {

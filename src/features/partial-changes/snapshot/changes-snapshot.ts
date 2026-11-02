@@ -2,12 +2,13 @@ import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
+import type {
+  BranchRef,
+  HeadAndDraft,
+} from 'src/features/share/branch-revisions/branch-revision-reader';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 
-export interface ChangesBranch {
-  readonly projectId: string;
-  readonly branchName: string;
-}
+export type ChangesBranch = BranchRef;
 
 export interface TableVersion {
   readonly versionId: string;
@@ -49,13 +50,7 @@ export interface SystemRows {
   readonly sharedSchemas: SystemTableRows;
 }
 
-export interface BranchRevisions {
-  readonly branchId: string;
-  readonly headRevisionId: string;
-  readonly draftRevisionId: string;
-}
-
-export interface ChangesSnapshot extends BranchRevisions {
+export interface ChangesSnapshot extends HeadAndDraft {
   readonly tables: readonly TablePair[];
   readonly systemRows: SystemRows;
 }

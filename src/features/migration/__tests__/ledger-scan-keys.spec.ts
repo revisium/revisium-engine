@@ -7,8 +7,8 @@ import {
   type ScanReads,
 } from 'src/features/migration/ledger-scan/ledger-scan';
 import type {
-  RevisionTables,
   RowHashCount,
+  ScannedRevision,
 } from 'src/features/migration/ledger-scan/scan-revision-reader';
 import {
   init,
@@ -60,7 +60,7 @@ class StoredVersions implements ScanReads {
 function revisionOf(
   migrationTableVersionId: string,
   schemaTableVersionId: string,
-): RevisionTables {
+): ScannedRevision {
   return {
     revisionId: `${migrationTableVersionId}-revision`,
     tableVersionIds: new Map([[PRODUCTS, 'products-version']]),

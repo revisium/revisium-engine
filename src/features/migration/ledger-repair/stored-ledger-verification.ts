@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { BranchRef } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
@@ -9,11 +10,7 @@ import {
   repairedTablesOf,
 } from './ledger-repair-plan.service';
 import { storedLedgerReplayOf } from './repair-ledger';
-import {
-  type RepairBranch,
-  type RepairState,
-  RepairStateReader,
-} from './repair-state-reader';
+import { type RepairState, RepairStateReader } from './repair-state-reader';
 
 @Injectable()
 export class StoredLedgerVerification {
@@ -24,7 +21,7 @@ export class StoredLedgerVerification {
   ) {}
 
   public async verify(
-    branch: RepairBranch,
+    branch: BranchRef,
     planned: PlannedRepair,
   ): Promise<void> {
     const defect = this.defectOf(

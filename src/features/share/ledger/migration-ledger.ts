@@ -1,6 +1,7 @@
 import { deepEqual } from '@revisium/schema-toolkit/lib';
-import type { Migration } from '@revisium/schema-toolkit/types';
+import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
+import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface LedgerEntry {
@@ -11,6 +12,11 @@ export interface LedgerEntry {
 export interface SplitLedger {
   readonly published: readonly LedgerEntry[];
   readonly pending: readonly LedgerEntry[];
+}
+
+export interface StoredSchema {
+  readonly schema: JsonSchema;
+  readonly history: readonly HistoryPatches[];
 }
 
 export function ledgerOf(rows: readonly Row[]): LedgerEntry[] {
@@ -65,6 +71,15 @@ function isSamePublishedRow(draft: Row | undefined, published: Row): boolean {
     deepEqual(draft.data, published.data) &&
     draft.publishedAt.getTime() === published.publishedAt.getTime()
   );
+}
+
+export function schemaRowOf(row: Row): StoredSchema {
+  const history = Array.isArray(row.meta) ? row.meta : [];
+
+  return {
+    schema: row.data as unknown as JsonSchema,
+    history: history as unknown as HistoryPatches[],
+  };
 }
 
 function migrationOf(row: Row): Migration {

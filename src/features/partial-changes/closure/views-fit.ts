@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { TargetViews } from 'src/features/partial-changes/assembly/system-target-assembler';
-import type { BranchRevisions } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { HeadAndDraft } from 'src/features/share/branch-revisions/branch-revision-reader';
 import type { ViewValidationService } from 'src/features/views/services';
 
 export class ViewsFit {
@@ -9,7 +9,7 @@ export class ViewsFit {
 
   constructor(
     private readonly validation: ViewValidationService,
-    private readonly revisions: BranchRevisions,
+    private readonly revisions: HeadAndDraft,
   ) {}
 
   public fits(views: TargetViews): Promise<boolean> {

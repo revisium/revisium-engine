@@ -3,22 +3,18 @@ import type {
   RowDiagnostics,
   ScanSchemaLedgerData,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
+import type { BranchRef } from 'src/features/share/branch-revisions/branch-revision-reader';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 1_000;
 const ROW_DIAGNOSTICS: readonly string[] = ['none', 'headAndDraft', 'all'];
 
-export interface BranchPosition {
-  readonly projectId: string;
-  readonly branchName: string;
-}
-
-type DecodedCursor = Partial<Record<keyof BranchPosition, unknown>> | null;
+type DecodedCursor = Partial<Record<keyof BranchRef, unknown>> | null;
 
 export interface ScanRequest {
   readonly projectId?: string;
   readonly branchName?: string;
-  readonly after?: BranchPosition;
+  readonly after?: BranchRef;
   readonly limit: number;
   readonly rowDiagnostics: RowDiagnostics;
 }
@@ -37,13 +33,13 @@ export function scanRequestOf(data: ScanSchemaLedgerData): ScanRequest {
   };
 }
 
-export function cursorOf({ projectId, branchName }: BranchPosition): string {
+export function cursorOf({ projectId, branchName }: BranchRef): string {
   return Buffer.from(JSON.stringify({ projectId, branchName })).toString(
     'base64url',
   );
 }
 
-function positionOf(cursor: string | undefined): BranchPosition | undefined {
+function positionOf(cursor: string | undefined): BranchRef | undefined {
   if (cursor === undefined) {
     return undefined;
   }

@@ -29,10 +29,11 @@ const TAGS = 'tags';
 
 const categorySchema = obj({ title: str() });
 const labelSchema = obj({ label: str() });
+const addressSchema = obj({ city: str(), street: str() });
 const productSchema = obj({
   code: str(),
   price: num(),
-  address: obj({ city: str() }),
+  address: addressSchema,
   variants: arr(obj({ color: str() })),
 });
 
@@ -102,6 +103,38 @@ describe('listChanges: structure changes', () => {
     ])('describes $change by its data pointer', async ({ patches, fields }) => {
       const draft = await givenCommittedProducts();
       await draft.updateTable(PRODUCTS, patches);
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({ table: 'changed', fields });
+    });
+
+    it.each<{ change: string; updates: JsonPatch[][]; fields: ChangedField[] }>(
+      [
+        {
+          change: 'a field whose later pending patch restored its Head schema',
+          updates: [
+            [replaceField('price', str())],
+            [replaceField('price', num())],
+          ],
+          fields: [{ path: '/price', change: 'changed' }],
+        },
+        {
+          change:
+            'every field of an object a pending patch replaced with an equal schema',
+          updates: [[replaceField('address', addressSchema)]],
+          fields: [
+            { path: '/address/city', change: 'changed' },
+            { path: '/address/street', change: 'changed' },
+          ],
+        },
+      ],
+    )('lists $change as changed', async ({ updates, fields }) => {
+      const draft = await givenCommittedProducts();
+
+      for (const patches of updates) {
+        await draft.updateTable(PRODUCTS, patches);
+      }
 
       const structure = await listedStructureOf(draft, PRODUCTS);
 
@@ -300,7 +333,7 @@ describe('listChanges: structure changes', () => {
           p1: {
             code: 'p1',
             price: 1,
-            address: { city: 'Riga' },
+            address: { city: 'Riga', street: 'Main' },
             variants: [{ color: 'red' }],
           },
         },

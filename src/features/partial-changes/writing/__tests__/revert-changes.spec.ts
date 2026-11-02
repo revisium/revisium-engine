@@ -26,6 +26,10 @@ import {
   type RevertOptions,
 } from '../../__tests__/support/change-reverting';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import {
+  expectCopiedInsteadOfEdited,
+  givenReadonlyDraftVersion,
+} from '../../__tests__/support/readonly-draft-versions';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const CATEGORIES = 'categories';
@@ -420,6 +424,27 @@ describe('revertChanges', () => {
         await draft.ledgerIds('head'),
       );
       await expectDraftRow(draft, PRODUCTS, 'p2', { title: 'dos', price: 2 });
+    });
+
+    it('copies a readonly Draft system table version instead of editing it in place', async () => {
+      const draft = await givenEditedPrices();
+      await draft.createTable(TAGS, tagSchema);
+      await draft.createTable(CATEGORIES, categorySchema);
+      const schemaTable = await givenReadonlyDraftVersion(
+        kit,
+        draft,
+        SystemTables.Schema,
+      );
+
+      await expectApplied(
+        draft.revertChanges({ selection: { tables: [TAGS] } }),
+      );
+
+      await expectCopiedInsteadOfEdited(kit, draft, schemaTable);
+      expect(await draft.rowIds('draft', SystemTables.Schema)).toEqual([
+        CATEGORIES,
+        PRODUCTS,
+      ]);
     });
 
     it('restores a removed table and drops its remove migration', async () => {

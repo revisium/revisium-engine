@@ -123,5 +123,5 @@ function readerFromMemory(): ChangesSnapshotReader {
 }
 
 function noRows(): SystemTableRows {
-  return { head: [], draft: [], versionIds: {} };
+  return { head: [], draft: [], versions: {} };
 }

@@ -177,7 +177,7 @@ class SystemTargetAssembly {
 
     return {
       tableId,
-      versionIds: rows.versionIds,
+      versionIds: versionIdsBySideOf(rows),
       outcome,
       linkSide,
       versionId: linkedVersionIdOf(rows, outcome, linkSide),
@@ -223,10 +223,19 @@ function linkedVersionIdOf(
   }
 
   if (outcome === 'other') {
-    return rows.versionIds[oppositeOf(linkSide)];
+    return rows.versions[oppositeOf(linkSide)]?.versionId;
   }
 
-  return rows.versionIds[linkSide];
+  return rows.versions[linkSide]?.versionId;
+}
+
+function versionIdsBySideOf({
+  versions,
+}: SystemTableRows): SystemTableVersionIds {
+  return {
+    head: versions.head?.versionId,
+    draft: versions.draft?.versionId,
+  };
 }
 
 function versionIdsOf(rows: readonly Row[]): Set<string> {

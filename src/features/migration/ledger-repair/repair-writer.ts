@@ -12,6 +12,7 @@ import type {
   PlannedTableRepair,
   RenumberedMigration,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import type { StoredTableVersion } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import type {
   LedgerEntry,
@@ -67,12 +68,14 @@ export class RepairWriter {
       source: pendingEntryOf(draftLedger, previousId).row,
       id,
     }));
+    const migrationTable = draftMigrationTableOf(state);
 
     await this.targetApi.replaceDraftRowVersions({
       headRevisionId: state.headRevisionId,
       draftRevisionId: state.draftRevisionId,
       tableId: SystemTables.Migration,
-      draftTableVersionId: draftMigrationTableVersionOf(state),
+      draftTableVersionId: migrationTable.versionId,
+      editInPlace: !migrationTable.readonly,
       replacedRowVersionIds: renumberings.map(({ source }) => source.versionId),
       newRows: renumberings.map(({ source, id }) =>
         renumberedMigrationRowOf(source, id),
@@ -186,11 +189,8 @@ function headSchemaOf(state: RepairState, tableId: string): StoredSchema {
   );
 }
 
-function draftMigrationTableVersionOf(state: RepairState): string {
-  return requiredOf(
-    state.draft.migrationTableVersionId,
-    'Draft migration table version',
-  );
+function draftMigrationTableOf(state: RepairState): StoredTableVersion {
+  return requiredOf(state.draft.migrationTable, 'Draft migration table');
 }
 
 function pendingEntryOf(

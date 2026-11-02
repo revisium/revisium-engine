@@ -304,11 +304,11 @@ class SystemTablePlanDescription {
       return undefined;
     }
 
-    if (this.rows.versionIds.head === versionId) {
+    if (this.rows.versions.head?.versionId === versionId) {
       return 'head';
     }
 
-    if (this.rows.versionIds.draft === versionId) {
+    if (this.rows.versions.draft?.versionId === versionId) {
       return 'draft';
     }
 

@@ -13,7 +13,6 @@ import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catal
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import type {
   SystemTableRows,
-  SystemTableVersionIds,
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { SystemTables } from 'src/features/share/system-tables.consts';
@@ -64,7 +63,7 @@ export function systemTableOutcomeOf(
   hasNewRows: boolean,
 ): TableOutcome {
   const otherSide = oppositeOf(linkSide);
-  const onBothSides = rows.versionIds[otherSide] !== undefined;
+  const onBothSides = rows.versions[otherSide] !== undefined;
 
   if (!onBothSides && !keptWhenEmpty && versions.length === 0 && !hasNewRows) {
     return 'absent';
@@ -187,17 +186,14 @@ class SystemTableTargets {
     return {
       linkSide,
       keptWhenEmpty: this.rules.takesEveryTableOf(linkSide),
-      editInPlace: this.rules.editsDraftInPlace(
-        linkSide,
-        holdsOwnDraftVersion(rows.versionIds),
-      ),
+      editInPlace: this.rules.editsDraftInPlace(linkSide, rows.versions.draft),
     };
   }
 
   private linkSideOf(rows: SystemTableRows): RevisionSide {
     const { baseSide } = this.rules;
 
-    if (rows.versionIds[baseSide] === undefined) {
+    if (rows.versions[baseSide] === undefined) {
       return oppositeOf(baseSide);
     }
 
@@ -243,11 +239,6 @@ function holdsExactly(rows: readonly Row[], versions: readonly Row[]): boolean {
   );
 }
 
-function existsOnEitherSide({ versionIds }: SystemTableRows): boolean {
-  return versionIds.head !== undefined || versionIds.draft !== undefined;
-}
-
-// The snapshot holds no readonly flag for system tables: a Draft links a readonly version only when Head links it too.
-function holdsOwnDraftVersion({ head, draft }: SystemTableVersionIds): boolean {
-  return draft !== undefined && draft !== head;
+function existsOnEitherSide({ versions }: SystemTableRows): boolean {
+  return versions.head !== undefined || versions.draft !== undefined;
 }

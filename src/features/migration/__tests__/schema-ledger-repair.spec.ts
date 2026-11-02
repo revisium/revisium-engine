@@ -9,6 +9,10 @@ import { MigrationLockedException } from 'src/features/migration/exceptions/migr
 import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 import { completeAsyncMigrationInPlace } from 'src/features/partial-changes/__tests__/support/head-schema-damage';
 import {
+  expectCopiedInsteadOfEdited,
+  givenReadonlyDraftVersion,
+} from 'src/features/partial-changes/__tests__/support/readonly-draft-versions';
+import {
   addField,
   moveField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
@@ -293,6 +297,21 @@ describe('Schema ledger repair', () => {
         hash: objectHash(data),
         publishedAt: new Date(renumberedId),
       });
+    });
+
+    it('renumbers the pending migrations of a readonly Draft migration table version in a copy instead of editing it in place', async () => {
+      const draft = await givenPublishedInPlaceMigration(kit);
+      await draft.updateTable(PRODUCTS, [moveField(COLOR, SHADE)]);
+      const migrationTable = await givenReadonlyDraftVersion(
+        kit,
+        draft,
+        SystemTables.Migration,
+      );
+
+      const repair = await repairLedger(kit, draft, { tableIds: [PRODUCTS] });
+
+      expect(repair.renumbered).toHaveLength(1);
+      await expectCopiedInsteadOfEdited(kit, draft, migrationTable);
     });
 
     it('rolls back and raises when the stored Draft ledger no longer reproduces a table that it reproduced before the repair', async () => {

@@ -110,7 +110,7 @@ export class LedgerScan {
       ([tableId, tableVersionId]) => {
         const schemaRow = schemaRows.get(tableId);
         const schemaEvaluation = evaluationKeyOf(
-          revision.migrationTableVersionId,
+          revision.migrationTable?.versionId,
           tableId,
           schemaRow?.versionId,
         );
@@ -118,7 +118,7 @@ export class LedgerScan {
         return {
           tableId,
           tableVersionId,
-          ledgerVersionId: revision.migrationTableVersionId,
+          ledgerVersionId: revision.migrationTable?.versionId,
           schemaRow,
           check: this.checkSchema(schemaEvaluation, ledger, tableId, schemaRow),
           schemaEvaluation,
@@ -206,7 +206,7 @@ export class LedgerScan {
       revision.tableVersionIds,
       await this.schemaTableRowsOf(revision),
       ledger?.rows ?? [],
-      revision.migrationTableVersionId,
+      revision.migrationTable,
     );
   }
 
@@ -240,14 +240,14 @@ export class LedgerScan {
   }
 
   private async scannedLedgerOf({
-    migrationTableVersionId,
+    migrationTable,
   }: ScannedRevision): Promise<ScannedLedger | undefined> {
-    if (migrationTableVersionId === undefined) {
+    if (migrationTable === undefined) {
       return undefined;
     }
 
-    return this.cached(this.ledgers, migrationTableVersionId, async () =>
-      this.replayed(await this.reader.readTableRows(migrationTableVersionId)),
+    return this.cached(this.ledgers, migrationTable.versionId, async () =>
+      this.replayed(await this.reader.readTableRows(migrationTable.versionId)),
     );
   }
 

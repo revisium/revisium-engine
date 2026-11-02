@@ -46,6 +46,7 @@ function draftRowVersionsPlanOf({
   draftRevisionId,
   tableId,
   draftTableVersionId,
+  editInPlace,
   replacedRowVersionIds,
   newRows,
 }: DraftRowVersionsReplacement): TargetWritePlan {
@@ -60,8 +61,7 @@ function draftRowVersionsPlanOf({
           kind: 'mixed',
           tableId,
           sourceVersionId: draftTableVersionId,
-          // The replaced rows are Draft-only, so the Draft table version that holds them is its own mutable copy.
-          editInPlace: true,
+          editInPlace,
           hasFileFields: false,
           removedRowVersionIds: replacedRowVersionIds,
           addedRowVersionIds: [],

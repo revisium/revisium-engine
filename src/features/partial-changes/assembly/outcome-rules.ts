@@ -15,6 +15,8 @@ import type {
 
 export type OtherSideColumn = 'publishedAt' | 'meta' | 'schemaHash';
 
+type VersionAccess = Pick<TableVersion, 'readonly'>;
+
 export interface OtherSideParts {
   readonly id: boolean;
   readonly paths: readonly string[];
@@ -124,10 +126,12 @@ export class OutcomeRules {
 
   public editsDraftInPlace(
     structureSide: RevisionSide,
-    draftIsMutable: boolean,
+    draft: VersionAccess | undefined,
   ): boolean {
     return (
-      this.operation === 'revert' && structureSide === 'draft' && draftIsMutable
+      this.operation === 'revert' &&
+      structureSide === 'draft' &&
+      isMutable(draft)
     );
   }
 }
@@ -191,7 +195,7 @@ export class TableOutcomeRules {
   }
 
   public editsDraftInPlace({ draft }: TablePair): boolean {
-    return this.rules.editsDraftInPlace(this.structureSide, isMutable(draft));
+    return this.rules.editsDraftInPlace(this.structureSide, draft);
   }
 
   private outcomeWithoutUnits(): TableOutcome {
@@ -280,6 +284,6 @@ export class TableOutcomeRules {
   }
 }
 
-function isMutable(version: TableVersion | undefined): boolean {
+function isMutable(version: VersionAccess | undefined): boolean {
   return version !== undefined && !version.readonly;
 }

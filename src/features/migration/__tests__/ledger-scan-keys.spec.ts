@@ -65,7 +65,7 @@ function revisionOf(
     revisionId: `${migrationTableVersionId}-revision`,
     tableVersionIds: new Map([[PRODUCTS, 'products-version']]),
     schemaTableVersionId,
-    migrationTableVersionId,
+    migrationTable: { versionId: migrationTableVersionId, readonly: true },
   };
 }
 

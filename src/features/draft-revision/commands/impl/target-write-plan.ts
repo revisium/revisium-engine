@@ -60,6 +60,7 @@ export interface DraftRowVersionsReplacement {
   readonly draftRevisionId: string;
   readonly tableId: SystemTables;
   readonly draftTableVersionId: string;
+  readonly editInPlace: boolean;
   readonly replacedRowVersionIds: readonly string[];
   readonly newRows: readonly NewRowVersion[];
 }

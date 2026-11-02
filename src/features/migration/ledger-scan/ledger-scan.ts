@@ -14,6 +14,7 @@ import type {
 import {
   ledgerOf,
   migrationsOf,
+  schemaRowOf,
 } from 'src/features/share/ledger/migration-ledger';
 import type {
   ReplayedLedger,
@@ -29,9 +30,9 @@ import {
   type SchemaRow,
 } from './schema-checks';
 import type {
-  BranchRevisions,
-  RevisionTables,
   RowHashCount,
+  ScannedBranchRevisions,
+  ScannedRevision,
   ScanRevisionReader,
 } from './scan-revision-reader';
 
@@ -91,13 +92,13 @@ export class LedgerScan {
     return { ...this.counts };
   }
 
-  public countBranch({ historyRevisionIds }: BranchRevisions): void {
+  public countBranch({ historyRevisionIds }: ScannedBranchRevisions): void {
     this.counts.branches += 1;
     this.counts.revisions +=
       HEAD_AND_DRAFT_REVISIONS + historyRevisionIds.length;
   }
 
-  public async tablesOf(revision: RevisionTables): Promise<ScannedTable[]> {
+  public async tablesOf(revision: ScannedRevision): Promise<ScannedTable[]> {
     if (revision.tableVersionIds.size === 0) {
       return [];
     }
@@ -179,9 +180,9 @@ export class LedgerScan {
   }
 
   public async repairInputOf(
-    { headRevisionId, draftRevisionId }: BranchRevisions,
-    head: RevisionTables,
-    draft: RevisionTables,
+    { headRevisionId, draftRevisionId }: ScannedBranchRevisions,
+    head: ScannedRevision,
+    draft: ScannedRevision,
   ): Promise<RepairInput> {
     const headLedger = await this.scannedLedgerOf(head);
     const draftLedger = await this.scannedLedgerOf(draft);
@@ -198,7 +199,7 @@ export class LedgerScan {
   }
 
   private async revisionLedgerOf(
-    revision: RevisionTables,
+    revision: ScannedRevision,
     ledger: ScannedLedger | undefined,
   ): Promise<RevisionLedger> {
     return revisionLedgerOf(
@@ -228,7 +229,7 @@ export class LedgerScan {
 
   private async schemaTableRowsOf({
     schemaTableVersionId,
-  }: RevisionTables): Promise<Row[]> {
+  }: ScannedRevision): Promise<Row[]> {
     if (schemaTableVersionId === undefined) {
       return [];
     }
@@ -240,7 +241,7 @@ export class LedgerScan {
 
   private async scannedLedgerOf({
     migrationTableVersionId,
-  }: RevisionTables): Promise<ScannedLedger | undefined> {
+  }: ScannedRevision): Promise<ScannedLedger | undefined> {
     if (migrationTableVersionId === undefined) {
       return undefined;
     }
@@ -303,7 +304,7 @@ function schemaRowsOf(rows: readonly Row[]): Map<string, SchemaRow> {
       {
         versionId: row.versionId,
         hash: row.hash,
-        schema: row.data as unknown as JsonSchema,
+        schema: schemaRowOf(row).schema,
       },
     ]),
   );

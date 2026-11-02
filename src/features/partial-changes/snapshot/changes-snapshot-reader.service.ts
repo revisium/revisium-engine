@@ -7,7 +7,6 @@ import {
   changedRowPairsSql,
 } from 'src/features/partial-changes/snapshot/changed-row-pairs-sql';
 import {
-  type BranchRevisions,
   type ChangedRows,
   type ChangedRowsKeyset,
   type ChangesBranch,
@@ -24,15 +23,25 @@ import {
   rowVersionTextsSql,
 } from 'src/features/partial-changes/snapshot/row-version-texts-sql';
 import {
+  type HeadAndDraftTables,
   pairUserTablesByIdentity,
-  type RevisionTables,
-  type StoredTable,
 } from 'src/features/partial-changes/snapshot/table-pairs';
-import { ShareTransactionalQueries } from 'src/features/share/share.transactional.queries';
+import {
+  BranchRevisionReader,
+  type HeadAndDraft,
+  type StoredSystemTables,
+} from 'src/features/share/branch-revisions/branch-revision-reader';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
 const MAX_IDS_FOR_INDEXED_LOOKUP = 100;
+
+const SNAPSHOT_SYSTEM_TABLES: readonly SystemTables[] = [
+  SystemTables.Schema,
+  SystemTables.Migration,
+  SystemTables.Views,
+  SystemTables.SharedSchemas,
+];
 
 export interface ReferrerQuery {
   readonly jsonPath: string;
@@ -56,7 +65,7 @@ export interface UnresolvedReferenceQuery {
 export class ChangesSnapshotReader {
   constructor(
     private readonly transactionService: TransactionPrismaService,
-    private readonly shareQueries: ShareTransactionalQueries,
+    private readonly revisionReader: BranchRevisionReader,
   ) {}
 
   private get transaction() {
@@ -64,8 +73,8 @@ export class ChangesSnapshotReader {
   }
 
   public async readSnapshot(branch: ChangesBranch): Promise<ChangesSnapshot> {
-    const revisions = await this.resolveRevisions(branch);
-    const tables = await this.readRevisionTables(revisions);
+    const revisions = await this.revisionReader.resolveHeadAndDraft(branch);
+    const tables = await this.readHeadAndDraftTables(revisions);
     const systemRows = await this.readSystemRows(tables);
 
     return {
@@ -240,81 +249,34 @@ export class ChangesSnapshotReader {
     return new Map(rows.map((row) => [row.versionId, row]));
   }
 
-  private async resolveRevisions(
-    branch: ChangesBranch,
-  ): Promise<BranchRevisions> {
-    const { id: branchId } = await this.shareQueries.findBranchInProjectOrThrow(
-      branch.projectId,
-      branch.branchName,
+  private async readHeadAndDraftTables({
+    headRevisionId,
+    draftRevisionId,
+  }: HeadAndDraft): Promise<HeadAndDraftTables> {
+    return {
+      head: await this.revisionReader.readTables(headRevisionId),
+      draft: await this.revisionReader.readTables(draftRevisionId),
+    };
+  }
+
+  private async readSystemRows(
+    tables: HeadAndDraftTables,
+  ): Promise<SystemRows> {
+    const head = await this.revisionReader.readSystemRows(
+      tables.head,
+      SNAPSHOT_SYSTEM_TABLES,
     );
-    const head =
-      await this.shareQueries.findHeadRevisionInBranchOrThrow(branchId);
-    const draft =
-      await this.shareQueries.findDraftRevisionInBranchOrThrow(branchId);
+    const draft = await this.revisionReader.readSystemRows(
+      tables.draft,
+      SNAPSHOT_SYSTEM_TABLES,
+    );
 
     return {
-      branchId,
-      headRevisionId: head.id,
-      draftRevisionId: draft.id,
+      schemas: systemTableRowsOf(head, draft, SystemTables.Schema),
+      migrations: systemTableRowsOf(head, draft, SystemTables.Migration),
+      views: systemTableRowsOf(head, draft, SystemTables.Views),
+      sharedSchemas: systemTableRowsOf(head, draft, SystemTables.SharedSchemas),
     };
-  }
-
-  private async readRevisionTables(
-    revisions: BranchRevisions,
-  ): Promise<RevisionTables> {
-    return {
-      head: await this.readTables(revisions.headRevisionId),
-      draft: await this.readTables(revisions.draftRevisionId),
-    };
-  }
-
-  private readTables(revisionId: string): Promise<StoredTable[]> {
-    return this.transaction.table.findMany({
-      where: { revisions: { some: { id: revisionId } } },
-      select: {
-        versionId: true,
-        createdId: true,
-        id: true,
-        readonly: true,
-        system: true,
-      },
-    });
-  }
-
-  private async readSystemRows(tables: RevisionTables): Promise<SystemRows> {
-    return {
-      schemas: await this.readSystemTable(tables, SystemTables.Schema),
-      migrations: await this.readSystemTable(tables, SystemTables.Migration),
-      views: await this.readSystemTable(tables, SystemTables.Views),
-      sharedSchemas: await this.readSystemTable(
-        tables,
-        SystemTables.SharedSchemas,
-      ),
-    };
-  }
-
-  private async readSystemTable(
-    tables: RevisionTables,
-    tableId: SystemTables,
-  ): Promise<SystemTableRows> {
-    const head = systemTableOf(tables.head, tableId);
-    const draft = systemTableOf(tables.draft, tableId);
-
-    return {
-      head: await this.readRows(head),
-      draft: await this.readRows(draft),
-      versionIds: { head: head?.versionId, draft: draft?.versionId },
-    };
-  }
-
-  private async readRows(table: StoredTable | undefined): Promise<Row[]> {
-    if (!table) {
-      return [];
-    }
-
-    return this.transaction.row.findMany({
-      where: { tables: { some: { versionId: table.versionId } } },
-    });
   }
 }
 
@@ -349,9 +311,17 @@ function versionOf(
   return versions.get(versionId);
 }
 
-function systemTableOf(
-  tables: readonly StoredTable[],
+function systemTableRowsOf(
+  head: StoredSystemTables<SystemTables>,
+  draft: StoredSystemTables<SystemTables>,
   tableId: SystemTables,
-): StoredTable | undefined {
-  return tables.find((table) => table.system && table.id === tableId);
+): SystemTableRows {
+  return {
+    head: head[tableId].rows,
+    draft: draft[tableId].rows,
+    versionIds: {
+      head: head[tableId].versionId,
+      draft: draft[tableId].versionId,
+    },
+  };
 }

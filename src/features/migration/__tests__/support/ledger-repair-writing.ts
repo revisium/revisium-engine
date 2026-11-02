@@ -15,11 +15,11 @@ import type {
   TableRepairOutcome,
 } from 'src/features/migration/commands/impl/repair-schema-ledger.command';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
-import type { StoredSchema } from 'src/features/migration/ledger-repair/repair-state-reader';
 import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 import type { RevisionSide } from 'src/features/partial-changes/__tests__/support/snapshot-reading';
 import { replayOf } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import type { StoredSchema } from 'src/features/share/ledger/migration-ledger';
 import type { ReplayFailure } from 'src/features/share/ledger-replay/ledger-replay';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { ShareCommands } from 'src/features/share/share.commands';

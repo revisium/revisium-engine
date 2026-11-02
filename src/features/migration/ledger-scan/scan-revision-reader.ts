@@ -1,16 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { type Row, sql } from 'src/engine-prisma-types';
 import { ACTIVE_MIGRATION_STATUSES } from 'src/features/migration/types/migration.types';
+import {
+  BranchRevisionReader,
+  type HeadAndDraft,
+  type StoredTable,
+  systemTableOf,
+  userTableVersionIdsOf,
+} from 'src/features/share/branch-revisions/branch-revision-reader';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
+import type { ScannedBranch } from './branch-page-reader';
 
-export interface BranchRevisions {
-  readonly headRevisionId: string;
-  readonly draftRevisionId: string;
+export interface ScannedBranchRevisions extends HeadAndDraft {
   readonly historyRevisionIds: readonly string[];
 }
 
-export interface RevisionTables {
+export interface ScannedRevision {
   readonly revisionId: string;
   readonly tableVersionIds: ReadonlyMap<string, string>;
   readonly schemaTableVersionId?: string;
@@ -22,56 +28,41 @@ export interface RowHashCount {
   readonly rowCount: number;
 }
 
-interface LinkedTable {
-  readonly revisionId: string;
-  readonly id: string;
-  readonly versionId: string;
-  readonly system: boolean;
-}
-
 @Injectable()
 export class ScanRevisionReader {
-  constructor(private readonly transactionService: TransactionPrismaService) {}
+  constructor(
+    private readonly transactionService: TransactionPrismaService,
+    private readonly revisionReader: BranchRevisionReader,
+  ) {}
 
   private get client() {
     return this.transactionService.getTransactionOrPrisma();
   }
 
-  public async readBranchRevisions(branchId: string): Promise<BranchRevisions> {
-    const revisions = await this.client.revision.findMany({
-      where: { branchId },
-      orderBy: { sequence: 'asc' },
-      select: { id: true, isHead: true, isDraft: true },
-    });
-    const head = revisions.find(({ isHead }) => isHead);
-    const draft = revisions.find(({ isDraft }) => isDraft);
-
-    if (!head || !draft) {
-      throw new Error(`Branch "${branchId}" has no Head or Draft revision`);
-    }
-
+  public async readBranchRevisions(
+    branch: ScannedBranch,
+  ): Promise<ScannedBranchRevisions> {
     return {
-      headRevisionId: head.id,
-      draftRevisionId: draft.id,
-      historyRevisionIds: revisions
-        .filter(({ isHead, isDraft }) => !isHead && !isDraft)
-        .map(({ id }) => id),
+      ...(await this.revisionReader.resolveHeadAndDraft(branch)),
+      historyRevisionIds: await this.readHistoryRevisionIds(branch.id),
     };
   }
 
-  public async readRevision(revisionId: string): Promise<RevisionTables> {
-    return revisionTablesOf(revisionId, await this.readLinks([revisionId]));
+  public async readRevision(revisionId: string): Promise<ScannedRevision> {
+    return scannedRevisionOf(
+      revisionId,
+      await this.revisionReader.readTables(revisionId),
+    );
   }
 
   public async readRevisions(
     revisionIds: readonly string[],
-  ): Promise<RevisionTables[]> {
-    const linksByRevision = groupedByRevision(
-      await this.readLinks(revisionIds),
-    );
+  ): Promise<ScannedRevision[]> {
+    const tablesByRevision =
+      await this.revisionReader.readTablesOfRevisions(revisionIds);
 
     return revisionIds.map((revisionId) =>
-      revisionTablesOf(revisionId, linksByRevision.get(revisionId) ?? []),
+      scannedRevisionOf(revisionId, tablesByRevision.get(revisionId) ?? []),
     );
   }
 
@@ -100,52 +91,26 @@ export class ScanRevisionReader {
     return activeMigrations > 0;
   }
 
-  private readLinks(revisionIds: readonly string[]): Promise<LinkedTable[]> {
-    return this.client.$queryRaw<LinkedTable[]>(sql`
-      SELECT rt."A" AS "revisionId", t."id", t."versionId", t."system"
-      FROM "_RevisionToTable" rt
-      JOIN "Table" t ON t."versionId" = rt."B"
-      WHERE rt."A" = ANY(${[...revisionIds]}::text[])
-    `);
+  private async readHistoryRevisionIds(branchId: string): Promise<string[]> {
+    const revisions = await this.client.revision.findMany({
+      where: { branchId, isHead: false, isDraft: false },
+      orderBy: { sequence: 'asc' },
+      select: { id: true },
+    });
+
+    return revisions.map(({ id }) => id);
   }
 }
 
-function groupedByRevision(
-  links: readonly LinkedTable[],
-): Map<string, LinkedTable[]> {
-  const linksByRevision = new Map<string, LinkedTable[]>();
-
-  for (const link of links) {
-    const revisionLinks = linksByRevision.get(link.revisionId) ?? [];
-    revisionLinks.push(link);
-    linksByRevision.set(link.revisionId, revisionLinks);
-  }
-
-  return linksByRevision;
-}
-
-function revisionTablesOf(
+function scannedRevisionOf(
   revisionId: string,
-  links: readonly LinkedTable[],
-): RevisionTables {
+  tables: readonly StoredTable[],
+): ScannedRevision {
   return {
     revisionId,
-    tableVersionIds: new Map(
-      links
-        .filter(({ system }) => !system)
-        .map(({ id, versionId }) => [id, versionId]),
-    ),
-    schemaTableVersionId: systemTableVersionIdOf(links, SystemTables.Schema),
-    migrationTableVersionId: systemTableVersionIdOf(
-      links,
-      SystemTables.Migration,
-    ),
+    tableVersionIds: userTableVersionIdsOf(tables),
+    schemaTableVersionId: systemTableOf(tables, SystemTables.Schema)?.versionId,
+    migrationTableVersionId: systemTableOf(tables, SystemTables.Migration)
+      ?.versionId,
   };
-}
-
-function systemTableVersionIdOf(
-  links: readonly LinkedTable[],
-  tableId: SystemTables,
-): string | undefined {
-  return links.find(({ id, system }) => system && id === tableId)?.versionId;
 }

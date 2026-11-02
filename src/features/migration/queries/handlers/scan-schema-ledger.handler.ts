@@ -14,8 +14,8 @@ import {
 } from 'src/features/migration/ledger-scan/ledger-scan';
 import { scanRequestOf } from 'src/features/migration/ledger-scan/scan-request';
 import {
-  type BranchRevisions,
-  type RevisionTables,
+  type ScannedBranchRevisions,
+  type ScannedRevision,
   ScanRevisionReader,
 } from 'src/features/migration/ledger-scan/scan-revision-reader';
 import {
@@ -85,7 +85,7 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
     scan: LedgerScan,
     branchScan: BranchScan,
   ): Promise<readonly string[]> {
-    const revisions = await this.reader.readBranchRevisions(branch.id);
+    const revisions = await this.reader.readBranchRevisions(branch);
     scan.countBranch(revisions);
     const head = await this.reader.readRevision(revisions.headRevisionId);
     const draft = await this.reader.readRevision(revisions.draftRevisionId);
@@ -101,9 +101,9 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
 
   private async headRepairsOf(
     scan: LedgerScan,
-    revisions: BranchRevisions,
-    head: RevisionTables,
-    draft: RevisionTables,
+    revisions: ScannedBranchRevisions,
+    head: ScannedRevision,
+    draft: ScannedRevision,
   ): Promise<HeadRepairs> {
     if (!hasDamagedTable(await scan.tablesOf(head))) {
       return new Map();

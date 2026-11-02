@@ -1,13 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { type Sql, sql } from 'src/engine-prisma-types';
+import type { BranchRef } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-import {
-  type BranchPosition,
-  cursorOf,
-  type ScanRequest,
-} from './scan-request';
+import { cursorOf, type ScanRequest } from './scan-request';
 
-export interface ScannedBranch extends BranchPosition {
+export interface ScannedBranch extends BranchRef {
   readonly id: string;
 }
 
@@ -94,7 +91,7 @@ function branchFilterOf(branchName: string | undefined): Sql {
   return sql`"name" = ${branchName}`;
 }
 
-function positionFilterOf(after: BranchPosition | undefined): Sql {
+function positionFilterOf(after: BranchRef | undefined): Sql {
   if (!after) {
     return sql`TRUE`;
   }

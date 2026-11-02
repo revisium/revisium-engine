@@ -18,7 +18,7 @@ import {
   passesSchemaCheck,
   type ReplayedCheck,
 } from './schema-checks';
-import type { RevisionTables } from './scan-revision-reader';
+import type { ScannedRevision } from './scan-revision-reader';
 
 export type HeadRepairs = ReadonlyMap<string, RepairOutcome> | 'deferred';
 
@@ -61,8 +61,8 @@ export class BranchScan {
   }
 
   public async addHeadAndDraft(
-    head: RevisionTables,
-    draft: RevisionTables,
+    head: ScannedRevision,
+    draft: ScannedRevision,
     repairs: HeadRepairs,
   ): Promise<void> {
     const headTables = await this.scan.tablesOf(head);
@@ -75,12 +75,12 @@ export class BranchScan {
     );
   }
 
-  public addHistory(revision: RevisionTables): Promise<void> {
+  public addHistory(revision: ScannedRevision): Promise<void> {
     return this.addRevision(revision, 'history', () => HISTORY_DAMAGE);
   }
 
   private async addRevision(
-    revision: RevisionTables,
+    revision: ScannedRevision,
     role: FindingRole,
     damageFindingOf: DamageFinding,
   ): Promise<void> {

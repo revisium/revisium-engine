@@ -1,27 +1,19 @@
-import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
 import type {
   RevisionRows,
   TablePair,
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { HistoryPatches } from 'src/features/share/queries/impl';
+import type { StoredTable } from 'src/features/share/branch-revisions/branch-revision-reader';
+import { schemaRowOf } from 'src/features/share/ledger/migration-ledger';
 
-export interface StoredTable {
-  readonly versionId: string;
-  readonly createdId: string;
-  readonly id: string;
-  readonly readonly: boolean;
-  readonly system: boolean;
-}
-
-export interface RevisionTables {
+export interface HeadAndDraftTables {
   readonly head: readonly StoredTable[];
   readonly draft: readonly StoredTable[];
 }
 
 export function pairUserTablesByIdentity(
-  tables: RevisionTables,
+  tables: HeadAndDraftTables,
   schemaRows: RevisionRows,
 ): TablePair[] {
   const head = userTableVersions(tables.head, schemaRows.head);
@@ -64,7 +56,6 @@ function withSchema(
     createdId: table.createdId,
     id: table.id,
     readonly: table.readonly,
-    schema: schemaRow.data as unknown as JsonSchema,
-    history: schemaRow.meta as unknown as HistoryPatches[],
+    ...schemaRowOf(schemaRow),
   };
 }

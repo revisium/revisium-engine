@@ -1,6 +1,7 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
+import { BranchRevisionReader } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { DiffService } from 'src/features/share/diff.service';
 import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
@@ -26,6 +27,7 @@ import { SystemTablesService } from 'src/features/share/system-tables.service';
     JsonSchemaValidatorService,
     SystemTablesService,
     ViewsMigrationService,
+    BranchRevisionReader,
     {
       provide: NativeSchemaRules,
       useFactory: (
@@ -49,6 +51,7 @@ import { SystemTablesService } from 'src/features/share/system-tables.service';
     ViewsMigrationService,
     NativeSchemaRules,
     LedgerReplayer,
+    BranchRevisionReader,
   ],
 })
 export class ShareModule {}

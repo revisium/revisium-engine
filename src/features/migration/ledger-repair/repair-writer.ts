@@ -13,7 +13,10 @@ import type {
   RenumberedMigration,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
-import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
+import type {
+  LedgerEntry,
+  StoredSchema,
+} from 'src/features/share/ledger/migration-ledger';
 import {
   publishedAtOf,
   renumberedMigrationRowOf,
@@ -26,7 +29,7 @@ import {
   repairedTablesOf,
 } from './ledger-repair-plan.service';
 import { repairMigrationOf } from './repair-patch';
-import type { RepairState, StoredSchema } from './repair-state-reader';
+import type { RepairState } from './repair-state-reader';
 
 interface TableRepairRecord {
   readonly tableId: string;

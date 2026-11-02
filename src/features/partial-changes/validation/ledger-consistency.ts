@@ -14,6 +14,7 @@ import {
   resultingRolesOf,
   sourceRoleOf,
 } from 'src/features/partial-changes/validation/ledger-roles';
+import { schemaRowOf } from 'src/features/share/ledger/migration-ledger';
 import type {
   ReplayedLedger,
   ReplayedSlot,
@@ -360,9 +361,7 @@ function failingStepOf({ failure }: ReplayedSlot): string {
 function schemasByTableId(
   schemaRows: readonly Row[],
 ): ReadonlyMap<string, JsonSchema> {
-  return new Map(
-    schemaRows.map(({ id, data }) => [id, data as unknown as JsonSchema]),
-  );
+  return new Map(schemaRows.map((row) => [row.id, schemaRowOf(row).schema]));
 }
 
 export function lineageOf({ migrations }: TableSlot): string {

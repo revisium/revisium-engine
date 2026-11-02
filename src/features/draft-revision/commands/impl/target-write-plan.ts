@@ -1,4 +1,5 @@
 import type { Row } from 'src/engine-prisma-types';
+import type { SystemTables } from 'src/features/share/system-tables.consts';
 
 export type RevisionSide = 'head' | 'draft';
 
@@ -44,6 +45,15 @@ export interface TargetWritePlan {
 }
 
 export interface RenumberedRows {
+  readonly replacedRowVersionIds: readonly string[];
+  readonly newRows: readonly NewRowVersion[];
+}
+
+export interface DraftRowVersionsReplacement {
+  readonly headRevisionId: string;
+  readonly draftRevisionId: string;
+  readonly tableId: SystemTables;
+  readonly draftTableVersionId: string;
   readonly replacedRowVersionIds: readonly string[];
   readonly newRows: readonly NewRowVersion[];
 }

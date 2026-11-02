@@ -1,16 +1,15 @@
-import objectHash from 'object-hash';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import { type JsonValue, type Row, sql } from 'src/engine-prisma-types';
+import { sql } from 'src/engine-prisma-types';
 import type {
   CommitTableWritePlan,
   CommitTargetWritePlan,
   DraftRevisionCommitToTargetCommandReturnType,
-  NewRowVersion,
   RenumberedRows,
   RevisionSide,
 } from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
+import { renumberedMigrationRowOf } from 'src/features/share/ledger/native-migration-id';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 import { requiredRow, type TableTarget, TablePlans } from './table-plans';
 
@@ -138,7 +137,7 @@ export class CommitTarget {
     return {
       replacedRowVersionIds: renumberings.map(({ source }) => source.versionId),
       newRows: renumberings.map(({ source, id }) =>
-        renumberedRowOf(source, id),
+        renumberedMigrationRowOf(source, id),
       ),
     };
   }
@@ -203,20 +202,5 @@ function takeDraftVersion(
     newRows: [],
     relinkCandidate: true,
     hasFileFields: false,
-  };
-}
-
-function renumberedRowOf(row: Row, id: string): NewRowVersion {
-  const data = { ...(row.data as Record<string, JsonValue>), id };
-
-  return {
-    createdId: row.createdId,
-    createdAt: row.createdAt,
-    id,
-    data,
-    hash: objectHash(data),
-    schemaHash: row.schemaHash,
-    publishedAt: new Date(id),
-    meta: row.meta,
   };
 }

@@ -5,8 +5,6 @@ import type { InputJsonValue } from 'src/engine-prisma-types';
 import type {
   DraftRevisionCreateRowsRowData,
   DraftRevisionUpdateRowsRowData,
-  NewRowVersion,
-  TableWritePlan,
 } from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
@@ -16,11 +14,18 @@ import type {
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
+import {
+  publishedAtOf,
+  renumberedMigrationRowOf,
+} from 'src/features/share/ledger/native-migration-id';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { DraftLedger, type TableHistories } from './draft-ledger';
+import {
+  type PlannedRepair,
+  repairedTablesOf,
+} from './ledger-repair-plan.service';
 import { repairMigrationOf } from './repair-patch';
-import { type PlannedRepair, repairedTablesOf } from './repair-planning';
 import type { RepairState, StoredSchema } from './repair-state-reader';
 
 interface TableRepairRecord {
@@ -56,24 +61,19 @@ export class RepairWriter {
     }
 
     const renumberings = renumbered.map(({ previousId, id }) => ({
-      source: pendingEntryOf(draftLedger, previousId),
+      source: pendingEntryOf(draftLedger, previousId).row,
       id,
     }));
 
-    await this.targetApi.revertToTarget({
+    await this.targetApi.replaceDraftRowVersions({
       headRevisionId: state.headRevisionId,
       draftRevisionId: state.draftRevisionId,
-      tables: [
-        draftMigrationTablePlanOf(state, {
-          removedRowVersionIds: renumberings.map(
-            ({ source }) => source.row.versionId,
-          ),
-          addedRowVersionIds: [],
-          newRows: renumberings.map(({ source, id }) =>
-            renumberedRowOf(source, id),
-          ),
-        }),
-      ],
+      tableId: SystemTables.Migration,
+      draftTableVersionId: draftMigrationTableVersionOf(state),
+      replacedRowVersionIds: renumberings.map(({ source }) => source.versionId),
+      newRows: renumberings.map(({ source, id }) =>
+        renumberedMigrationRowOf(source, id),
+      ),
     });
   }
 
@@ -119,7 +119,7 @@ export class RepairWriter {
       rowId: migrationId,
       data: migration as unknown as InputJsonValue,
       schemaHash: this.validator.tableSchemaHash,
-      publishedAt: new Date(migrationId),
+      publishedAt: publishedAtOf(migrationId),
     };
   }
 }
@@ -133,43 +133,6 @@ function repairRecordOf({
     tableId,
     migrationId: requiredOf(migrationId, `repair migration id of ${tableId}`),
     patches: requiredOf(patches, `repair patches of ${tableId}`),
-  };
-}
-
-function draftMigrationTablePlanOf(
-  state: RepairState,
-  changes: Pick<
-    TableWritePlan,
-    'removedRowVersionIds' | 'addedRowVersionIds' | 'newRows'
-  >,
-): TableWritePlan {
-  return {
-    identity: SystemTables.Migration,
-    headVersionId: state.head.migrationTableVersionId,
-    draftVersionId: state.draft.migrationTableVersionId,
-    outcome: 'mixed',
-    structureSide: 'draft',
-    relinkCandidate: false,
-    hasFileFields: false,
-    ...changes,
-  };
-}
-
-function renumberedRowOf(
-  { row, migration }: LedgerEntry,
-  id: string,
-): NewRowVersion {
-  const data = { ...migration, id };
-
-  return {
-    createdId: row.createdId,
-    createdAt: row.createdAt,
-    schemaHash: row.schemaHash,
-    meta: row.meta,
-    id,
-    data: data as unknown as NewRowVersion['data'],
-    hash: objectHash(data),
-    publishedAt: new Date(id),
   };
 }
 
@@ -217,6 +180,13 @@ function headSchemaOf(state: RepairState, tableId: string): StoredSchema {
   return requiredOf(
     state.head.schemas.get(tableId),
     `Head schema row of ${tableId}`,
+  );
+}
+
+function draftMigrationTableVersionOf(state: RepairState): string {
+  return requiredOf(
+    state.draft.migrationTableVersionId,
+    'Draft migration table version',
   );
 }
 

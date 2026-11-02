@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { RepairPlanning } from 'src/features/migration/ledger-repair/repair-planning';
+import { LedgerRepairPlanService } from 'src/features/migration/ledger-repair/ledger-repair-plan.service';
 import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-state-reader';
 import {
   type PlanSchemaLedgerRepairData,
@@ -16,7 +16,7 @@ export class PlanSchemaLedgerRepairHandler implements IQueryHandler<
   constructor(
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly stateReader: RepairStateReader,
-    private readonly repairPlanning: RepairPlanning,
+    private readonly repairPlanService: LedgerRepairPlanService,
   ) {}
 
   public execute({
@@ -30,6 +30,6 @@ export class PlanSchemaLedgerRepairHandler implements IQueryHandler<
   ): Promise<SchemaLedgerRepairPlan> {
     const state = await this.stateReader.readUnlockedBranch(data);
 
-    return this.repairPlanning.plan(state, { tableIds: data.tableIds });
+    return this.repairPlanService.plan(state, { tableIds: data.tableIds });
   }
 }

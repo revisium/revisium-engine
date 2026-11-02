@@ -446,6 +446,12 @@ describe('Schema ledger repair planning', () => {
         tableId: PRODUCTS,
         outcome: 'unledgered',
       },
+      {
+        table: 'a damaged table that the Draft removed',
+        given: givenDamagedTableRemovedInDraft,
+        tableId: PRODUCTS,
+        outcome: 'needsDraftStructureRevert',
+      },
     ])('reports $outcome for $table', async ({ given, tableId, outcome }) => {
       const draft = await given();
 
@@ -747,6 +753,13 @@ describe('Schema ledger repair planning', () => {
     const draft = await givenCommittedCatalog(kit);
     await draft.updateTable(PRODUCTS, [addField('weight', num())]);
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenDamagedTableRemovedInDraft(): Promise<ChangesScenario> {
+    const draft = await givenPublishedInPlaceMigration(kit);
+    await draft.removeTable(PRODUCTS);
 
     return draft;
   }

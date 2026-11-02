@@ -3,10 +3,12 @@ import { JsonSchemaValidatorService } from 'src/features/share/json-schema-valid
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-import { DraftLedger } from './draft-ledger';
+import { DraftLedger, passesNativeHistoryValidation } from './draft-ledger';
+import {
+  type PlannedRepair,
+  repairedTablesOf,
+} from './ledger-repair-plan.service';
 import { storedLedgerReplayOf } from './repair-ledger';
-import { isNativeHistory } from './repair-patch';
-import { type PlannedRepair, repairedTablesOf } from './repair-planning';
 import {
   type RepairBranch,
   type RepairState,
@@ -83,14 +85,10 @@ export class StoredLedgerVerification {
   }
 
   private storesNativeHistory(ledger: DraftLedger, tableId: string): boolean {
-    const histories = ledger.historiesOf(tableId);
-
-    return (
-      histories !== undefined &&
-      isNativeHistory(
-        [...histories.inherited, ...histories.pending],
-        this.validator,
-      )
+    return passesNativeHistoryValidation(
+      ledger.historiesOf(tableId),
+      this.validator,
+      { missingHistory: 'fails' },
     );
   }
 

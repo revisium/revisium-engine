@@ -1,14 +1,8 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
-import type { PendingSchemaHistory } from 'src/features/share/ledger/schema-history';
+import type { PendingSchemaHistory } from 'src/features/share/ledger/pending-schema-history';
 import type { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
-
-export function hasPendingEntries(
-  pendingHistory: PendingSchemaHistory,
-): boolean {
-  return !pendingHistory.extendsHead || pendingHistory.entries.length > 0;
-}
 
 export function isStructureRecorded(
   headSchema: JsonSchema,

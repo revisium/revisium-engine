@@ -4,13 +4,14 @@ import {
   ledgerOf,
   migrationsOf,
 } from 'src/features/share/ledger/migration-ledger';
+import type { MigrationBounds } from 'src/features/share/ledger/native-migration-id';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
-import { DraftLedger } from './draft-ledger';
-import { lastPublishedBoundsOf, type MigrationBounds } from './repair-ids';
-import { type HistoryPatchesValidator, isNativeHistory } from './repair-patch';
+import { DraftLedger, passesNativeHistoryValidation } from './draft-ledger';
+import { lastPublishedBoundsOf } from './repair-ids';
+import type { HistoryPatchesValidator } from './repair-patch';
 import type { RepairState, RevisionLedger } from './repair-state-reader';
 
 export interface StoredLedgerReplays {
@@ -109,14 +110,10 @@ export class RepairLedger {
   }
 
   private hasNativeHistories(tableId: string): boolean {
-    const histories = this.draftLedger.historiesOf(tableId);
-
-    return (
-      histories === undefined ||
-      isNativeHistory(
-        [...histories.inherited, ...histories.pending],
-        this.historyValidator,
-      )
+    return passesNativeHistoryValidation(
+      this.draftLedger.historiesOf(tableId),
+      this.historyValidator,
+      { missingHistory: 'passes' },
     );
   }
 

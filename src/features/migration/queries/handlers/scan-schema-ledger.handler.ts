@@ -1,5 +1,5 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { RepairPlanning } from 'src/features/migration/ledger-repair/repair-planning';
+import { LedgerRepairPlanService } from 'src/features/migration/ledger-repair/ledger-repair-plan.service';
 import {
   BranchPageReader,
   type ScannedBranch,
@@ -36,7 +36,7 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly branchPages: BranchPageReader,
     private readonly reader: ScanRevisionReader,
-    private readonly repairPlanning: RepairPlanning,
+    private readonly repairPlanService: LedgerRepairPlanService,
     private readonly replayer: LedgerReplayer,
   ) {}
 
@@ -118,7 +118,7 @@ export class ScanSchemaLedgerHandler implements IQueryHandler<
       head,
       draft,
     );
-    const plan = await this.repairPlanning.plan(state, { storedReplays });
+    const plan = await this.repairPlanService.plan(state, { storedReplays });
 
     return new Map(
       plan.tables.map(({ tableId, outcome }) => [tableId, outcome]),

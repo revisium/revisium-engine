@@ -1,20 +1,19 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
-import { nextNativeMigrationId } from 'src/features/draft/commands/handlers/migration/native-migration-id';
 import type { RenumberedMigration } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
+import {
+  type MigrationBounds,
+  nextNativeMigrationId,
+  publishedAtOf,
+} from 'src/features/share/ledger/native-migration-id';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-
-export interface MigrationBounds {
-  readonly id: string | null;
-  readonly publishedAt: Date | null;
-}
 
 export class NativeIdSequence {
   constructor(private bounds: MigrationBounds) {}
 
   public next(): string {
     const id = nextNativeMigrationId(this.bounds);
-    this.bounds = { id, publishedAt: new Date(id) };
+    this.bounds = { id, publishedAt: publishedAtOf(id) };
 
     return id;
   }
@@ -47,7 +46,7 @@ export function renumberedAfter(
 
   const sequence = new NativeIdSequence({
     id: lastRepairId,
-    publishedAt: new Date(lastRepairId),
+    publishedAt: publishedAtOf(lastRepairId),
   });
 
   return pending.map(({ id }) => ({ previousId: id, id: sequence.next() }));

@@ -21,6 +21,7 @@ import {
   transactionModeOfSnapshotRead,
 } from '../../__tests__/support/change-preview';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
 import {
   sourceLedgersOf,
   sourceReplaysDuring,
@@ -784,6 +785,28 @@ describe('previewChanges', () => {
   });
 
   describe('input', () => {
+    it('previews with includeRequired and optional selection fields given as null as it previews without them', async () => {
+      const draft = await givenEditedAndCreatedCategories();
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: {
+          all: null,
+          rows: [{ tableId: CATEGORIES, rowId: 'c9', side: null }],
+          fields: null,
+          exclude: { rows: null },
+        },
+        includeRequired: null,
+      });
+
+      expect(preview).toEqual(
+        await draft.previewChanges({
+          operation: 'commit',
+          selection: { rows: [rowOf(CATEGORIES, 'c9')], exclude: {} },
+        }),
+      );
+    });
+
     it.each<{ input: string; selection: unknown; operation: unknown }>([
       {
         input: 'a malformed selection',
@@ -797,6 +820,26 @@ describe('previewChanges', () => {
         selection: titleOfC1,
         operation: 'publish',
       },
+      {
+        input: 'a null selection',
+        selection: null,
+        operation: 'commit',
+      },
+      {
+        input: 'a null operation',
+        selection: titleOfC1,
+        operation: null,
+      },
+      {
+        input: 'a selector with a null row id',
+        selection: { rows: [{ tableId: CATEGORIES, rowId: null }] },
+        operation: 'commit',
+      },
+      ...FORBIDDEN_NULL_FIELDS.map(({ field, selection }) => ({
+        input: `${field} given as null`,
+        selection,
+        operation: 'commit',
+      })),
     ])(
       'refuses $input before any transaction',
       async ({ selection, operation }) => {

@@ -337,6 +337,18 @@ describe('listChanges', () => {
   });
 
   describe('input', () => {
+    it('lists with tableId, cursor and pageSize given as null as it lists without them', async () => {
+      const draft = await givenCreatedTableNextToEditedCategory();
+
+      const page = await draft.listChanges({
+        tableId: null,
+        cursor: null,
+        pageSize: null,
+      });
+
+      expect(page).toEqual(await draft.listChanges());
+    });
+
     it.each([0, 5_001, 1.5])('refuses pageSize %s', async (pageSize) => {
       const draft = await givenOneEditedCategory();
 

@@ -5,9 +5,9 @@ import type { FieldChange } from 'src/features/partial-changes/structure/table-s
 
 export interface ListChangesInput {
   readonly branch: ChangesBranch;
-  readonly tableId?: string;
-  readonly cursor?: string;
-  readonly pageSize?: number;
+  readonly tableId?: string | null;
+  readonly cursor?: string | null;
+  readonly pageSize?: number | null;
 }
 
 export type TableChange =

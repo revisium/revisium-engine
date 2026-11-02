@@ -148,7 +148,7 @@ describe('revertChanges', () => {
       });
     });
 
-    it.each<{ input: string; options: RevertOptions }>([
+    it.each<{ input: string; options: unknown }>([
       {
         input: 'includeRequired without expected',
         options: { selection: creationOfC9, includeRequired: true },
@@ -161,14 +161,39 @@ describe('revertChanges', () => {
           },
         },
       },
+      {
+        input: 'a null selection',
+        options: { selection: null },
+      },
     ])('refuses $input before any transaction', async ({ options }) => {
       const draft = await givenProductOfCreatedCategory();
       const reads = jest.spyOn(kit.snapshotReader, 'readSnapshot');
 
-      await expect(draft.revertChanges(options)).rejects.toThrow(
-        SelectionValidationError,
-      );
+      await expect(
+        draft.revertChanges(options as RevertOptions),
+      ).rejects.toThrow(SelectionValidationError);
       expect(reads).not.toHaveBeenCalled();
+    });
+
+    it('applies with includeRequired, expected and optional selection fields given as null as it applies without them', async () => {
+      const draft = await givenEditedPrices();
+      const headRevisionId = await draft.revisionId('head');
+      const draftRevisionId = await draft.revisionId('draft');
+
+      const result = await draft.revertChanges({
+        selection: { ...titleOfP1, rows: null, exclude: null },
+        includeRequired: null,
+        expected: null,
+      });
+
+      expect(result).toEqual<RevertChangesResult>({
+        status: 'applied',
+        headRevisionId,
+        draftRevisionId,
+        applied: { selected: 1, required: 0 },
+        remaining: { units: 2, unreadTables: 0 },
+      });
+      await expectDraftRow(draft, PRODUCTS, 'p1', { title: 'one', price: 10 });
     });
 
     it('is blocked by a selector that matches no unit next to one that does, and writes nothing', async () => {

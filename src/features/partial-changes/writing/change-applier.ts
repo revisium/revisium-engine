@@ -117,16 +117,20 @@ export function appliedCountsOf({
 
 function applyRequestOf(
   operation: ChangeOperation,
-  { branch, selection, includeRequired = false, expected }: ApplyChangesInput,
+  { branch, selection, includeRequired, expected }: ApplyChangesInput,
 ): ApplyRequest {
-  validateRequiredAdditionsAcceptance({ includeRequired, expected });
+  const acceptance = {
+    includeRequired: includeRequired ?? false,
+    expected: expected ?? undefined,
+  };
+
+  validateRequiredAdditionsAcceptance(acceptance);
 
   return {
     operation,
     branch,
     selection: validateSelection(selection),
-    includeRequired,
-    expected,
+    ...acceptance,
   };
 }
 

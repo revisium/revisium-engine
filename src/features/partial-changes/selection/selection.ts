@@ -32,6 +32,18 @@ export interface Selection extends SelectionItems {
   readonly exclude?: SelectionItems;
 }
 
+export type SelectionInput = NullableOptionals<Selection>;
+
+type NullableOptionals<T> = T extends readonly (infer Item)[]
+  ? readonly NullableOptionals<Item>[]
+  : T extends object
+    ? {
+        readonly [K in keyof T]: undefined extends T[K]
+          ? NullableOptionals<T[K]> | null
+          : NullableOptionals<T[K]>;
+      }
+    : T;
+
 export type ItemKind = keyof SelectionItems;
 
 export type ItemSelector<K extends ItemKind> = NonNullable<

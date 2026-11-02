@@ -20,21 +20,28 @@ export function listingRequestOf({
   branch,
   tableId,
   cursor,
-  pageSize = DEFAULT_PAGE_SIZE,
+  pageSize,
 }: ListChangesInput): ListingRequest {
-  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+  const size = pageSize ?? DEFAULT_PAGE_SIZE;
+
+  if (!Number.isInteger(size) || size < 1 || size > MAX_PAGE_SIZE) {
     throw new ListingValidationError(
       `pageSize must be an integer from 1 to ${MAX_PAGE_SIZE}`,
     );
   }
 
-  return { branch, tableId, cursor: decodedCursorOf(cursor), pageSize };
+  return {
+    branch,
+    tableId: tableId ?? undefined,
+    cursor: decodedCursorOf(cursor),
+    pageSize: size,
+  };
 }
 
 function decodedCursorOf(
-  cursor: string | undefined,
+  cursor: string | null | undefined,
 ): ListingCursor | undefined {
-  if (cursor === undefined) {
+  if (cursor === undefined || cursor === null) {
     return undefined;
   }
 

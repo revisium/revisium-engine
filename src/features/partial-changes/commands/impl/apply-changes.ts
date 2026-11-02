@@ -1,14 +1,14 @@
 import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
-import type { Selection } from 'src/features/partial-changes/selection/selection';
+import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
 import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 export interface ApplyChangesInput {
   readonly branch: ChangesBranch;
-  readonly selection: Selection;
-  readonly includeRequired?: boolean;
-  readonly expected?: string;
+  readonly selection: SelectionInput;
+  readonly includeRequired?: boolean | null;
+  readonly expected?: string | null;
 }
 
 export interface AppliedCounts {

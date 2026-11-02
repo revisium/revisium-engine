@@ -28,6 +28,7 @@ import type { TableViewsData } from 'src/features/views/types';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
 import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const CATEGORIES = 'categories';
@@ -191,7 +192,7 @@ describe('commitChanges', () => {
       });
     });
 
-    it.each<{ input: string; options: CommitOptions }>([
+    it.each<{ input: string; options: unknown }>([
       {
         input: 'includeRequired without expected',
         options: { selection: categoryOfP1, includeRequired: true },
@@ -204,14 +205,63 @@ describe('commitChanges', () => {
           },
         },
       },
+      {
+        input: 'a null selection',
+        options: { selection: null },
+      },
+      ...FORBIDDEN_NULL_FIELDS.map(({ field, selection }) => ({
+        input: `${field} given as null`,
+        options: { selection },
+      })),
     ])('refuses $input before any transaction', async ({ options }) => {
       const draft = await givenProductOfCreatedCategory();
       const reads = jest.spyOn(kit.snapshotReader, 'readSnapshot');
 
-      await expect(draft.commitChanges(options)).rejects.toThrow(
-        SelectionValidationError,
-      );
+      await expect(
+        draft.commitChanges(options as CommitOptions),
+      ).rejects.toThrow(SelectionValidationError);
       expect(reads).not.toHaveBeenCalled();
+    });
+
+    it('applies with includeRequired, expected, comment and optional selection fields given as null as it applies without them', async () => {
+      const draft = await givenEditedPrices();
+      const previousHeadRevisionId = await draft.revisionId('head');
+      const formerDraftRevisionId = await draft.revisionId('draft');
+
+      const result = await draft.commitChanges({
+        selection: { ...titleOfP1, rows: null, exclude: null },
+        includeRequired: null,
+        expected: null,
+        comment: null,
+      });
+
+      expect(result).toEqual<CommitChangesResult>({
+        status: 'applied',
+        previousHeadRevisionId,
+        headRevisionId: formerDraftRevisionId,
+        draftRevisionId: await draft.revisionId('draft'),
+        applied: { selected: 1, required: 0 },
+        remaining: { units: 2, unreadTables: 0 },
+        renumbered: [],
+      });
+      expect(await commentOf(formerDraftRevisionId)).toBe('');
+    });
+
+    it('leaves out the units of an exclude whose item lists are getters', async () => {
+      const draft = await givenEditedPrices();
+
+      const result = await draft.commitChanges({
+        selection: { tableData: [PRODUCTS], exclude: new ExclusionOfP2() },
+      });
+
+      expect(result).toMatchObject({
+        status: 'applied',
+        applied: { selected: 2, required: 0 },
+      });
+      await expectProducts(draft, 'head', {
+        p1: { title: 'uno', price: 10 },
+        p2: { title: 'two', price: 2 },
+      });
     });
 
     it('is blocked by a selector that matches no unit next to one that does, and writes nothing', async () => {
@@ -1062,6 +1112,12 @@ describe('commitChanges', () => {
     return draft;
   }
 });
+
+class ExclusionOfP2 {
+  get rows(): RowRef[] {
+    return [rowOf(PRODUCTS, 'p2')];
+  }
+}
 
 interface WholeDraft {
   readonly holding: string;

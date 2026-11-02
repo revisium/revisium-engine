@@ -25,7 +25,46 @@ describe('SelectionValidator', () => {
       exclude: { rows: [{ tableId: PRODUCTS, rowId: 'p4' }] },
     };
 
-    expect(validateSelection(selection)).toBe(selection);
+    expect(validateSelection(selection)).toEqual(selection);
+  });
+
+  it('returns the selection without its optional fields given as null', () => {
+    const selection = {
+      all: null,
+      tables: [{ tableId: PRODUCTS, side: null }],
+      rows: null,
+      renames: [{ tableId: PRODUCTS, rowId: 'p2', side: null }],
+      exclude: { tableData: null, rowColumns: [] },
+    };
+
+    expect(validateSelection(selection)).toStrictEqual({
+      tables: [{ tableId: PRODUCTS }],
+      renames: [{ tableId: PRODUCTS, rowId: 'p2' }],
+      exclude: { rowColumns: [] },
+    });
+  });
+
+  it('reads the item lists of an exclude through its getters', () => {
+    const exclude = new (class {
+      get rows() {
+        return [{ tableId: PRODUCTS, rowId: 'p4' }];
+      }
+    })();
+
+    expect(validateSelection({ all: true, exclude })).toStrictEqual({
+      all: true,
+      exclude: { rows: [{ tableId: PRODUCTS, rowId: 'p4' }] },
+    });
+  });
+
+  it('checks every indexed item of a list whose iterator yields nothing', () => {
+    const rows = Object.defineProperty([null], Symbol.iterator, {
+      value: function* () {},
+    });
+
+    expect(() => validateSelection({ all: true, exclude: { rows } })).toThrow(
+      'selection.exclude.rows[0] must be an object',
+    );
   });
 
   it.each([
@@ -130,6 +169,31 @@ describe('SelectionValidator', () => {
       error: 'a missing entry of a sparse id array',
       input: { exclude: { tableData: new Array(1) } },
       message: 'selection.exclude.tableData[0] must be a non-empty string',
+    },
+    {
+      error: 'an unknown field given as null',
+      input: { all: true, rowz: null },
+      message: 'selection.rowz is not allowed',
+    },
+    {
+      error: 'all inside exclude given as null',
+      input: { all: true, exclude: { all: null } },
+      message: 'selection.exclude.all is not allowed',
+    },
+    {
+      error: 'a field a selector does not have given as null',
+      input: { rows: [{ tableId: PRODUCTS, rowId: 'p1', path: null }] },
+      message: 'selection.rows[0].path is not allowed',
+    },
+    {
+      error: 'a required id given as null',
+      input: { fields: [{ tableId: PRODUCTS, rowId: null, path: '/a' }] },
+      message: 'selection.fields[0].rowId must be a non-empty string',
+    },
+    {
+      error: 'a null entry of an item list',
+      input: { tableData: [null] },
+      message: 'selection.tableData[0] must be a non-empty string',
     },
   ])('refuses $error with a validation error', ({ input, message }) => {
     expectValidationError(() => validateSelection(input), message);

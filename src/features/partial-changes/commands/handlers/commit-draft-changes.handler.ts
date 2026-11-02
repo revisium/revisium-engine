@@ -30,7 +30,7 @@ export class CommitDraftChangesHandler implements ICommandHandler<
     data,
   }: CommitDraftChangesCommand): Promise<CommitChangesResult> {
     const result = await this.changeApplier.apply('commit', data, (plan) =>
-      this.commitDraft(plan, data.comment),
+      this.commitDraft(plan, data.comment ?? undefined),
     );
 
     await this.notifyWhenCommitted(result);

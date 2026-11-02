@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2 |
+| Version | 2.2 |
 | Status | Accepted |
-| Date | 2026-10-31 |
+| Date | 2026-11-02 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), delivery stage 0 |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-004, REQ-001.BR-005 |
 | Previous version | [async-row-migration-v1]: shadow table, batches, worker modes, statuses and branch lock are kept |
@@ -350,6 +350,10 @@ release gate needs. Read-only; no permission layer in the engine.
 | `cursor`, `limit` | string; integer 1–1,000, default 50 | Paging by (`projectId`, `branchName`). |
 | `rowDiagnostics` | `'none' \| 'headAndDraft' \| 'all'`, default `'headAndDraft'` | Where predicate (a) runs. |
 
+Every input is optional, and one given as `null` is treated as absent, so a transport that sends `null` for an omitted
+argument (as GraphQL clients do) needs no mapping: `cursor: null` starts at the first page, and `branchName` with a
+`null` `projectId` is refused like `branchName` alone.
+
 Output `{ findings, nextCursor, stats }`; **Finding**
 `{ code, projectId, branchName, tableId, role: 'head' | 'draft' | 'history', revisionIds, detail }`, one per distinct
 evaluation with every revision of the branch that shares it.
@@ -362,6 +366,20 @@ evaluation with every revision of the branch that shares it.
 | `draftOnlyDamage` (Draft) | Draft fails (b) under a passing Head: revert the table's structure; no repair. |
 | `damagedHistory` | An earlier revision fails (b); not repaired (rewriting history needs its own ADR). |
 | `rowSchemaHashMismatch` | Predicate (a) fails; diagnostic only. Per distinct row hash, first match wins: `unmigratedByAsync` (the table fails (b) and the hash is the replayed schema's); `renamedReference` (the hash is in the slot's trail and only referrer rewrites follow it: a known false positive); `unmigratedRows` (an own step follows it); `unknownHash` (not in the trail, for example `''` from the low-level row API: a known false-positive source). |
+
+These code unions of the scan have one runtime list each in the engine, next to their type, and the type is derived
+from the list. The package exports the lists, and `RowDiagnostics` with its list, so a transport builds its enums from
+them instead of a hand-kept copy:
+
+| List | Values of |
+| --- | --- |
+| `ROW_DIAGNOSTICS` | `rowDiagnostics` |
+| `FINDING_CODES` | Finding `code`, in precedence order |
+| `FINDING_ROLES` | Finding `role` |
+| `UNLEDGERED_REASONS` | `detail.reason` of `unledgeredTable` |
+| `DAMAGE_SHAPES` | `detail.shape` of `damagedTable` |
+| `DAMAGED_TABLE_REPAIRS` | `detail.repair` of `damagedTable`: `REPAIR_OUTCOMES` (§6.1) and `deferred` |
+| `ROW_HASH_REASONS` | `reason` of each row hash of `rowSchemaHashMismatch` |
 
 ### 5.3 Algorithm and cost
 
@@ -395,11 +413,18 @@ changes.
 | `tableIds` | string[], optional | Head table ids; omitted → every Head table that fails (b). |
 | `dryRun` | boolean, default `false` | Planning only (§6.3). |
 
+`tableIds` or `dryRun` given as `null` is treated as absent, as in the scan (§5.2). `projectId` and `branchName` stay
+required: one given as `null` is refused as if omitted, and nothing is written.
+
 Output `{ headRevisionId, draftRevisionId, dryRun, tables, renumbered }`; each table entry is
 `{ tableId, outcome, migrationId?, patches?, removedPaths?, invalidRows?, blockedBy? }`; `renumbered` lists every
 pending migration the plan renumbers, branch-wide (§6.3 step 4), including those of tables not requested. Errors: unknown
 project or branch → not found; an unknown table id → validation error; an active async migration on the branch →
 `MigrationLockedException` before any work.
+
+The outcomes (§6.2) have runtime lists exported like those of the scan: `REPAIR_OUTCOMES`, the planner's outcomes
+(every outcome but `stale`), and `TABLE_REPAIR_OUTCOMES`, the values of a table entry's `outcome`: `REPAIR_OUTCOMES`
+and `stale`.
 
 ### 6.2 Outcomes, first match wins
 
@@ -737,5 +762,15 @@ still rewrite committed rows during the scan.
 ### Version 2.1 (2026-11-01)
 
 - `repairSchemaLedger` returns `renumbered` once for the branch instead of per table entry (§6.1).
+
+### Version 2.2 (2026-11-02)
+
+- §5.2, §6.1: an optional input of `scanSchemaLedger` or `repairSchemaLedger` given as `null` is treated as absent;
+  `projectId` and `branchName` of the repair stay required. GraphQL clients send `null` for omitted optional
+  arguments, which the scan took as values (`cursor: null` was a malformed cursor, a `null` `projectId` or
+  `branchName` failed in the database query).
+- §5.2, §6.1: the code unions of the scan input and findings and the repair outcomes have one runtime list each, from
+  which their types are derived and which the package exports, so a transport builds its enums from the engine
+  instead of a hand-kept copy that drifts.
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

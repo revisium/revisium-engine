@@ -15,8 +15,14 @@ import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-s
 import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
 import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
 import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import type { BranchRef } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
+
+interface RepairRequest extends BranchRef {
+  readonly tableIds?: readonly string[];
+  readonly dryRun: boolean;
+}
 
 @CommandHandler(RepairSchemaLedgerCommand)
 export class RepairSchemaLedgerHandler implements ICommandHandler<
@@ -37,39 +43,37 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
   public async execute({
     data,
   }: RepairSchemaLedgerCommand): Promise<SchemaLedgerRepair> {
+    const request = repairRequestOf(data);
     const planned = await this.transactionRunner.runPlanning(() =>
-      this.planRepair(data),
+      this.planRepair(request),
     );
-    const dryRun = data.dryRun ?? false;
 
-    if (dryRun || repairedTablesOf(planned.plan).length === 0) {
-      return repairResultOf(planned.plan, dryRun);
+    if (request.dryRun || repairedTablesOf(planned.plan).length === 0) {
+      return repairResultOf(planned.plan, request.dryRun);
     }
 
-    return this.writeRepair(data, planned);
+    return this.writeRepair(request, planned);
   }
 
-  private async planRepair(
-    data: RepairSchemaLedgerData,
-  ): Promise<PlannedRepair> {
-    const state = await this.stateReader.readUnlockedBranch(data);
+  private async planRepair(request: RepairRequest): Promise<PlannedRepair> {
+    const state = await this.stateReader.readUnlockedBranch(request);
 
     return {
       state,
       plan: await this.repairPlanService.plan(state, {
-        tableIds: data.tableIds,
+        tableIds: request.tableIds,
       }),
     };
   }
 
   private async writeRepair(
-    data: RepairSchemaLedgerData,
+    request: RepairRequest,
     planned: PlannedRepair,
   ): Promise<SchemaLedgerRepair> {
     const { draftRevisionId } = planned.state;
     const written = await this.writeAdmission.runSerializableRevisionWrite(
       draftRevisionId,
-      () => this.recordFreshRepair(data, planned),
+      () => this.recordFreshRepair(request, planned),
     );
 
     if (!written) {
@@ -82,18 +86,32 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
   }
 
   private async recordFreshRepair(
-    data: RepairSchemaLedgerData,
+    request: RepairRequest,
     planned: PlannedRepair,
   ): Promise<boolean> {
-    if (!(await this.freshness.isFresh(data, planned))) {
+    if (!(await this.freshness.isFresh(request, planned))) {
       return false;
     }
 
     await this.writer.record(planned);
-    await this.verification.verify(data, planned);
+    await this.verification.verify(request, planned);
 
     return true;
   }
+}
+
+function repairRequestOf({
+  projectId,
+  branchName,
+  tableIds,
+  dryRun,
+}: RepairSchemaLedgerData): RepairRequest {
+  return {
+    projectId,
+    branchName,
+    tableIds: tableIds ?? undefined,
+    dryRun: dryRun ?? false,
+  };
 }
 
 function repairResultOf(

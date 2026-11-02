@@ -58,6 +58,7 @@ import {
   repairOfPlan,
   repairTwiceConcurrentlyPastTheirPlans,
   repairUntilPlanned,
+  requestRepair,
   storedColumnsOf,
   storedSchemaOf,
   tableOutcomesOf,
@@ -619,6 +620,36 @@ describe('Schema ledger repair', () => {
         repairLedger(kit, draft, { tableIds: [PRODUCTS] }),
       ).rejects.toThrow(MigrationLockedException);
     });
+  });
+
+  describe('input', () => {
+    it('repairs with tableIds and dryRun given as null as it repairs without them', async () => {
+      const draft = await givenTwoDamagedTablesAfterFuturePublication(kit);
+      const plan = await planRepair(kit, draft);
+
+      const repair = await repairLedger(kit, draft, {
+        tableIds: null,
+        dryRun: null,
+      });
+
+      expect(repair).toEqual(repairOfPlan(plan, false));
+      expect(await pendingMigrationIds(draft)).toEqual(
+        repair.tables.map(({ migrationId }) => migrationId),
+      );
+    });
+
+    it.each(['projectId', 'branchName'])(
+      'refuses %s given as null and writes nothing',
+      async (field) => {
+        const draft = await givenUnpublishedInPlaceMigration(kit);
+        const before = await branchContentsOf(kit, draft);
+
+        await expect(
+          requestRepair(kit, { ...draft.branch, [field]: null }),
+        ).rejects.toThrow();
+        expect(await branchContentsOf(kit, draft)).toEqual(before);
+      },
+    );
   });
 
   async function givenMalformedInheritedHistory(): Promise<BranchScenario> {

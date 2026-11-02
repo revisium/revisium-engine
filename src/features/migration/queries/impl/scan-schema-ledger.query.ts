@@ -1,38 +1,67 @@
-import type { RepairOutcome } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import { REPAIR_OUTCOMES } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type { ReplayFailure } from 'src/features/share/ledger-replay/ledger-replay';
 
-export type RowDiagnostics = 'none' | 'headAndDraft' | 'all';
+export const ROW_DIAGNOSTICS = ['none', 'headAndDraft', 'all'] as const;
+
+export type RowDiagnostics = (typeof ROW_DIAGNOSTICS)[number];
 
 export interface ScanSchemaLedgerData {
-  readonly projectId?: string;
-  readonly branchName?: string;
-  readonly cursor?: string;
-  readonly limit?: number;
-  readonly rowDiagnostics?: RowDiagnostics;
+  readonly projectId?: string | null;
+  readonly branchName?: string | null;
+  readonly cursor?: string | null;
+  readonly limit?: number | null;
+  readonly rowDiagnostics?: RowDiagnostics | null;
 }
 
 export class ScanSchemaLedgerQuery {
   constructor(public readonly data: ScanSchemaLedgerData) {}
 }
 
-export type FindingRole = 'head' | 'draft' | 'history';
+export const FINDING_ROLES = ['head', 'draft', 'history'] as const;
+
+export type FindingRole = (typeof FINDING_ROLES)[number];
+
+export const UNLEDGERED_REASONS = [
+  'noMigrationTable',
+  'noLineage',
+  'brokenLineage',
+] as const;
+
+export type UnledgeredReason = (typeof UNLEDGERED_REASONS)[number];
+
+interface UnledgeredOf<Reason extends UnledgeredReason> {
+  readonly reason: Reason;
+}
+
+interface BrokenLineage extends UnledgeredOf<'brokenLineage'> {
+  readonly migrationId: string;
+}
 
 export type UnledgeredDetail =
-  | { readonly reason: 'noMigrationTable' | 'noLineage' }
-  | { readonly reason: 'brokenLineage'; readonly migrationId: string };
+  | UnledgeredOf<'noMigrationTable' | 'noLineage'>
+  | BrokenLineage;
 
-export type DamageShape = 'unpublished' | 'published' | 'unknown';
+export const DAMAGE_SHAPES = ['unpublished', 'published', 'unknown'] as const;
+
+export type DamageShape = (typeof DAMAGE_SHAPES)[number];
+
+export const DAMAGED_TABLE_REPAIRS = [...REPAIR_OUTCOMES, 'deferred'] as const;
+
+export type DamagedTableRepair = (typeof DAMAGED_TABLE_REPAIRS)[number];
 
 export interface DamagedTableDetail {
   readonly shape: DamageShape;
-  readonly repair: RepairOutcome | 'deferred';
+  readonly repair: DamagedTableRepair;
 }
 
-export type RowHashReason =
-  | 'unmigratedByAsync'
-  | 'renamedReference'
-  | 'unmigratedRows'
-  | 'unknownHash';
+export const ROW_HASH_REASONS = [
+  'unmigratedByAsync',
+  'renamedReference',
+  'unmigratedRows',
+  'unknownHash',
+] as const;
+
+export type RowHashReason = (typeof ROW_HASH_REASONS)[number];
 
 export interface MismatchedRowHash {
   readonly hash: string;
@@ -45,18 +74,28 @@ export interface RowSchemaHashMismatchDetail {
   readonly rowHashes: readonly MismatchedRowHash[];
 }
 
+export const FINDING_CODES = [
+  'unledgeredTable',
+  'unreplayableLedger',
+  'damagedTable',
+  'draftOnlyDamage',
+  'damagedHistory',
+  'rowSchemaHashMismatch',
+] as const;
+
+export type FindingCode = (typeof FINDING_CODES)[number];
+
+interface FindingOf<Code extends FindingCode, Detail> {
+  readonly code: Code;
+  readonly detail: Detail;
+}
+
 export type FindingContent =
-  | { readonly code: 'unledgeredTable'; readonly detail: UnledgeredDetail }
-  | { readonly code: 'unreplayableLedger'; readonly detail: ReplayFailure }
-  | { readonly code: 'damagedTable'; readonly detail: DamagedTableDetail }
-  | {
-      readonly code: 'draftOnlyDamage' | 'damagedHistory';
-      readonly detail: Record<string, never>;
-    }
-  | {
-      readonly code: 'rowSchemaHashMismatch';
-      readonly detail: RowSchemaHashMismatchDetail;
-    };
+  | FindingOf<'unledgeredTable', UnledgeredDetail>
+  | FindingOf<'unreplayableLedger', ReplayFailure>
+  | FindingOf<'damagedTable', DamagedTableDetail>
+  | FindingOf<'draftOnlyDamage' | 'damagedHistory', Record<string, never>>
+  | FindingOf<'rowSchemaHashMismatch', RowSchemaHashMismatchDetail>;
 
 export type SchemaLedgerFinding = FindingContent & {
   readonly projectId: string;

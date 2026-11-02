@@ -1,5 +1,6 @@
 import type { RepairOutcome } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type {
+  DamagedTableRepair,
   DamageShape,
   FindingContent,
   FindingRole,
@@ -275,10 +276,7 @@ function headCounterpartOf(
   );
 }
 
-function repairOf(
-  repairs: HeadRepairs,
-  tableId: string,
-): RepairOutcome | 'deferred' {
+function repairOf(repairs: HeadRepairs, tableId: string): DamagedTableRepair {
   if (repairs === 'deferred') {
     return 'deferred';
   }

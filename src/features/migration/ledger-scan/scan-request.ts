@@ -1,13 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
-import type {
-  RowDiagnostics,
-  ScanSchemaLedgerData,
+import {
+  ROW_DIAGNOSTICS,
+  type RowDiagnostics,
+  type ScanSchemaLedgerData,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
 import type { BranchRef } from 'src/features/share/branch-revisions/branch-revision-reader';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 1_000;
-const ROW_DIAGNOSTICS: readonly string[] = ['none', 'headAndDraft', 'all'];
+const DEFAULT_ROW_DIAGNOSTICS: RowDiagnostics = 'headAndDraft';
 
 type DecodedCursor = Partial<Record<keyof BranchRef, unknown>> | null;
 
@@ -20,16 +21,21 @@ export interface ScanRequest {
 }
 
 export function scanRequestOf(data: ScanSchemaLedgerData): ScanRequest {
-  if (data.branchName !== undefined && data.projectId === undefined) {
+  const projectId = data.projectId ?? undefined;
+  const branchName = data.branchName ?? undefined;
+
+  if (branchName !== undefined && projectId === undefined) {
     throw new BadRequestException('branchName requires projectId');
   }
 
   return {
-    projectId: data.projectId,
-    branchName: data.branchName,
-    after: positionOf(data.cursor),
-    limit: limitOf(data.limit),
-    rowDiagnostics: rowDiagnosticsOf(data.rowDiagnostics),
+    projectId,
+    branchName,
+    after: positionOf(data.cursor ?? undefined),
+    limit: limitOf(data.limit ?? DEFAULT_LIMIT),
+    rowDiagnostics: rowDiagnosticsOf(
+      data.rowDiagnostics ?? DEFAULT_ROW_DIAGNOSTICS,
+    ),
   };
 }
 
@@ -66,7 +72,7 @@ function decodedCursorOf(cursor: string): DecodedCursor | undefined {
   }
 }
 
-function limitOf(limit: number = DEFAULT_LIMIT): number {
+function limitOf(limit: number): number {
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
     throw new BadRequestException(
       `limit must be an integer from 1 to ${MAX_LIMIT}`,
@@ -76,9 +82,7 @@ function limitOf(limit: number = DEFAULT_LIMIT): number {
   return limit;
 }
 
-function rowDiagnosticsOf(
-  rowDiagnostics: RowDiagnostics = 'headAndDraft',
-): RowDiagnostics {
+function rowDiagnosticsOf(rowDiagnostics: RowDiagnostics): RowDiagnostics {
   if (!ROW_DIAGNOSTICS.includes(rowDiagnostics)) {
     throw new BadRequestException(
       `rowDiagnostics must be one of ${ROW_DIAGNOSTICS.join(', ')}`,

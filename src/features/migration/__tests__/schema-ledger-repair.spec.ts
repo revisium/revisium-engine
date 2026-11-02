@@ -1,17 +1,21 @@
 import { str } from '@revisium/schema-toolkit/mocks';
 import objectHash from 'object-hash';
 import {
-  createPartialChangesTestKit,
-  type PartialChangesTestKit,
-} from 'src/__tests__/kit/create-partial-changes-test-kit';
+  createBranchScenarioTestKit,
+  type BranchScenarioTestKit,
+} from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import { queueWriteBehindBranchFence } from 'src/features/draft/commands/handlers/__tests__/support/branch-write-fence';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
-import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
-import { completeAsyncMigrationInPlace } from 'src/features/partial-changes/__tests__/support/head-schema-damage';
+import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
+import {
+  pendingMigrationIds,
+  storedLedgerOf,
+} from 'src/__tests__/fixtures/stored-ledger';
+import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
 import {
   expectCopiedInsteadOfEdited,
   givenReadonlyDraftVersion,
-} from 'src/features/partial-changes/__tests__/support/readonly-draft-versions';
+} from 'src/__tests__/fixtures/readonly-draft-versions';
 import {
   addField,
   moveField,
@@ -43,9 +47,7 @@ import {
   branchContentsOf,
   expectStrictlyAscending,
   givenActiveMigration,
-  pendingMigrationIds,
   planRepair,
-  writeRowWithoutValidation,
 } from './support/ledger-repair-planning';
 import {
   draftReplayFailureOf,
@@ -61,7 +63,6 @@ import {
   repairOfPlan,
   repairTwiceConcurrentlyPastTheirPlans,
   repairUntilPlanned,
-  storedLedgerOf,
   storedColumnsOf,
   storedSchemaOf,
   tableOutcomesOf,
@@ -89,19 +90,19 @@ const MALFORMED_HISTORY_ENTRY = {
 
 interface MalformedHistoryCase {
   readonly entry: string;
-  readonly given: () => Promise<ChangesScenario>;
+  readonly given: () => Promise<BranchScenario>;
 }
 
 interface StaleCase {
   readonly change: string;
-  readonly changeDraft: (draft: ChangesScenario) => Promise<void>;
+  readonly changeDraft: (draft: BranchScenario) => Promise<void>;
 }
 
 describe('Schema ledger repair', () => {
-  let kit: PartialChangesTestKit;
+  let kit: BranchScenarioTestKit;
 
   beforeAll(async () => {
-    kit = await createPartialChangesTestKit();
+    kit = await createBranchScenarioTestKit();
   });
 
   afterEach(async () => {
@@ -171,7 +172,7 @@ describe('Schema ledger repair', () => {
     });
 
     it('AM-54 records a repair whose new foreign key names a table that a pending migration renames, and a replica applies it', async () => {
-      const draft = await ChangesScenario.committed(kit, {
+      const draft = await BranchScenario.committed(kit, {
         [TAGS]: { schema: tagSchema },
         [NOTES]: { schema: noteSchema },
       });
@@ -484,7 +485,7 @@ describe('Schema ledger repair', () => {
       {
         change: 'a low-level row update writes an invalid row',
         changeDraft: (draft) =>
-          writeRowWithoutValidation(kit, draft, PRODUCTS, 'p2', {
+          draft.writeRowBelowNativeValidation(PRODUCTS, 'p2', {
             code: 'changed',
             category: 'c1',
           }),
@@ -625,7 +626,7 @@ describe('Schema ledger repair', () => {
     });
   });
 
-  async function givenMalformedInheritedHistory(): Promise<ChangesScenario> {
+  async function givenMalformedInheritedHistory(): Promise<BranchScenario> {
     const draft = await givenCommittedCatalog(kit);
     const { history } = await storedSchemaOf(draft, 'draft', PRODUCTS);
     await draft.rewriteSchemaHistory(PRODUCTS, [
@@ -638,7 +639,7 @@ describe('Schema ledger repair', () => {
     return draft;
   }
 
-  async function givenMalformedPendingHistory(): Promise<ChangesScenario> {
+  async function givenMalformedPendingHistory(): Promise<BranchScenario> {
     const draft = await givenUnpublishedInPlaceMigration(kit);
     const { history } = await storedSchemaOf(draft, 'head', PRODUCTS);
     await draft.rewriteSchemaHistory(PRODUCTS, [
@@ -649,7 +650,7 @@ describe('Schema ledger repair', () => {
     return draft;
   }
 
-  async function givenInPlaceMigrationOfTableWithViews(): Promise<ChangesScenario> {
+  async function givenInPlaceMigrationOfTableWithViews(): Promise<BranchScenario> {
     const draft = await givenCommittedCatalog(kit);
     await draft.updateViews(PRODUCTS, productViews);
     await draft.commit();

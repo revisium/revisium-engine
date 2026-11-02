@@ -23,8 +23,12 @@ import {
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
+import {
+  describedLedgerOf,
+  ledgerIdsOf,
+  pendingMigrationIds,
+} from 'src/__tests__/fixtures/stored-ledger';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
-import { describedLedgerOf } from '../../__tests__/support/head-schema-damage';
 import {
   DraftSyncedReplica,
   expectPendingMigrationsAfterPublished,
@@ -533,7 +537,7 @@ describe('commitChanges of structure units', () => {
       const draft = await givenProductsAndOrdersTwice();
       const replica = await givenHeadSyncedReplicaOf(draft);
       const [productsMigration, ordersMigration] =
-        await draft.pendingMigrationIds();
+        await pendingMigrationIds(draft);
 
       const result = await draft.commitChanges({
         selection: { tables: [ORDERS] },
@@ -543,8 +547,8 @@ describe('commitChanges of structure units', () => {
       expect(renumberedOf(result)).toEqual([
         { from: productsMigration, to: expect.any(String) },
       ]);
-      expect(await draft.ledgerIds('head')).toContain(ordersMigration);
-      expect(await draft.pendingMigrationIds()).toEqual([renumbered?.to]);
+      expect(await ledgerIdsOf(draft, 'head')).toContain(ordersMigration);
+      expect(await pendingMigrationIds(draft)).toEqual([renumbered?.to]);
       await expectPendingMigrationsAfterPublished(draft);
       await expectBothLedgersToReplayToTheirSchemas(draft);
       await replica.syncWith(draft);
@@ -555,7 +559,7 @@ describe('commitChanges of structure units', () => {
       });
 
       expect(renumberedOf(next)).toEqual([]);
-      expect(await draft.pendingMigrationIds()).toEqual([]);
+      expect(await pendingMigrationIds(draft)).toEqual([]);
       await replica.syncWith(draft);
       await replica.expectSchemasOf(draft);
     });
@@ -564,7 +568,7 @@ describe('commitChanges of structure units', () => {
       const draft = await givenProductsAndOrdersTwice();
       await draft.updateTable(PRODUCTS, [addField('size', num())]);
       const [colorMigration, ordersMigration, sizeMigration] =
-        await draft.pendingMigrationIds();
+        await pendingMigrationIds(draft);
 
       const result = await draft.commitChanges({
         selection: { tables: [ORDERS] },
@@ -575,7 +579,7 @@ describe('commitChanges of structure units', () => {
         colorMigration,
         sizeMigration,
       ]);
-      expect(await draft.pendingMigrationIds()).toEqual(
+      expect(await pendingMigrationIds(draft)).toEqual(
         renumbered.map(({ to }) => to),
       );
       expectStrictlyAscending([
@@ -587,7 +591,7 @@ describe('commitChanges of structure units', () => {
 
     it('writes each renumbered migration as a new Draft row with its id, data id, publishedAt and hash changed together and the other columns of its source', async () => {
       const draft = await givenProductsAndOrdersTwice();
-      const [productsMigration] = await draft.pendingMigrationIds();
+      const [productsMigration] = await pendingMigrationIds(draft);
       const source = await migrationRowOf(draft, productsMigration);
 
       const result = await draft.commitChanges({
@@ -612,14 +616,14 @@ describe('commitChanges of structure units', () => {
 
     it('renumbers nothing when the committed structure holds the earlier migration (AS-40)', async () => {
       const draft = await givenProductsAndOrdersTwice();
-      const [, ordersMigration] = await draft.pendingMigrationIds();
+      const [, ordersMigration] = await pendingMigrationIds(draft);
 
       const result = await draft.commitChanges({
         selection: { tables: [PRODUCTS] },
       });
 
       expect(renumberedOf(result)).toEqual([]);
-      expect(await draft.pendingMigrationIds()).toEqual([ordersMigration]);
+      expect(await pendingMigrationIds(draft)).toEqual([ordersMigration]);
       await expectBothLedgersToReplayToTheirSchemas(draft);
     });
 

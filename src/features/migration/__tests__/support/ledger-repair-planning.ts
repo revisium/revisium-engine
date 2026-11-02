@@ -7,16 +7,16 @@ import type {
   Migration,
 } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import { sql, type InputJsonValue } from 'src/engine-prisma-types';
+import { ledgerIdsOf } from 'src/__tests__/fixtures/stored-ledger';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
+import { sql } from 'src/engine-prisma-types';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import type {
   PlannedTableRepair,
   SchemaLedgerRepairPlan,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
-import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
-import type { RevisionSide } from 'src/features/partial-changes/__tests__/support/snapshot-reading';
+import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { createMigrationRecord } from './migration-database';
 
@@ -29,8 +29,8 @@ interface RevisionContents {
 }
 
 export function planRepair(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   tableIds?: readonly string[],
 ): Promise<SchemaLedgerRepairPlan> {
   return kit.module
@@ -60,15 +60,11 @@ export function expectStrictlyAscending(
 }
 
 export async function lastPublishedMigrationId(
-  draft: ChangesScenario,
+  draft: BranchScenario,
 ): Promise<string | undefined> {
   const ids = await ledgerIdsOf(draft, 'head');
 
   return ids.at(-1);
-}
-
-export function pendingMigrationIds(draft: ChangesScenario): Promise<string[]> {
-  return draft.pendingMigrationIds();
 }
 
 export function initAt(
@@ -80,8 +76,8 @@ export function initAt(
 }
 
 export async function importMigrations(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   migrations: Migration[],
 ): Promise<void> {
   const results = await kit.draftApi.applyMigrations({
@@ -94,27 +90,9 @@ export async function importMigrations(
   );
 }
 
-export async function writeRowWithoutValidation(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
-  tableId: string,
-  rowId: string,
-  data: InputJsonValue,
-): Promise<void> {
-  const revisionId = await draft.revisionId('draft');
-
-  await kit.draftWriteAdmission.runSerializableRevisionWrite(revisionId, () =>
-    kit.draftRevisionApi.updateRows({
-      revisionId,
-      tableId,
-      rows: [{ rowId, data }],
-    }),
-  );
-}
-
 export async function givenActiveMigration(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   tableId: string,
 ): Promise<void> {
   await createMigrationRecord(
@@ -126,8 +104,8 @@ export async function givenActiveMigration(
 }
 
 export function branchContentsOf(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
 ): Promise<RevisionContents[]> {
   return kit.prisma.$queryRaw<RevisionContents[]>(sql`
     SELECT to_jsonb(rev) AS "revision",
@@ -150,19 +128,8 @@ export function branchContentsOf(
   `);
 }
 
-async function ledgerIdsOf(
-  draft: ChangesScenario,
-  side: RevisionSide,
-): Promise<string[]> {
-  const snapshot = await draft.readSnapshot();
-
-  return snapshot.systemRows.migrations[side]
-    .map(({ id }) => id)
-    .sort(compareCodePoints);
-}
-
 export function migratedRowOf(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
   schema: JsonSchema,
   row: JsonValue,
   patches: readonly JsonPatch[],

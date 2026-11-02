@@ -14,12 +14,10 @@ import {
   replaceField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
-import {
-  ChangesScenario,
-  type TableFixture,
-} from '../../__tests__/support/changes-scenario';
+import type { TableFixture } from 'src/__tests__/fixtures/branch-scenario';
+import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
+import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
-import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
 
 const ALPHA = 'alpha';
 const BETA = 'beta';

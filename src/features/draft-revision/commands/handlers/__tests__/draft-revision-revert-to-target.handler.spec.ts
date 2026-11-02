@@ -1,14 +1,15 @@
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { num, obj, ref, str } from '@revisium/schema-toolkit/mocks';
 import {
-  createPartialChangesTestKit,
-  type PartialChangesTestKit,
-} from 'src/__tests__/kit/create-partial-changes-test-kit';
+  createBranchScenarioTestKit,
+  type BranchScenarioTestKit,
+} from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
 import { countSqlStatements } from 'src/__tests__/utils/sql-statements';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
-import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
+import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
+import { givenReadonlyDraftVersion } from 'src/__tests__/fixtures/readonly-draft-versions';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { RevertTarget } from './support/revert-target';
 
@@ -35,10 +36,10 @@ const emptyFile = {
 };
 
 describe('DraftRevisionRevertToTargetHandler', () => {
-  let kit: PartialChangesTestKit;
+  let kit: BranchScenarioTestKit;
 
   beforeAll(async () => {
-    kit = await createPartialChangesTestKit();
+    kit = await createBranchScenarioTestKit();
   });
 
   afterEach(async () => {
@@ -139,19 +140,19 @@ describe('DraftRevisionRevertToTargetHandler', () => {
 
     it('creates a new mutable version from the Draft links when the Draft version is readonly', async () => {
       const draft = await givenDraftWithEditedPrices();
-      const previous = await givenReadonlyDraftVersion(draft, PRODUCTS);
+      const previous = await givenReadonlyDraftVersion(kit, draft, PRODUCTS);
       const head = await rowVersionsOf(draft, 'head', PRODUCTS);
       const before = await rowVersionsOf(draft, 'draft', PRODUCTS);
 
       await revertTo(draft, mixedProducts('draft'));
 
-      await expectNewMutableVersionOf(draft, PRODUCTS, previous);
+      await expectNewMutableVersionOf(draft, PRODUCTS, previous.versionId);
       await expectMixedProductRows(draft, {
         fromHead: { p1: head.p1, p3: head.p3 },
         fromDraft: { p4: before.p4 },
         replaced: [head.p2, before.p2],
       });
-      expect(await rowVersionsOfVersion(previous)).toEqual(
+      expect(await rowVersionsOfVersion(previous.versionId)).toEqual(
         Object.values(before).sort(),
       );
     });
@@ -278,7 +279,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
 
       await revertTo(draft, { tableId: PRODUCTS, outcome: 'other' });
 
-      expect(await hasChanges(draft)).toBe(false);
+      expect(await draft.hasChanges()).toBe(false);
     });
 
     it('stays true while the Draft keeps changes', async () => {
@@ -290,7 +291,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
         rows: { otherSide: ['p1'] },
       });
 
-      expect(await hasChanges(draft)).toBe(true);
+      expect(await draft.hasChanges()).toBe(true);
     });
   });
 
@@ -317,7 +318,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
 
     await expectDraftLinksHeadVersion(draft, SystemTables.Schema);
     await expectDraftLinksHeadVersion(draft, SystemTables.Migration);
-    expect(await hasChanges(draft)).toBe(false);
+    expect(await draft.hasChanges()).toBe(false);
   });
 
   it('writes in the caller transaction, so a failing caller leaves the Draft as it was', async () => {
@@ -352,7 +353,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
   });
 
   function revertTo(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     ...targets: Parameters<RevertTarget['revert']>
   ): Promise<string> {
     return new RevertTarget(kit, draft).revert(...targets);
@@ -379,7 +380,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
   }
 
   async function expectMixedProductRows(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     { fromHead, fromDraft, replaced }: MixedProductRows,
   ): Promise<void> {
     const rows = await rowVersionsOf(draft, 'draft', PRODUCTS);
@@ -397,7 +398,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
   }
 
   async function expectDraftLinksHeadVersion(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     tableId: string,
   ): Promise<void> {
     expect(await draft.tableVersionId('draft', tableId)).toBe(
@@ -406,7 +407,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
   }
 
   async function expectNewMutableVersionOf(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     tableId: string,
     sourceVersionId: string,
   ): Promise<void> {
@@ -428,7 +429,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
     structureSide: RevisionSide,
   ): Promise<number> {
     const rowIds = Array.from({ length: rowCount }, (_, index) => `r${index}`);
-    const draft = await ChangesScenario.committed(kit, {
+    const draft = await BranchScenario.committed(kit, {
       [PRODUCTS]: {
         schema: productSchema,
         rows: Object.fromEntries(
@@ -455,8 +456,8 @@ describe('DraftRevisionRevertToTargetHandler', () => {
     return countSqlStatements(() => target.write(plan));
   }
 
-  function givenCommittedProducts(): Promise<ChangesScenario> {
-    return ChangesScenario.committed(kit, {
+  function givenCommittedProducts(): Promise<BranchScenario> {
+    return BranchScenario.committed(kit, {
       [PRODUCTS]: {
         schema: productSchema,
         rows: {
@@ -468,7 +469,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
     });
   }
 
-  async function givenDraftWithEditedPrices(): Promise<ChangesScenario> {
+  async function givenDraftWithEditedPrices(): Promise<BranchScenario> {
     const draft = await givenCommittedProducts();
     await draft.updateRow(PRODUCTS, 'p1', { code: 'one', price: 11 });
     await draft.updateRow(PRODUCTS, 'p2', { code: 'changed', price: 22 });
@@ -477,8 +478,8 @@ describe('DraftRevisionRevertToTargetHandler', () => {
     return draft;
   }
 
-  async function givenDraftWithUploadedImage(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
+  async function givenDraftWithUploadedImage(): Promise<BranchScenario> {
+    const draft = await BranchScenario.committed(kit, {
       [DOCUMENTS]: {
         schema: documentSchema,
         rows: { d1: { title: 'one', image: emptyFile } },
@@ -489,20 +490,6 @@ describe('DraftRevisionRevertToTargetHandler', () => {
     return draft;
   }
 
-  async function givenReadonlyDraftVersion(
-    draft: ChangesScenario,
-    tableId: string,
-  ): Promise<string> {
-    const versionId = await draft.tableVersionId('draft', tableId);
-
-    await kit.prisma.table.update({
-      where: { versionId },
-      data: { readonly: true },
-    });
-
-    return versionId;
-  }
-
   function spyOnFileRegistrations() {
     return jest.spyOn(
       kit.module.get(FileUsageIntegrationService),
@@ -511,7 +498,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
   }
 
   async function rowVersionsOf(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     side: RevisionSide,
     tableId: string,
   ): Promise<Record<string, string>> {
@@ -560,15 +547,6 @@ describe('DraftRevisionRevertToTargetHandler', () => {
     });
 
     return row.fileBlobs.map((blob) => blob.id).sort();
-  }
-
-  async function hasChanges(draft: ChangesScenario): Promise<boolean> {
-    const revision = await kit.prisma.revision.findUniqueOrThrow({
-      where: { id: await draft.revisionId('draft') },
-      select: { hasChanges: true },
-    });
-
-    return revision.hasChanges;
   }
 });
 

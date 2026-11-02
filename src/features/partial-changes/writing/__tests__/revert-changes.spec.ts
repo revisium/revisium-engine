@@ -22,14 +22,15 @@ import { addField } from 'src/features/share/ledger-replay/__tests__/support/led
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import {
+  expectCopiedInsteadOfEdited,
+  givenReadonlyDraftVersion,
+} from 'src/__tests__/fixtures/readonly-draft-versions';
+import { ledgerIdsOf } from 'src/__tests__/fixtures/stored-ledger';
+import {
   recordEndpointNotifications,
   type RevertOptions,
 } from '../../__tests__/support/change-reverting';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
-import {
-  expectCopiedInsteadOfEdited,
-  givenReadonlyDraftVersion,
-} from '../../__tests__/support/readonly-draft-versions';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const CATEGORIES = 'categories';
@@ -420,8 +421,8 @@ describe('revertChanges', () => {
 
       expect(await draft.hasTable('draft', TAGS)).toBe(false);
       await expectDraftSystemTableEqualsHead(draft, SystemTables.Schema);
-      expect(await draft.ledgerIds('draft')).toEqual(
-        await draft.ledgerIds('head'),
+      expect(await ledgerIdsOf(draft, 'draft')).toEqual(
+        await ledgerIdsOf(draft, 'head'),
       );
       await expectDraftRow(draft, PRODUCTS, 'p2', { title: 'dos', price: 2 });
     });
@@ -457,8 +458,8 @@ describe('revertChanges', () => {
 
       await expectDraftLinksHeadVersion(draft, TAGS);
       await expectDraftSystemTableEqualsHead(draft, SystemTables.Schema);
-      expect(await draft.ledgerIds('draft')).toEqual(
-        await draft.ledgerIds('head'),
+      expect(await ledgerIdsOf(draft, 'draft')).toEqual(
+        await ledgerIdsOf(draft, 'head'),
       );
     });
 
@@ -472,8 +473,8 @@ describe('revertChanges', () => {
 
       expect(await draft.hasTable('draft', GOODS)).toBe(false);
       await expectDraftLinksHeadVersion(draft, TAGS);
-      expect(await draft.ledgerIds('draft')).toEqual(
-        await draft.ledgerIds('head'),
+      expect(await ledgerIdsOf(draft, 'draft')).toEqual(
+        await ledgerIdsOf(draft, 'head'),
       );
     });
 
@@ -494,8 +495,8 @@ describe('revertChanges', () => {
       );
 
       await expectDraftSystemTableEqualsHead(draft, SystemTables.Schema);
-      expect(await draft.ledgerIds('draft')).toEqual(
-        await draft.ledgerIds('head'),
+      expect(await ledgerIdsOf(draft, 'draft')).toEqual(
+        await ledgerIdsOf(draft, 'head'),
       );
       await expectDraftRow(draft, PRODUCTS, 'p1', { title: 'uno', price: 1 });
       await expectDraftRow(draft, PRODUCTS, 'p3', { title: 'three', price: 3 });

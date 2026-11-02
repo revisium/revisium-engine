@@ -6,19 +6,22 @@ import type {
   JsonValue,
 } from '@revisium/schema-toolkit/types';
 import {
-  createPartialChangesTestKit,
-  type PartialChangesTestKit,
-} from 'src/__tests__/kit/create-partial-changes-test-kit';
+  createBranchScenarioTestKit,
+  type BranchScenarioTestKit,
+} from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import type { RepairOutcome } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type { InputJsonValue } from 'src/engine-prisma-types';
-import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
+import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import {
   completeAsyncMigrationInPlace,
-  describedLedgerOf,
   recordLedgerRepair,
+} from 'src/__tests__/fixtures/head-schema-damage';
+import {
+  describedLedgerOf,
+  pendingMigrationIds,
   replayedHeadLedgerOf,
-} from 'src/features/partial-changes/__tests__/support/head-schema-damage';
+} from 'src/__tests__/fixtures/stored-ledger';
 import {
   addField,
   moveField,
@@ -30,10 +33,8 @@ import {
   givenActiveMigration,
   migratedRowOf,
   lastPublishedMigrationId,
-  pendingMigrationIds,
   planRepair,
   repairOf,
-  writeRowWithoutValidation,
 } from './support/ledger-repair-planning';
 import {
   addColor,
@@ -84,7 +85,7 @@ const addNote = [addField('note', str())];
 
 interface UnrepairableCase {
   readonly table: string;
-  readonly given: () => Promise<ChangesScenario>;
+  readonly given: () => Promise<BranchScenario>;
   readonly tableId: string;
   readonly outcome: RepairOutcome;
 }
@@ -100,7 +101,7 @@ interface ContainerCase {
 
 interface HistoryCase {
   readonly table: string;
-  readonly changeTags: (draft: ChangesScenario) => Promise<void>;
+  readonly changeTags: (draft: BranchScenario) => Promise<void>;
   readonly outcome: RepairOutcome;
 }
 
@@ -111,15 +112,15 @@ interface UnreferencingRowsCase {
 
 interface RowsCase {
   readonly rows: string;
-  readonly given: () => Promise<ChangesScenario>;
+  readonly given: () => Promise<BranchScenario>;
   readonly invalidRowIds: string[];
 }
 
 describe('Schema ledger repair planning', () => {
-  let kit: PartialChangesTestKit;
+  let kit: BranchScenarioTestKit;
 
   beforeAll(async () => {
-    kit = await createPartialChangesTestKit();
+    kit = await createBranchScenarioTestKit();
   });
 
   afterEach(async () => {
@@ -180,7 +181,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('plans an unrecorded field rename as a removal and an addition whose values replicas lose', async () => {
-      const draft = await ChangesScenario.committed(kit, {
+      const draft = await BranchScenario.committed(kit, {
         [NOTES]: { schema: noteSchema },
       });
       await completeAsyncMigrationInPlace(kit, draft, NOTES, [
@@ -211,7 +212,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('validates the repair where it is inserted, before a pending rename of the table its new foreign key names', async () => {
-      const draft = await ChangesScenario.committed(kit, {
+      const draft = await BranchScenario.committed(kit, {
         [TAGS]: { schema: tagSchema },
         [NOTES]: { schema: noteSchema },
       });
@@ -264,7 +265,7 @@ describe('Schema ledger repair planning', () => {
     ])(
       'plans $change as child operations before a metadata replace that rows migrate through',
       async ({ schema, damage, removedPaths, row, migratedRow }) => {
-        const draft = await ChangesScenario.committed(kit, {
+        const draft = await BranchScenario.committed(kit, {
           [NOTES]: { schema },
         });
         await completeAsyncMigrationInPlace(kit, draft, NOTES, damage);
@@ -296,7 +297,7 @@ describe('Schema ledger repair planning', () => {
     });
 
     it('refuses a repair whose patch the synchronous path rejects where it would be inserted', async () => {
-      const draft = await ChangesScenario.committed(kit, {
+      const draft = await BranchScenario.committed(kit, {
         [INVOICES]: { schema: obj({ amount: num() }) },
       });
       await completeAsyncMigrationInPlace(kit, draft, INVOICES, [
@@ -583,7 +584,7 @@ describe('Schema ledger repair planning', () => {
     it('fingerprints the rows it validated and the rows their foreign keys consulted', async () => {
       const draft = await givenUnpublishedInPlaceMigration(kit);
       const first = await planRepair(kit, draft, [PRODUCTS]);
-      await writeRowWithoutValidation(kit, draft, PRODUCTS, 'p2', {
+      await draft.writeRowBelowNativeValidation(PRODUCTS, 'p2', {
         code: 'changed',
         category: 'c1',
         color: '',
@@ -679,22 +680,22 @@ describe('Schema ledger repair planning', () => {
     });
   });
 
-  async function givenDamageBesideTags(): Promise<ChangesScenario> {
+  async function givenDamageBesideTags(): Promise<BranchScenario> {
     const draft = await givenCatalogWithTags(kit);
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
 
     return draft;
   }
 
-  async function givenRecordedRepairBesideTags(): Promise<ChangesScenario> {
+  async function givenRecordedRepairBesideTags(): Promise<BranchScenario> {
     const draft = await givenDamageBesideTags();
     await recordLedgerRepair(draft, PRODUCTS, addColor);
 
     return draft;
   }
 
-  async function givenRepairNamingRemovedTags(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
+  async function givenRepairNamingRemovedTags(): Promise<BranchScenario> {
+    const draft = await BranchScenario.committed(kit, {
       [TAGS]: { schema: tagSchema },
       [NOTES]: { schema: noteSchema },
     });
@@ -704,8 +705,8 @@ describe('Schema ledger repair planning', () => {
     return draft;
   }
 
-  async function givenRepairNamingTagsWhoseRemovalAlreadyFails(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
+  async function givenRepairNamingTagsWhoseRemovalAlreadyFails(): Promise<BranchScenario> {
+    const draft = await BranchScenario.committed(kit, {
       [TAGS]: { schema: tagSchema },
       [NOTES]: { schema: noteSchema },
       [CARDS]: { schema: cardSchema },
@@ -721,8 +722,8 @@ describe('Schema ledger repair planning', () => {
 
   async function givenDamagedTaggedNotes(
     noteRows: Readonly<Record<string, InputJsonValue>>,
-  ): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
+  ): Promise<BranchScenario> {
+    const draft = await BranchScenario.committed(kit, {
       [TAGS]: tags,
       [NOTES]: { schema: taggedNoteSchema, rows: noteRows },
     });
@@ -731,16 +732,16 @@ describe('Schema ledger repair planning', () => {
     return draft;
   }
 
-  async function givenRevertedInPlaceMigration(): Promise<ChangesScenario> {
+  async function givenRevertedInPlaceMigration(): Promise<BranchScenario> {
     const draft = await givenUnpublishedInPlaceMigration(kit);
     await draft.revertNatively();
 
     return draft;
   }
 
-  async function givenRowReferencingMissingCategory(): Promise<ChangesScenario> {
+  async function givenRowReferencingMissingCategory(): Promise<BranchScenario> {
     const draft = await givenUnpublishedInPlaceMigration(kit);
-    await writeRowWithoutValidation(kit, draft, PRODUCTS, 'p1', {
+    await draft.writeRowBelowNativeValidation(PRODUCTS, 'p1', {
       code: 'one',
       category: 'missing',
       color: '',
@@ -749,7 +750,7 @@ describe('Schema ledger repair planning', () => {
     return draft;
   }
 
-  async function givenDraftOnlyDamage(): Promise<ChangesScenario> {
+  async function givenDraftOnlyDamage(): Promise<BranchScenario> {
     const draft = await givenCommittedCatalog(kit);
     await draft.updateTable(PRODUCTS, [addField('weight', num())]);
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
@@ -757,14 +758,14 @@ describe('Schema ledger repair planning', () => {
     return draft;
   }
 
-  async function givenDamagedTableRemovedInDraft(): Promise<ChangesScenario> {
+  async function givenDamagedTableRemovedInDraft(): Promise<BranchScenario> {
     const draft = await givenPublishedInPlaceMigration(kit);
     await draft.removeTable(PRODUCTS);
 
     return draft;
   }
 
-  async function givenUnreplayableHeadLedger(): Promise<ChangesScenario> {
+  async function givenUnreplayableHeadLedger(): Promise<BranchScenario> {
     const draft = await givenCommittedCatalog(kit);
     await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
     await draft.commit();
@@ -777,8 +778,8 @@ describe('Schema ledger repair planning', () => {
     return draft;
   }
 
-  async function givenHeadTableWithoutInit(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
+  async function givenHeadTableWithoutInit(): Promise<BranchScenario> {
+    const draft = await BranchScenario.committed(kit, {
       [CATEGORIES]: categories,
     });
     await draft.createTable(PRODUCTS, productSchema);
@@ -789,7 +790,7 @@ describe('Schema ledger repair planning', () => {
     return draft;
   }
 
-  async function givenHeadTableRecreatedWithoutRecord(): Promise<ChangesScenario> {
+  async function givenHeadTableRecreatedWithoutRecord(): Promise<BranchScenario> {
     const draft = await givenCommittedCatalog(kit);
     await draft.removeTable(PRODUCTS);
     await draft.dropFromDraftLedger('remove', PRODUCTS);
@@ -810,11 +811,11 @@ function keepTagsHistory(): Promise<void> {
   return Promise.resolve();
 }
 
-function dropTagsHistory(draft: ChangesScenario): Promise<void> {
+function dropTagsHistory(draft: BranchScenario): Promise<void> {
   return draft.rewriteSchemaHistory(TAGS, []);
 }
 
-async function dropRenamedTagsHistory(draft: ChangesScenario): Promise<void> {
+async function dropRenamedTagsHistory(draft: BranchScenario): Promise<void> {
   await draft.renameTable(TAGS, LABELS);
   await draft.rewriteSchemaHistory(LABELS, []);
 }

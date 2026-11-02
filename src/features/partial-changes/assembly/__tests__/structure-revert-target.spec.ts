@@ -8,12 +8,10 @@ import {
   moveField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import {
-  ChangesScenario,
-  type TableFixture,
-} from '../../__tests__/support/changes-scenario';
+import type { TableFixture } from 'src/__tests__/fixtures/branch-scenario';
+import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
+import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
-import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
 import type { TargetView } from '../../__tests__/support/target-assembling';
 
 const PRODUCTS = 'products';

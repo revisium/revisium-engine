@@ -1,11 +1,16 @@
 import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import {
+  pendingMigrationIds,
+  storedLedgerOf,
+} from 'src/__tests__/fixtures/stored-ledger';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import { createBarrier, type Barrier } from 'src/__tests__/utils/barrier';
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import type {
   DraftRevisionCreateRowsCommandData,
   DraftRevisionUpdateRowsCommandData,
   DraftRowVersionsReplacement,
+  RevisionSide,
 } from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import type {
@@ -16,8 +21,7 @@ import type {
 } from 'src/features/migration/commands/impl/repair-schema-ledger.command';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
-import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
-import type { RevisionSide } from 'src/features/partial-changes/__tests__/support/snapshot-reading';
+import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import { replayOf } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import type { StoredSchema } from 'src/features/share/ledger/migration-ledger';
 import type { ReplayFailure } from 'src/features/share/ledger-replay/ledger-replay';
@@ -25,10 +29,7 @@ import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-import {
-  importMigrations,
-  pendingMigrationIds,
-} from './ledger-repair-planning';
+import { importMigrations } from './ledger-repair-planning';
 import { scanBranch } from './ledger-scan';
 
 export type RepairOptions = Pick<RepairSchemaLedgerData, 'tableIds' | 'dryRun'>;
@@ -45,8 +46,8 @@ export interface EndpointNotification {
 const heldRepairs: { barrier: Barrier; result: Promise<unknown> }[] = [];
 
 export function repairLedger(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   options: RepairOptions = {},
 ): Promise<SchemaLedgerRepair> {
   return kit.module
@@ -96,8 +97,8 @@ export function repairOfPlan(
 }
 
 export async function repairUntilPlanned(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   options: RepairOptions,
 ): Promise<PausedRepair> {
   const barrier = createBarrier('The repair');
@@ -116,8 +117,8 @@ export async function repairUntilPlanned(
 }
 
 export async function repairTwiceConcurrentlyPastTheirPlans(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   options: RepairOptions,
 ): Promise<PromiseSettledResult<SchemaLedgerRepair>[]> {
   const barriers = [
@@ -151,8 +152,8 @@ export async function releaseHeldRepairs(): Promise<void> {
 }
 
 export function observeEndpointNotifications(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
 ): EndpointNotification[] {
   const notifications: EndpointNotification[] = [];
 
@@ -169,7 +170,7 @@ export function observeEndpointNotifications(
 }
 
 export function recordRepairsWithoutTheirPatches(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
 ): void {
   const draftRevisionApi = kit.draftRevisionApi;
   const createRows = draftRevisionApi.createRows.bind(draftRevisionApi);
@@ -180,7 +181,7 @@ export function recordRepairsWithoutTheirPatches(
 }
 
 export function renumberMigrationsWithoutTheirPatches(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
 ): void {
   const targetApi = kit.module.get(DraftRevisionTargetApiService);
   const replaceDraftRowVersions =
@@ -194,7 +195,7 @@ export function renumberMigrationsWithoutTheirPatches(
 }
 
 export function recordHistoriesWithEntry(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
   entry: HistoryPatches,
 ): void {
   const draftRevisionApi = kit.draftRevisionApi;
@@ -230,8 +231,8 @@ export function storedColumnsOf({
 }
 
 export async function expectNoHeadOrDraftDamage(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
 ): Promise<void> {
   const scan = await scanBranch(kit, draft, { rowDiagnostics: 'none' });
 
@@ -239,10 +240,10 @@ export async function expectNoHeadOrDraftDamage(
 }
 
 export async function expectHeadSyncedReplicaToReproduceTheHead(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
 ): Promise<void> {
-  const replica = await ChangesScenario.committed(kit, {});
+  const replica = await BranchScenario.committed(kit, {});
   await importMigrations(kit, replica, await storedLedgerOf(draft, 'head'));
   await replica.commit();
 
@@ -250,35 +251,22 @@ export async function expectHeadSyncedReplicaToReproduceTheHead(
 }
 
 export async function expectLedgerRowsPublishedAtTheirIds(
-  draft: ChangesScenario,
+  draft: BranchScenario,
 ): Promise<void> {
-  const snapshot = await draft.readSnapshot();
-  const rows = snapshot.systemRows.migrations.draft.map(
-    ({ id, data, publishedAt }) => ({
-      id,
-      migrationId: (data as unknown as Migration).id,
-      publishedAt: publishedAt.toISOString(),
-    }),
-  );
+  const ledgerRows = await draft.rows('draft', SystemTables.Migration);
+  const rows = ledgerRows.map(({ id, data, publishedAt }) => ({
+    id,
+    migrationId: (data as unknown as Migration).id,
+    publishedAt: publishedAt.toISOString(),
+  }));
 
   expect(rows).toEqual(
     rows.map(({ id }) => ({ id, migrationId: id, publishedAt: id })),
   );
 }
 
-export async function storedLedgerOf(
-  draft: ChangesScenario,
-  side: RevisionSide,
-): Promise<Migration[]> {
-  const snapshot = await draft.readSnapshot();
-
-  return snapshot.systemRows.migrations[side]
-    .map(({ data }) => data as unknown as Migration)
-    .sort((left, right) => compareCodePoints(left.id, right.id));
-}
-
 export async function storedSchemaOf(
-  draft: ChangesScenario,
+  draft: BranchScenario,
   side: RevisionSide,
   tableId: string,
 ): Promise<StoredSchema> {
@@ -291,7 +279,7 @@ export async function storedSchemaOf(
 }
 
 export async function draftReplayFailureOf(
-  draft: ChangesScenario,
+  draft: BranchScenario,
   tableId: string,
 ): Promise<ReplayFailure | undefined> {
   const replay = replayOf(...(await storedLedgerOf(draft, 'draft')));
@@ -300,17 +288,15 @@ export async function draftReplayFailureOf(
 }
 
 async function headSchemasOf(
-  draft: ChangesScenario,
+  draft: BranchScenario,
 ): Promise<Record<string, unknown>> {
-  const snapshot = await draft.readSnapshot();
+  const schemaRows = await draft.rows('head', SystemTables.Schema);
 
-  return Object.fromEntries(
-    snapshot.systemRows.schemas.head.map(({ id, data }) => [id, data]),
-  );
+  return Object.fromEntries(schemaRows.map(({ id, data }) => [id, data]));
 }
 
 function holdEachBeforeWriting(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
   barriers: readonly Barrier[],
 ): void {
   const admission = kit.draftWriteAdmission;

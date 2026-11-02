@@ -1,4 +1,8 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
+import {
+  ledgerIdsOf,
+  pendingMigrationIds,
+} from 'src/__tests__/fixtures/stored-ledger';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ApplyMigrationResult } from 'src/features/draft/commands/impl/migration';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
@@ -63,9 +67,9 @@ export class DraftSyncedReplica {
 export async function expectPendingMigrationsAfterPublished(
   draft: ChangesScenario,
 ): Promise<void> {
-  const published = await draft.ledgerIds('head');
+  const published = await ledgerIdsOf(draft, 'head');
   const lastPublished = published.at(-1) ?? '';
-  const pending = await draft.pendingMigrationIds();
+  const pending = await pendingMigrationIds(draft);
 
   expect(
     pending.filter((id) => compareCodePoints(id, lastPublished) <= 0),
@@ -77,7 +81,7 @@ async function newMigrationsOf(
   source: ChangesScenario,
   side: RevisionSide,
 ): Promise<Migration[]> {
-  const imported = new Set(await replica.ledgerIds('draft'));
+  const imported = new Set(await ledgerIdsOf(replica, 'draft'));
   const ledger = await ledgerOf(source, side);
 
   return ledger.filter(({ id }) => !imported.has(id));

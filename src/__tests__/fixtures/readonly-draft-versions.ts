@@ -1,5 +1,5 @@
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { ChangesScenario } from './changes-scenario';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
+import type { BranchScenario } from './branch-scenario';
 
 export interface ReadonlyDraftVersion {
   readonly tableId: string;
@@ -8,8 +8,8 @@ export interface ReadonlyDraftVersion {
 }
 
 export async function givenReadonlyDraftVersion(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   tableId: string,
 ): Promise<ReadonlyDraftVersion> {
   const versionId = await draft.tableVersionId('draft', tableId);
@@ -27,8 +27,8 @@ export async function givenReadonlyDraftVersion(
 }
 
 export async function expectCopiedInsteadOfEdited(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   readonlyVersion: ReadonlyDraftVersion,
 ): Promise<void> {
   const versionId = await draft.tableVersionId(
@@ -47,7 +47,7 @@ export async function expectCopiedInsteadOfEdited(
 }
 
 async function rowVersionIdsOf(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
   tableVersionId: string,
 ): Promise<string[]> {
   const rows = await kit.prisma.row.findMany({

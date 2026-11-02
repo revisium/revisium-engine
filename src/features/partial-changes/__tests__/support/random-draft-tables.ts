@@ -7,7 +7,8 @@ import {
 import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { ChangesScenario, TableIdentity } from './changes-scenario';
+import type { TableIdentity } from 'src/__tests__/fixtures/branch-scenario';
+import type { ChangesScenario } from './changes-scenario';
 
 export interface HeadTable extends TableIdentity {
   readonly rows: readonly Row[];

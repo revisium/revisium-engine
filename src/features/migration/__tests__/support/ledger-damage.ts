@@ -1,11 +1,11 @@
 import { obj, str } from '@revisium/schema-toolkit/mocks';
 import type { JsonPatch } from '@revisium/schema-toolkit/types';
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import {
-  ChangesScenario,
+  BranchScenario,
   type TableFixture,
-} from 'src/features/partial-changes/__tests__/support/changes-scenario';
-import { completeAsyncMigrationInPlace } from 'src/features/partial-changes/__tests__/support/head-schema-damage';
+} from 'src/__tests__/fixtures/branch-scenario';
+import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
 import {
   addField,
   moveField,
@@ -50,18 +50,18 @@ export const addColor = [addField(COLOR, str())];
 export const addTone = [addField(TONE, str())];
 
 export function givenCommittedCatalog(
-  kit: PartialChangesTestKit,
-): Promise<ChangesScenario> {
-  return ChangesScenario.committed(kit, {
+  kit: BranchScenarioTestKit,
+): Promise<BranchScenario> {
+  return BranchScenario.committed(kit, {
     [CATEGORIES]: categories,
     [PRODUCTS]: products,
   });
 }
 
 export function givenCatalogWithTags(
-  kit: PartialChangesTestKit,
-): Promise<ChangesScenario> {
-  return ChangesScenario.committed(kit, {
+  kit: BranchScenarioTestKit,
+): Promise<BranchScenario> {
+  return BranchScenario.committed(kit, {
     [CATEGORIES]: categories,
     [PRODUCTS]: products,
     [TAGS]: tags,
@@ -69,8 +69,8 @@ export function givenCatalogWithTags(
 }
 
 export async function givenUnpublishedInPlaceMigration(
-  kit: PartialChangesTestKit,
-): Promise<ChangesScenario> {
+  kit: BranchScenarioTestKit,
+): Promise<BranchScenario> {
   const draft = await givenCommittedCatalog(kit);
   await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, addColor);
 
@@ -78,8 +78,8 @@ export async function givenUnpublishedInPlaceMigration(
 }
 
 export async function givenPublishedInPlaceMigration(
-  kit: PartialChangesTestKit,
-): Promise<ChangesScenario> {
+  kit: BranchScenarioTestKit,
+): Promise<BranchScenario> {
   const draft = await givenUnpublishedInPlaceMigration(kit);
   await draft.commit();
 
@@ -87,8 +87,8 @@ export async function givenPublishedInPlaceMigration(
 }
 
 export async function givenTwoDamagedTablesAfterFuturePublication(
-  kit: PartialChangesTestKit,
-): Promise<ChangesScenario> {
+  kit: BranchScenarioTestKit,
+): Promise<BranchScenario> {
   const draft = await givenCatalogWithTags(kit);
   await importMigrations(kit, draft, [
     initAt(FUTURE_MIGRATION_ID, NOTES, noteSchema),
@@ -101,9 +101,9 @@ export async function givenTwoDamagedTablesAfterFuturePublication(
 }
 
 export async function givenReciprocalDamage(
-  kit: PartialChangesTestKit,
-): Promise<ChangesScenario> {
-  const draft = await ChangesScenario.committed(kit, {
+  kit: BranchScenarioTestKit,
+): Promise<BranchScenario> {
+  const draft = await BranchScenario.committed(kit, {
     [ALPHAS]: { schema: obj({ title: str() }) },
     [BETAS]: {
       schema: obj({ title: str(), alpha: str({ foreignKey: ALPHAS }) }),

@@ -54,11 +54,14 @@ export interface DamagedTableDetail {
   readonly repair: DamagedTableRepair;
 }
 
-export type RowHashReason =
-  | 'unmigratedByAsync'
-  | 'renamedReference'
-  | 'unmigratedRows'
-  | 'unknownHash';
+export const ROW_HASH_REASONS = [
+  'unmigratedByAsync',
+  'renamedReference',
+  'unmigratedRows',
+  'unknownHash',
+] as const;
+
+export type RowHashReason = (typeof ROW_HASH_REASONS)[number];
 
 export interface MismatchedRowHash {
   readonly hash: string;

@@ -196,6 +196,7 @@ export {
   FINDING_CODES,
   FINDING_ROLES,
   ROW_DIAGNOSTICS,
+  ROW_HASH_REASONS,
   type RowDiagnostics,
   UNLEDGERED_REASONS,
 } from './features/migration/queries/impl/scan-schema-ledger.query';

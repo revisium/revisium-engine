@@ -379,6 +379,7 @@ them instead of a hand-kept copy:
 | `UNLEDGERED_REASONS` | `detail.reason` of `unledgeredTable` |
 | `DAMAGE_SHAPES` | `detail.shape` of `damagedTable` |
 | `DAMAGED_TABLE_REPAIRS` | `detail.repair` of `damagedTable`: `REPAIR_OUTCOMES` (§6.1) and `deferred` |
+| `ROW_HASH_REASONS` | `reason` of each row hash of `rowSchemaHashMismatch` |
 
 ### 5.3 Algorithm and cost
 

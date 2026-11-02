@@ -13,6 +13,7 @@ import type {
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { attributeLedger } from 'src/features/partial-changes/snapshot/ledger-attribution';
+import { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
 import {
   refs,
   replayer,
@@ -67,15 +68,14 @@ function givenEditedRows(rowCount: number): CatalogueSource {
     },
   };
 
-  const ledger = attributeLedger(snapshot);
-
   return {
     snapshot,
-    ledger,
-    headSchema: checkHeadSchema(
-      { snapshot, ledger, wholeDraft: true },
-      replayer,
-    ),
+    ledger: attributeLedger(snapshot),
+    headSchema: checkHeadSchema({
+      snapshot,
+      replays: new SourceReplays(snapshot, replayer),
+      wholeDraft: true,
+    }),
     tables: [
       {
         identity: TABLE_IDENTITY,

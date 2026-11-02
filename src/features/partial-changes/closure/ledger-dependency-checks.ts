@@ -15,10 +15,9 @@ import {
 import { TableIdTimeline } from 'src/features/partial-changes/closure/table-id-timeline';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
 import {
-  LedgerConsistency,
-  lineageOf,
   readTableIdsByStep,
   type SourceInconsistencies,
+  sourceInconsistenciesOf,
 } from 'src/features/partial-changes/validation/ledger-consistency';
 import {
   type ResultingRole,
@@ -28,6 +27,7 @@ import {
 import { ledgerOf } from 'src/features/share/ledger/migration-ledger';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
+import { lineageIdOf } from 'src/features/share/ledger-replay/slot-check';
 
 type TableIdDependency = 'missing' | 'anotherTable' | 'occupied';
 
@@ -112,9 +112,7 @@ class LedgerDependencyChecking implements TargetChecking {
   }
 
   private inconsistenciesOfSource(): SourceInconsistencies {
-    this.sourceInconsistencies ??= new LedgerConsistency(
-      this.replayer,
-    ).sourceInconsistenciesOf(this.source.snapshot);
+    this.sourceInconsistencies ??= sourceInconsistenciesOf(this.source);
 
     return this.sourceInconsistencies;
   }
@@ -270,7 +268,7 @@ function lineagesByStepOf({ slots }: ReplayedLedger): Map<string, string> {
 
   for (const slot of slots) {
     for (const { id } of slot.migrations) {
-      lineages.set(id, lineageOf(slot));
+      lineages.set(id, lineageIdOf(slot));
     }
   }
 

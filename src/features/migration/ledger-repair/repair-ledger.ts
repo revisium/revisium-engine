@@ -7,8 +7,10 @@ import {
 import type { MigrationBounds } from 'src/features/share/ledger/native-migration-id';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
-import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
-import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
+import {
+  checkTableSlot,
+  type SlotCheck,
+} from 'src/features/share/ledger-replay/slot-check';
 import { DraftLedger, passesNativeHistoryValidation } from './draft-ledger';
 import { lastPublishedBoundsOf } from './repair-ids';
 import type { HistoryPatchesValidator } from './repair-patch';
@@ -54,9 +56,7 @@ export class RepairLedger {
     this.lastPublished = lastPublishedBoundsOf(this.draftLedger.published);
     this.headReplay = storedReplays.head;
     this.damagedTableIds = [...state.head.tableVersionIds.keys()].filter(
-      (tableId) =>
-        isLedgered(this.headReplay.slots, tableId) &&
-        !this.replaysToHeadSchema(tableId),
+      (tableId) => isDamaged(this.headCheckOf(tableId)),
     );
     this.headSchemaBaseline = replayer.replay(this.pending, {
       schemas: schemasOf(state.head),
@@ -73,17 +73,19 @@ export class RepairLedger {
   }
 
   public assess(tableId: string): TableAssessment {
-    if (!isLedgered(this.headReplay.slots, tableId)) {
+    const check = this.headCheckOf(tableId);
+
+    if (check.kind === 'unledgered') {
       return { outcome: 'unledgered' };
     }
 
-    if (this.headReplay.unreplayable.has(tableId)) {
+    if (check.kind === 'unreplayable') {
       return { outcome: 'ledgerDoesNotReplay' };
     }
 
     const draftTableId = this.draftLedger.draftTableIdOf(tableId);
 
-    if (this.replaysToHeadSchema(tableId)) {
+    if (check.kind === 'reproduces') {
       return { outcome: this.draftDamageOf(draftTableId) };
     }
 
@@ -117,15 +119,8 @@ export class RepairLedger {
     );
   }
 
-  private replaysToHeadSchema(tableId: string): boolean {
-    const replayed = this.replayedSchemaOf(tableId);
-    const headSchema = this.headSchemaOf(tableId);
-
-    return (
-      replayed !== undefined &&
-      headSchema !== undefined &&
-      schemasEqual(replayed, headSchema)
-    );
+  private headCheckOf(tableId: string): SlotCheck {
+    return checkTableSlot(this.headReplay, tableId, this.headSchemaOf(tableId));
   }
 
   private draftDamageOf(draftTableId: string | undefined): RepairOutcome {
@@ -169,6 +164,10 @@ export function storedLedgerReplayOf(
   replayer: LedgerReplayer,
 ): ReplayedLedger {
   return replayer.replay(migrationsOf(ledgerOf(revision.migrationRows)));
+}
+
+function isDamaged({ kind }: SlotCheck): boolean {
+  return kind === 'unreplayable' || kind === 'mismatch';
 }
 
 function failingMigrationIdsOf(replay: ReplayedLedger): Set<string> {

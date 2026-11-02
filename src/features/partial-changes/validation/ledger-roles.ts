@@ -7,6 +7,7 @@ import { systemTableTargetsOf } from 'src/features/partial-changes/assembly/syst
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { sourceLedgerOf } from 'src/features/partial-changes/snapshot/source-replays';
 import {
   ledgerOf,
   migrationsOf,
@@ -30,12 +31,12 @@ interface TargetSystemRows {
 }
 
 export function sourceRoleOf(
-  { systemRows }: ChangesSnapshot,
+  snapshot: ChangesSnapshot,
   side: RevisionSide,
 ): LedgerRole {
   return {
-    ledger: migrationsOf(ledgerOf(systemRows.migrations[side])),
-    schemaRows: systemRows.schemas[side],
+    ledger: sourceLedgerOf(snapshot, side),
+    schemaRows: snapshot.systemRows.schemas[side],
   };
 }
 

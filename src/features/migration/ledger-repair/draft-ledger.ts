@@ -11,7 +11,7 @@ import {
 } from 'src/features/share/ledger/pending-attribution';
 import { pendingSchemaHistory } from 'src/features/share/ledger/pending-schema-history';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
-import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
+import { checkTableSlot } from 'src/features/share/ledger-replay/slot-check';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import type { HistoryPatchesValidator } from './repair-patch';
 import type { RepairState } from './repair-state-reader';
@@ -69,13 +69,10 @@ export class DraftLedger {
     replay: ReplayedLedger,
     draftTableId: string,
   ): boolean {
-    const replayed = replay.schemas.get(draftTableId);
     const stored = this.state.draft.schemas.get(draftTableId);
 
     return (
-      replayed !== undefined &&
-      stored !== undefined &&
-      schemasEqual(replayed, stored.schema)
+      checkTableSlot(replay, draftTableId, stored?.schema).kind === 'reproduces'
     );
   }
 

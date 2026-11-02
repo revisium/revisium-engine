@@ -1,5 +1,8 @@
+import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
+import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { replayOf } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import type { ChangesScenario } from './changes-scenario';
 import type { RevisionSide } from './snapshot-reading';
@@ -49,4 +52,51 @@ export async function schemasOf(
       data as unknown as JsonSchema,
     ]),
   );
+}
+
+export type SourceLedgers = Record<RevisionSide, Migration[]>;
+
+export async function sourceLedgersOf(
+  draft: ChangesScenario,
+): Promise<SourceLedgers> {
+  return {
+    head: await ledgerOf(draft, 'head'),
+    draft: await ledgerOf(draft, 'draft'),
+  };
+}
+
+export async function sourceReplaysDuring(
+  kit: PartialChangesTestKit,
+  sourceLedgers: SourceLedgers,
+  action: () => Promise<unknown>,
+): Promise<Record<RevisionSide, number>> {
+  const replayed = await replayedLedgersDuring(kit, action);
+
+  return {
+    head: timesReplayed(replayed, sourceLedgers.head),
+    draft: timesReplayed(replayed, sourceLedgers.draft),
+  };
+}
+
+async function replayedLedgersDuring(
+  kit: PartialChangesTestKit,
+  action: () => Promise<unknown>,
+): Promise<Migration[][]> {
+  const replay = jest.spyOn(kit.module.get(LedgerReplayer), 'replay');
+
+  try {
+    await action();
+
+    return replay.mock.calls.map(([ledger]) => [...ledger]);
+  } finally {
+    replay.mockRestore();
+  }
+}
+
+function timesReplayed(
+  replayed: readonly (readonly Migration[])[],
+  ledger: readonly Migration[],
+): number {
+  return replayed.filter((replayedLedger) => deepEqual(replayedLedger, ledger))
+    .length;
 }

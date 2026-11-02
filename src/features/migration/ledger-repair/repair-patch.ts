@@ -11,7 +11,7 @@ import {
 } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
 import type { SchemaRefs } from 'src/features/share/ledger-replay/native-schema-rules';
-import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
+import { checkTableSlot } from 'src/features/share/ledger-replay/slot-check';
 import { NativeIdSequence } from './repair-ids';
 import type { RepairLedger } from './repair-ledger';
 
@@ -137,14 +137,12 @@ function reproducesWhereInserted(
   headSchema: JsonSchema,
 ): boolean {
   const insertionId = new NativeIdSequence(ledger.lastPublished).next();
-  const replayed = ledger
-    .replay([
-      ...ledger.published,
-      repairMigrationOf(tableId, repair, insertionId),
-    ])
-    .schemas.get(tableId);
+  const replay = ledger.replay([
+    ...ledger.published,
+    repairMigrationOf(tableId, repair, insertionId),
+  ]);
 
-  return replayed !== undefined && schemasEqual(replayed, headSchema);
+  return checkTableSlot(replay, tableId, headSchema).kind === 'reproduces';
 }
 
 function propertyPatchesBetween(

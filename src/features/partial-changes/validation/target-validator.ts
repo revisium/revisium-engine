@@ -12,7 +12,10 @@ import {
 } from 'src/features/partial-changes/plan/plan-blocker';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { InvalidRows } from 'src/features/partial-changes/validation/invalid-rows';
-import { LedgerConsistency } from 'src/features/partial-changes/validation/ledger-consistency';
+import {
+  LedgerConsistency,
+  type ValidationSource,
+} from 'src/features/partial-changes/validation/ledger-consistency';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import {
   hasIntactPublishedPrefix,
@@ -49,7 +52,7 @@ export class TargetValidator {
   // §6.9 step 5, uniqueness over whole target tables, is added here once
   // unique constraints (ADR-0029) exist in the engine.
   public async validate(
-    source: AssemblySource,
+    source: ValidationSource,
     { choice, assembled }: AppliedTarget,
   ): Promise<PlanBlocker[]> {
     const unrecorded = unrecordedStructureChangesOf(source, choice);

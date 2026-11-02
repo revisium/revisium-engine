@@ -16,6 +16,7 @@ import {
   type LedgerAttribution,
   pendingMigrationsOf,
 } from 'src/features/partial-changes/snapshot/ledger-attribution';
+import { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
 import {
   analyzeTableStructure,
   type TableSide,
@@ -48,10 +49,11 @@ export class ComparedSnapshotReader {
   ): Promise<ComparedSnapshot> {
     const snapshot = await this.snapshotReader.readSnapshot(branch);
     const ledger = attributeLedger(snapshot);
-    const headSchema = checkHeadSchema(
-      { snapshot, ledger, wholeDraft },
-      this.replayer,
-    );
+    const headSchema = checkHeadSchema({
+      snapshot,
+      replays: new SourceReplays(snapshot, this.replayer),
+      wholeDraft,
+    });
 
     return {
       snapshot,

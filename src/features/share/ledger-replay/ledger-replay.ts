@@ -53,6 +53,7 @@ export interface ReplayedSlot extends TableSlot {
 
 export interface ReplayedLedger {
   slots: readonly ReplayedSlot[];
+  currentSlots: ReadonlyMap<string, ReplayedSlot>;
   schemas: ReadonlyMap<string, JsonSchema>;
   unreplayable: ReadonlyMap<string, ReplayFailure>;
   unattributed: readonly UnattributedFailure[];
@@ -127,6 +128,7 @@ class LedgerReplay {
 
     return {
       slots,
+      currentSlots: currentSlotsOf(slots),
       ...ledgeredTablesOf(slots),
       unattributed: [...this.unattributed],
       reads: [...this.reads],
@@ -464,6 +466,20 @@ class LedgerReplay {
 
     return [...(this.trails.get(slot) ?? [])];
   }
+}
+
+function currentSlotsOf(
+  slots: readonly ReplayedSlot[],
+): Map<string, ReplayedSlot> {
+  const currentSlots = new Map<string, ReplayedSlot>();
+
+  for (const slot of slots) {
+    if (slot.currentTableId !== undefined) {
+      currentSlots.set(slot.currentTableId, slot);
+    }
+  }
+
+  return currentSlots;
 }
 
 function ledgeredTablesOf(slots: readonly ReplayedSlot[]) {

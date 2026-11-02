@@ -17,6 +17,10 @@ import {
   unitsOfPages,
 } from '../../__tests__/support/change-listing';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import {
+  sourceLedgersOf,
+  sourceReplaysDuring,
+} from '../../__tests__/support/ledger-replaying';
 
 const ADDRESS = 'address';
 const CATEGORIES = 'categories';
@@ -278,6 +282,19 @@ describe('listChanges', () => {
     });
   });
 
+  describe('ledger replays', () => {
+    it('replays the Head ledger once and the Draft ledger not at all to list a page', async () => {
+      const draft = await givenCreatedTableNextToEditedCategory();
+      const sourceLedgers = await sourceLedgersOf(draft);
+
+      const replays = await sourceReplaysDuring(kit, sourceLedgers, () =>
+        draft.listChanges(),
+      );
+
+      expect(replays).toEqual({ head: 1, draft: 0 });
+    });
+  });
+
   describe('tableId', () => {
     it('lists only the units of the table with that Draft id', async () => {
       const draft = await givenDraftWithEveryUnitKind();
@@ -448,6 +465,13 @@ describe('listChanges', () => {
     await draft.commit();
     await draft.updateRow(PRODUCTS, 'p1', { title: 'edited' });
     await draft.updateRow(CATEGORIES, 'c1', { title: 'edited' });
+
+    return draft;
+  }
+
+  async function givenCreatedTableNextToEditedCategory(): Promise<ChangesScenario> {
+    const draft = await givenOneEditedCategory();
+    await draft.createTable(TAGS, labelSchema);
 
     return draft;
   }

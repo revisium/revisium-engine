@@ -1,5 +1,5 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
-import { lineageOf } from 'src/features/partial-changes/validation/ledger-consistency';
+import { lineageIdOf } from 'src/features/share/ledger-replay/slot-check';
 import { TableSlots } from 'src/features/share/ledger-replay/table-slots';
 
 export interface TableIdChange {
@@ -83,7 +83,7 @@ function lineageHolding(
     return undefined;
   }
 
-  return lineageOf(slot);
+  return lineageIdOf(slot);
 }
 
 function lastIndexBefore(

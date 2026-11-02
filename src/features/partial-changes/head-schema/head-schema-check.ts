@@ -5,19 +5,13 @@ import {
   type TablePair,
   type TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { LedgerAttribution } from 'src/features/partial-changes/snapshot/ledger-attribution';
-import {
-  ledgerOf,
-  migrationsOf,
-} from 'src/features/share/ledger/migration-ledger';
+import type { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
 import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
-import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
-import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
 import {
-  isLedgered,
-  type TableSlot,
-  traceTableSlots,
-} from 'src/features/share/ledger-replay/table-slots';
+  checkTableSlot,
+  type SlotCheck,
+} from 'src/features/share/ledger-replay/slot-check';
+import { isLedgered } from 'src/features/share/ledger-replay/table-slots';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export type RefusalCode = 'headSchemaInconsistent' | 'unledgeredTable';
@@ -29,7 +23,7 @@ export interface RefusedTable {
 
 export interface HeadSchemaCheckInput {
   readonly snapshot: ChangesSnapshot;
-  readonly ledger: LedgerAttribution;
+  readonly replays: SourceReplays;
   readonly wholeDraft: boolean;
 }
 
@@ -37,6 +31,7 @@ export interface HeadSchemaCheck {
   readonly refusedTables: readonly RefusedTable[];
   readonly refusedTablesByIdentity: ReadonlyMap<string, RefusedTable>;
   readonly replayedHeadSchemas: ReadonlyMap<string, JsonSchema>;
+  readonly sourceReplays: SourceReplays;
 }
 
 interface Refusal {
@@ -44,44 +39,34 @@ interface Refusal {
   readonly table: RefusedTable;
 }
 
-export function checkHeadSchema(
-  input: HeadSchemaCheckInput,
-  replayer: LedgerReplayer,
-): HeadSchemaCheck {
-  const headLedger = replayer.replay(migrationsOf(input.ledger.published));
-  const refusals = refusalsOf(input, headLedger);
+export function checkHeadSchema(input: HeadSchemaCheckInput): HeadSchemaCheck {
+  const refusals = refusalsOf(input);
 
   return {
     refusedTables: refusals.map(({ table }) => table),
     refusedTablesByIdentity: new Map(
       refusals.map(({ identity, table }) => [identity, table]),
     ),
-    replayedHeadSchemas: replayedHeadSchemasOf(input.snapshot, headLedger),
+    replayedHeadSchemas: replayedHeadSchemasOf(
+      input.snapshot,
+      input.replays.head,
+    ),
+    sourceReplays: input.replays,
   };
 }
 
-function refusalsOf(
-  input: HeadSchemaCheckInput,
-  headLedger: ReplayedLedger,
-): Refusal[] {
+function refusalsOf(input: HeadSchemaCheckInput): Refusal[] {
   if (input.wholeDraft) {
     return [];
   }
 
-  const draftSlots = traceTableSlots(
-    migrationsOf(ledgerOf(input.snapshot.systemRows.migrations.draft)),
-  );
-
-  return new TableRefusals(headLedger, draftSlots)
+  return new TableRefusals(input.replays)
     .of(input.snapshot.tables)
     .sort(byTableIdAndCode);
 }
 
 class TableRefusals {
-  constructor(
-    private readonly headLedger: ReplayedLedger,
-    private readonly draftSlots: readonly TableSlot[],
-  ) {}
+  constructor(private readonly replays: SourceReplays) {}
 
   public of(pairs: readonly TablePair[]): Refusal[] {
     return pairs.flatMap((pair) => {
@@ -101,34 +86,40 @@ class TableRefusals {
   }
 
   private codeOf(pair: TablePair): RefusalCode | undefined {
-    if (isUnledgered(pair, this.headLedger.slots, this.draftSlots)) {
-      return 'unledgeredTable';
+    if (pair.head) {
+      return headCodeOf(headCheckOf(pair.head, this.replays));
     }
 
-    if (pair.head && !this.replaysToSchemaRow(pair.head)) {
-      return 'headSchemaInconsistent';
+    if (isUnledgered(pair, this.replays)) {
+      return 'unledgeredTable';
     }
 
     return undefined;
   }
-
-  private replaysToSchemaRow({ id, schema }: TableVersion): boolean {
-    const replayed = this.headLedger.schemas.get(id);
-
-    return replayed !== undefined && schemasEqual(replayed, schema);
-  }
 }
 
-export function isUnledgered(
-  pair: TablePair,
-  headSlots: readonly TableSlot[],
-  draftSlots: readonly TableSlot[],
-): boolean {
-  if (!pair.head) {
-    return !isLedgered(draftSlots, publicTableIdOf(pair));
+export function isUnledgered(pair: TablePair, replays: SourceReplays): boolean {
+  if (pair.head) {
+    return headCheckOf(pair.head, replays).kind === 'unledgered';
   }
 
-  return !isLedgered(headSlots, pair.head.id);
+  return !isLedgered(replays.draftSlots, publicTableIdOf(pair));
+}
+
+function headCheckOf(head: TableVersion, replays: SourceReplays): SlotCheck {
+  return checkTableSlot(replays.head, head.id, head.schema);
+}
+
+function headCodeOf(check: SlotCheck): RefusalCode | undefined {
+  switch (check.kind) {
+    case 'unledgered':
+      return 'unledgeredTable';
+    case 'unreplayable':
+    case 'mismatch':
+      return 'headSchemaInconsistent';
+    case 'reproduces':
+      return undefined;
+  }
 }
 
 function replayedHeadSchemasOf(

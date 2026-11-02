@@ -16,10 +16,7 @@ import {
   migrationsOf,
   schemaRowOf,
 } from 'src/features/share/ledger/migration-ledger';
-import type {
-  ReplayedLedger,
-  ReplayedSlot,
-} from 'src/features/share/ledger-replay/ledger-replay';
+import type { ReplayedLedger } from 'src/features/share/ledger-replay/ledger-replay';
 import type { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
@@ -60,7 +57,6 @@ export interface RepairInput {
 interface ScannedLedger {
   readonly rows: readonly Row[];
   readonly replay: ReplayedLedger;
-  readonly currentSlots: ReadonlyMap<string, ReplayedSlot>;
 }
 
 type ScanCounts = { -readonly [Key in keyof SchemaLedgerScanStats]: number };
@@ -219,7 +215,7 @@ export class LedgerScan {
     let check = this.schemaChecks.get(schemaEvaluation);
 
     if (!check) {
-      check = schemaCheckOf(ledger?.currentSlots, tableId, schemaRow);
+      check = schemaCheckOf(ledger?.replay, tableId, schemaRow);
       this.schemaChecks.set(schemaEvaluation, check);
       this.counts.schemaChecks += 1;
     }
@@ -268,15 +264,8 @@ export class LedgerScan {
     const replay = this.replayer.replay(migrationsOf(ledgerOf(rows)), {
       recordTrail: this.recordTrail,
     });
-    const currentSlots = new Map<string, ReplayedSlot>();
 
-    for (const slot of replay.slots) {
-      if (slot.currentTableId !== undefined) {
-        currentSlots.set(slot.currentTableId, slot);
-      }
-    }
-
-    return { rows, replay, currentSlots };
+    return { rows, replay };
   }
 
   private async cached<T>(

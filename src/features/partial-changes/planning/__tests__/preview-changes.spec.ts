@@ -21,6 +21,10 @@ import {
 } from '../../__tests__/support/change-preview';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
+import {
+  sourceLedgersOf,
+  sourceReplaysDuring,
+} from '../../__tests__/support/ledger-replaying';
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
@@ -555,6 +559,22 @@ describe('previewChanges', () => {
     });
   });
 
+  describe('ledger replays', () => {
+    it('replays the Head and Draft ledgers once each to plan a revert that moves pending migrations', async () => {
+      const draft = await givenTwoTablesWithNewFields();
+      const sourceLedgers = await sourceLedgersOf(draft);
+
+      const replays = await sourceReplaysDuring(kit, sourceLedgers, () =>
+        draft.previewChanges({
+          operation: 'revert',
+          selection: { tables: [PRODUCTS] },
+        }),
+      );
+
+      expect(replays).toEqual({ head: 1, draft: 1 });
+    });
+  });
+
   describe('read scope', () => {
     it('returns every refused table of the branch and none for exactly { all: true }', async () => {
       const draft = await givenUnledgeredProductsNextToEditedCategories();
@@ -932,6 +952,17 @@ describe('previewChanges', () => {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: { schema: titleSchema, rows: { p1: { title: 'one' } } },
     });
+    await draft.updateTable(PRODUCTS, [addField('color', str())]);
+
+    return draft;
+  }
+
+  async function givenTwoTablesWithNewFields(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: { schema: titleSchema, rows: { p1: { title: 'one' } } },
+    });
+    await draft.updateTable(CATEGORIES, [addField('color', str())]);
     await draft.updateTable(PRODUCTS, [addField('color', str())]);
 
     return draft;

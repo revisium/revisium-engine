@@ -5,10 +5,14 @@ import type {
   UnledgeredDetail,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
 import type {
+  ReplayedLedger,
   ReplayedSlot,
   ReplayFailure,
 } from 'src/features/share/ledger-replay/ledger-replay';
-import { schemasEqual } from 'src/features/share/ledger-replay/schemas-equal';
+import {
+  checkTableSlot,
+  lineageIdOf,
+} from 'src/features/share/ledger-replay/slot-check';
 import type { RowHashCount } from './scan-revision-reader';
 
 export interface SchemaRow {
@@ -36,39 +40,34 @@ export type ReplayedCheck = Extract<SchemaCheck, { kind: 'replayed' }>;
 export type SchemaHashing = (schema: JsonSchema) => string;
 
 export function schemaCheckOf(
-  currentSlots: ReadonlyMap<string, ReplayedSlot> | undefined,
+  replay: ReplayedLedger | undefined,
   tableId: string,
   schemaRow: SchemaRow | undefined,
 ): SchemaCheck {
-  if (!currentSlots) {
+  if (!replay) {
     return { kind: 'unledgered', detail: { reason: 'noMigrationTable' } };
   }
 
-  const slot = currentSlots.get(tableId);
+  const check = checkTableSlot(replay, tableId, schemaRow?.schema);
 
-  if (!slot) {
-    return { kind: 'unledgered', detail: { reason: 'noLineage' } };
+  switch (check.kind) {
+    case 'unledgered':
+      return { kind: 'unledgered', detail: check.reason };
+    case 'unreplayable':
+      return {
+        kind: 'unreplayable',
+        lineage: lineageIdOf(check.slot),
+        failure: check.failure,
+      };
+    case 'mismatch':
+    case 'reproduces':
+      return {
+        kind: 'replayed',
+        lineage: lineageIdOf(check.slot),
+        slot: check.slot,
+        passes: check.kind === 'reproduces',
+      };
   }
-
-  if (slot.brokenBy) {
-    return {
-      kind: 'unledgered',
-      detail: { reason: 'brokenLineage', migrationId: slot.brokenBy.id },
-    };
-  }
-
-  const lineage = slot.migrations[0]?.id ?? '';
-
-  if (slot.failure) {
-    return { kind: 'unreplayable', lineage, failure: slot.failure };
-  }
-
-  return {
-    kind: 'replayed',
-    lineage,
-    slot,
-    passes: reproducesSchemaRow(slot, schemaRow),
-  };
 }
 
 export function lineageOf(check: SchemaCheck): string | undefined {
@@ -130,15 +129,4 @@ export function rowHashReasonOf(
   }
 
   return 'renamedReference';
-}
-
-function reproducesSchemaRow(
-  { schema }: ReplayedSlot,
-  schemaRow: SchemaRow | undefined,
-): boolean {
-  return (
-    schema !== undefined &&
-    schemaRow !== undefined &&
-    schemasEqual(schema, schemaRow.schema)
-  );
 }

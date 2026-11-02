@@ -387,6 +387,24 @@ describe('revertChanges', () => {
       expect(reverted.data).toEqual({ title: 'dos', price: 2 });
     });
 
+    it('reverts the schemaHash of a row alone and keeps its data edit', async () => {
+      const draft = await givenEditedPrices();
+      await draft.writeRowColumns(PRODUCTS, 'p2', {
+        schemaHash: 'stale-schema-hash',
+      });
+
+      await expectApplied(
+        draft.revertChanges({
+          selection: { rowColumns: [rowOf(PRODUCTS, 'p2')] },
+        }),
+      );
+
+      const head = await draft.row('head', PRODUCTS, 'p2');
+      const reverted = await draft.row('draft', PRODUCTS, 'p2');
+      expect(reverted.schemaHash).toBe(head.schemaHash);
+      expect(reverted.data).toEqual({ title: 'dos', price: 2 });
+    });
+
     it('reverts a created table with its rows and its init migration', async () => {
       const draft = await givenEditedPrices();
       await draft.createTable(TAGS, tagSchema);

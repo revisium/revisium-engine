@@ -17,6 +17,7 @@ import {
   completeAsyncMigrationInPlace,
   describedLedgerOf,
   recordLedgerRepair,
+  schemaRowOf,
 } from '../../__tests__/support/head-schema-damage';
 
 const PRODUCTS = 'products';
@@ -260,6 +261,13 @@ describe('TargetValidator', () => {
         selection: { fields: [titleOfC1] },
       },
       {
+        source:
+          'a table created in the Draft whose structure its history does not record, renumbered in the remaining Draft by a structure commit of a later table',
+        given: givenUnrecordedCreatedTagsBeforeANewProductField,
+        operation: 'commit',
+        selection: { tables: [PRODUCTS] },
+      },
+      {
         source: 'a damaged Head table, published again by { all: true }',
         given: givenUnpublishedHeadDamage,
         operation: 'commit',
@@ -382,6 +390,24 @@ describe('TargetValidator', () => {
     expect(
       (await draft.readCatalogue([PRODUCTS])).structureOf(PRODUCTS),
     ).toMatchObject({ recorded: false });
+
+    return draft;
+  }
+
+  async function givenUnrecordedCreatedTagsBeforeANewProductField(): Promise<ChangesScenario> {
+    const draft = await givenEditedCatalog();
+    await draft.createTable(TAGS, tagSchema);
+    await completeAsyncMigrationInPlace(kit, draft, TAGS, addColor);
+    await draft.updateTable(PRODUCTS, [addField('weight', num())]);
+    expect(await describedLedgerOf(draft, 'draft')).toEqual([
+      'init products',
+      'init categories',
+      'init tags',
+      'update products',
+    ]);
+    expect(await schemaRowOf(draft, 'draft', TAGS)).toEqual(
+      obj({ label: str(), color: str() }),
+    );
 
     return draft;
   }

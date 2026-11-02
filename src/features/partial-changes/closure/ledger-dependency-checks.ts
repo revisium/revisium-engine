@@ -70,13 +70,17 @@ class LedgerDependencyChecking implements TargetChecking {
     this.unitsWithPendingMigrations = new Set(this.owners.values());
   }
 
-  public findingsOf({ choice, rules }: CheckContext): Promise<Finding[]> {
+  public findingsOf({
+    target,
+    choice,
+    rules,
+  }: CheckContext): Promise<Finding[]> {
     if (!this.movesPendingMigrations(rules)) {
       return Promise.resolve([]);
     }
 
     return Promise.resolve(
-      resultingRolesOf(this.source, choice).flatMap((role) =>
+      resultingRolesOf(this.source, choice, target.ledger).flatMap((role) =>
         this.reportedDependentStepsOf(role).flatMap((step) =>
           this.requirementsOf(step, role, rules),
         ),

@@ -81,7 +81,7 @@ async-migration copy batches do not run Serializable (§12).
 | `data` (`hash` = native hash of `data`) | yes; when the structure differs, only at unchanged leaves (§3.3) | the `field` unit of the leaf; values of changed leaves belong to the structure unit |
 | `publishedAt` | yes, unless the published-at field is new or changed by the structure | see below |
 | `meta` | yes | `rowColumns` |
-| `schemaHash` | only when the structure is unchanged | `rowColumns` (defensive: native writers set the current schema hash on every write); when the structure differs it follows the structure |
+| `schemaHash` | only when the structure is unchanged | `rowColumns` (native writers set the current schema hash on every write, but a native rename of a referenced table leaves the referrer rows with the previous one); when the structure differs it follows the structure |
 
 - **`publishedAt` ownership.** Native writers fill the column from a `RowPublishedAt` value of the written data and
   store `''` in every `RowPublishedAt` data leaf, so `hash` never shows it. The *published-at field* exists only when
@@ -468,8 +468,7 @@ Decided in this order; preview skips step 3 and returns `ready` in step 6:
 | `tooLarge` | A limit (§11) is exceeded; `tableId` is set for a per-table limit. | Select less. |
 
 When unique constraints ([ADR-0029]) are implemented, a uniqueness blocker is
-added (§6.9). Until delivery stage 3 (ADR-001), a commit that applies a structure unit returns `blocked` with the
-temporary code `structureCommitUnavailable`.
+added (§6.9).
 
 ### 5.9 Errors
 
@@ -574,8 +573,7 @@ type ApplyChangesResult = { status: 'applied' | 'required' | 'blocked' | 'stale'
   unmatched?: SelectionItems & { exclude?: SelectionItems } };
 ```
 
-`RequiredReasonCode` and `BlockerCode` are the codes of §5.7 and §5.8, including the temporary
-`structureCommitUnavailable` (until delivery stage 3).
+`RequiredReasonCode` and `BlockerCode` are the codes of §5.7 and §5.8.
 
 ### 5.12 Examples
 
@@ -660,14 +658,18 @@ every AssembleTarget) → PlanLedger → ValidateTarget → CheckHeadSchema → 
 4. Determine the affected tables:
    - `all: true` → every table;
    - otherwise start with the user tables named by any selector, included or excluded (`tables`, `tableData`,
-     `views`, `rows`, `renames`, `rowColumns`, `fields`), matched by Head or Draft public id; then add, transitively,
-     every user table that shares a public id (Head or Draft) with an affected table (renames, reused and taken-over
-     ids) and every user table connected to an affected table by a foreign key in its Head or Draft schema, in either
-     direction;
+     `views`, `rows`, `renames`, `rowColumns`, `fields`), matched by Head or Draft public id or by an id their pending
+     migrations gave them (a table created and removed in the Draft is named by its ids alone); then add, transitively,
+     every user table that shares such an id with an affected table (renames, reused and taken-over ids) and every
+     user table connected to an affected table by a foreign key, in either direction: a foreign key in its Head or
+     Draft schema, or a foreign-key target named by a pending migration of either table (an `init` schema or an
+     `update` patch value), matched by the ids the target held through its pending renames;
    - the system tables are always read whole (step 3); `sharedSchemas` selects system rows only.
 
    This is enough because every required addition comes from the table itself, a table sharing an id or a table
-   connected by a foreign key: the plan equals the plan that reads every table (AS-74).
+   connected by a foreign key, including a table that a pending migration needs at its step (§6.6): the plan equals
+   the plan that reads every table (AS-74). The planner checks it before deciding: a plan that applies a unit of a
+   changed table it did not read is an internal error and is never written.
 5. Count the changed rows of the affected tables in SQL with the change predicate (§3.1). Rows of created or removed
    tables are not counted (they are linked whole). An affected table counts in full, even for a one-row selection
    (an accepted v1 limit). Above `maxChangedRows` → refuse with `tooLarge` and stop.
@@ -810,7 +812,8 @@ Per user table on both sides, with structure side S and the opposite side O:
   | `id` | O id if the rename unit takes the other side, else S id |
   | `publishedAt` | O if its owner (field unit or `rowColumns`) takes the other side, else S (a structure-owned value follows S) |
   | `meta` | O if the `rowColumns` unit that owns it takes the other side, else S |
-  | `hash`, `schemaHash` | native rules: hash of the merged data; hash of the target schema |
+  | `hash` | native rule: hash of the merged data |
+  | `schemaHash` | O if the `rowColumns` unit that owns it takes the other side, else the hash of the target schema |
   | `createdId`, `createdAt` | of the row (S) |
   | `readonly` | true in a commit, false in a revert |
 
@@ -1532,7 +1535,9 @@ versions unchanged" (§14) holds in every scenario.
   the mixed-table limit and above the per-row-work limit for formulas and for files; an in-place revert copies no
   links.
 - AS-74 Scoped reading: a one-field preview, commit and revert next to an unrelated table with more changed rows than
-  the limit read only the affected table and apply; changed rows of tables connected by a foreign key count;
+  the limit read only the affected table and apply; changed rows of tables connected by a foreign key count, also
+  of a table that only a pending migration names as a foreign-key target, or that a table created and removed in the
+  Draft referenced;
   `all: true` reads every table; an unread table with only content-equal versions keeps its Draft version. Property over
   random Drafts and selections (including `exclude`, commit and revert): the scoped plan equals the plan that reads
   every table (status, fingerprint, selected, applied, required, blockers, unmatched, deferred, estimate except
@@ -1736,6 +1741,16 @@ Listing:
 - §5.2, §11: a page stops after reading `pageSize` changed row ids, each with at most two row version pairs, because
   a changed row can yield no unit; the cursor carries the row to resume from; the per-page cost of the link anti-join
   is stated with measurements.
+
+Structure commit (delivery stage 3):
+
+- §5.8, §5.11: the temporary `structureCommitUnavailable` blocker is removed; a commit applies structure units.
+- §3.1, §6.7: a merged row takes `schemaHash` from the other side when the `rowColumns` unit that owns it takes the
+  other side, as `publishedAt` and `meta` do, else the hash of the target schema; native `createRevision` publishes
+  a Draft row's `schemaHash` as it is, also one a native rename of a referenced table left stale.
+- §6.2, §13.7 (AS-74): the read scope also follows the foreign-key targets that pending migrations name, through
+  pending renames and from tables created and removed in the Draft, so every table a ledger dependency (§6.6) can
+  require is read; a plan that applies a unit of a changed table it did not read is an internal error.
 
 ### Version 1 (2026-10-22)
 

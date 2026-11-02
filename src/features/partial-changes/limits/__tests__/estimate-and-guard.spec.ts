@@ -134,7 +134,7 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
     });
   });
 
-  it('counts the link of a merge that collapses to the structure-side version as copied, as the assembly keeps it', async () => {
+  it('counts the Head link that a merged row replaces as copied, an upper bound of the links the assembly copies', async () => {
     const draft = await givenRowColumnsEditNextToFieldEdit(kit);
 
     const closure = await draft.closeDependencies(
@@ -150,9 +150,9 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
       { tableId: PRODUCTS, linksCopied: 4, linksAdded: 2 },
     ]);
     expect(target.tableOf(PRODUCTS)).toMatchObject({
-      removedLinks: ['head p2'],
+      removedLinks: ['head p1', 'head p2'],
       addedLinks: ['draft p2'],
-      newRows: [],
+      newRows: [expect.objectContaining({ id: 'p1', schemaHash: 'edited' })],
     });
   });
 

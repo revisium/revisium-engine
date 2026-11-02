@@ -19,8 +19,12 @@ import type {
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
+import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
 import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
-import { removeField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import {
+  addField,
+  removeField,
+} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import { branchContentOf } from '../../__tests__/support/branch-content';
@@ -35,6 +39,8 @@ const ORDERS = 'orders';
 const DOCUMENTS = 'documents';
 const LOGS = 'logs';
 const ADDRESS = 'address';
+const GROUPS = 'groups';
+const TAGS = 'tags';
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({
@@ -49,6 +55,7 @@ const orderSchema = obj({
 });
 const documentSchema = obj({ title: str(), image: ref(SystemSchemaIds.File) });
 const logSchema = obj({ entry: str() });
+const tagSchema = obj({ label: str() });
 const addressSchema = obj({ city: str() });
 const editedAddressSchema = obj({ city: str(), street: str() });
 
@@ -73,6 +80,7 @@ const titleOf = (tableId: string, rowId: string): FieldRef => ({
 const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
 
 const INJECTED_FAILURE = 'Injected failure after the writes';
+const STALE_SCHEMA_HASH = 'stale-schema-hash';
 
 const titleOfP1: Selection = { fields: [titleOf(PRODUCTS, 'p1')] };
 const categoryOfP1: Selection = {
@@ -326,28 +334,6 @@ describe('commitChanges', () => {
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
-
-    it('is blocked with structureCommitUnavailable for a structure unit until delivery stage 3, and writes nothing', async () => {
-      const draft = await givenCommittedPrices();
-      await draft.updateTable(PRODUCTS, [removeField('price')]);
-      const contents = await branchContentsOf(kit, draft);
-
-      const result = await draft.commitChanges({
-        selection: { tables: [PRODUCTS] },
-      });
-
-      expect(result).toEqual<CommitChangesResult>({
-        status: 'blocked',
-        blockers: [
-          expect.objectContaining({
-            code: 'structureCommitUnavailable',
-            tableId: PRODUCTS,
-          }),
-        ],
-        required: [],
-      });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-    });
   });
 
   describe('units', () => {
@@ -436,6 +422,28 @@ describe('commitChanges', () => {
         p1: { title: 'uno', price: 10 },
         p2: { title: 'dos', price: 2 },
       });
+    });
+
+    it('commits the schemaHash of a row alone, so that only its data edit stays listed', async () => {
+      const draft = await givenEditedPrices();
+      await draft.writeRowColumns(PRODUCTS, 'p2', {
+        schemaHash: STALE_SCHEMA_HASH,
+      });
+
+      await expectApplied(
+        draft.commitChanges({
+          selection: { rowColumns: [rowOf(PRODUCTS, 'p2')] },
+        }),
+      );
+
+      const committed = await draft.row('head', PRODUCTS, 'p2');
+      expect(committed.schemaHash).toBe(STALE_SCHEMA_HASH);
+      expect(committed.data).toEqual({ title: 'two', price: 2 });
+      expect(unitsOf(await draft.listChanges())).toEqual([
+        { kind: 'field', rowId: 'p1', path: '/price' },
+        { kind: 'field', rowId: 'p1', path: '/title' },
+        { kind: 'field', rowId: 'p2', path: '/title' },
+      ]);
     });
 
     it('commits a views edit and keeps the data edits in the Draft', async () => {
@@ -608,6 +616,11 @@ describe('commitChanges', () => {
         holding: 'an empty shared-schema table that Head lacks',
         given: givenEmptySharedSchemaTableNextToAnEdit,
       },
+      {
+        holding:
+          'data and structure changes: a table rename, a new field, a created and a removed table and views (AS-50)',
+        given: givenDataAndStructureChanges,
+      },
     ];
 
     it.each(drafts)(
@@ -696,6 +709,31 @@ describe('commitChanges', () => {
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
       expect(await fileReferencesOf(draft)).toEqual(fileReferences);
       expect(notifications).toEqual([]);
+    });
+  });
+
+  describe('a required unit of a table the plan did not read', () => {
+    it('refuses to plan with an internal error, and writes nothing', async () => {
+      const draft = await givenRenamedCategoriesOfEditedProducts();
+      const selection: Selection = { tables: [GROUPS] };
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection,
+      });
+      notReading(await identityOf(draft, PRODUCTS));
+      const contents = await branchContentsOf(kit, draft);
+
+      await expect(
+        draft.commitChanges({
+          selection,
+          includeRequired: true,
+          expected: preview.fingerprint,
+        }),
+      ).rejects.toThrow(
+        'The plan applies units of products, whose changed rows it did not read',
+      );
+
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
   });
 
@@ -826,6 +864,38 @@ describe('commitChanges', () => {
       .sort();
   }
 
+  function notReading(identity: string): void {
+    const readScope = kit.module.get(ReadScope);
+    const scopeOf = readScope.scopeOf.bind(readScope);
+
+    jest
+      .spyOn(readScope, 'scopeOf')
+      .mockImplementation((selection, compared) => {
+        const scope = scopeOf(selection, compared);
+
+        return {
+          ...scope,
+          affectedTables: scope.affectedTables.filter(
+            (table) => table.identity !== identity,
+          ),
+        };
+      });
+  }
+
+  async function identityOf(
+    draft: ChangesScenario,
+    tableId: string,
+  ): Promise<string> {
+    const tables = await draft.userTables('draft');
+    const table = tables.find(({ id }) => id === tableId);
+
+    if (!table) {
+      throw new Error(`The Draft has no table ${tableId}`);
+    }
+
+    return table.createdId;
+  }
+
   function failingAfterTheWrites(): void {
     const api = kit.module.get(DraftRevisionTargetApiService);
     const commitToTarget = api.commitToTarget.bind(api);
@@ -883,6 +953,14 @@ describe('commitChanges', () => {
     return draft;
   }
 
+  async function givenRenamedCategoriesOfEditedProducts(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c1' });
+    await draft.renameTable(CATEGORIES, GROUPS);
+
+    return draft;
+  }
+
   function givenCommittedCatalog(): Promise<ChangesScenario> {
     return ChangesScenario.committed(kit, {
       [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
@@ -935,6 +1013,31 @@ describe('commitChanges', () => {
     await draft.updateViews(PRODUCTS, productViews('Renamed'));
     await draft.updateRow(LOGS, 'l1', { entry: 'restarted' });
     await draft.updateRow(LOGS, 'l1', { entry: 'started' });
+
+    return draft;
+  }
+
+  async function givenDataAndStructureChanges(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: {
+        schema: pricedSchema,
+        rows: {
+          p1: { title: 'one', price: 1 },
+          p2: { title: 'two', price: 2 },
+        },
+      },
+      [LOGS]: { schema: logSchema, rows: { l1: { entry: 'started' } } },
+    });
+    await draft.updateViews(PRODUCTS, productViews('All'));
+    await draft.commit();
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
+    await draft.updateTable(PRODUCTS, [addField('color', str())]);
+    await draft.renameTable(CATEGORIES, GROUPS);
+    await draft.removeTable(LOGS);
+    await draft.createTable(TAGS, tagSchema);
+    await draft.createRows(TAGS, { t1: { label: 'one' } });
+    await draft.updateViews(PRODUCTS, productViews('Renamed'));
 
     return draft;
   }

@@ -1,50 +1,62 @@
-import type { JsonSchema } from '@revisium/schema-toolkit/types';
-import { publicIdsOf } from 'src/features/partial-changes/catalogue/public-id-groups';
-import type {
-  TablePair,
-  TableVersion,
-} from 'src/features/partial-changes/snapshot/changes-snapshot';
-
-export type ForeignKeysOf = (schema: JsonSchema) => string[];
+export interface ConnectedTable {
+  readonly identity?: string;
+  readonly tableIds: readonly string[];
+  readonly referencedTableIds: readonly string[];
+}
 
 export class TableConnections {
-  private readonly identitiesByPublicId: ReadonlyMap<string, readonly string[]>;
+  private readonly identitiesByTableId = new Map<string, string[]>();
   private readonly links = new Map<string, Set<string>>();
 
-  constructor(tables: readonly TablePair[], foreignKeysOf: ForeignKeysOf) {
-    this.identitiesByPublicId = identitiesByPublicIdOf(tables);
-
-    for (const table of tables) {
-      for (const tableId of linkedTableIdsOf(table, foreignKeysOf)) {
-        this.link(table.identity, this.identitiesNamed(tableId));
+  constructor(tables: readonly ConnectedTable[]) {
+    for (const { identity, tableIds, referencedTableIds } of tables) {
+      if (identity !== undefined) {
+        this.name(identity, tableIds);
       }
+
+      this.link([...tableIds, ...referencedTableIds]);
     }
   }
 
   public connectedTo(tableIds: readonly string[]): ReadonlySet<string> {
     const connected = new Set<string>();
-    const pending = tableIds.flatMap((tableId) =>
-      this.identitiesNamed(tableId),
-    );
+    const pending = [...tableIds];
 
     for (
-      let identity = pending.pop();
-      identity !== undefined;
-      identity = pending.pop()
+      let tableId = pending.pop();
+      tableId !== undefined;
+      tableId = pending.pop()
     ) {
-      if (!connected.has(identity)) {
-        connected.add(identity);
-        pending.push(...(this.links.get(identity) ?? []));
+      if (!connected.has(tableId)) {
+        connected.add(tableId);
+        pending.push(...(this.links.get(tableId) ?? []));
       }
     }
 
-    return connected;
+    return new Set(
+      [...connected].flatMap((tableId) => this.identitiesNamed(tableId)),
+    );
   }
 
-  private link(identity: string, others: readonly string[]): void {
+  private name(identity: string, tableIds: readonly string[]): void {
+    for (const tableId of new Set(tableIds)) {
+      this.identitiesByTableId.set(tableId, [
+        ...this.identitiesNamed(tableId),
+        identity,
+      ]);
+    }
+  }
+
+  private link(tableIds: readonly string[]): void {
+    const [first, ...others] = tableIds;
+
+    if (first === undefined) {
+      return;
+    }
+
     for (const other of others) {
-      this.addLink(identity, other);
-      this.addLink(other, identity);
+      this.addLink(first, other);
+      this.addLink(other, first);
     }
   }
 
@@ -60,40 +72,6 @@ export class TableConnections {
   }
 
   private identitiesNamed(tableId: string): readonly string[] {
-    return this.identitiesByPublicId.get(tableId) ?? [];
+    return this.identitiesByTableId.get(tableId) ?? [];
   }
-}
-
-function identitiesByPublicIdOf(
-  tables: readonly TablePair[],
-): Map<string, string[]> {
-  const identities = new Map<string, string[]>();
-
-  for (const table of tables) {
-    for (const publicId of publicIdsOf(table)) {
-      identities.set(publicId, [
-        ...(identities.get(publicId) ?? []),
-        table.identity,
-      ]);
-    }
-  }
-
-  return identities;
-}
-
-function linkedTableIdsOf(
-  table: TablePair,
-  foreignKeysOf: ForeignKeysOf,
-): string[] {
-  const referencedTableIds = versionsOf(table).flatMap(({ schema }) =>
-    foreignKeysOf(schema),
-  );
-
-  return [...publicIdsOf(table), ...referencedTableIds];
-}
-
-function versionsOf({ head, draft }: TablePair): TableVersion[] {
-  return [head, draft].filter(
-    (version): version is TableVersion => version !== undefined,
-  );
 }

@@ -1,6 +1,7 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type { LedgerPlan } from 'src/features/partial-changes/assembly/ledger-plan';
 import {
   type AppliedUnits,
   OutcomeRules,
@@ -13,6 +14,7 @@ import {
   migrationsOf,
 } from 'src/features/share/ledger/migration-ledger';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface LedgerRole {
   readonly ledger: readonly Migration[];
@@ -42,6 +44,7 @@ export function sourceRoleOf(
 export function resultingRolesOf(
   source: AssemblySource,
   choice: AppliedUnits,
+  ledger: LedgerPlan,
 ): ResultingRole[] {
   const target = targetSystemRowsOf(source, choice);
 
@@ -67,7 +70,7 @@ export function resultingRolesOf(
     },
     {
       name: 'remaining Draft',
-      ledger: remainingDraftLedgerOf(migrations.draft, target.migrations),
+      ledger: remainingDraftLedgerOf(migrations.draft, ledger),
       schemaRows: schemas.draft,
       keepsInconsistenciesOf: ['draft'],
     },
@@ -88,20 +91,19 @@ function targetSystemRowsOf(
   };
 }
 
+// The remaining Draft replays its migrations in the order of the ids it stores,
+// the renumbered ones included, but under their source ids, so that what it
+// finds compares with what the source Draft already has.
 function remainingDraftLedgerOf(
   draftRows: readonly Row[],
-  publishedRows: readonly Row[],
+  { renumbered }: LedgerPlan,
 ): Migration[] {
-  const published = new Set(publishedRows.map(({ versionId }) => versionId));
+  const storedIds = new Map(
+    renumbered.map(({ source, row }) => [source.migration.id, row.id]),
+  );
+  const storedIdOf = ({ id }: Migration) => storedIds.get(id) ?? id;
 
-  // Renumbering (§6.8) keeps the remaining entries in their order after every
-  // published one, so the replay needs that order, not the new ids.
-  return [
-    ...migrationsOf(
-      ledgerOf(draftRows.filter(({ versionId }) => published.has(versionId))),
-    ),
-    ...migrationsOf(
-      ledgerOf(draftRows.filter(({ versionId }) => !published.has(versionId))),
-    ),
-  ];
+  return migrationsOf(ledgerOf(draftRows)).sort((left, right) =>
+    compareCodePoints(storedIdOf(left), storedIdOf(right)),
+  );
 }

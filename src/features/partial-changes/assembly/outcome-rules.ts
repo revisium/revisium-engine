@@ -16,7 +16,7 @@ export interface AppliedUnits {
   readonly wholeDraft: boolean;
 }
 
-export type OtherSideColumn = 'publishedAt' | 'meta';
+export type OtherSideColumn = 'publishedAt' | 'meta' | 'schemaHash';
 
 export interface OtherSideParts {
   readonly id: boolean;
@@ -60,7 +60,11 @@ const ABSENT: RowOutcome = { kind: 'absent' };
 const STRUCTURE_SIDE: RowOutcome = { kind: 'structureSide' };
 const OTHER_SIDE: RowOutcome = { kind: 'otherSide' };
 const MOVE: RowOutcome = { kind: 'move' };
-const OTHER_SIDE_COLUMNS: readonly OtherSideColumn[] = ['publishedAt', 'meta'];
+const OTHER_SIDE_COLUMNS: readonly OtherSideColumn[] = [
+  'publishedAt',
+  'meta',
+  'schemaHash',
+];
 const BASE_SIDES: Readonly<Record<ChangeOperation, RevisionSide>> = {
   commit: 'head',
   revert: 'draft',

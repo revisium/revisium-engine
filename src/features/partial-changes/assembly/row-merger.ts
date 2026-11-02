@@ -50,6 +50,11 @@ export interface DraftStructureMigration {
   readonly pendingHistory: readonly HistoryPatches[];
 }
 
+interface NewVersion {
+  readonly row: Row;
+  readonly otherSideSchemaHash?: string;
+}
+
 @Injectable()
 export class RowMerger {
   constructor(
@@ -63,7 +68,7 @@ export class RowMerger {
     merges: readonly RowMerge[],
     target: MergeTarget,
   ): Promise<MergedRow[]> {
-    return this.newVersionsOf(merges.map(rowTakingOtherSideParts), target);
+    return this.newVersionsOf(merges.map(versionTakingOtherSideParts), target);
   }
 
   public migrateIntoDraftStructure(
@@ -72,7 +77,7 @@ export class RowMerger {
     target: MergeTarget,
   ): Promise<MergedRow[]> {
     return this.newVersionsOf(
-      this.migratedThroughPendingHistory(headRows, migration),
+      this.migratedThroughPendingHistory(headRows, migration).map(versionOf),
       target,
     );
   }
@@ -84,24 +89,31 @@ export class RowMerger {
   ): Promise<MergedRow[]> {
     return this.newVersionsOf(
       draftRows.map((row) =>
-        this.withHeadDefaults(row, unchangedLeaves, target.schema),
+        versionOf(this.withHeadDefaults(row, unchangedLeaves, target.schema)),
       ),
       target,
     );
   }
 
   private async newVersionsOf(
-    rows: Row[],
+    versions: readonly NewVersion[],
     target: MergeTarget,
   ): Promise<MergedRow[]> {
-    if (rows.length === 0) {
+    if (versions.length === 0) {
       return [];
     }
 
-    await this.recomputeComputedLeaves(rows, target);
-    const schemaHash = this.schemaValidator.getSchemaHash(target.schema);
+    await this.recomputeComputedLeaves(
+      versions.map(({ row }) => row),
+      target,
+    );
+    const targetSchemaHash = this.schemaValidator.getSchemaHash(target.schema);
 
-    return Promise.all(rows.map((row) => this.mergedRowOf(row, schemaHash)));
+    return Promise.all(
+      versions.map(({ row, otherSideSchemaHash }) =>
+        this.mergedRowOf(row, otherSideSchemaHash ?? targetSchemaHash),
+      ),
+    );
   }
 
   private migratedThroughPendingHistory(
@@ -179,14 +191,32 @@ export class RowMerger {
   }
 }
 
-function rowTakingOtherSideParts(merge: RowMerge): Row {
+function versionOf(row: Row): NewVersion {
+  return { row };
+}
+
+function versionTakingOtherSideParts(merge: RowMerge): NewVersion {
   return {
-    ...merge.structureSide,
-    id: sideTaking(merge, merge.fromOtherSide.id).id,
-    data: dataTakingOtherSidePaths(merge),
-    publishedAt: sideTakingColumn(merge, 'publishedAt').publishedAt,
-    meta: sideTakingColumn(merge, 'meta').meta,
+    row: {
+      ...merge.structureSide,
+      id: sideTaking(merge, merge.fromOtherSide.id).id,
+      data: dataTakingOtherSidePaths(merge),
+      publishedAt: sideTakingColumn(merge, 'publishedAt').publishedAt,
+      meta: sideTakingColumn(merge, 'meta').meta,
+    },
+    otherSideSchemaHash: otherSideSchemaHashOf(merge),
   };
+}
+
+function otherSideSchemaHashOf({
+  otherSide,
+  fromOtherSide,
+}: RowMerge): string | undefined {
+  if (!fromOtherSide.columns.includes('schemaHash')) {
+    return undefined;
+  }
+
+  return otherSide.schemaHash;
 }
 
 function dataTakingOtherSidePaths({

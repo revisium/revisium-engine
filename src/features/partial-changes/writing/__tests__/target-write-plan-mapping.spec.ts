@@ -1,12 +1,17 @@
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { arr, obj, ref, str } from '@revisium/schema-toolkit/mocks';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
+import type { Migration } from '@revisium/schema-toolkit/types';
+import type { Row } from 'src/engine-prisma-types';
 import type {
+  CommitTableWritePlan,
   CommitTargetWritePlan,
+  NewRowVersion,
   RevisionSide,
   TableWriteOutcome,
   TableWritePlan,
 } from 'src/features/draft-revision/commands/impl';
+import type { RenumberedMigrationRow } from 'src/features/partial-changes/assembly/ledger-plan';
 import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
@@ -273,29 +278,107 @@ describe('targetWritePlanOf', () => {
       });
     });
 
-    it('refuses a commit that takes the structure of a table from the Draft, whose remaining migrations are renumbered only from delivery stage 3', () => {
-      const writable = writableTargetOf({
-        pairs: [products],
-        tables: [tablePlanOf(products, { structureSide: 'draft' })],
-      });
-
-      expect(() => commitTargetWritePlanOf(writable)).toThrow(
-        `The commit takes the structure of table ${products.identity} from the Draft, which is not written before delivery stage 3`,
+    it('writes a commit that takes the structure of a table from the Draft on its Draft side', () => {
+      const plan = commitTargetWritePlanOf(
+        writableTargetOf({
+          pairs: [products],
+          tables: [
+            tablePlanOf(products, { outcome: 'base', structureSide: 'draft' }),
+          ],
+        }),
       );
+
+      expect(plan.tables).toEqual<CommitTableWritePlan[]>([
+        expect.objectContaining({
+          identity: products.identity,
+          outcome: 'base',
+          structureSide: 'draft',
+        }),
+      ]);
+    });
+
+    it('writes the renumbered migrations into the next Draft version of the migration table, replacing their source rows', () => {
+      const plan = commitTargetWritePlanOf(
+        writableTargetOf({
+          systemTables: [migrationTablePlan, viewsTablePlan],
+          renumbered: [renumbered('2026-10-20T10:00:00.000Z')],
+        }),
+      );
+
+      expect(plan.tables).toEqual<CommitTableWritePlan[]>([
+        expect.objectContaining({
+          identity: SystemTables.Migration,
+          renumberedRows: {
+            replacedRowVersionIds: ['2026-10-20T10:00:00.000Z-version'],
+            newRows: [renumberedRow],
+          },
+        }),
+        expect.not.objectContaining({ renumberedRows: expect.anything() }),
+      ]);
+    });
+
+    it('writes no renumbered rows when nothing was renumbered', () => {
+      const plan = commitTargetWritePlanOf(
+        writableTargetOf({ systemTables: [migrationTablePlan] }),
+      );
+
+      expect(plan.tables).toEqual<CommitTableWritePlan[]>([
+        expect.not.objectContaining({ renumberedRows: expect.anything() }),
+      ]);
     });
   });
 });
+
+const renumberedRow: NewRowVersion = {
+  createdId: 'migration-created',
+  createdAt: new Date('2026-10-20T10:00:00.000Z'),
+  id: '2026-10-22T14:03:12.418Z',
+  data: { id: '2026-10-22T14:03:12.418Z' },
+  hash: 'renumbered-hash',
+  schemaHash: 'migration-schema-hash',
+  publishedAt: new Date('2026-10-22T14:03:12.418Z'),
+  meta: null,
+};
+
+const migrationTablePlan = systemTablePlanOf(SystemTables.Migration);
+const viewsTablePlan = systemTablePlanOf(SystemTables.Views);
+
+function renumbered(migrationId: string): RenumberedMigrationRow {
+  return {
+    source: {
+      row: { versionId: `${migrationId}-version`, id: migrationId } as Row,
+      migration: { id: migrationId } as Migration,
+    },
+    row: renumberedRow,
+  };
+}
+
+function systemTablePlanOf(tableId: SystemTables): SystemTablePlan {
+  return {
+    tableId,
+    versionIds: { head: `${tableId}-head`, draft: `${tableId}-draft` },
+    outcome: 'mixed',
+    linkSide: 'head',
+    versionId: `${tableId}-head`,
+    relinkCandidate: false,
+    removedLinks: [],
+    addedLinks: [],
+    newRows: [],
+  };
+}
 
 interface WritableTargetParts {
   readonly pairs?: readonly TablePair[];
   readonly tables?: readonly TablePlan[];
   readonly systemTables?: readonly SystemTablePlan[];
+  readonly renumbered?: readonly RenumberedMigrationRow[];
 }
 
 function writableTargetOf({
   pairs = [],
   tables = [],
   systemTables = [],
+  renumbered = [],
 }: WritableTargetParts): WritableTarget {
   return {
     source: {
@@ -306,7 +389,7 @@ function writableTargetOf({
         tables: pairs,
       },
     },
-    assembled: { tables, systemTables },
+    assembled: { tables, systemTables, ledger: { renumbered } },
   };
 }
 

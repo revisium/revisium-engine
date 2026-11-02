@@ -42,12 +42,20 @@ export type PublishedAtOwner =
   | { readonly owner: 'structure' }
   | { readonly owner: 'rowColumns' };
 
+export type FieldChange = 'added' | 'removed' | 'changed';
+
+export interface ChangedLeaf {
+  readonly pointer: JsonPointer;
+  readonly change: FieldChange;
+}
+
 export interface TableStructure {
   readonly pendingHistory: PendingSchemaHistory;
   readonly recorded: boolean;
   readonly differs: boolean;
   readonly unchangedLeaves: readonly SchemaLeaf[];
   readonly changedPointers: readonly JsonPointer[];
+  readonly changedLeaves: readonly ChangedLeaf[];
   readonly publishedAtOwner: PublishedAtOwner;
 }
 
@@ -60,7 +68,8 @@ export function analyzeTableStructure(
     input.draft.history,
   );
   const leaves = new LeafComparison(input);
-  const changedPointers = leaves.changedPointers();
+  const changedLeaves = leaves.changedLeaves();
+  const changedPointers = changedLeaves.map(({ pointer }) => pointer);
 
   return {
     pendingHistory,
@@ -70,6 +79,7 @@ export function analyzeTableStructure(
     differs: structureDiffers(input, pendingHistory, changedPointers),
     unchangedLeaves: leaves.unchanged,
     changedPointers,
+    changedLeaves,
     publishedAtOwner: leaves.publishedAtOwner(),
   };
 }
@@ -115,13 +125,13 @@ class LeafComparison {
     );
   }
 
-  public changedPointers(): JsonPointer[] {
+  public changedLeaves(): ChangedLeaf[] {
     const unchanged = new Set(this.unchanged.map(pointerKey));
-    const changed = new Map<string, JsonPointer>();
+    const changed = new Map<string, ChangedLeaf>();
 
     for (const leaf of [...this.draftLeaves.all, ...this.headLeaves.all]) {
       if (!unchanged.has(pointerKey(leaf))) {
-        changed.set(pointerKey(leaf), leaf.pointer);
+        changed.set(pointerKey(leaf), this.changedLeafOf(leaf));
       }
     }
 
@@ -140,6 +150,22 @@ class LeafComparison {
     }
 
     return { owner: 'structure' };
+  }
+
+  private changedLeafOf({ pointer }: SchemaLeaf): ChangedLeaf {
+    return { pointer, change: this.changeAt(pointer) };
+  }
+
+  private changeAt(pointer: JsonPointer): FieldChange {
+    if (!this.headLeaves.at(pointer)) {
+      return 'added';
+    }
+
+    if (!this.draftLeaves.at(pointer)) {
+      return 'removed';
+    }
+
+    return 'changed';
   }
 
   private isUnchanged(draftLeaf: SchemaLeaf): boolean {

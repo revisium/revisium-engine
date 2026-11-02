@@ -107,6 +107,10 @@ function decisionOf({ status, counts, fingerprint }: PreviewChangesResult) {
   return { status, counts, fingerprint };
 }
 
-function unitRefOf({ structure: _structure, ...unit }: ListedUnit) {
+function unitRefOf({
+  structure: _structure,
+  structureChange: _structureChange,
+  ...unit
+}: ListedUnit) {
   return unit;
 }

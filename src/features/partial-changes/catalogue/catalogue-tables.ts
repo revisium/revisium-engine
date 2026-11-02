@@ -15,17 +15,31 @@ export interface SidedRows {
 export class CatalogueTables {
   public readonly pairs: readonly TablePair[];
 
+  private readonly pairsByIdentity: ReadonlyMap<string, TablePair>;
   private readonly structures: ReadonlyMap<string, TableStructure>;
   private readonly schemaRows: RowsByTableId;
   private readonly viewsRows: RowsByTableId;
 
   constructor(snapshot: ChangesSnapshot, tables: readonly ComparedTable[]) {
     this.pairs = snapshot.tables;
+    this.pairsByIdentity = new Map(
+      snapshot.tables.map((pair) => [pair.identity, pair]),
+    );
     this.structures = new Map(
       tables.map(({ identity, structure }) => [identity, structure]),
     );
     this.schemaRows = new RowsByTableId(snapshot.systemRows.schemas);
     this.viewsRows = new RowsByTableId(snapshot.systemRows.views);
+  }
+
+  public pairOf(identity: string): TablePair {
+    const pair = this.pairsByIdentity.get(identity);
+
+    if (!pair) {
+      throw new Error(`Table ${identity} is in neither revision`);
+    }
+
+    return pair;
   }
 
   public structureOf({ identity }: TablePair): TableStructure {

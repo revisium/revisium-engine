@@ -189,6 +189,60 @@ export type {
   TableViewsData,
 } from './features/views/types';
 
+// Partial Changes (EngineApiService.changes)
+export type {
+  ListChangesInput,
+  ListChangesResult,
+  ListedUnit,
+} from './features/partial-changes/queries/impl/list-draft-changes.query';
+export type {
+  PreviewChangesInput,
+  PreviewChangesResult,
+} from './features/partial-changes/queries/impl/preview-draft-changes.query';
+export type {
+  CommitChangesInput,
+  CommitChangesResult,
+  CommittedDraft,
+} from './features/partial-changes/commands/impl/commit-draft-changes.command';
+export type {
+  RevertChangesInput,
+  RevertChangesResult,
+  RevertedDraft,
+} from './features/partial-changes/commands/impl/revert-draft-changes.command';
+export type {
+  ChangesBlocked,
+  ChangesRequireAdditions,
+  ChangesStale,
+  NothingToApply,
+} from './features/partial-changes/commands/impl/apply-changes';
+export type { ChangesBranch } from './features/partial-changes/snapshot/changes-snapshot';
+export type {
+  RowRef,
+  Selection,
+  SelectionItems,
+} from './features/partial-changes/selection/selection';
+export type {
+  HeadQualifier,
+  Unit,
+  UnitKind,
+} from './features/partial-changes/catalogue/unit';
+export type {
+  RequiredUnit,
+  UnitRef,
+} from './features/partial-changes/selection/unit-refs';
+export type { BlockerCode } from './features/partial-changes/plan/plan-blocker';
+export type {
+  Reason,
+  RequiredReasonCode,
+} from './features/partial-changes/plan/reason';
+export type {
+  Blocker,
+  Deferred,
+} from './features/partial-changes/planning/plan-refs';
+export type { Counts } from './features/partial-changes/planning/change-planner';
+export type { Estimate } from './features/partial-changes/limits/operation-estimator';
+export type { RefusedTable } from './features/partial-changes/head-schema/head-schema-check';
+
 // Draft Command Data Types
 export type { ApiCreateRevisionCommandData } from './features/draft/commands/impl/api-create-revision.command';
 export type { ApiCreateRevisionCommandReturnType } from './features/draft/commands/impl/api-create-revision.command';

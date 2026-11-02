@@ -1,6 +1,7 @@
 # EngineApiService — API Reference
 
-`EngineApiService` is a flat facade over all engine services. Import it from `@revisium/engine`:
+`EngineApiService` is a flat facade over all engine services; the partial commit and revert operations are grouped in
+the [`changes` namespace](#partial-changes). Import it from `@revisium/engine`:
 
 ```typescript
 import { EngineApiService } from '@revisium/engine';
@@ -388,8 +389,8 @@ Count of foreign key references for a row.
 
 ## Revisions
 
-Partial commit and revert of selected Draft changes are accepted but not
-implemented yet; see [ADR-001](adr/ADR-001-partial-commit-and-revert.md).
+To commit or revert only selected Draft changes, use
+[`changes.commit` and `changes.revert`](#partial-changes).
 
 ### createRevision
 
@@ -537,6 +538,167 @@ engine.rowChanges({
 ```
 
 Returns: `{ edges: [{ cursor, node: RowChange }], pageInfo, totalCount }`
+
+---
+
+## Partial Changes
+
+`engine.changes` groups four operations on the changes of a branch's Draft: `list` pages them as units, `preview`
+plans a commit or revert of a selection, and `commit` and `revert` apply it. The native `createRevision` and
+`revertChanges` keep their signatures and still apply the whole Draft. The unit model, the selection rules, required
+reasons and blockers are specified in [partial-changes-v1](specs/partial-changes-v1.spec.md#5-operations); the input
+and result types are exported from `@revisium/engine`.
+
+Every operation takes `branch: { projectId: string; branchName: string }` (`ChangesBranch`) and reads the Head and
+Draft of that branch. A unit is the smallest change an operation applies: a field, a row creation, deletion,
+replacement or rename, the row columns, a table structure, a views document or a shared schema. A `Selection` names
+units by public ids:
+
+```typescript
+type Selection = SelectionItems & { all?: boolean; exclude?: SelectionItems };
+type SelectionItems = {
+  tables?: Array<string | { tableId: string; side?: 'head' }>; // structure units
+  tableData?: string[]; // row and field units of a table
+  views?: string[];
+  sharedSchemas?: string[];
+  rows?: RowRef[]; // every unit of a row
+  renames?: RowRef[]; // the rowRename unit only
+  rowColumns?: RowRef[]; // the rowColumns unit only
+  fields?: Array<{ tableId: string; rowId: string; path: string }>; // path is a JSON Pointer
+};
+type RowRef = { tableId: string; rowId: string; side?: 'head' };
+```
+
+`side: 'head'` addresses a Head-side unit whose id a rename took over.
+
+### changes.list
+
+Pages the selectable units with exact selectors. Read-only.
+
+```typescript
+engine.changes.list({
+  branch: ChangesBranch;
+  tableId?: string;   // only units of this table: Draft id, else Head id
+  cursor?: string;    // nextCursor of the previous page
+  pageSize?: number;  // 1–5,000, default 500
+})
+```
+
+Returns: `{ headRevisionId, draftRevisionId, units: ListedUnit[], nextCursor: string | null, refusedTables }`
+
+- Each unit carries a `selector` that selects exactly that unit; the caller adds it to a selection or to `exclude`.
+- A page can hold fewer than `pageSize` units, or none. Only `nextCursor: null` ends the listing.
+- Each page reads its own snapshot and returns its Head and Draft ids, so concurrent edits can move units between
+  pages. What a commit or revert applies is bound by `expected`, not by the listing.
+- `refusedTables` lists every table whose units partial operations refuse: `headSchemaInconsistent` (the Head schema
+  does not match the schema replayed from the Head ledger) or `unledgeredTable` (the table has no intact ledger
+  lineage). Such tables are committed or reverted natively or with exactly `{ all: true }`.
+
+### changes.preview
+
+Plans a commit or revert of a selection and writes nothing.
+
+```typescript
+engine.changes.preview({
+  branch: ChangesBranch;
+  operation: 'commit' | 'revert';
+  selection: Selection;
+  includeRequired?: boolean;  // treat required additions as accepted; affects only status
+})
+```
+
+Returns: `PreviewChangesResult`
+
+```typescript
+{
+  status: 'ready' | 'required' | 'blocked' | 'empty';
+  headRevisionId: string;
+  draftRevisionId: string;
+  fingerprint: string;          // pass as expected; '' when a limit refused the plan
+  counts: { selected: number; required: number; remaining: number };
+  unreadTables: number;         // tables not read; their row units are not in counts.remaining
+  refusedTables: RefusedTable[];
+  required: RequiredUnit[];     // required additions, each with its reason
+  blockers: Blocker[];
+  deferred: Deferred[];         // commit only: rows committed without their table's structure
+  sample: UnitRef[];            // up to 20 applied units, for display
+  unmatched: SelectionItems & { exclude?: SelectionItems };
+  estimate: Estimate;
+}
+```
+
+### changes.commit
+
+Commits the selected units: the Draft revision becomes the new Head with only the selected changes, and a new Draft
+keeps the rest.
+
+```typescript
+engine.changes.commit({
+  branch: ChangesBranch;
+  selection: Selection;
+  includeRequired?: boolean;  // apply the required additions; requires expected
+  expected?: string;          // fingerprint of a commit preview of the same selection
+  comment?: string;           // stored on the new Head revision; default ''
+})
+```
+
+Returns: `CommitChangesResult`. With `status: 'applied'`:
+`{ previousHeadRevisionId, headRevisionId, draftRevisionId, applied: { selected, required }, remaining: { units, unreadTables }, renumbered }`.
+`headRevisionId` is the former Draft revision; `renumbered` lists the `{ from, to }` ids of the pending migrations
+that the commit renumbered.
+
+### changes.revert
+
+Reverts the selected units in the Draft. The input is that of `changes.commit` without `comment`; `expected` is the
+fingerprint of a revert preview.
+
+Returns: `RevertChangesResult`. With `status: 'applied'`:
+`{ headRevisionId, draftRevisionId, applied: { selected, required }, remaining: { units, unreadTables } }`, with the
+unchanged Head and the same Draft revision.
+
+### Statuses
+
+The operations decide the status in this order; preview skips the `stale` check and returns `ready` where commit and
+revert apply the plan.
+
+| Status | Condition | Commit and revert result fields |
+| --- | --- | --- |
+| `blocked` | A limit refused the plan (`tooLarge`), whatever `expected` is. | `blockers`, `required`, `unmatched` (when present) |
+| `empty` | No unit to apply and no blocker, including a repeat of an applied commit or revert. | `headRevisionId`, `draftRevisionId`, `unmatched` (when present) |
+| `stale` | `expected` is given and differs from the current fingerprint. | none |
+| `blocked` | A blocker, or a selector that matches no unit (`unmatchedSelector`). | `blockers`, `required`, `unmatched` (when present) |
+| `required` | Required additions exist and `includeRequired` is not set. | `required` |
+| `applied` (`ready` in preview) | Otherwise. | See `changes.commit` and `changes.revert`. |
+
+Only `applied` writes. The codes of required reasons (`RequiredReasonCode`) and blockers (`BlockerCode`) are listed
+in [SPEC §5.7](specs/partial-changes-v1.spec.md#57-required-reasons) and
+[§5.8](specs/partial-changes-v1.spec.md#58-blockers).
+
+### The `expected` rule for hosts
+
+A commit or revert with `expected` applies exactly the previewed plan: when the Head or Draft changed since the
+preview, it returns `stale` and writes nothing. Without `expected`, it plans again on the current state.
+
+The engine keeps `expected` optional for internal callers. A host that exposes `changes.commit` or `changes.revert`
+through a public API or MCP rejects a call without `expected` unless its selection is exactly `{ all: true }`. The
+host also enforces permissions and writes audit records, which the engine does not do
+([SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports)). A host that notifies endpoints after
+native writes notifies them after an applied commit for the former Draft revision and the new Draft, and after an
+applied revert for the Draft.
+
+### Errors
+
+| Condition | Error |
+| --- | --- |
+| `includeRequired: true` without `expected`; a malformed selection: an unknown field, a wrong type, an empty id, a `path` that is not a JSON Pointer, `side` other than `'head'`, `all` or `exclude` inside `exclude` | `BadRequestException` before any transaction |
+| `changes.list` with an invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table | `BadRequestException` |
+| Unknown project or branch | The native not-found error |
+| Commit or revert while an async migration is active on the branch | `MigrationLockedException` (`MIGRATION_LOCKED`); preview returns the `migrationInProgress` blocker instead |
+| The operation outlives `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | `OperationTimeoutException` (`OPERATION_TIMEOUT`) |
+| Every attempt of a commit or revert fails serialization (`PARTIAL_CHANGES_MAX_ATTEMPTS`) | The last serialization failure |
+
+A failed operation persists nothing, file references and ledger rows included, so a retry is safe. The limits and
+settings are listed in [ENV.md](../ENV.md#partial-changes).
 
 ---
 

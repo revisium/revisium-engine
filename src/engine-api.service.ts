@@ -10,6 +10,7 @@ import { TableApiService } from 'src/features/table/table-api.service';
 import { ViewsApiService } from 'src/features/views/views-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import { FileUsageApiService } from 'src/features/file-usage/file-usage-api.service';
+import { PartialChangesApiService } from 'src/features/partial-changes/partial-changes-api.service';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
 import {
   ApiRevertChangesCommand,
@@ -32,6 +33,7 @@ export class EngineApiService {
     private readonly cleanupService: CleanupService,
     private readonly migrationApi: MigrationApiService,
     private readonly fileUsageApi: FileUsageApiService,
+    private readonly partialChangesApi: PartialChangesApiService,
   ) {}
 
   // --- Tables ---
@@ -256,6 +258,23 @@ export class EngineApiService {
   rowChanges(...args: Parameters<RevisionChangesApiService['rowChanges']>) {
     return this.changesApi.rowChanges(...args);
   }
+
+  // --- Partial Changes ---
+
+  readonly changes = {
+    list: (...args: Parameters<PartialChangesApiService['listChanges']>) =>
+      this.partialChangesApi.listChanges(...args),
+
+    preview: (
+      ...args: Parameters<PartialChangesApiService['previewChanges']>
+    ) => this.partialChangesApi.previewChanges(...args),
+
+    commit: (...args: Parameters<PartialChangesApiService['commitChanges']>) =>
+      this.partialChangesApi.commitChanges(...args),
+
+    revert: (...args: Parameters<PartialChangesApiService['revertChanges']>) =>
+      this.partialChangesApi.revertChanges(...args),
+  };
 
   // --- Branches ---
 

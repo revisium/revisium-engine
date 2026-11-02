@@ -20,10 +20,10 @@ The stages run in the order 0–4; stages 1–3 may be developed in parallel wit
 | Stage | Work | Status | Design |
 | --- | --- | --- | --- |
 | 0 | Native prerequisites | In progress | [SPEC §12](specs/partial-changes-v1.spec.md#12-native-prerequisites-stage-0) |
-| 1 | Partial revert, `listChanges`, `previewChanges`, Head schema check | Not started | [SPEC §5.2](specs/partial-changes-v1.spec.md#52-listchanges), [§5.3](specs/partial-changes-v1.spec.md#53-previewchanges), [§5.5](specs/partial-changes-v1.spec.md#55-revertchanges), [§6.10](specs/partial-changes-v1.spec.md#610-checkheadschema), [§6.14](specs/partial-changes-v1.spec.md#614-writerevert) |
-| 2 | Partial commit of data units | Not started | [SPEC §5.4](specs/partial-changes-v1.spec.md#54-commitchanges), [§6.13](specs/partial-changes-v1.spec.md#613-writecommit) |
-| 3 | Partial commit of structure units, ledger renumbering, replica guarantee | Not started | [SPEC §6.8](specs/partial-changes-v1.spec.md#68-planledger), [§10](specs/partial-changes-v1.spec.md#10-migration-history-and-replicas) |
-| 4 | Public API, CLI and MCP | Not started | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports) |
+| 1 | Partial revert, `listChanges`, `previewChanges`, Head schema check | Done (Head schema check: #104; revert writer: #122; listing: #125; preview: #129; revert: #133; properties: #139) | [SPEC §5.2](specs/partial-changes-v1.spec.md#52-listchanges), [§5.3](specs/partial-changes-v1.spec.md#53-previewchanges), [§5.5](specs/partial-changes-v1.spec.md#55-revertchanges), [§6.10](specs/partial-changes-v1.spec.md#610-checkheadschema), [§6.14](specs/partial-changes-v1.spec.md#614-writerevert) |
+| 2 | Partial commit of data units | Done (commit writer: #130; commit: #137) | [SPEC §5.4](specs/partial-changes-v1.spec.md#54-commitchanges), [§6.13](specs/partial-changes-v1.spec.md#613-writecommit) |
+| 3 | Partial commit of structure units, ledger renumbering, replica guarantee | Done (ledger dependencies: #142; structure units and renumbering: #144) | [SPEC §6.8](specs/partial-changes-v1.spec.md#68-planledger), [§10](specs/partial-changes-v1.spec.md#10-migration-history-and-replicas) |
+| 4 | Engine facade `changes` namespace; public API, CLI and MCP | Engine facade: awaiting release gate. Public API, CLI and MCP: not started | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports) |
 
 ### Stage 0 items
 
@@ -51,7 +51,8 @@ Acceptance scenarios for every stage: [SPEC §13](specs/partial-changes-v1.spec.
 
 ### Release gate
 
-Status: not reached. No partial operation is released before the gate holds:
+Status: not reached. No partial operation is released, and the engine facade `changes` namespace is not merged,
+before the gate holds:
 [ADR-001, Delivery stages](adr/ADR-001-partial-commit-and-revert.md#delivery-stages),
 [SPEC §12](specs/partial-changes-v1.spec.md#12-native-prerequisites-stage-0) (release gate) and
 [SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration) (limits re-measured).

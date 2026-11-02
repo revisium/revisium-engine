@@ -10,6 +10,7 @@ import type {
 import type {
   RowPair,
   TablePair,
+  TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 export type OtherSideColumn = 'publishedAt' | 'meta' | 'schemaHash';
@@ -120,6 +121,15 @@ export class OutcomeRules {
 
     return this.sideTakenBy(structure);
   }
+
+  public editsDraftInPlace(
+    structureSide: RevisionSide,
+    draftIsMutable: boolean,
+  ): boolean {
+    return (
+      this.operation === 'revert' && structureSide === 'draft' && draftIsMutable
+    );
+  }
 }
 
 export class TableOutcomeRules {
@@ -178,6 +188,10 @@ export class TableOutcomeRules {
     }
 
     return 'absent';
+  }
+
+  public editsDraftInPlace({ draft }: TablePair): boolean {
+    return this.rules.editsDraftInPlace(this.structureSide, isMutable(draft));
   }
 
   private outcomeWithoutUnits(): TableOutcome {
@@ -264,4 +278,8 @@ export class TableOutcomeRules {
 
     return [structure, ...rows];
   }
+}
+
+function isMutable(version: TableVersion | undefined): boolean {
+  return version !== undefined && !version.readonly;
 }

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import {
-  type LinkChanges,
-  NO_LINK_CHANGES,
-} from 'src/features/partial-changes/assembly/link-changes';
+import type {
+  RevisionSide,
+  RowLinkChanges,
+} from 'src/features/draft-revision/commands/impl/target-write-plan';
+import { NO_LINK_CHANGES } from 'src/features/partial-changes/assembly/link-changes';
 import {
   type LedgerPlan,
   planLedger,
@@ -71,11 +71,12 @@ export type TargetRow =
       readonly merged: MergedRow;
     };
 
-export interface TablePlan extends LinkChanges {
+export interface TablePlan extends RowLinkChanges {
   readonly identity: string;
   readonly outcome: TableOutcome;
   readonly structureSide: RevisionSide;
   readonly versionId?: string;
+  readonly editInPlace: boolean;
   readonly relinkCandidate: boolean;
   readonly rows: readonly TargetRow[];
 }
@@ -200,6 +201,7 @@ class TargetAssembly {
       outcome: rules.outcomeOfOneSidedTable(pair),
       structureSide: rules.structureSide,
       versionId: pair[rules.structureSide]?.versionId,
+      editInPlace: false,
       ...NO_LINK_CHANGES,
       relinkCandidate: false,
       rows: [],
@@ -250,6 +252,7 @@ class ReadTableAssembly {
         outcome,
         structureSide: this.rules.structureSide,
         versionId: linkedVersionOf(pair, outcome, this.rules).versionId,
+        editInPlace: this.rules.editsDraftInPlace(pair),
         ...linkChangesOf(outcome, rows, this.rules),
         relinkCandidate: this.rules.isRelinkCandidate(),
         rows,
@@ -455,16 +458,16 @@ function linkChangesOf(
   outcome: TableOutcome,
   rows: readonly TargetRow[],
   rules: TableOutcomeRules,
-): LinkChanges {
+): RowLinkChanges {
   if (outcome !== 'mixed') {
     return NO_LINK_CHANGES;
   }
 
   return {
-    removedLinks: rows
+    removedRowVersionIds: rows
       .filter(({ kind }) => kind !== 'structureSide')
       .flatMap(({ pair }) => versionIdsOn(pair, rules.structureSide)),
-    addedLinks: rows
+    addedRowVersionIds: rows
       .filter(({ kind }) => kind === 'otherSide')
       .flatMap(({ pair }) => versionIdsOn(pair, rules.otherSide)),
     newRows: rows.flatMap(newRowsOf),

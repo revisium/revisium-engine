@@ -3,21 +3,20 @@ import type {
   CommitTargetWritePlan,
   RenumberedRows,
   RowLinkChanges,
-  TableWriteOutcome,
   TableWritePlan,
+  TargetTableVersion,
   TargetWritePlan,
 } from 'src/features/draft-revision/commands/impl';
 import type { RenumberedMigrationRow } from 'src/features/partial-changes/assembly/ledger-plan';
-import type { LinkChanges } from 'src/features/partial-changes/assembly/link-changes';
-import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
 import type {
   AssembledTarget,
   TablePlan,
 } from 'src/features/partial-changes/assembly/target-assembler';
-import type {
-  ChangesSnapshot,
-  TablePair,
+import {
+  type ChangesSnapshot,
+  type TablePair,
+  versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { hasFileFields } from 'src/features/partial-changes/structure/schema-fields';
 import { SystemTables } from 'src/features/share/system-tables.consts';
@@ -82,11 +81,28 @@ function userTableWritePlanOf(
     identity: plan.identity,
     headVersionId: pair.head?.versionId,
     draftVersionId: pair.draft?.versionId,
-    outcome: writeOutcomeOf(plan.outcome),
-    structureSide: plan.structureSide,
-    ...rowLinkChangesOf(plan),
+    target: userTableTargetOf(plan, pair),
     relinkCandidate: plan.relinkCandidate,
-    hasFileFields: structureHasFileFields(pair, plan),
+  };
+}
+
+function userTableTargetOf(
+  plan: TablePlan,
+  pair: TablePair,
+): TargetTableVersion {
+  if (plan.outcome !== 'mixed') {
+    return { kind: 'linked', versionId: plan.versionId };
+  }
+
+  const structure = versionOn(pair, plan.structureSide);
+
+  return {
+    kind: 'mixed',
+    tableId: structure.id,
+    sourceVersionId: structure.versionId,
+    editInPlace: plan.editInPlace,
+    hasFileFields: hasFileFields(structure.schema),
+    ...rowLinkChangesOf(plan),
   };
 }
 
@@ -95,11 +111,23 @@ function systemTableWritePlanOf(plan: SystemTablePlan): TableWritePlan {
     identity: plan.tableId,
     headVersionId: plan.versionIds.head,
     draftVersionId: plan.versionIds.draft,
-    outcome: writeOutcomeOf(plan.outcome),
-    structureSide: plan.linkSide,
-    ...rowLinkChangesOf(plan),
+    target: systemTableTargetOf(plan),
     relinkCandidate: plan.relinkCandidate,
+  };
+}
+
+function systemTableTargetOf(plan: SystemTablePlan): TargetTableVersion {
+  if (plan.outcome !== 'mixed') {
+    return { kind: 'linked', versionId: plan.versionId };
+  }
+
+  return {
+    kind: 'mixed',
+    tableId: plan.tableId,
+    sourceVersionId: linkSideVersionIdOf(plan),
+    editInPlace: plan.editInPlace,
     hasFileFields: false,
+    ...rowLinkChangesOf(plan),
   };
 }
 
@@ -125,37 +153,26 @@ function renumberedRowsOf(
   };
 }
 
-function writeOutcomeOf(outcome: TableOutcome): TableWriteOutcome {
-  if (outcome === 'present') {
-    return 'base';
-  }
-
-  return outcome;
-}
-
 function rowLinkChangesOf({
-  removedLinks,
-  addedLinks,
+  removedRowVersionIds,
+  addedRowVersionIds,
   newRows,
-}: LinkChanges): RowLinkChanges {
-  return {
-    removedRowVersionIds: removedLinks,
-    addedRowVersionIds: addedLinks,
-    newRows,
-  };
+}: RowLinkChanges): RowLinkChanges {
+  return { removedRowVersionIds, addedRowVersionIds, newRows };
 }
 
-function structureHasFileFields(
-  pair: TablePair,
-  { structureSide }: TablePlan,
-): boolean {
-  const structure = pair[structureSide];
+function linkSideVersionIdOf({
+  tableId,
+  versionIds,
+  linkSide,
+}: SystemTablePlan): string {
+  const versionId = versionIds[linkSide];
 
-  if (!structure) {
-    return false;
+  if (versionId === undefined) {
+    throw new Error(`System table ${tableId} has no ${linkSide} version`);
   }
 
-  return hasFileFields(structure.schema);
+  return versionId;
 }
 
 function pairOf(

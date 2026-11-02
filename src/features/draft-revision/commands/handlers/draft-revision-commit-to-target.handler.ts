@@ -4,7 +4,7 @@ import {
   CommitTargetWritePlan,
   DraftRevisionCommitToTargetCommand,
   DraftRevisionCommitToTargetCommandReturnType,
-  oppositeOf,
+  MixedTableVersion,
   RenumberedRows,
   versionIdOn,
 } from 'src/features/draft-revision/commands/impl';
@@ -86,27 +86,20 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
   private async writeHeadTable(
     plan: CommitTableWritePlan,
   ): Promise<WrittenVersion> {
-    switch (plan.outcome) {
-      case 'absent':
-        return linkedVersion(undefined);
-      case 'unchanged':
-      case 'base':
-        return this.linkIntoHead(plan, versionIdOn(plan, plan.structureSide));
-      case 'other':
-        return this.linkIntoHead(
-          plan,
-          versionIdOn(plan, oppositeOf(plan.structureSide)),
-        );
-      case 'mixed':
-        return this.writeMixedHeadTable(plan);
+    const { target } = plan;
+
+    if (target.kind === 'mixed') {
+      return this.writeMixedHeadTable(plan, target);
     }
+
+    return this.linkIntoHead(plan, target.versionId);
   }
 
   private async linkIntoHead(
     plan: CommitTableWritePlan,
-    versionId: string,
+    versionId: string | undefined,
   ): Promise<WrittenVersion> {
-    if (versionId !== plan.headVersionId) {
+    if (versionId !== undefined && versionId !== plan.headVersionId) {
       await this.versionWriter.lockLinkedIntoHead(
         versionId,
         plan.headVersionId,
@@ -118,10 +111,11 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
 
   private async writeMixedHeadTable(
     plan: CommitTableWritePlan,
+    target: MixedTableVersion,
   ): Promise<WrittenVersion> {
     const written = await this.versionWriter.createReadonlyTableVersion(
-      versionIdOn(plan, plan.structureSide),
-      plan,
+      target.sourceVersionId,
+      target,
     );
 
     await this.versionWriter.lockLinkedIntoHead(

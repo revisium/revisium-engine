@@ -56,13 +56,18 @@ function draftRowVersionsPlanOf({
       {
         identity: tableId,
         draftVersionId: draftTableVersionId,
-        outcome: 'mixed',
-        structureSide: 'draft',
+        target: {
+          kind: 'mixed',
+          tableId,
+          sourceVersionId: draftTableVersionId,
+          // The replaced rows are Draft-only, so the Draft table version that holds them is its own mutable copy.
+          editInPlace: true,
+          hasFileFields: false,
+          removedRowVersionIds: replacedRowVersionIds,
+          addedRowVersionIds: [],
+          newRows,
+        },
         relinkCandidate: false,
-        hasFileFields: false,
-        removedRowVersionIds: replacedRowVersionIds,
-        addedRowVersionIds: [],
-        newRows,
       },
     ],
   };

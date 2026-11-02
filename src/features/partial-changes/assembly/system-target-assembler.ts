@@ -4,11 +4,9 @@ import type { JsonValue, Row } from 'src/engine-prisma-types';
 import {
   oppositeOf,
   type RevisionSide,
+  type RowLinkChanges,
 } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import {
-  type LinkChanges,
-  NO_LINK_CHANGES,
-} from 'src/features/partial-changes/assembly/link-changes';
+import { NO_LINK_CHANGES } from 'src/features/partial-changes/assembly/link-changes';
 import type {
   OutcomeRules,
   TableOutcome,
@@ -32,12 +30,13 @@ import type { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import { HashService } from 'src/infrastructure/database/hash.service';
 
-export interface SystemTablePlan extends LinkChanges {
+export interface SystemTablePlan extends RowLinkChanges {
   readonly tableId: SystemTables;
   readonly versionIds: SystemTableVersionIds;
   readonly outcome: TableOutcome;
   readonly linkSide: RevisionSide;
   readonly versionId?: string;
+  readonly editInPlace: boolean;
   readonly relinkCandidate: boolean;
 }
 
@@ -169,7 +168,7 @@ class SystemTargetAssembly {
     target: SystemTableTarget,
     desired: DesiredRows,
   ): SystemTablePlan {
-    const { tableId, rows, linkSide, ownerKinds } = target;
+    const { tableId, rows, linkSide, editInPlace, ownerKinds } = target;
     const outcome = systemTableOutcomeOf(
       target,
       desired.versions,
@@ -182,6 +181,7 @@ class SystemTargetAssembly {
       outcome,
       linkSide,
       versionId: linkedVersionIdOf(rows, outcome, linkSide),
+      editInPlace,
       ...systemLinkChangesOf(outcome, rows[linkSide], desired),
       relinkCandidate: this.keepsNoUnitsOf(ownerKinds),
     };
@@ -198,7 +198,7 @@ function systemLinkChangesOf(
   outcome: TableOutcome,
   linked: readonly Row[],
   desired: DesiredRows,
-): LinkChanges {
+): RowLinkChanges {
   if (outcome !== 'mixed') {
     return NO_LINK_CHANGES;
   }
@@ -207,8 +207,8 @@ function systemLinkChangesOf(
   const desiredIds = versionIdsOf(desired.versions);
 
   return {
-    removedLinks: [...linkedIds].filter((id) => !desiredIds.has(id)),
-    addedLinks: [...desiredIds].filter((id) => !linkedIds.has(id)),
+    removedRowVersionIds: [...linkedIds].filter((id) => !desiredIds.has(id)),
+    addedRowVersionIds: [...desiredIds].filter((id) => !linkedIds.has(id)),
     newRows: desired.newRows,
   };
 }

@@ -207,8 +207,8 @@ class TablePlanDescription {
         .sort((left, right) =>
           compareCodePoints(pairKey(left), pairKey(right)),
         ),
-      removedLinks: this.versionNamesOf(plan.removedLinks),
-      addedLinks: this.versionNamesOf(plan.addedLinks),
+      removedLinks: this.versionNamesOf(plan.removedRowVersionIds),
+      addedLinks: this.versionNamesOf(plan.addedRowVersionIds),
       newRows: [...plan.newRows].sort((left, right) =>
         compareCodePoints(left.id, right.id),
       ),
@@ -290,8 +290,8 @@ class SystemTablePlanDescription {
       rows: this.targetRows()
         .map((row) => describeRowOf(plan.tableId, row))
         .sort(compareCodePoints),
-      removedLinks: this.namesOn(plan.linkSide, plan.removedLinks),
-      addedLinks: this.namesOn(this.otherSide, plan.addedLinks),
+      removedLinks: this.namesOn(plan.linkSide, plan.removedRowVersionIds),
+      addedLinks: this.namesOn(this.otherSide, plan.addedRowVersionIds),
       newRows: plan.newRows,
       relinkCandidate: plan.relinkCandidate,
     };
@@ -328,10 +328,10 @@ class SystemTablePlanDescription {
       default:
         return [
           ...rows[plan.linkSide].filter(
-            ({ versionId }) => !plan.removedLinks.includes(versionId),
+            ({ versionId }) => !plan.removedRowVersionIds.includes(versionId),
           ),
           ...rows[this.otherSide].filter(({ versionId }) =>
-            plan.addedLinks.includes(versionId),
+            plan.addedRowVersionIds.includes(versionId),
           ),
           ...plan.newRows,
         ];

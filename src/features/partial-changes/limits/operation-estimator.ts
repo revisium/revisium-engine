@@ -19,10 +19,7 @@ import {
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { estimateTooLarge } from 'src/features/partial-changes/limits/too-large-blockers';
-import type {
-  AppliedUnits,
-  ChangeOperation,
-} from 'src/features/partial-changes/plan/change-operation';
+import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
 import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import {
@@ -60,6 +57,7 @@ export type GuardedEstimate =
 interface PlannedTable {
   readonly version: TableVersion;
   readonly structureSide: RevisionSide;
+  readonly editInPlace: boolean;
   readonly rows: readonly RowWithOutcome[];
   readonly outcome: TableOutcome;
 }
@@ -120,7 +118,7 @@ export class OperationEstimation {
     const mixedTables: MixedTableEstimate[] = [];
 
     for (const table of mixed) {
-      mixedTables.push(await this.mixedTableEstimate(table, choice.operation));
+      mixedTables.push(await this.mixedTableEstimate(table));
     }
 
     return {
@@ -136,22 +134,23 @@ export class OperationEstimation {
 
   private async mixedTableEstimate(
     table: PlannedTable,
-    operation: ChangeOperation,
   ): Promise<MixedTableEstimate> {
     return {
       tableId: table.version.id,
-      linksCopied: await this.linksCopiedInto(table, operation),
+      linksCopied: await this.linksCopiedInto(table),
       linksAdded: table.rows.filter(({ kind }) =>
         ROWS_LINKED_FROM_OTHER_SIDE.has(kind),
       ).length,
     };
   }
 
-  private async linksCopiedInto(
-    { version, structureSide, rows }: PlannedTable,
-    operation: ChangeOperation,
-  ): Promise<number> {
-    if (editsDraftInPlace(operation, structureSide)) {
+  private async linksCopiedInto({
+    version,
+    structureSide,
+    editInPlace,
+    rows,
+  }: PlannedTable): Promise<number> {
+    if (editInPlace) {
       return 0;
     }
 
@@ -167,7 +166,7 @@ export class OperationEstimation {
   private mixedSystemTables(rules: OutcomeRules): MixedTableEstimate[] {
     return systemTableTargetsOf(this.source, rules)
       .filter(mayBeMixed)
-      .map((target) => systemTableEstimateOf(target, rules.operation));
+      .map(systemTableEstimateOf);
   }
 
   private async rowLinksOf(tableVersionId: string): Promise<number> {
@@ -194,6 +193,7 @@ function plannedTableOf(table: ReadTable, rules: OutcomeRules): PlannedTable {
   return {
     version: versionOn(table.pair, tableRules.structureSide),
     structureSide: tableRules.structureSide,
+    editInPlace: tableRules.editsDraftInPlace(table.pair),
     rows,
     outcome: tableRules.tableOutcomeOf(rows),
   };
@@ -225,27 +225,27 @@ function mayBeMixed(target: SystemTableTarget): boolean {
   return outcome === 'mixed';
 }
 
-function systemTableEstimateOf(
-  target: SystemTableTarget,
-  operation: ChangeOperation,
-): MixedTableEstimate {
+function systemTableEstimateOf(target: SystemTableTarget): MixedTableEstimate {
   const { tableId, rows, linkSide, versions, rewrites } = target;
   const linkedIds = new Set(rows[linkSide].map(({ versionId }) => versionId));
 
   return {
     tableId,
-    linksCopied: systemLinksCopied(target, operation),
+    linksCopied: systemLinksCopied(target),
     linksAdded:
       versions.filter(({ versionId }) => !linkedIds.has(versionId)).length +
       rewrites.length,
   };
 }
 
-function systemLinksCopied(
-  { rows, linkSide, versions, rewrites }: SystemTableTarget,
-  operation: ChangeOperation,
-): number {
-  if (editsDraftInPlace(operation, linkSide)) {
+function systemLinksCopied({
+  rows,
+  linkSide,
+  editInPlace,
+  versions,
+  rewrites,
+}: SystemTableTarget): number {
+  if (editInPlace) {
     return 0;
   }
 
@@ -261,11 +261,4 @@ function systemLinksCopied(
 
 function needsPerRowWork({ version }: PlannedTable): boolean {
   return hasFormulaOrFileFields(version.schema);
-}
-
-function editsDraftInPlace(
-  operation: ChangeOperation,
-  structureSide: RevisionSide,
-): boolean {
-  return operation === 'revert' && structureSide === 'draft';
 }

@@ -4,29 +4,16 @@ import type {
   JsonPatch,
   JsonSchema,
   JsonValue,
-  Migration,
 } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
 import { ledgerIdsOf } from 'src/__tests__/fixtures/stored-ledger';
 import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
-import { sql } from 'src/engine-prisma-types';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
 import type {
   PlannedTableRepair,
   SchemaLedgerRepairPlan,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
-import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
-import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-import { createMigrationRecord } from './migration-database';
-
-interface RevisionContents {
-  readonly revision: unknown;
-  readonly tableVersions: string;
-  readonly rowLinks: number;
-  readonly rows: string;
-  readonly migrationRecords: number;
-}
 
 export function planRepair(
   kit: BranchScenarioTestKit,
@@ -51,14 +38,6 @@ export function repairOf(
   return repair;
 }
 
-export function expectStrictlyAscending(
-  ids: readonly (string | undefined)[],
-): void {
-  const definedIds = ids.filter((id): id is string => id !== undefined);
-
-  expect(ids).toEqual([...new Set(definedIds)].sort(compareCodePoints));
-}
-
 export async function lastPublishedMigrationId(
   draft: BranchScenario,
 ): Promise<string | undefined> {
@@ -73,59 +52,6 @@ export function initAt(
   schema: JsonSchema,
 ): InitMigration {
   return { changeType: 'init', id, tableId, hash: objectHash(schema), schema };
-}
-
-export async function importMigrations(
-  kit: BranchScenarioTestKit,
-  draft: BranchScenario,
-  migrations: Migration[],
-): Promise<void> {
-  const results = await kit.draftApi.applyMigrations({
-    revisionId: await draft.revisionId('draft'),
-    migrations,
-  });
-
-  expect(results.map(({ status }) => status)).toEqual(
-    migrations.map(() => 'applied'),
-  );
-}
-
-export async function givenActiveMigration(
-  kit: BranchScenarioTestKit,
-  draft: BranchScenario,
-  tableId: string,
-): Promise<void> {
-  await createMigrationRecord(
-    kit.prisma,
-    await draft.revisionId('draft'),
-    MigrationStatus.PENDING,
-    { tableId },
-  );
-}
-
-export function branchContentsOf(
-  kit: BranchScenarioTestKit,
-  draft: BranchScenario,
-): Promise<RevisionContents[]> {
-  return kit.prisma.$queryRaw<RevisionContents[]>(sql`
-    SELECT to_jsonb(rev) AS "revision",
-           (SELECT md5(coalesce(string_agg(to_jsonb(t)::text, ',' ORDER BY t."versionId"), ''))
-              FROM "_RevisionToTable" rt JOIN "Table" t ON t."versionId" = rt."B"
-             WHERE rt."A" = rev."id") AS "tableVersions",
-           (SELECT count(*) FROM "_RevisionToTable" rt
-              JOIN "_RowToTable" rr ON rr."B" = rt."B"
-             WHERE rt."A" = rev."id")::int AS "rowLinks",
-           (SELECT md5(coalesce(string_agg(to_jsonb(r)::text, ',' ORDER BY rr."B", r."versionId"), ''))
-              FROM "_RevisionToTable" rt
-              JOIN "_RowToTable" rr ON rr."B" = rt."B"
-              JOIN "Row" r ON r."versionId" = rr."A"
-             WHERE rt."A" = rev."id") AS "rows",
-           (SELECT count(*) FROM "TableMigration" tm
-             WHERE tm."revisionId" = rev."id")::int AS "migrationRecords"
-    FROM "Revision" rev
-    WHERE rev."branchId" = ${draft.branchId}
-    ORDER BY rev."id"
-  `);
 }
 
 export function migratedRowOf(

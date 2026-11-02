@@ -4,7 +4,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
-import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {

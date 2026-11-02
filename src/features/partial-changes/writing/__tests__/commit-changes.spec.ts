@@ -7,9 +7,10 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
 import {
+  branchContentOf,
   branchContentsOf,
-  givenActiveMigration,
-} from 'src/features/migration/__tests__/support/ledger-repair-planning';
+} from 'src/__tests__/fixtures/branch-content';
+import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
@@ -21,13 +22,9 @@ import type {
 } from 'src/features/partial-changes/selection/selection';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
 import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
-import {
-  addField,
-  removeField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
-import { branchContentOf } from 'src/__tests__/fixtures/branch-content';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
 import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';

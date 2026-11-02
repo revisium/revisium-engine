@@ -13,10 +13,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
-import {
-  addField,
-  replaceField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, replaceField } from 'src/__tests__/fixtures/ledger-steps';
 import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import type {

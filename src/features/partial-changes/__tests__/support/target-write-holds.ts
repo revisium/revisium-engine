@@ -1,4 +1,4 @@
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import { createBarrier, type Barrier } from 'src/__tests__/utils/barrier';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 
@@ -14,7 +14,7 @@ export class TargetWriteHolds {
   ) {}
 
   public static ofReverts(
-    kit: PartialChangesTestKit,
+    kit: BranchScenarioTestKit,
     heldWrites: number,
   ): TargetWriteHolds {
     const holds = new TargetWriteHolds('partial revert', heldWrites);
@@ -31,7 +31,7 @@ export class TargetWriteHolds {
   }
 
   public static ofCommits(
-    kit: PartialChangesTestKit,
+    kit: BranchScenarioTestKit,
     heldWrites: number,
   ): TargetWriteHolds {
     const holds = new TargetWriteHolds('partial commit', heldWrites);
@@ -78,7 +78,7 @@ export class TargetWriteHolds {
 }
 
 function targetApiOf(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
 ): DraftRevisionTargetApiService {
   return kit.module.get(DraftRevisionTargetApiService);
 }

@@ -10,12 +10,12 @@ import {
   type SeededRandom,
 } from 'src/features/share/ledger-replay/__tests__/support/seeded-random';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { ChangesScenario } from './support/changes-scenario';
 import {
-  ledgerOf,
-  replayedSchemasOf,
-  schemasOf,
-} from './support/ledger-replaying';
+  storedLedgerOf,
+  storedSchemasOf,
+} from 'src/__tests__/fixtures/stored-ledger';
+import type { ChangesScenario } from './support/changes-scenario';
+import { replayedSchemasOf } from './support/ledger-replaying';
 import {
   givenRandomDraft,
   RANDOM_DRAFT_SEED_TIMEOUT_MS,
@@ -61,7 +61,7 @@ describe('committing listed units one by one over random Drafts (AS-65b)', () =>
       expect(await publishedContentOf(draft, 'head')).toEqual(original);
       expect(await draft.hasChanges()).toBe(false);
       expect(await replayedSchemasOf(draft, 'head')).toEqual(
-        await schemasOf(draft, 'head'),
+        await storedSchemasOf(draft, 'head'),
       );
     },
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
@@ -125,7 +125,7 @@ describe('committing listed units one by one over random Drafts (AS-65b)', () =>
           ([tableId]) => tableId !== SystemTables.Migration,
         ),
       ),
-      migrations: (await ledgerOf(draft, side))
+      migrations: (await storedLedgerOf(draft, side))
         .map(withoutId)
         .sort((left, right) => left.localeCompare(right)),
     };

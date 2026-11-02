@@ -14,11 +14,7 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { attributeLedger } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
-import {
-  refs,
-  replayer,
-  validator,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { refs, replayer, validator } from 'src/__tests__/fixtures/ledger-steps';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 import { analyzeStructure } from '../../structure/__tests__/support/table-structure-scenario';

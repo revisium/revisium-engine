@@ -3,7 +3,7 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import { branchContentsOf } from 'src/features/migration/__tests__/support/ledger-repair-planning';
+import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import { ChangePlanner } from 'src/features/partial-changes/planning/change-planner';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';

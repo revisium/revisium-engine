@@ -1,10 +1,7 @@
 import { num, obj, str } from '@revisium/schema-toolkit/mocks';
 import type { JsonPatch } from '@revisium/schema-toolkit/types';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
-import {
-  addField,
-  removeField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import {
   analyzeStructure,
   createdWith,

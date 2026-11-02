@@ -9,10 +9,7 @@ import type {
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import {
-  addField,
-  replaceField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, replaceField } from 'src/__tests__/fixtures/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
 import type { TableFixture } from 'src/__tests__/fixtures/branch-scenario';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';

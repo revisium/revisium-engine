@@ -6,7 +6,7 @@ import {
   moveField,
   removeField,
   replaceField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+} from 'src/__tests__/fixtures/ledger-steps';
 import {
   analyzeStructure,
   changedPointersOf,

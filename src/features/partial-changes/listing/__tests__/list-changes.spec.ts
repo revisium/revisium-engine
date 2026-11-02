@@ -10,7 +10,7 @@ import {
 } from 'src/features/partial-changes/catalogue/unit';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
-import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
 import {
   addressedUnitOfListed,

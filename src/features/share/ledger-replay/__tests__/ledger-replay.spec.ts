@@ -31,7 +31,7 @@ import {
   unattributedOf,
   unreplayableOf,
   update,
-} from './support/ledger-steps';
+} from 'src/__tests__/fixtures/ledger-steps';
 
 const categorySchema = obj({ title: str() });
 const tagSchema = obj({ label: str() });

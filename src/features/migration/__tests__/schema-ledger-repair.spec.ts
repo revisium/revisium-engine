@@ -8,6 +8,7 @@ import { queueWriteBehindBranchFence } from 'src/features/draft/commands/handler
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import {
+  expectStrictlyAscending,
   pendingMigrationIds,
   storedLedgerOf,
 } from 'src/__tests__/fixtures/stored-ledger';
@@ -16,13 +17,13 @@ import {
   expectCopiedInsteadOfEdited,
   givenReadonlyDraftVersion,
 } from 'src/__tests__/fixtures/readonly-draft-versions';
-import {
-  addField,
-  moveField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, moveField } from 'src/__tests__/fixtures/ledger-steps';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
+import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
+import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
+import { expectHeadSyncedReplicaToReproduceTheHead } from 'src/__tests__/fixtures/ledger-replicas';
 import {
   addColor,
   addTone,
@@ -43,15 +44,9 @@ import {
   tagSchema,
   TONE,
 } from './support/ledger-damage';
-import {
-  branchContentsOf,
-  expectStrictlyAscending,
-  givenActiveMigration,
-  planRepair,
-} from './support/ledger-repair-planning';
+import { planRepair } from './support/ledger-repair-planning';
 import {
   draftReplayFailureOf,
-  expectHeadSyncedReplicaToReproduceTheHead,
   expectLedgerRowsPublishedAtTheirIds,
   expectNoHeadOrDraftDamage,
   observeEndpointNotifications,

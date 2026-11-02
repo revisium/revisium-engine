@@ -3,7 +3,7 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import { branchContentsOf } from 'src/features/migration/__tests__/support/ledger-repair-planning';
+import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
@@ -14,7 +14,7 @@ import type {
 } from 'src/features/partial-changes/selection/selection';
 import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
-import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
 import {
   failingFirstSnapshotRead,

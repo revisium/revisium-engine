@@ -22,7 +22,7 @@ import {
   rename,
   replaceField,
   update,
-} from './support/ledger-steps';
+} from 'src/__tests__/fixtures/ledger-steps';
 import {
   givenNativeDraft,
   replayWithNativeRules,

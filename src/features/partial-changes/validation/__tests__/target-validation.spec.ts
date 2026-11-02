@@ -8,10 +8,7 @@ import type {
   FieldRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import {
-  addField,
-  removeField,
-} from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import {
   completeAsyncMigrationInPlace,
   recordLedgerRepair,

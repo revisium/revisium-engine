@@ -9,7 +9,7 @@ import type {
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import { replaceField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { replaceField } from 'src/__tests__/fixtures/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
 

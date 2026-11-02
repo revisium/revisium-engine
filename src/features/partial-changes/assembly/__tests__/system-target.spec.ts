@@ -7,7 +7,7 @@ import type { RevisionSide } from 'src/features/draft-revision/commands/impl/tar
 import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
-import { removeField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';

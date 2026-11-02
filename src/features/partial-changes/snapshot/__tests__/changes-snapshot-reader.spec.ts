@@ -10,7 +10,7 @@ import type {
   RevisionRows,
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 

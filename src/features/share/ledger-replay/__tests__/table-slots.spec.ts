@@ -3,7 +3,13 @@ import {
   isLedgered,
   traceTableSlots,
 } from 'src/features/share/ledger-replay/table-slots';
-import { addField, init, remove, rename, update } from './support/ledger-steps';
+import {
+  addField,
+  init,
+  remove,
+  rename,
+  update,
+} from 'src/__tests__/fixtures/ledger-steps';
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({ code: str() });

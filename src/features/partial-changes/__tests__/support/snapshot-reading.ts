@@ -1,6 +1,5 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
-import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type {
   ChangedRows,
   ChangesBranch,
@@ -9,6 +8,7 @@ import type {
   RowPair,
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 
 export interface RowPairIds {
   readonly head?: string;

@@ -5,11 +5,11 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { TARGET_CHECKS } from 'src/features/partial-changes/closure/target-checks';
 import { OperationEstimation } from 'src/features/partial-changes/limits/operation-estimator';
+import type { Reason } from 'src/features/partial-changes/plan/reason';
 import type {
   FieldRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
 import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { ScriptedCheck } from '../../__tests__/support/scripted-checks';

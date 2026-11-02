@@ -4,7 +4,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { branchContentsOf } from 'src/features/migration/__tests__/support/ledger-repair-planning';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type {

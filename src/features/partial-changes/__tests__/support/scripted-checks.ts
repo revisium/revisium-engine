@@ -1,5 +1,4 @@
 import { deepEqual } from '@revisium/schema-toolkit/lib';
-import type { AppliedUnits } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type {
@@ -8,8 +7,9 @@ import type {
   TargetChecking,
 } from 'src/features/partial-changes/closure/check-context';
 import type { Finding } from 'src/features/partial-changes/closure/findings';
-import type { Reason } from 'src/features/partial-changes/selection/selection-resolution';
 import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
+import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
+import type { Reason } from 'src/features/partial-changes/plan/reason';
 
 export type CheckScript = (pass: ScriptedPass) => Finding[];
 

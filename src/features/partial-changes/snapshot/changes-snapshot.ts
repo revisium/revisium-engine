@@ -1,5 +1,6 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 
@@ -21,6 +22,10 @@ export interface TablePair {
   readonly identity: string;
   readonly head?: TableVersion;
   readonly draft?: TableVersion;
+}
+
+export function publicTableIdOf({ identity, head, draft }: TablePair): string {
+  return versionOf(identity, draft ?? head).id;
 }
 
 export interface RevisionRows {
@@ -84,6 +89,37 @@ export function unitRowIdOf({ identity, head, draft }: RowPair): string {
   return row.id;
 }
 
+interface Version {
+  readonly id: string;
+}
+
+interface VersionPair<T extends Version> {
+  readonly identity: string;
+  readonly head?: T;
+  readonly draft?: T;
+}
+
+export function versionOn<T extends Version>(
+  pair: VersionPair<T>,
+  side: RevisionSide,
+): T {
+  const version = pair[side];
+
+  if (!version) {
+    throw new Error(`${publicIdOrIdentityOf(pair)} has no ${side} version`);
+  }
+
+  return version;
+}
+
+export function publicIdOrIdentityOf({
+  identity,
+  head,
+  draft,
+}: VersionPair<Version>): string {
+  return draft?.id ?? head?.id ?? identity;
+}
+
 export interface RowBound {
   readonly rowId: string;
   readonly inclusive: boolean;
@@ -92,4 +128,15 @@ export interface RowBound {
 export interface ChangedRowsKeyset {
   readonly from?: RowBound;
   readonly rowLimit: number;
+}
+
+function versionOf(
+  identity: string,
+  version: TableVersion | undefined,
+): TableVersion {
+  if (!version) {
+    throw new Error(`Table ${identity} is in neither revision`);
+  }
+
+  return version;
 }

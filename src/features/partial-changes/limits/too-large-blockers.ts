@@ -1,6 +1,6 @@
 import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
+import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 
 export function changedRowsTooLarge(
   changedRowCount: number,

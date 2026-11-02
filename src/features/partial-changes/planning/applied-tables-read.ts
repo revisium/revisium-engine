@@ -1,6 +1,8 @@
-import { publicIdOrIdentityOf } from 'src/features/partial-changes/assembly/read-tables';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
-import { hasDifferentVersions } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import {
+  hasDifferentVersions,
+  publicIdOrIdentityOf,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 // A unit of a changed table that the plan did not read could be written without its rows; the read scope (SPEC §6.2)
 // must make this impossible, so a plan that breaks it is an internal error and is never decided or written.

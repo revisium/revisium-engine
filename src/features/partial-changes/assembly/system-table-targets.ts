@@ -8,13 +8,9 @@ import type {
   TableOutcome,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
-import {
-  CatalogueTables,
-  distinctRows,
-} from 'src/features/partial-changes/catalogue/catalogue-tables';
+import { distinctRows } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import type {
   SystemTableRows,
   TablePair,
@@ -88,16 +84,10 @@ export function systemTableOutcomeOf(
 }
 
 class SystemTableTargets {
-  private readonly tables: CatalogueTables;
-  private readonly lookup: CatalogueLookup;
-
   constructor(
     private readonly source: AssemblySource,
     private readonly rules: OutcomeRules,
-  ) {
-    this.tables = new CatalogueTables(source.snapshot, source.tables);
-    this.lookup = new CatalogueLookup(source.catalogue);
-  }
+  ) {}
 
   public targets(): SystemTableTarget[] {
     const { schemas, views, sharedSchemas } = this.source.snapshot.systemRows;
@@ -164,11 +154,11 @@ class SystemTableTargets {
 
   private tableViewsOf(pair: TablePair): TableViews[] {
     const tableSide = this.sideTakenFor(
-      this.lookup.tableUnitOf('structure', pair)?.key,
+      this.source.catalogue.lookup.tableUnitOf('structure', pair)?.key,
     );
     const viewsSide = this.viewsSideOf(pair, tableSide);
     const table = pair[tableSide];
-    const source = this.tables.viewsRowsOf(pair)[viewsSide];
+    const source = this.source.catalogue.tables.viewsRowsOf(pair)[viewsSide];
 
     if (!table || !source) {
       return [];
@@ -178,7 +168,7 @@ class SystemTableTargets {
   }
 
   private viewsSideOf(pair: TablePair, tableSide: RevisionSide): RevisionSide {
-    const viewsUnit = this.lookup.tableUnitOf('views', pair);
+    const viewsUnit = this.source.catalogue.lookup.tableUnitOf('views', pair);
 
     if (!viewsUnit) {
       return tableSide;

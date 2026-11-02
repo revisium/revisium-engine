@@ -1,6 +1,6 @@
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Counts } from 'src/features/partial-changes/planning/change-planner';
 import type { PreviewStatus } from 'src/features/partial-changes/planning/plan-decision';
 import type {

@@ -1,19 +1,19 @@
+import type {
+  AddressedRow,
+  CatalogueLookup,
+} from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
+import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type {
+  Reason,
+  RequiredReasonCode,
+} from 'src/features/partial-changes/plan/reason';
 import {
   isCreatedOrRemoved,
   requireStructureOfCreatedOrRemoved,
 } from 'src/features/partial-changes/selection/created-or-removed-tables';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
-import type {
-  PlanBlocker,
-  Reason,
-  RequiredReasonCode,
-} from 'src/features/partial-changes/selection/selection-resolution';
-import type {
-  AddressedRow,
-  SelectionTargets,
-} from 'src/features/partial-changes/selection/selection-targets';
+import type { SelectionTargets } from 'src/features/partial-changes/selection/selection-targets';
 import {
   blockedBy,
   combined,

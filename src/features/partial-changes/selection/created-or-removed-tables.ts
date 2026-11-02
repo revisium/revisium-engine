@@ -1,4 +1,4 @@
-import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
+import type { CatalogueLookup } from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import type { SelectionTargets } from 'src/features/partial-changes/selection/selection-targets';
 import {
   refusing,

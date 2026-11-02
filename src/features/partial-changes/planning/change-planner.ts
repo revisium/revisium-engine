@@ -1,12 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type {
   AssemblySource,
   DeferredValues,
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { ledgerInconsistentBlockerOf } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
 import {
   type ClosureSource,
   DependencyClosure,
@@ -14,6 +11,12 @@ import {
 } from 'src/features/partial-changes/closure/dependency-closure';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import {
+  distinctBlockers,
+  ledgerInconsistentBlockerOf,
+  type PlanBlocker,
+} from 'src/features/partial-changes/plan/plan-blocker';
 import { assertEveryAppliedTableRead } from 'src/features/partial-changes/planning/applied-tables-read';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
 import {
@@ -27,20 +30,18 @@ import {
   ScopedCatalogueReader,
 } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
 import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
-import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
 import {
   isWholeDraftSelection,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
-import type {
-  PlanBlocker,
-  UnmatchedSelection,
-} from 'src/features/partial-changes/selection/selection-resolution';
-import { distinctBlockers } from 'src/features/partial-changes/selection/selection-resolver';
+import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
 import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { ComparedSnapshotReader } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
+import {
+  type ComparedSnapshot,
+  ComparedSnapshotReader,
+} from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import {
   type AppliedTarget,
   TargetValidator,
@@ -232,7 +233,6 @@ function planOf({
   validated,
 }: PlanParts): ChangePlan {
   const { snapshot, catalogue, headSchema } = source;
-  const lookup = new CatalogueLookup(catalogue);
   const appliedUnits = catalogue.units.filter(({ key }) =>
     closure.applied.has(key),
   );
@@ -252,9 +252,11 @@ function planOf({
     unreadTables,
     refusedTables: headSchema.refusedTables,
     required: closure.required,
-    blockers: blockers.map((blocker) => blockerRefOf(lookup, blocker)),
+    blockers: blockers.map((blocker) =>
+      blockerRefOf(catalogue.lookup, blocker),
+    ),
     deferred: deferredValuesOf(validated).map((deferred) =>
-      deferredRefOf(lookup, deferred),
+      deferredRefOf(catalogue.lookup, deferred),
     ),
     unmatched: closure.unmatched,
     estimate: closure.estimate,

@@ -22,7 +22,6 @@ import {
   tableViewsOf,
 } from 'src/features/partial-changes/assembly/system-table-targets';
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
-import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import type {
@@ -83,16 +82,12 @@ export class SystemTargetAssembler {
 }
 
 class SystemTargetAssembly {
-  private readonly tables: CatalogueTables;
-
   constructor(
     private readonly source: AssemblySource,
     private readonly rules: OutcomeRules,
     private readonly headViews: HeadViewsMigration,
     private readonly hashService: HashService,
-  ) {
-    this.tables = new CatalogueTables(source.snapshot, source.tables);
-  }
+  ) {}
 
   public async planSystemTables(): Promise<SystemTablePlan[]> {
     const plans: SystemTablePlan[] = [];
@@ -165,7 +160,7 @@ class SystemTargetAssembly {
       this.headViews.migrate(
         document,
         pair.head.schema,
-        this.tables.structureOf(pair).pendingHistory,
+        this.source.catalogue.tables.structureOf(pair).pendingHistory,
       ) ?? document
     );
   }

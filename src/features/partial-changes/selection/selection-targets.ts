@@ -1,10 +1,9 @@
-import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
+import type { AddressedRow } from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import { groupRecreations } from 'src/features/partial-changes/catalogue/public-id-groups';
+import { PublicIdIndex } from 'src/features/partial-changes/catalogue/public-id-index';
 import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { tablesOfRow } from 'src/features/partial-changes/selection/addressed-rows';
-import { PublicIdIndex } from 'src/features/partial-changes/selection/public-id-index';
 import type { RowRef } from 'src/features/partial-changes/selection/selection';
 import type { SelectionSource } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
@@ -18,21 +17,13 @@ import {
 } from 'src/features/partial-changes/structure/schema-leaves';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 
-export interface AddressedRow {
-  readonly table: TablePair;
-  readonly rowId: string;
-  readonly side: RevisionSide;
-}
-
 export class SelectionTargets {
   private readonly tables: PublicIdIndex<TablePair>;
-  private readonly structures: CatalogueTables;
   private readonly recreations = new Map<string, readonly TablePair[]>();
   private readonly leaves = new Map<string, SchemaLeaves>();
 
   constructor(private readonly source: SelectionSource) {
     this.tables = new PublicIdIndex(source.snapshot.tables, (pair) => pair);
-    this.structures = new CatalogueTables(source.snapshot, source.tables);
 
     for (const group of groupRecreations(source.snapshot.tables)) {
       for (const { identity } of group) {
@@ -82,7 +73,7 @@ export class SelectionTargets {
   }
 
   public structureOf(table: TablePair): TableStructure {
-    return this.structures.structureOf(table);
+    return this.source.catalogue.tables.structureOf(table);
   }
 
   public leafAtOrAbove(

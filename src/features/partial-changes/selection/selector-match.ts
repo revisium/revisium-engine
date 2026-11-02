@@ -1,17 +1,15 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type {
-  RefusalCode,
-  RefusedTable,
-} from 'src/features/partial-changes/head-schema/head-schema-check';
+import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
+import {
+  type PlanBlocker,
+  refusalBlocker,
+} from 'src/features/partial-changes/plan/plan-blocker';
+import type { Reason } from 'src/features/partial-changes/plan/reason';
 import type {
   ItemKind,
   ItemSelector,
   SelectionItems,
 } from 'src/features/partial-changes/selection/selection';
-import type {
-  PlanBlocker,
-  Reason,
-} from 'src/features/partial-changes/selection/selection-resolution';
 
 export interface RequiredAddition {
   readonly key: string;
@@ -28,11 +26,6 @@ export const NO_MATCH: SelectorMatch = {
   selected: [],
   required: [],
   blockers: [],
-};
-
-const REFUSAL_REASONS: Readonly<Record<RefusalCode, string>> = {
-  headSchemaInconsistent: 'its Head schema does not match its Head ledger',
-  unledgeredTable: 'it has no intact ledger lineage',
 };
 
 export function selecting(units: readonly CatalogueUnit[]): SelectorMatch {
@@ -66,14 +59,6 @@ export function refusing(
   }
 
   return blockedBy(refusals.map(refusalBlocker));
-}
-
-export function refusalBlocker({ tableId, code }: RefusedTable): PlanBlocker {
-  return {
-    code,
-    tableId,
-    message: `${tableId} is refused: ${REFUSAL_REASONS[code]}`,
-  };
 }
 
 export function combined(

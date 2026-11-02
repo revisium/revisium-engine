@@ -4,11 +4,13 @@ import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catal
 import {
   type CatalogueTables,
   distinctRows,
-  publicTableIdOf,
 } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { viewsUnitKey } from 'src/features/partial-changes/catalogue/unit-key';
-import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import {
+  publicTableIdOf,
+  type TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { TableViewsData } from 'src/features/views/types';
 
 export function buildViewsUnits(

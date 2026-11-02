@@ -13,7 +13,7 @@ import type { InputJsonValue, Row } from 'src/engine-prisma-types';
 import { BranchApiService } from 'src/features/branch/branch-api.service';
 import { ApiRevertChangesCommand } from 'src/features/draft/commands/impl/api-revert-changes.command';
 import { InternalUpdateRowCommand } from 'src/features/draft/commands/impl/transactional/internal-update-row.command';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type {
   ListChangesResult,
   ListedUnit,

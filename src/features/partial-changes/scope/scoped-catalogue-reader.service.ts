@@ -2,18 +2,18 @@ import { Injectable } from '@nestjs/common';
 import {
   buildChangeCatalogue,
   type ChangeCatalogue,
-  type ComparedSnapshot,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { changedRowsTooLarge } from 'src/features/partial-changes/limits/too-large-blockers';
+import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
   ReadScope,
   type TableScope,
 } from 'src/features/partial-changes/scope/read-scope';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 
 interface ScopeCounts {
   readonly changedRowCount: number;

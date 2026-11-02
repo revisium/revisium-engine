@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import type { Row } from 'src/engine-prisma-types';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type {
   ChangesSnapshot,
   RowPair,
@@ -17,7 +17,7 @@ import { compareCodePoints } from 'src/features/share/utils/compare-code-points'
 export interface FingerprintedPlan {
   readonly operation: ChangeOperation;
   readonly snapshot: ChangesSnapshot;
-  readonly catalogue: ChangeCatalogue;
+  readonly catalogue: Pick<ChangeCatalogue, 'units' | 'rows'>;
   readonly applied: ReadonlySet<string>;
 }
 

@@ -4,7 +4,6 @@ import type {
   ComparedTable,
   RevisionRows,
   TablePair,
-  TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 
@@ -48,10 +47,6 @@ export class CatalogueTables {
   }
 }
 
-export function publicTableIdOf({ identity, head, draft }: TablePair): string {
-  return versionOf(identity, draft ?? head).id;
-}
-
 export function previousTableIdOf({
   head,
   draft,
@@ -90,15 +85,4 @@ class RowsByTableId {
       draft: draft && this.draft.get(draft.id),
     };
   }
-}
-
-function versionOf(
-  identity: string,
-  version: TableVersion | undefined,
-): TableVersion {
-  if (!version) {
-    throw new Error(`Table ${identity} is in neither revision`);
-  }
-
-  return version;
 }

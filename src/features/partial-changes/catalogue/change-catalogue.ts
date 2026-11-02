@@ -1,10 +1,10 @@
+import { CatalogueLookup } from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type {
   CatalogueRow,
   CatalogueUnit,
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
-import type { LedgerAttribution } from 'src/features/partial-changes/catalogue/ledger-attribution';
 import {
   type LedgerInconsistency,
   ledgerInconsistenciesOf,
@@ -23,19 +23,15 @@ import type {
   ChangesSnapshot,
   ComparedTable,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 
 export interface ChangeCatalogue {
   readonly units: readonly CatalogueUnit[];
   readonly rows: ReadonlyMap<string, readonly CatalogueRow[]>;
+  readonly lookup: CatalogueLookup;
+  readonly tables: CatalogueTables;
   readonly ledgerInconsistencies: readonly LedgerInconsistency[];
   readonly refusedTables: readonly RefusedTable[];
-}
-
-export interface ComparedSnapshot {
-  readonly snapshot: ChangesSnapshot;
-  readonly ledger: LedgerAttribution;
-  readonly headSchema: HeadSchemaCheck;
-  readonly tables: readonly ComparedTable[];
 }
 
 export interface CatalogueSource extends ComparedSnapshot {
@@ -61,11 +57,13 @@ export function buildChangeCatalogue(
     ...tableUnits.filter((unit) => !holdsRefusedTable(unit, source.headSchema)),
     ...buildSharedSchemaUnits(source.snapshot.systemRows.sharedSchemas),
     ...rowUnits.units,
-  ];
+  ].sort(compareUnits);
 
   return {
-    units: units.sort(compareUnits),
+    units,
     rows: rowUnits.rows,
+    lookup: new CatalogueLookup(units, rowUnits.rows),
+    tables,
     ledgerInconsistencies: ledgerInconsistenciesOf(tables, source.ledger),
     refusedTables: source.headSchema.refusedTables,
   };

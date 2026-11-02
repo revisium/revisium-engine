@@ -1,6 +1,6 @@
 import type { DeferredValues } from 'src/features/partial-changes/assembly/target-assembler';
-import type { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
+import type { CatalogueLookup } from 'src/features/partial-changes/catalogue/catalogue-lookup';
+import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
   type UnitRef,
   unitRefOf,

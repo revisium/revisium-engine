@@ -9,19 +9,15 @@ import {
   planLedger,
 } from 'src/features/partial-changes/assembly/ledger-plan';
 import {
-  type AppliedUnits,
-  type ChangeOperation,
   OutcomeRules,
   type RowOutcome,
   type TableOutcome,
   type TableOutcomeRules,
 } from 'src/features/partial-changes/assembly/outcome-rules';
 import {
-  publicIdOrIdentityOf,
   type ReadTable,
   readTablesOf,
   tableRulesOf,
-  versionOn,
 } from 'src/features/partial-changes/assembly/read-tables';
 import {
   type DraftStructureMigration,
@@ -38,14 +34,22 @@ import {
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { differInContent } from 'src/features/partial-changes/catalogue/row-differences';
-import { CatalogueLookup } from 'src/features/partial-changes/selection/catalogue-lookup';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
-  ChangesSnapshot,
-  ComparedTable,
-  RowPair,
-  TablePair,
-  TableVersion,
+  AppliedUnits,
+  ChangeOperation,
+} from 'src/features/partial-changes/plan/change-operation';
+import {
+  type PlanBlocker,
+  unrecordedStructureChangeOf,
+} from 'src/features/partial-changes/plan/plan-blocker';
+import {
+  type ChangesSnapshot,
+  type ComparedTable,
+  publicIdOrIdentityOf,
+  type RowPair,
+  type TablePair,
+  type TableVersion,
+  versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { SchemaLeaves } from 'src/features/partial-changes/structure/schema-leaves';
@@ -138,20 +142,16 @@ export class TargetAssembler {
 }
 
 class TargetAssembly {
-  private readonly lookup: CatalogueLookup;
-
   constructor(
     private readonly source: AssemblySource,
     private readonly rules: OutcomeRules,
     private readonly rowMerger: RowMerger,
-  ) {
-    this.lookup = new CatalogueLookup(source.catalogue);
-  }
+  ) {}
 
   public async assembleUserTables(): Promise<AssembledTable[]> {
     const assembled: AssembledTable[] = [];
 
-    for (const table of readTablesOf(this.source, this.lookup)) {
+    for (const table of readTablesOf(this.source)) {
       assembled.push(await this.assembleReadTable(table));
     }
 
@@ -170,7 +170,10 @@ class TargetAssembly {
 
   private assembleOneSidedTables(): AssembledTable[] {
     return this.source.snapshot.tables.flatMap((pair) => {
-      const structure = this.lookup.tableUnitOf('structure', pair);
+      const structure = this.source.catalogue.lookup.tableUnitOf(
+        'structure',
+        pair,
+      );
 
       if (!structure || isOnBothSides(pair)) {
         return [];
@@ -446,16 +449,6 @@ function deferredValuesOf(
   }
 
   return [{ unitKey: existence, paths, structureKey }];
-}
-
-export function unrecordedStructureChangeOf(pair: TablePair): PlanBlocker {
-  const tableId = publicIdOrIdentityOf(pair);
-
-  return {
-    code: 'unrecordedStructureChange',
-    tableId,
-    message: `The Draft structure of ${tableId} is not reproduced by its schema history and migrations: its commit is refused, and Head rows cannot be migrated into it`,
-  };
 }
 
 function linkChangesOf(

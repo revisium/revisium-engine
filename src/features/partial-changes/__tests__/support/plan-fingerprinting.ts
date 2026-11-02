@@ -1,5 +1,5 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { FingerprintedPlan } from 'src/features/partial-changes/planning/plan-fingerprint';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';

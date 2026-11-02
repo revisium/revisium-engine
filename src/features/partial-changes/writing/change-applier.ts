@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
 import type {
   AppliedCounts,
   ApplyChangesInput,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import {
   type ChangePlan,
   ChangePlanner,

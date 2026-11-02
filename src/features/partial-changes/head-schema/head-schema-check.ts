@@ -1,11 +1,11 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
-import { publicTableIdOf } from 'src/features/partial-changes/catalogue/catalogue-tables';
-import type { LedgerAttribution } from 'src/features/partial-changes/catalogue/ledger-attribution';
-import type {
-  ChangesSnapshot,
-  TablePair,
-  TableVersion,
+import {
+  type ChangesSnapshot,
+  publicTableIdOf,
+  type TablePair,
+  type TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { LedgerAttribution } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import {
   ledgerOf,
   migrationsOf,

@@ -1,10 +1,9 @@
+import type { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import {
-  type CatalogueTables,
   publicTableIdOf,
-} from 'src/features/partial-changes/catalogue/catalogue-tables';
-import type { LedgerAttribution } from 'src/features/partial-changes/catalogue/ledger-attribution';
-import type { PlanBlocker } from 'src/features/partial-changes/selection/selection-resolution';
-import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+  type TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { LedgerAttribution } from 'src/features/partial-changes/snapshot/ledger-attribution';
 
 export type LedgerInconsistency =
   | {
@@ -35,24 +34,6 @@ export function ledgerInconsistenciesOf(
         }),
       ),
   ];
-}
-
-export function ledgerInconsistentBlockerOf(
-  inconsistency: LedgerInconsistency,
-): PlanBlocker {
-  return {
-    code: 'ledgerInconsistent',
-    tableId: inconsistency.tableId,
-    message: messageOf(inconsistency),
-  };
-}
-
-function messageOf(inconsistency: LedgerInconsistency): string {
-  if (inconsistency.reason === 'unattributableMigration') {
-    return `Pending migration ${inconsistency.migrationId} of ${inconsistency.tableId} cannot be attributed to a table`;
-  }
-
-  return `The Draft schema history of ${inconsistency.tableId} does not extend its Head history`;
 }
 
 function historyDoesNotExtendHead(

@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
-import type { ComparedSnapshot } from 'src/features/partial-changes/catalogue/change-catalogue';
-import type { TableHistory } from 'src/features/partial-changes/catalogue/ledger-attribution';
 import { publicIdsOf } from 'src/features/partial-changes/catalogue/public-id-groups';
 import {
   type ConnectedTable,
@@ -18,6 +16,8 @@ import {
   type TablePair,
   type TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
+import type { TableHistory } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import {
   NativeSchemaRules,
   patchValues,

@@ -1,7 +1,7 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import type { MigrationLockedDetails } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
-import type { ChangeOperation } from 'src/features/partial-changes/assembly/outcome-rules';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import {
   type ChangePlan,
   ChangePlanner,

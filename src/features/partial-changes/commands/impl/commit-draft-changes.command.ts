@@ -1,6 +1,7 @@
 import type {
   AppliedCounts,
   ApplyChangesInput,
+  ApplyResult,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
 
@@ -13,7 +14,7 @@ export interface RenumberedMigration {
   readonly to: string;
 }
 
-export interface CommittedDraft extends AppliedCounts {
+export interface CommittedDraft extends ApplyResult, AppliedCounts {
   readonly status: 'applied';
   readonly previousHeadRevisionId: string;
   readonly headRevisionId: string;

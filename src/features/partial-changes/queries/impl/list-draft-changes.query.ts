@@ -10,12 +10,15 @@ export interface ListChangesInput {
   readonly pageSize?: number | null;
 }
 
-export type TableChange =
-  | 'created'
-  | 'removed'
-  | 'replaced'
-  | 'transient'
-  | 'changed';
+export const TABLE_CHANGES = [
+  'created',
+  'removed',
+  'replaced',
+  'transient',
+  'changed',
+] as const;
+
+export type TableChange = (typeof TABLE_CHANGES)[number];
 
 export interface ChangedField {
   readonly path: string;

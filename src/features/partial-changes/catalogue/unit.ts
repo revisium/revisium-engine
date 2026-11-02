@@ -12,9 +12,13 @@ export const UNIT_KINDS = [
 
 export type UnitKind = (typeof UNIT_KINDS)[number];
 
-export type RowColumn = 'publishedAt' | 'meta' | 'schemaHash';
+export const ROW_COLUMNS = ['publishedAt', 'meta', 'schemaHash'] as const;
 
-export type HeadQualifier = 'head';
+export type RowColumn = (typeof ROW_COLUMNS)[number];
+
+export const HEAD_QUALIFIERS = ['head'] as const;
+
+export type HeadQualifier = (typeof HEAD_QUALIFIERS)[number];
 
 export interface Unit {
   readonly kind: UnitKind;

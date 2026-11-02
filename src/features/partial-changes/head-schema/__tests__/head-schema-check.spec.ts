@@ -3,7 +3,10 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
+import {
+  REFUSAL_CODES,
+  type RefusedTable,
+} from 'src/features/partial-changes/head-schema/head-schema-check';
 import { addField, moveField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableFixture } from 'src/__tests__/fixtures/branch-scenario';
@@ -149,6 +152,12 @@ describe('HeadSchemaCheck: refused tables', () => {
     refusal: { tableId: PRODUCTS, code: 'unledgeredTable' },
     edit: productRename,
   };
+
+  it('covers every value of REFUSAL_CODES', () => {
+    const codes = refusalCases.map(({ refusal }) => refusal.code);
+
+    expect(new Set(codes)).toEqual(new Set(REFUSAL_CODES));
+  });
 
   describe('in a partial operation', () => {
     it.each(refusalCases)(

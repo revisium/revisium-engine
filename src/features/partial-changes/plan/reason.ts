@@ -1,12 +1,15 @@
-export type RequiredReasonCode =
-  | 'structureBoundData'
-  | 'wholeRowUnit'
-  | 'atomicValue'
-  | 'referencedRowMissing'
-  | 'referrerStillReferences'
-  | 'idOccupied'
-  | 'referencedTableMissing'
-  | 'viewsDoNotFitStructure';
+export const REQUIRED_REASON_CODES = [
+  'structureBoundData',
+  'wholeRowUnit',
+  'atomicValue',
+  'referencedRowMissing',
+  'referrerStillReferences',
+  'idOccupied',
+  'referencedTableMissing',
+  'viewsDoNotFitStructure',
+] as const;
+
+export type RequiredReasonCode = (typeof REQUIRED_REASON_CODES)[number];
 
 export interface Reason {
   readonly code: RequiredReasonCode;

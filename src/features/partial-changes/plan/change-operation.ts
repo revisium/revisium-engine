@@ -1,4 +1,6 @@
-export type ChangeOperation = 'commit' | 'revert';
+export const CHANGE_OPERATIONS = ['commit', 'revert'] as const;
+
+export type ChangeOperation = (typeof CHANGE_OPERATIONS)[number];
 
 export interface AppliedUnits {
   readonly operation: ChangeOperation;

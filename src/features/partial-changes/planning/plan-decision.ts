@@ -1,9 +1,16 @@
 import type { ChangePlan } from 'src/features/partial-changes/planning/change-planner';
 import { hasUnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 
-export type PlanStatus = 'ready' | 'required' | 'blocked' | 'stale' | 'empty';
+export const PREVIEW_STATUSES = [
+  'ready',
+  'required',
+  'blocked',
+  'empty',
+] as const;
 
-export type PreviewStatus = Exclude<PlanStatus, 'stale'>;
+export type PreviewStatus = (typeof PREVIEW_STATUSES)[number];
+
+export type PlanStatus = PreviewStatus | 'stale';
 
 export type DecidedPlan = Pick<
   ChangePlan,

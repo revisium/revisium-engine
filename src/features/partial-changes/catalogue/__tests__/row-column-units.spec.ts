@@ -6,6 +6,11 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
+import {
+  ROW_COLUMNS,
+  type RowColumn,
+  type Unit,
+} from 'src/features/partial-changes/catalogue/unit';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 
@@ -212,6 +217,9 @@ describe('ChangeCatalogue: owners of publishedAt, meta and schemaHash', () => {
           columns: ['publishedAt', 'meta', 'schemaHash'],
         },
       ]);
+      expect(new Set(columnsOf(catalogue.unitsOf(ARTICLES)))).toEqual(
+        new Set(ROW_COLUMNS),
+      );
       expectEveryDifferenceOwnedOnce(catalogue);
     });
   });
@@ -225,3 +233,7 @@ describe('ChangeCatalogue: owners of publishedAt, meta and schemaHash', () => {
     });
   }
 });
+
+function columnsOf(units: readonly Unit[]): RowColumn[] {
+  return units.flatMap(({ columns }) => columns ?? []);
+}

@@ -1,5 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
-import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import { HEAD_QUALIFIERS } from 'src/features/partial-changes/catalogue/unit';
+import {
+  CHANGE_OPERATIONS,
+  type ChangeOperation,
+} from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
@@ -19,12 +23,9 @@ interface Field {
 
 type ObjectRecord = Readonly<Record<string, unknown>>;
 
-const HEAD_SIDE = 'head';
+const OPERATIONS: ReadonlySet<unknown> = new Set(CHANGE_OPERATIONS);
 
-const OPERATIONS: ReadonlySet<unknown> = new Set<ChangeOperation>([
-  'commit',
-  'revert',
-]);
+const SIDES: ReadonlySet<unknown> = new Set(HEAD_QUALIFIERS);
 
 export function validateSelection(input: unknown): Selection {
   return checkSelection(input, 'selection') as Selection;
@@ -32,7 +33,7 @@ export function validateSelection(input: unknown): Selection {
 
 export function validateOperation(input: unknown): ChangeOperation {
   if (!OPERATIONS.has(input)) {
-    throw invalid(`operation must be 'commit' or 'revert'`);
+    throw invalid(`operation must be ${oneOf(CHANGE_OPERATIONS)}`);
   }
 
   return input as ChangeOperation;
@@ -64,8 +65,8 @@ const checkBoolean: Check = (value, at) => {
 };
 
 const checkSide: Check = (value, at) => {
-  if (value !== HEAD_SIDE) {
-    throw invalid(`${at} must be '${HEAD_SIDE}'`);
+  if (!SIDES.has(value)) {
+    throw invalid(`${at} must be ${oneOf(HEAD_QUALIFIERS)}`);
   }
 
   return value;
@@ -197,6 +198,10 @@ function required(check: Check): Field {
 
 function optional(check: Check): Field {
   return { check, optional: true };
+}
+
+function oneOf(values: readonly string[]): string {
+  return values.map((value) => `'${value}'`).join(' or ');
 }
 
 function invalid(message: string): SelectionValidationError {

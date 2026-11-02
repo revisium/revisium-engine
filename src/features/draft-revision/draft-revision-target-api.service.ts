@@ -46,6 +46,7 @@ function draftRowVersionsPlanOf({
   draftRevisionId,
   tableId,
   draftTableVersionId,
+  editInPlace,
   replacedRowVersionIds,
   newRows,
 }: DraftRowVersionsReplacement): TargetWritePlan {
@@ -56,13 +57,17 @@ function draftRowVersionsPlanOf({
       {
         identity: tableId,
         draftVersionId: draftTableVersionId,
-        outcome: 'mixed',
-        structureSide: 'draft',
+        target: {
+          kind: 'mixed',
+          tableId,
+          sourceVersionId: draftTableVersionId,
+          editInPlace,
+          hasFileFields: false,
+          removedRowVersionIds: replacedRowVersionIds,
+          addedRowVersionIds: [],
+          newRows,
+        },
         relinkCandidate: false,
-        hasFileFields: false,
-        removedRowVersionIds: replacedRowVersionIds,
-        addedRowVersionIds: [],
-        newRows,
       },
     ],
   };

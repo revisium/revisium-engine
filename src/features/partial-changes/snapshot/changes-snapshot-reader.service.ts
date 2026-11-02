@@ -319,9 +319,6 @@ function systemTableRowsOf(
   return {
     head: head[tableId].rows,
     draft: draft[tableId].rows,
-    versionIds: {
-      head: head[tableId].versionId,
-      draft: draft[tableId].versionId,
-    },
+    versions: { head: head[tableId].version, draft: draft[tableId].version },
   };
 }

@@ -195,12 +195,7 @@ function takeDraftVersion(
     identity,
     headVersionId,
     draftVersionId,
-    outcome: draftVersionId === undefined ? 'absent' : 'base',
-    structureSide: 'draft',
-    removedRowVersionIds: [],
-    addedRowVersionIds: [],
-    newRows: [],
+    target: { kind: 'linked', versionId: draftVersionId },
     relinkCandidate: true,
-    hasFileFields: false,
   };
 }

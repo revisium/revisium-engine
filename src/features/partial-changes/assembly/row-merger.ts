@@ -6,6 +6,7 @@ import type {
   JsonValue as SchemaJsonValue,
 } from '@revisium/schema-toolkit/types';
 import type { JsonValue, Row } from 'src/engine-prisma-types';
+import type { NewRowVersion } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type {
   OtherSideColumn,
   OtherSideParts,
@@ -21,17 +22,7 @@ import { JsonSchemaValidatorService } from 'src/features/share/json-schema-valid
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 import { HashService } from 'src/infrastructure/database/hash.service';
 
-export type MergedRow = Pick<
-  Row,
-  | 'createdId'
-  | 'createdAt'
-  | 'id'
-  | 'data'
-  | 'hash'
-  | 'schemaHash'
-  | 'publishedAt'
-  | 'meta'
->;
+export type MergedRow = NewRowVersion;
 
 export interface RowMerge {
   readonly structureSide: Row;

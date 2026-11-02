@@ -127,5 +127,5 @@ function tableVersion(versionId: string): TableVersion {
 }
 
 function noRows(): SystemTableRows {
-  return { head: [], draft: [], versionIds: {} };
+  return { head: [], draft: [], versions: {} };
 }

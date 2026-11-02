@@ -1,9 +1,8 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import {
   DraftRevisionRevertToTargetCommand,
-  oppositeOf,
+  MixedTableVersion,
   TableWritePlan,
-  versionIdOn,
   versionRefsOf,
 } from 'src/features/draft-revision/commands/impl';
 import {
@@ -66,47 +65,30 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
     return tables;
   }
 
-  private async writeTable(plan: TableWritePlan): Promise<WrittenVersion> {
-    switch (plan.outcome) {
-      case 'unchanged':
-        return linkedVersion(plan.draftVersionId);
-      case 'absent':
-        return linkedVersion(undefined);
-      case 'base':
-        return linkedVersion(versionIdOn(plan, plan.structureSide));
-      case 'other':
-        return linkedVersion(versionIdOn(plan, oppositeOf(plan.structureSide)));
-      case 'mixed':
-        return this.writeMixedTable(plan);
+  private async writeTable({
+    target,
+  }: TableWritePlan): Promise<WrittenVersion> {
+    if (target.kind === 'mixed') {
+      return this.writeMixedTable(target);
     }
+
+    return linkedVersion(target.versionId);
   }
 
-  private async writeMixedTable(
-    plan: TableWritePlan,
+  private writeMixedTable(
+    target: MixedTableVersion,
   ): Promise<AssembledTableVersion> {
-    const sourceVersionId = versionIdOn(plan, plan.structureSide);
-
-    if (await this.editsDraftVersionInPlace(plan)) {
-      return this.versionWriter.editTableVersion(sourceVersionId, plan);
+    if (target.editInPlace) {
+      return this.versionWriter.editTableVersion(
+        target.sourceVersionId,
+        target,
+      );
     }
 
-    return this.versionWriter.createTableVersion(sourceVersionId, plan);
-  }
-
-  private async editsDraftVersionInPlace(
-    plan: TableWritePlan,
-  ): Promise<boolean> {
-    if (plan.structureSide === 'head') {
-      return false;
-    }
-
-    // The Draft structure owns the public id, so a mutable Draft version keeps it.
-    const { readonly } = await this.transaction.table.findUniqueOrThrow({
-      where: { versionId: versionIdOn(plan, 'draft') },
-      select: { readonly: true },
-    });
-
-    return !readonly;
+    return this.versionWriter.createTableVersion(
+      target.sourceVersionId,
+      target,
+    );
   }
 
   private async followHeadWhenContentEqual(

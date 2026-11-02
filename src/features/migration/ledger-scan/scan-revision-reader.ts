@@ -5,6 +5,8 @@ import {
   BranchRevisionReader,
   type HeadAndDraft,
   type StoredTable,
+  type StoredTableVersion,
+  storedVersionOf,
   systemTableOf,
   userTableVersionIdsOf,
 } from 'src/features/share/branch-revisions/branch-revision-reader';
@@ -20,7 +22,7 @@ export interface ScannedRevision {
   readonly revisionId: string;
   readonly tableVersionIds: ReadonlyMap<string, string>;
   readonly schemaTableVersionId?: string;
-  readonly migrationTableVersionId?: string;
+  readonly migrationTable?: StoredTableVersion;
 }
 
 export interface RowHashCount {
@@ -110,7 +112,18 @@ function scannedRevisionOf(
     revisionId,
     tableVersionIds: userTableVersionIdsOf(tables),
     schemaTableVersionId: systemTableOf(tables, SystemTables.Schema)?.versionId,
-    migrationTableVersionId: systemTableOf(tables, SystemTables.Migration)
-      ?.versionId,
+    migrationTable: migrationTableOf(tables),
   };
+}
+
+function migrationTableOf(
+  tables: readonly StoredTable[],
+): StoredTableVersion | undefined {
+  const table = systemTableOf(tables, SystemTables.Migration);
+
+  if (!table) {
+    return undefined;
+  }
+
+  return storedVersionOf(table);
 }

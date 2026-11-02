@@ -30,6 +30,7 @@ export interface SystemTableTarget {
   readonly rows: SystemTableRows;
   readonly linkSide: RevisionSide;
   readonly keptWhenEmpty: boolean;
+  readonly editInPlace: boolean;
   readonly versions: readonly Row[];
   readonly rewrites: readonly TableViews[];
   readonly ownerKinds: readonly UnitKind[];
@@ -62,7 +63,7 @@ export function systemTableOutcomeOf(
   hasNewRows: boolean,
 ): TableOutcome {
   const otherSide = oppositeOf(linkSide);
-  const onBothSides = rows.versionIds[otherSide] !== undefined;
+  const onBothSides = rows.versions[otherSide] !== undefined;
 
   if (!onBothSides && !keptWhenEmpty && versions.length === 0 && !hasNewRows) {
     return 'absent';
@@ -179,16 +180,20 @@ class SystemTableTargets {
 
   private linkOf(
     rows: SystemTableRows,
-  ): Pick<SystemTableTarget, 'linkSide' | 'keptWhenEmpty'> {
+  ): Pick<SystemTableTarget, 'linkSide' | 'keptWhenEmpty' | 'editInPlace'> {
     const linkSide = this.linkSideOf(rows);
 
-    return { linkSide, keptWhenEmpty: this.rules.takesEveryTableOf(linkSide) };
+    return {
+      linkSide,
+      keptWhenEmpty: this.rules.takesEveryTableOf(linkSide),
+      editInPlace: this.rules.editsDraftInPlace(linkSide, rows.versions.draft),
+    };
   }
 
   private linkSideOf(rows: SystemTableRows): RevisionSide {
     const { baseSide } = this.rules;
 
-    if (rows.versionIds[baseSide] === undefined) {
+    if (rows.versions[baseSide] === undefined) {
       return oppositeOf(baseSide);
     }
 
@@ -234,6 +239,6 @@ function holdsExactly(rows: readonly Row[], versions: readonly Row[]): boolean {
   );
 }
 
-function existsOnEitherSide({ versionIds }: SystemTableRows): boolean {
-  return versionIds.head !== undefined || versionIds.draft !== undefined;
+function existsOnEitherSide({ versions }: SystemTableRows): boolean {
+  return versions.head !== undefined || versions.draft !== undefined;
 }

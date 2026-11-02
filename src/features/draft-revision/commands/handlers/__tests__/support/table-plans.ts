@@ -2,12 +2,13 @@ import objectHash from 'object-hash';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue, Row, Table } from 'src/engine-prisma-types';
 import {
+  type MixedTableVersion,
   type NewRowVersion,
   oppositeOf,
   type RevisionSide,
   type RowLinkChanges,
-  type TableWriteOutcome,
   type TableWritePlan,
+  type TargetTableVersion,
 } from 'src/features/draft-revision/commands/impl';
 import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
 
@@ -22,9 +23,11 @@ export interface TargetRows {
   readonly merged?: Readonly<Record<string, MergedColumns>>;
 }
 
+type TableTargetOutcome = 'unchanged' | 'absent' | 'base' | 'other' | 'mixed';
+
 export interface TableTarget {
   readonly tableId: string;
-  readonly outcome: TableWriteOutcome;
+  readonly outcome: TableTargetOutcome;
   readonly structureSide?: RevisionSide;
   readonly rows?: TargetRows;
   readonly relinkCandidate?: boolean;
@@ -51,15 +54,8 @@ export class TablePlans {
       identity: (versions.draft ?? versions.head)?.createdId ?? target.tableId,
       headVersionId: versions.head?.versionId,
       draftVersionId: versions.draft?.versionId,
-      outcome: target.outcome,
-      structureSide,
-      ...(await this.rowLinkChangesOf(
-        versions[structureSide],
-        versions[oppositeOf(structureSide)],
-        target.rows ?? {},
-      )),
+      target: await this.targetVersionOf(target, versions, structureSide),
       relinkCandidate: target.relinkCandidate ?? false,
-      hasFileFields: target.hasFileFields ?? false,
     };
   }
 
@@ -95,6 +91,62 @@ export class TablePlans {
     });
 
     return new Map(rows.map((row) => [row.id, row]));
+  }
+
+  private async targetVersionOf(
+    target: TableTarget,
+    versions: TableVersions,
+    structureSide: RevisionSide,
+  ): Promise<TargetTableVersion> {
+    switch (target.outcome) {
+      case 'absent':
+        return { kind: 'linked', versionId: undefined };
+      case 'unchanged':
+      case 'base':
+        return {
+          kind: 'linked',
+          versionId: versions[structureSide]?.versionId,
+        };
+      case 'other':
+        return {
+          kind: 'linked',
+          versionId: versions[oppositeOf(structureSide)]?.versionId,
+        };
+      case 'mixed':
+        return this.mixedVersionOf(target, versions, structureSide);
+    }
+  }
+
+  private async mixedVersionOf(
+    target: TableTarget,
+    versions: TableVersions,
+    structureSide: RevisionSide,
+  ): Promise<MixedTableVersion> {
+    const source = requiredVersion(versions, structureSide);
+
+    return {
+      kind: 'mixed',
+      tableId: source.id,
+      sourceVersionId: source.versionId,
+      editInPlace: this.editsDraftInPlace(structureSide, versions.draft),
+      hasFileFields: target.hasFileFields ?? false,
+      ...(await this.rowLinkChangesOf(
+        source,
+        versions[oppositeOf(structureSide)],
+        target.rows ?? {},
+      )),
+    };
+  }
+
+  private editsDraftInPlace(
+    structureSide: RevisionSide,
+    draft: Table | undefined,
+  ): boolean {
+    return (
+      this.baseSide === 'draft' &&
+      structureSide === 'draft' &&
+      draft?.readonly === false
+    );
   }
 
   private async rowLinkChangesOf(
@@ -156,6 +208,16 @@ function versionIdsOf(row: Row | undefined): string[] {
   }
 
   return [row.versionId];
+}
+
+function requiredVersion(versions: TableVersions, side: RevisionSide): Table {
+  const version = versions[side];
+
+  if (!version) {
+    throw new Error(`The table has no ${side} version`);
+  }
+
+  return version;
 }
 
 export function requiredRow(

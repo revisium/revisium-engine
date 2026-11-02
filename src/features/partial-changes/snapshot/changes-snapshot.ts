@@ -5,6 +5,7 @@ import type { TableStructure } from 'src/features/partial-changes/structure/tabl
 import type {
   BranchRef,
   HeadAndDraft,
+  StoredTableVersion,
 } from 'src/features/share/branch-revisions/branch-revision-reader';
 import type { HistoryPatches } from 'src/features/share/queries/impl';
 
@@ -39,8 +40,13 @@ export interface SystemTableVersionIds {
   readonly draft?: string;
 }
 
+export interface SystemTableVersions {
+  readonly head?: StoredTableVersion;
+  readonly draft?: StoredTableVersion;
+}
+
 export interface SystemTableRows extends RevisionRows {
-  readonly versionIds: SystemTableVersionIds;
+  readonly versions: SystemTableVersions;
 }
 
 export interface SystemRows {

@@ -1,13 +1,7 @@
-import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
+import type { RowLinkChanges } from 'src/features/draft-revision/commands/impl/target-write-plan';
 
-export interface LinkChanges {
-  readonly removedLinks: readonly string[];
-  readonly addedLinks: readonly string[];
-  readonly newRows: readonly MergedRow[];
-}
-
-export const NO_LINK_CHANGES: LinkChanges = {
-  removedLinks: [],
-  addedLinks: [],
+export const NO_LINK_CHANGES: RowLinkChanges = {
+  removedRowVersionIds: [],
+  addedRowVersionIds: [],
   newRows: [],
 };

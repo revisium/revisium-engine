@@ -55,13 +55,13 @@ function isSameState(planned: RepairState, current: RepairState): boolean {
 
 function contentOf({
   tableVersionIds,
-  migrationTableVersionId,
+  migrationTable,
   schemas,
   migrationRows,
 }: RevisionLedger) {
   return {
     tableVersionIds: sortedEntriesOf(tableVersionIds),
-    migrationTableVersionId,
+    migrationTable,
     schemas: sortedEntriesOf(schemas),
     migrationRows: migrationRows
       .map(copiedColumnsOf)

@@ -5,6 +5,7 @@ import {
   type BranchRef,
   BranchRevisionReader,
   type HeadAndDraft,
+  type StoredTableVersion,
   userTableVersionIdsOf,
 } from 'src/features/share/branch-revisions/branch-revision-reader';
 import {
@@ -15,7 +16,7 @@ import { SystemTables } from 'src/features/share/system-tables.consts';
 
 export interface RevisionLedger {
   readonly tableVersionIds: ReadonlyMap<string, string>;
-  readonly migrationTableVersionId?: string;
+  readonly migrationTable?: StoredTableVersion;
   readonly schemas: ReadonlyMap<string, StoredSchema>;
   readonly migrationRows: readonly Row[];
 }
@@ -78,7 +79,7 @@ export class RepairStateReader {
       userTableVersionIdsOf(tables),
       systemTables[SystemTables.Schema].rows,
       migrationTable.rows,
-      migrationTable.versionId,
+      migrationTable.version,
     );
   }
 }
@@ -87,11 +88,11 @@ export function revisionLedgerOf(
   tableVersionIds: ReadonlyMap<string, string>,
   schemaRows: readonly Row[],
   migrationRows: readonly Row[],
-  migrationTableVersionId: string | undefined,
+  migrationTable: StoredTableVersion | undefined,
 ): RevisionLedger {
   return {
     tableVersionIds,
-    migrationTableVersionId,
+    migrationTable,
     schemas: new Map(schemaRows.map((row) => [row.id, schemaRowOf(row)])),
     migrationRows,
   };

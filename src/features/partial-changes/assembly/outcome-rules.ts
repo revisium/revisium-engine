@@ -10,9 +10,12 @@ import type {
 import type {
   RowPair,
   TablePair,
+  TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 export type OtherSideColumn = 'publishedAt' | 'meta' | 'schemaHash';
+
+type VersionAccess = Pick<TableVersion, 'readonly'>;
 
 export interface OtherSideParts {
   readonly id: boolean;
@@ -120,6 +123,17 @@ export class OutcomeRules {
 
     return this.sideTakenBy(structure);
   }
+
+  public editsDraftInPlace(
+    structureSide: RevisionSide,
+    draft: VersionAccess | undefined,
+  ): boolean {
+    return (
+      this.operation === 'revert' &&
+      structureSide === 'draft' &&
+      isMutable(draft)
+    );
+  }
 }
 
 export class TableOutcomeRules {
@@ -178,6 +192,10 @@ export class TableOutcomeRules {
     }
 
     return 'absent';
+  }
+
+  public editsDraftInPlace({ draft }: TablePair): boolean {
+    return this.rules.editsDraftInPlace(this.structureSide, draft);
   }
 
   private outcomeWithoutUnits(): TableOutcome {
@@ -264,4 +282,8 @@ export class TableOutcomeRules {
 
     return [structure, ...rows];
   }
+}
+
+function isMutable(version: VersionAccess | undefined): boolean {
+  return version !== undefined && !version.readonly;
 }

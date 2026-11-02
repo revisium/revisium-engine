@@ -3,13 +3,6 @@ import type { SystemTables } from 'src/features/share/system-tables.consts';
 
 export type RevisionSide = 'head' | 'draft';
 
-export type TableWriteOutcome =
-  | 'unchanged'
-  | 'absent'
-  | 'base'
-  | 'other'
-  | 'mixed';
-
 export type NewRowVersion = Pick<
   Row,
   | 'createdId'
@@ -28,14 +21,27 @@ export interface RowLinkChanges {
   readonly newRows: readonly NewRowVersion[];
 }
 
-export interface TableWritePlan extends RowLinkChanges {
+export interface LinkedTableVersion {
+  readonly kind: 'linked';
+  readonly versionId?: string;
+}
+
+export interface MixedTableVersion extends RowLinkChanges {
+  readonly kind: 'mixed';
+  readonly tableId: string;
+  readonly sourceVersionId: string;
+  readonly editInPlace: boolean;
+  readonly hasFileFields: boolean;
+}
+
+export type TargetTableVersion = LinkedTableVersion | MixedTableVersion;
+
+export interface TableWritePlan {
   readonly identity: string;
   readonly headVersionId?: string;
   readonly draftVersionId?: string;
-  readonly outcome: TableWriteOutcome;
-  readonly structureSide: RevisionSide;
+  readonly target: TargetTableVersion;
   readonly relinkCandidate: boolean;
-  readonly hasFileFields: boolean;
 }
 
 export interface TargetWritePlan {
@@ -54,6 +60,7 @@ export interface DraftRowVersionsReplacement {
   readonly draftRevisionId: string;
   readonly tableId: SystemTables;
   readonly draftTableVersionId: string;
+  readonly editInPlace: boolean;
   readonly replacedRowVersionIds: readonly string[];
   readonly newRows: readonly NewRowVersion[];
 }

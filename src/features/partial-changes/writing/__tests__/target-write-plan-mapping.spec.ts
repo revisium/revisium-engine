@@ -8,7 +8,6 @@ import type {
   CommitTargetWritePlan,
   NewRowVersion,
   RevisionSide,
-  TableWriteOutcome,
   TableWritePlan,
 } from 'src/features/draft-revision/commands/impl';
 import type { RenumberedMigrationRow } from 'src/features/partial-changes/assembly/ledger-plan';
@@ -65,7 +64,7 @@ describe('targetWritePlanOf', () => {
   });
 
   describe('user tables', () => {
-    it('writes a table with the versions of both sides, its structure side, its link changes and whether it is a relink candidate', () => {
+    it('writes a mixed table from its structure-side version with its public id, its link changes, whether it is edited in place and whether it is a relink candidate', () => {
       const plan = targetWritePlanOf(
         writableTargetOf({
           pairs: [products],
@@ -73,9 +72,11 @@ describe('targetWritePlanOf', () => {
             tablePlanOf(products, {
               outcome: 'mixed',
               structureSide: 'draft',
+              versionId: 'products-draft',
+              editInPlace: true,
               relinkCandidate: true,
-              removedLinks: ['p1-draft', 'p2-draft'],
-              addedLinks: ['p1-head'],
+              removedRowVersionIds: ['p1-draft', 'p2-draft'],
+              addedRowVersionIds: ['p1-head'],
               newRows: [mergedP2],
             }),
           ],
@@ -87,35 +88,36 @@ describe('targetWritePlanOf', () => {
           identity: products.identity,
           headVersionId: 'products-head',
           draftVersionId: 'products-draft',
-          outcome: 'mixed',
-          structureSide: 'draft',
-          removedRowVersionIds: ['p1-draft', 'p2-draft'],
-          addedRowVersionIds: ['p1-head'],
-          newRows: [mergedP2],
+          target: {
+            kind: 'mixed',
+            tableId: 'products',
+            sourceVersionId: 'products-draft',
+            editInPlace: true,
+            hasFileFields: false,
+            removedRowVersionIds: ['p1-draft', 'p2-draft'],
+            addedRowVersionIds: ['p1-head'],
+            newRows: [mergedP2],
+          },
           relinkCandidate: true,
-          hasFileFields: false,
         },
       ]);
     });
 
-    it.each<{ assembled: TableOutcome; written: TableWriteOutcome }>([
-      { assembled: 'unchanged', written: 'unchanged' },
-      { assembled: 'base', written: 'base' },
-      { assembled: 'other', written: 'other' },
-      { assembled: 'mixed', written: 'mixed' },
-      { assembled: 'absent', written: 'absent' },
-      { assembled: 'present', written: 'base' },
-    ])(
-      'writes a table assembled as $assembled with the outcome $written',
-      ({ assembled, written }) => {
+    it.each<TableOutcome>(['unchanged', 'base', 'other', 'absent', 'present'])(
+      'links the planned version of a table assembled as %s',
+      (outcome) => {
         const plan = targetWritePlanOf(
           writableTargetOf({
             pairs: [products],
-            tables: [tablePlanOf(products, { outcome: assembled })],
+            tables: [
+              tablePlanOf(products, { outcome, versionId: 'products-head' }),
+            ],
           }),
         );
 
-        expect(plan.tables).toMatchObject([{ outcome: written }]);
+        expect(plan.tables).toMatchObject([
+          { target: { kind: 'linked', versionId: 'products-head' } },
+        ]);
       },
     );
 
@@ -137,9 +139,7 @@ describe('targetWritePlanOf', () => {
           identity: createdTags.identity,
           headVersionId: undefined,
           draftVersionId: 'tags-draft',
-          outcome: 'absent',
-          structureSide: 'head',
-          hasFileFields: false,
+          target: { kind: 'linked', versionId: undefined },
         }),
       ]);
     });
@@ -172,7 +172,7 @@ describe('targetWritePlanOf', () => {
           }),
         );
 
-        expect(plan.tables).toMatchObject([{ hasFileFields }]);
+        expect(plan.tables).toMatchObject([{ target: { hasFileFields } }]);
       },
     );
 
@@ -196,7 +196,7 @@ describe('targetWritePlanOf', () => {
           }),
         );
 
-        expect(plan.tables).toMatchObject([{ hasFileFields }]);
+        expect(plan.tables).toMatchObject([{ target: { hasFileFields } }]);
       },
     );
   });
@@ -212,9 +212,10 @@ describe('targetWritePlanOf', () => {
               outcome: 'mixed',
               linkSide: 'draft',
               versionId: 'views-draft',
+              editInPlace: true,
               relinkCandidate: false,
-              removedLinks: ['products-views-draft'],
-              addedLinks: ['products-views-head'],
+              removedRowVersionIds: ['products-views-draft'],
+              addedRowVersionIds: ['products-views-head'],
               newRows: [],
             },
           ],
@@ -226,13 +227,17 @@ describe('targetWritePlanOf', () => {
           identity: SystemTables.Views,
           headVersionId: 'views-head',
           draftVersionId: 'views-draft',
-          outcome: 'mixed',
-          structureSide: 'draft',
-          removedRowVersionIds: ['products-views-draft'],
-          addedRowVersionIds: ['products-views-head'],
-          newRows: [],
+          target: {
+            kind: 'mixed',
+            tableId: SystemTables.Views,
+            sourceVersionId: 'views-draft',
+            editInPlace: true,
+            hasFileFields: false,
+            removedRowVersionIds: ['products-views-draft'],
+            addedRowVersionIds: ['products-views-head'],
+            newRows: [],
+          },
           relinkCandidate: false,
-          hasFileFields: false,
         },
       ]);
     });
@@ -247,8 +252,9 @@ describe('targetWritePlanOf', () => {
             tablePlanOf(products, {
               outcome: 'mixed',
               structureSide: 'head',
+              versionId: 'products-head',
               relinkCandidate: true,
-              removedLinks: ['p2-head'],
+              removedRowVersionIds: ['p2-head'],
               newRows: [mergedP2],
             }),
           ],
@@ -266,13 +272,17 @@ describe('targetWritePlanOf', () => {
             identity: products.identity,
             headVersionId: 'products-head',
             draftVersionId: 'products-draft',
-            outcome: 'mixed',
-            structureSide: 'head',
-            removedRowVersionIds: ['p2-head'],
-            addedRowVersionIds: [],
-            newRows: [mergedP2],
+            target: {
+              kind: 'mixed',
+              tableId: 'products',
+              sourceVersionId: 'products-head',
+              editInPlace: false,
+              hasFileFields: false,
+              removedRowVersionIds: ['p2-head'],
+              addedRowVersionIds: [],
+              newRows: [mergedP2],
+            },
             relinkCandidate: true,
-            hasFileFields: false,
           },
         ],
       });
@@ -283,7 +293,11 @@ describe('targetWritePlanOf', () => {
         writableTargetOf({
           pairs: [products],
           tables: [
-            tablePlanOf(products, { outcome: 'base', structureSide: 'draft' }),
+            tablePlanOf(products, {
+              outcome: 'base',
+              structureSide: 'draft',
+              versionId: 'products-draft',
+            }),
           ],
         }),
       );
@@ -291,8 +305,7 @@ describe('targetWritePlanOf', () => {
       expect(plan.tables).toEqual<CommitTableWritePlan[]>([
         expect.objectContaining({
           identity: products.identity,
-          outcome: 'base',
-          structureSide: 'draft',
+          target: { kind: 'linked', versionId: 'products-draft' },
         }),
       ]);
     });
@@ -360,9 +373,10 @@ function systemTablePlanOf(tableId: SystemTables): SystemTablePlan {
     outcome: 'mixed',
     linkSide: 'head',
     versionId: `${tableId}-head`,
+    editInPlace: false,
     relinkCandidate: false,
-    removedLinks: [],
-    addedLinks: [],
+    removedRowVersionIds: [],
+    addedRowVersionIds: [],
     newRows: [],
   };
 }
@@ -431,10 +445,11 @@ function tablePlanOf(pair: TablePair, plan: Partial<TablePlan>): TablePlan {
     identity: pair.identity,
     outcome: 'unchanged',
     structureSide: 'draft',
+    editInPlace: false,
     relinkCandidate: false,
     rows: [],
-    removedLinks: [],
-    addedLinks: [],
+    removedRowVersionIds: [],
+    addedRowVersionIds: [],
     newRows: [],
     ...plan,
   };

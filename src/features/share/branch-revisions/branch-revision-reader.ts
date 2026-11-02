@@ -23,8 +23,10 @@ export interface StoredTable {
   readonly system: boolean;
 }
 
+export type StoredTableVersion = Pick<StoredTable, 'versionId' | 'readonly'>;
+
 export interface StoredSystemTable {
-  readonly versionId?: string;
+  readonly version?: StoredTableVersion;
   readonly rows: readonly Row[];
 }
 
@@ -110,7 +112,7 @@ export class BranchRevisionReader {
     }
 
     return {
-      versionId: table.versionId,
+      version: storedVersionOf(table),
       rows: await this.client.row.findMany({
         where: { tables: { some: { versionId: table.versionId } } },
       }),
@@ -123,6 +125,13 @@ export function systemTableOf(
   tableId: SystemTables,
 ): StoredTable | undefined {
   return tables.find(({ id, system }) => system && id === tableId);
+}
+
+export function storedVersionOf({
+  versionId,
+  readonly,
+}: StoredTable): StoredTableVersion {
+  return { versionId, readonly };
 }
 
 export function userTableVersionIdsOf(

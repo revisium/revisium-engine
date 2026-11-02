@@ -4,11 +4,13 @@ import {
   createBranchScenarioTestKit,
   type BranchScenarioTestKit,
 } from 'src/__tests__/kit/create-branch-scenario-test-kit';
-import type {
-  DamageShape,
-  FindingRole,
-  RowDiagnostics,
-  ScanSchemaLedgerData,
+import {
+  DAMAGE_SHAPES,
+  type DamageShape,
+  type FindingRole,
+  ROW_DIAGNOSTICS,
+  type RowDiagnostics,
+  type ScanSchemaLedgerData,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
 import type * as SchemaChecksModule from 'src/features/migration/ledger-scan/schema-checks';
 import type * as LedgerReplayModule from 'src/features/share/ledger-replay/ledger-replay';
@@ -256,7 +258,7 @@ describe('Schema ledger scan', () => {
   });
 
   describe('schema damage', () => {
-    it.each<ShapeCase>([
+    const shapeCases: ShapeCase[] = [
       {
         rows: 'not migrated',
         given: givenUnpublishedInPlaceMigration,
@@ -287,7 +289,9 @@ describe('Schema ledger scan', () => {
         rowDiagnostics: 'none',
         shape: 'unknown',
       },
-    ])(
+    ];
+
+    it.each(shapeCases)(
       'reports a damaged Head table whose rows are $rows as $shape with rowDiagnostics $rowDiagnostics',
       async ({ given, rowDiagnostics, shape }) => {
         const draft = await given();
@@ -303,6 +307,12 @@ describe('Schema ledger scan', () => {
         );
       },
     );
+
+    it('covers every value of DAMAGE_SHAPES', () => {
+      const shapes = shapeCases.map(({ shape }) => shape);
+
+      expect(new Set(shapes)).toEqual(new Set(DAMAGE_SHAPES));
+    });
 
     it('reports a ledgered Head table without a schema row as damaged with an unknown shape', async () => {
       const draft = await givenCommittedCatalog();
@@ -521,11 +531,13 @@ describe('Schema ledger scan', () => {
       ]);
     });
 
-    it.each<RowDiagnosticsCase>([
+    const rowDiagnosticsCases: RowDiagnosticsCase[] = [
       { rowDiagnostics: 'none', roles: [] },
       { rowDiagnostics: 'headAndDraft', roles: ['draft'] },
       { rowDiagnostics: 'all', roles: ['draft', 'history'] },
-    ])(
+    ];
+
+    it.each(rowDiagnosticsCases)(
       'checks row schema hashes in the $roles revisions with rowDiagnostics $rowDiagnostics',
       async ({ rowDiagnostics, roles }) => {
         const draft = await givenRowMismatchesInDraftAndHistory();
@@ -539,6 +551,15 @@ describe('Schema ledger scan', () => {
         ).toEqual(roles);
       },
     );
+
+    it('covers every value of ROW_DIAGNOSTICS', () => {
+      const modes = rowDiagnosticsCases.map(
+        ({ rowDiagnostics }) => rowDiagnostics,
+      );
+
+      expect(new Set(modes)).toEqual(new Set(ROW_DIAGNOSTICS));
+    });
+
     it('classifies the row hashes of a table version once per ledger however many revisions share them', async () => {
       const draft = await givenUnknownRowHashSharedByTenCommits();
 
@@ -637,10 +658,42 @@ describe('Schema ledger scan', () => {
   });
 
   describe('request validation', () => {
+    it('scans with cursor, limit and rowDiagnostics given as null as it scans without them', async () => {
+      const draft = await givenUnpublishedInPlaceMigration();
+
+      const scan = await scanBranch(kit, draft, {
+        cursor: null,
+        limit: null,
+        rowDiagnostics: null,
+      });
+
+      expect(scan).toEqual(await scanBranch(kit, draft));
+    });
+
+    it('scans with projectId and branchName given as null as it scans every project', async () => {
+      const draft = await givenDamagedProjectWithThreeBranches();
+      const { nextCursor: cursor } = await scanProject(kit, draft, {
+        limit: 1,
+      });
+
+      const page = await scanLedgers(kit, {
+        projectId: null,
+        branchName: null,
+        cursor,
+        limit: 1,
+      });
+
+      expect(page).toEqual(await scanLedgers(kit, { cursor, limit: 1 }));
+    });
+
     it.each<InvalidRequestCase>([
       {
         request: 'a branch name without a project',
         data: { branchName: 'master' },
+      },
+      {
+        request: 'a branch name with a project given as null',
+        data: { projectId: null, branchName: 'master' },
       },
       { request: 'a malformed cursor', data: { cursor: 'not-a-cursor' } },
       { request: 'a limit below one', data: { limit: 0 } },

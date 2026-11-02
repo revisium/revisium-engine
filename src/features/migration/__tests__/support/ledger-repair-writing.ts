@@ -49,9 +49,14 @@ export function repairLedger(
   draft: BranchScenario,
   options: RepairOptions = {},
 ): Promise<SchemaLedgerRepair> {
-  return kit.module
-    .get(MigrationApiService)
-    .repairSchemaLedger({ ...draft.branch, ...options });
+  return requestRepair(kit, { ...draft.branch, ...options });
+}
+
+export function requestRepair(
+  kit: BranchScenarioTestKit,
+  data: RepairSchemaLedgerData,
+): Promise<SchemaLedgerRepair> {
+  return kit.module.get(MigrationApiService).repairSchemaLedger(data);
 }
 
 export function tableRepairOf(

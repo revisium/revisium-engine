@@ -10,18 +10,21 @@ export class PlanSchemaLedgerRepairQuery {
   constructor(public readonly data: PlanSchemaLedgerRepairData) {}
 }
 
-export type RepairOutcome =
-  | 'unledgered'
-  | 'ledgerDoesNotReplay'
-  | 'notDamaged'
-  | 'draftOnlyDamage'
-  | 'ledgerInconsistent'
-  | 'alreadyRepaired'
-  | 'repaired'
-  | 'rowsNeedMigration'
-  | 'patchNotReproducible'
-  | 'blockedByDependency'
-  | 'needsDraftStructureRevert';
+export const REPAIR_OUTCOMES = [
+  'unledgered',
+  'ledgerDoesNotReplay',
+  'notDamaged',
+  'draftOnlyDamage',
+  'ledgerInconsistent',
+  'alreadyRepaired',
+  'repaired',
+  'rowsNeedMigration',
+  'patchNotReproducible',
+  'blockedByDependency',
+  'needsDraftStructureRevert',
+] as const;
+
+export type RepairOutcome = (typeof REPAIR_OUTCOMES)[number];
 
 export interface InvalidRows {
   readonly count: number;

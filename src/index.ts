@@ -189,6 +189,19 @@ export type {
   TableViewsData,
 } from './features/views/types';
 
+// Schema Ledger Scan and Repair — code lists
+export {
+  DAMAGE_SHAPES,
+  DAMAGED_TABLE_REPAIRS,
+  FINDING_CODES,
+  FINDING_ROLES,
+  ROW_DIAGNOSTICS,
+  type RowDiagnostics,
+  UNLEDGERED_REASONS,
+} from './features/migration/queries/impl/scan-schema-ledger.query';
+export { REPAIR_OUTCOMES } from './features/migration/queries/impl/plan-schema-ledger-repair.query';
+export { TABLE_REPAIR_OUTCOMES } from './features/migration/commands/impl/repair-schema-ledger.command';
+
 // Draft Command Data Types
 export type { ApiCreateRevisionCommandData } from './features/draft/commands/impl/api-create-revision.command';
 export type { ApiCreateRevisionCommandReturnType } from './features/draft/commands/impl/api-create-revision.command';

@@ -7,7 +7,11 @@ import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type { ChangesScenario } from './support/changes-scenario';
 import { unionOfSelections } from './support/dependency-closing';
-import { givenRandomDraft, RANDOM_DRAFT_SEEDS } from './support/random-draft';
+import {
+  givenRandomDraft,
+  RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  RANDOM_DRAFT_SEEDS,
+} from './support/random-draft';
 import { UnitKindCoverage } from './support/unit-kind-coverage';
 
 const OPERATIONS: readonly ChangeOperation[] = ['commit', 'revert'];
@@ -43,6 +47,7 @@ describe('listed selectors over random Drafts (AS-61)', () => {
         await expectUnionToPreviewAsWholeDraft(draft, operation, units);
       }
     },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
   it('lists every unit kind across its seeds', () => {

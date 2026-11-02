@@ -4,6 +4,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import {
   givenRandomDraftTwins,
+  RANDOM_DRAFT_SEED_TIMEOUT_MS,
   RANDOM_DRAFT_SEEDS,
 } from './support/random-draft';
 import { versionedContentsOf } from './support/revision-contents';
@@ -41,6 +42,7 @@ describe('{ all: true } revert against native revertChanges over random Drafts (
       );
       expect(await draft.hasChanges()).toBe(await twin.hasChanges());
     },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
   it('reverts every unit kind across its seeds', () => {

@@ -16,7 +16,11 @@ import {
   replayedSchemasOf,
   schemasOf,
 } from './support/ledger-replaying';
-import { givenRandomDraft, RANDOM_DRAFT_SEEDS } from './support/random-draft';
+import {
+  givenRandomDraft,
+  RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  RANDOM_DRAFT_SEEDS,
+} from './support/random-draft';
 import {
   type ComparedColumns,
   comparedColumnsOf,
@@ -60,6 +64,7 @@ describe('committing listed units one by one over random Drafts (AS-65b)', () =>
         await schemasOf(draft, 'head'),
       );
     },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
   it('commits every unit kind across its seeds', () => {

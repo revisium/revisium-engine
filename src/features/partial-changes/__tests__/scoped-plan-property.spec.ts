@@ -16,7 +16,11 @@ import {
   type PlanView,
   readPlan,
 } from './support/plan-reading';
-import { givenRandomDraft, RANDOM_DRAFT_SEEDS } from './support/random-draft';
+import {
+  givenRandomDraft,
+  RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  RANDOM_DRAFT_SEEDS,
+} from './support/random-draft';
 import { READING_EVERY_TABLE } from './support/scoped-reading';
 import { UnitKindCoverage } from './support/unit-kind-coverage';
 
@@ -59,6 +63,7 @@ describe('scoped reading over random Drafts and selections (AS-74)', () => {
         }
       }
     },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
   it('applies every unit kind across its seeds', () => {

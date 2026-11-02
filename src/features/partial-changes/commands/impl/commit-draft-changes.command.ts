@@ -5,7 +5,7 @@ import type {
 } from 'src/features/partial-changes/commands/impl/apply-changes';
 
 export interface CommitChangesInput extends ApplyChangesInput {
-  readonly comment?: string;
+  readonly comment?: string | null;
 }
 
 export interface RenumberedMigration {

@@ -10,7 +10,7 @@ export interface RequiredAdditionsAcceptance {
   readonly expected?: string;
 }
 
-type Check = (value: unknown, at: string) => void;
+type Check = (value: unknown, at: string) => unknown;
 
 interface Field {
   readonly check: Check;
@@ -27,9 +27,7 @@ const OPERATIONS: ReadonlySet<unknown> = new Set<ChangeOperation>([
 ]);
 
 export function validateSelection(input: unknown): Selection {
-  checkSelection(input, 'selection');
-
-  return input as Selection;
+  return checkSelection(input, 'selection') as Selection;
 }
 
 export function validateOperation(input: unknown): ChangeOperation {
@@ -53,24 +51,32 @@ const checkNonEmptyString: Check = (value, at) => {
   if (typeof value !== 'string' || value === '') {
     throw invalid(`${at} must be a non-empty string`);
   }
+
+  return value;
 };
 
 const checkBoolean: Check = (value, at) => {
   if (typeof value !== 'boolean') {
     throw invalid(`${at} must be a boolean`);
   }
+
+  return value;
 };
 
 const checkSide: Check = (value, at) => {
   if (value !== HEAD_SIDE) {
     throw invalid(`${at} must be '${HEAD_SIDE}'`);
   }
+
+  return value;
 };
 
 const checkJsonPointer: Check = (value, at) => {
   if (typeof value !== 'string' || !JsonPointer.isValid(value)) {
     throw invalid(`${at} must be a JSON Pointer`);
   }
+
+  return value;
 };
 
 const checkTableObject = objectOf({
@@ -80,10 +86,10 @@ const checkTableObject = objectOf({
 
 const checkTableRef: Check = (value, at) => {
   if (typeof value === 'string') {
-    checkNonEmptyString(value, at);
-  } else {
-    checkTableObject(value, at);
+    return checkNonEmptyString(value, at);
   }
+
+  return checkTableObject(value, at);
 };
 
 const checkRowRef = objectOf({
@@ -121,24 +127,44 @@ function objectOf(fields: Readonly<Record<string, Field>>): Check {
   return (value, at) => {
     const object = objectAt(value, at);
 
-    for (const name of Object.keys(object)) {
-      if (!known.has(name)) {
-        throw invalid(`${at}.${name} is not allowed`);
-      }
-    }
+    rejectUnknownFields(object, known, at);
 
-    for (const [name, field] of known) {
-      checkField(field, object[name], `${at}.${name}`);
-    }
+    return checkedFieldsOf(object, known, at);
   };
 }
 
-function checkField(field: Field, value: unknown, at: string): void {
-  if (value === undefined && field.optional) {
-    return;
+function rejectUnknownFields(
+  object: ObjectRecord,
+  known: ReadonlyMap<string, Field>,
+  at: string,
+): void {
+  for (const name of Object.keys(object)) {
+    if (!known.has(name)) {
+      throw invalid(`${at}.${name} is not allowed`);
+    }
+  }
+}
+
+function checkedFieldsOf(
+  object: ObjectRecord,
+  known: ReadonlyMap<string, Field>,
+  at: string,
+): ObjectRecord {
+  const checked: Record<string, unknown> = {};
+
+  for (const [name, field] of known) {
+    const value = object[name];
+
+    if (!isOmitted(field, value)) {
+      checked[name] = field.check(value, `${at}.${name}`);
+    }
   }
 
-  field.check(value, at);
+  return checked;
+}
+
+function isOmitted(field: Field, value: unknown): boolean {
+  return field.optional && (value === undefined || value === null);
 }
 
 function arrayOf(checkItem: Check): Check {
@@ -147,9 +173,13 @@ function arrayOf(checkItem: Check): Check {
       throw invalid(`${at} must be an array`);
     }
 
+    const checked: unknown[] = [];
+
     for (let index = 0; index < value.length; index += 1) {
-      checkItem(value[index], `${at}[${index}]`);
+      checked.push(checkItem(value[index], `${at}[${index}]`));
     }
+
+    return checked;
   };
 }
 

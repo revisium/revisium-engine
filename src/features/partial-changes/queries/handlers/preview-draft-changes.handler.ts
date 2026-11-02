@@ -91,13 +91,13 @@ function previewRequestOf({
   branch,
   operation,
   selection,
-  includeRequired = false,
+  includeRequired,
 }: PreviewChangesInput): PreviewRequest {
   return {
     branch,
     operation: validateOperation(operation),
     selection: validateSelection(selection),
-    includeRequired,
+    includeRequired: includeRequired ?? false,
   };
 }
 

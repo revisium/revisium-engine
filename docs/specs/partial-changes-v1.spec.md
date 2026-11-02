@@ -253,6 +253,14 @@ Callers: the engine facade (`changes` namespace, §5.10), and through it the adm
 (REQ-001.BR-001). The engine features that plan and write, and their responsibilities, are defined in
 [ADR-001, Modules and Interactions](../adr/ADR-001-partial-commit-and-revert.md#modules-and-interactions).
 
+**Optional input fields.** An optional input field of `listChanges`, `previewChanges`, `commitChanges` or
+`revertChanges` given as `null` is treated as absent, at any depth: the optional fields of the input, every field of a
+`Selection` (§4.1) and of its `exclude`, and `side` of a selector that has it. A transport that sends `null` for an
+omitted argument (as GraphQL clients do) needs no mapping. Required fields stay required: one given as `null` is refused
+as if omitted. Only declared fields are optional: a field the object does not have stays malformed when given as
+`null` (§5.9), for example an unknown selection field, `all` or `exclude` inside `exclude`, or `path` of a `rows`
+selector.
+
 ### 5.1 Common types
 
 **Branch** `{ projectId: string; branchName: string }`, required in every operation; the operations act on its Head
@@ -499,7 +507,7 @@ added (§6.9).
 | Condition | Result |
 | --- | --- |
 | `includeRequired: true` without `expected` | Validation error before any transaction. |
-| A malformed selection: an unknown field, a wrong type, an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
+| A malformed selection: an unknown field, a wrong type (`null` in an optional field is absent, §5), an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
 | Invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
 | Unknown project or branch | Not-found error (native). |
 | Commit or revert while an async migration is active on the branch | `MigrationLocked` error (native lock). |
@@ -577,21 +585,22 @@ type Estimate = { changedRows: number; mergedRows: number; perRowWorkRows: numbe
   mixedTables: Array<{ tableId: string; linksCopied: number; linksAdded: number }> };
 type Counts = { selected: number; required: number; remaining: number };
 
-type ListChangesInput = { branch: Branch; tableId?: string; cursor?: string; pageSize?: number };
+type ListChangesInput = { branch: Branch; tableId?: string | null; cursor?: string | null;
+  pageSize?: number | null };
 type RefusedTable = { tableId: string; code: 'headSchemaInconsistent' | 'unledgeredTable' };
 type ListChangesResult = { headRevisionId: string; draftRevisionId: string; units: ListedUnit[];
   nextCursor: string | null; refusedTables: RefusedTable[] };
 
-type PreviewChangesInput = { branch: Branch; operation: 'commit' | 'revert'; selection: Selection;
-  includeRequired?: boolean };
+type PreviewChangesInput = { branch: Branch; operation: 'commit' | 'revert'; selection: SelectionInput;
+  includeRequired?: boolean | null };
 type PreviewChangesResult = { status: 'ready' | 'required' | 'blocked' | 'empty';
   headRevisionId: string; draftRevisionId: string; fingerprint: string; counts: Counts; unreadTables: number;
   refusedTables: RefusedTable[];
   required: RequiredUnit[]; blockers: Blocker[]; deferred: Deferred[]; sample: UnitRef[];
   unmatched: SelectionItems & { exclude?: SelectionItems }; estimate: Estimate };
 
-type CommitChangesInput = { branch: Branch; selection: Selection; includeRequired?: boolean; expected?: string;
-  comment?: string };
+type CommitChangesInput = { branch: Branch; selection: SelectionInput; includeRequired?: boolean | null;
+  expected?: string | null; comment?: string | null };
 type RevertChangesInput = Omit<CommitChangesInput, 'comment'>;
 type ApplyChangesResult = { status: 'applied' | 'required' | 'blocked' | 'stale' | 'empty';
   previousHeadRevisionId?: string; headRevisionId?: string; draftRevisionId?: string;
@@ -600,7 +609,8 @@ type ApplyChangesResult = { status: 'applied' | 'required' | 'blocked' | 'stale'
   unmatched?: SelectionItems & { exclude?: SelectionItems } };
 ```
 
-`RequiredReasonCode` and `BlockerCode` are the codes of §5.7 and §5.8.
+`RequiredReasonCode` and `BlockerCode` are the codes of §5.7 and §5.8. `SelectionInput` is `Selection` with `| null`
+added to each optional field at every depth; the engine normalises it into `Selection` (§5).
 
 ### 5.12 Examples
 
@@ -1735,6 +1745,14 @@ Listing of structure units:
   `changed`. Only the listing carries it; unit identities, selectors, preview results and the fingerprint do not
   change.
 - §13.6: AS-60 covers the structure UnitRef; AS-60a covers `structureChange`.
+
+Optional inputs:
+
+- §5, §5.9, §5.11: an optional input field of the four operations given as `null` is treated as absent, at any depth
+  of the input and its selection; required fields stay required, and a field the object does not have stays malformed
+  when given as `null`. The input types accept `null` in exactly those fields (`SelectionInput`). GraphQL clients
+  send `null` for omitted optional arguments, which the engine took as values (`cursor: null` was a malformed cursor,
+  `expected: null` made a commit `stale`).
 
 ### Version 1.1 (2026-10-31)
 

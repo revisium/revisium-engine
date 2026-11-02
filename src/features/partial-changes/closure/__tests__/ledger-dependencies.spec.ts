@@ -10,9 +10,10 @@ import {
   moveField,
   removeField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
+import { migrationIdOf } from 'src/__tests__/fixtures/stored-ledger';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
-import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
 import {
   replayedSchemasOf,
   schemasOf,
@@ -144,7 +145,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
   describe('a table created while the table it references had another id', () => {
     it('requires reverting the created table when the renames are reverted', async () => {
       const draft = await givenLinksCreatedWhileNotesWasRenamed(kit);
-      const initOfLinks = await draft.migrationIdOf('init', LINKS);
+      const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('revert', {
         tables: [NOTES],
@@ -165,7 +166,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
     it('requires the renames when the created table is committed', async () => {
       const draft = await givenLinksCreatedWhileNotesWasRenamed(kit);
-      const initOfLinks = await draft.migrationIdOf('init', LINKS);
+      const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('commit', {
         tables: [LINKS],
@@ -186,7 +187,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
     it('requires the created table when the renames are committed', async () => {
       const draft = await givenLinksCreatedWhileNotesWasRenamed(kit);
-      const initOfLinks = await draft.migrationIdOf('init', LINKS);
+      const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('commit', {
         tables: [NOTES],
@@ -207,7 +208,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
     it('blocks a required table that the selection excludes as requiredExcluded', async () => {
       const draft = await givenLinksCreatedWhileNotesWasRenamed(kit);
-      const initOfLinks = await draft.migrationIdOf('init', LINKS);
+      const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('revert', {
         tables: [NOTES],
@@ -235,7 +236,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
     it('requires reverting the removed table when the rename is reverted', async () => {
       const draft =
         await givenLinksCreatedAndRemovedWhileCategoriesWasRenamed(kit);
-      const initOfLinks = await draft.migrationIdOf('init', LINKS);
+      const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('revert', {
         tables: [KINDS],
@@ -257,7 +258,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
     it('requires the rename when the removed table is committed', async () => {
       const draft =
         await givenLinksCreatedAndRemovedWhileCategoriesWasRenamed(kit);
-      const initOfLinks = await draft.migrationIdOf('init', LINKS);
+      const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('commit', {
         tables: [LINKS],
@@ -280,7 +281,8 @@ describe('DependencyClosure: pending migrations that need a table id another uni
   describe('tables rotated into the id of a removed table', () => {
     it('requires reverting the renames into the restored ids when the removal is reverted', async () => {
       const draft = await givenTablesRotatedIntoRemovedNotes(kit);
-      const renameOfCategories = await draft.migrationIdOf(
+      const renameOfCategories = await migrationIdOf(
+        draft,
         'rename',
         CATEGORIES,
       );
@@ -313,7 +315,8 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
     it('requires the removal whose id the committed renames take', async () => {
       const draft = await givenTablesRotatedIntoRemovedNotes(kit);
-      const renameOfCategories = await draft.migrationIdOf(
+      const renameOfCategories = await migrationIdOf(
+        draft,
         'rename',
         CATEGORIES,
       );
@@ -349,7 +352,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
     it('requires the referrer that the remaining Draft would resolve to the other table when both tables are committed', async () => {
       const draft =
         await givenProductsReferencingNotesBeforeItsIdWasReused(kit);
-      const updateOfProducts = await draft.migrationIdOf('update', PRODUCTS);
+      const updateOfProducts = await migrationIdOf(draft, 'update', PRODUCTS);
 
       const closure = await draft.closeDependencies('commit', {
         tables: [NOTES, MEMOS],

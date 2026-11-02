@@ -12,13 +12,16 @@ import {
   addField,
   removeField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
-import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   completeAsyncMigrationInPlace,
-  describedLedgerOf,
   recordLedgerRepair,
   schemaRowOf,
-} from '../../__tests__/support/head-schema-damage';
+} from 'src/__tests__/fixtures/head-schema-damage';
+import {
+  describedLedgerOf,
+  pendingMigrationIds,
+} from 'src/__tests__/fixtures/stored-ledger';
+import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const PRODUCTS = 'products';
 const ITEMS = 'items';
@@ -163,7 +166,7 @@ describe('TargetValidator', () => {
       const draft = await givenEditedCatalog();
       await draft.updateTable(PRODUCTS, [addField('weight', num())]);
       await draft.updateTable(PRODUCTS, [addField('size', num())]);
-      const [firstId, secondId] = await draft.pendingMigrationIds();
+      const [firstId, secondId] = await pendingMigrationIds(draft);
       await draft.exchangeMigrationIds(firstId ?? '', secondId ?? '');
 
       const blockers = await draft.validateTarget('commit', {

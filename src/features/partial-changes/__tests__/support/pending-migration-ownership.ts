@@ -2,7 +2,8 @@ import type { Migration } from '@revisium/schema-toolkit/types';
 import type { Row } from 'src/engine-prisma-types';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { type CatalogueView, describeMigration } from './catalogue-reading';
+import { describeMigration } from 'src/__tests__/fixtures/stored-ledger';
+import type { CatalogueView } from './catalogue-reading';
 
 export function pendingMigrationViolationsOf(view: CatalogueView): string[] {
   const unattributable = unattributableMigrationIdsOf(view);

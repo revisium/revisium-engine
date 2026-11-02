@@ -1,5 +1,5 @@
 import objectHash from 'object-hash';
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import type { JsonValue, Row, Table } from 'src/engine-prisma-types';
 import {
   type MixedTableVersion,
@@ -10,7 +10,7 @@ import {
   type TableWritePlan,
   type TargetTableVersion,
 } from 'src/features/draft-revision/commands/impl';
-import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
+import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 
 export interface MergedColumns {
   readonly data?: JsonValue;
@@ -41,8 +41,8 @@ export interface TableVersions {
 
 export class TablePlans {
   constructor(
-    private readonly kit: PartialChangesTestKit,
-    private readonly draft: ChangesScenario,
+    private readonly kit: BranchScenarioTestKit,
+    private readonly draft: BranchScenario,
     private readonly baseSide: RevisionSide,
   ) {}
 

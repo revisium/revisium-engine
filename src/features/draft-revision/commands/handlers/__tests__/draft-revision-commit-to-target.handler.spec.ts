@@ -2,15 +2,15 @@ import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
 import { num, obj, ref, str } from '@revisium/schema-toolkit/mocks';
 import objectHash from 'object-hash';
 import {
-  createPartialChangesTestKit,
-  type PartialChangesTestKit,
-} from 'src/__tests__/kit/create-partial-changes-test-kit';
+  createBranchScenarioTestKit,
+  type BranchScenarioTestKit,
+} from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import { countSqlStatements } from 'src/__tests__/utils/sql-statements';
 import { type JsonValue, type Row, sql } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
 import { FileUsageIntegrationService } from 'src/features/file-usage/services/file-usage-integration.service';
-import { branchContentOf } from 'src/features/partial-changes/__tests__/support/branch-content';
-import { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
+import { branchContentOf } from 'src/__tests__/fixtures/branch-content';
+import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import {
   addField,
   removeField,
@@ -51,10 +51,10 @@ const emptyFile = {
 };
 
 describe('DraftRevisionCommitToTargetHandler', () => {
-  let kit: PartialChangesTestKit;
+  let kit: BranchScenarioTestKit;
 
   beforeAll(async () => {
-    kit = await createPartialChangesTestKit();
+    kit = await createBranchScenarioTestKit();
   });
 
   afterEach(async () => {
@@ -522,7 +522,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
         relinkCandidate: true,
       });
 
-      expect(await hasChanges(draft)).toBe(false);
+      expect(await draft.hasChanges()).toBe(false);
     });
 
     it('stays true while the next Draft keeps changes', async () => {
@@ -534,7 +534,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
         rows: { otherSide: ['p1'] },
       });
 
-      expect(await hasChanges(draft)).toBe(true);
+      expect(await draft.hasChanges()).toBe(true);
     });
   });
 
@@ -576,7 +576,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
   });
 
   function commitTo(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     ...targets: CommitTableTarget[]
   ): Promise<CommitResult> {
     return new CommitTarget(kit, draft).commit(...targets);
@@ -594,7 +594,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
   }
 
   async function expectNewReadonlyHeadVersionOf(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     tableId: string,
     sourceVersionId: string,
   ): Promise<void> {
@@ -658,7 +658,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
   }
 
   async function pendingMigrationIdsOf(
-    draft: ChangesScenario,
+    draft: BranchScenario,
   ): Promise<[string, string]> {
     const [first, second, ...others] = (
       await new CommitTarget(kit, draft).draftOnlyRowIds(SystemTables.Migration)
@@ -676,7 +676,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     structureSide: RevisionSide,
   ): Promise<number> {
     const rowIds = Array.from({ length: rowCount }, (_, index) => `r${index}`);
-    const draft = await ChangesScenario.committed(kit, {
+    const draft = await BranchScenario.committed(kit, {
       [PRODUCTS]: {
         schema: productSchema,
         rows: Object.fromEntries(
@@ -729,8 +729,8 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     return countSqlStatements(() => target.write(plan));
   }
 
-  function givenCommittedProducts(): Promise<ChangesScenario> {
-    return ChangesScenario.committed(kit, {
+  function givenCommittedProducts(): Promise<BranchScenario> {
+    return BranchScenario.committed(kit, {
       [PRODUCTS]: {
         schema: productSchema,
         rows: {
@@ -742,8 +742,8 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     });
   }
 
-  function givenCommittedProductsAndCategories(): Promise<ChangesScenario> {
-    return ChangesScenario.committed(kit, {
+  function givenCommittedProductsAndCategories(): Promise<BranchScenario> {
+    return BranchScenario.committed(kit, {
       [PRODUCTS]: {
         schema: productSchema,
         rows: {
@@ -759,14 +759,14 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     });
   }
 
-  async function givenDraftWithEditedPrice(): Promise<ChangesScenario> {
+  async function givenDraftWithEditedPrice(): Promise<BranchScenario> {
     const draft = await givenCommittedProducts();
     await draft.updateRow(PRODUCTS, 'p1', { code: 'one', price: 11 });
 
     return draft;
   }
 
-  async function givenDraftWithEditedPrices(): Promise<ChangesScenario> {
+  async function givenDraftWithEditedPrices(): Promise<BranchScenario> {
     const draft = await givenDraftWithEditedPrice();
     await draft.updateRow(PRODUCTS, 'p2', { code: 'changed', price: 22 });
     await draft.createRows(PRODUCTS, { p4: { code: 'four', price: 4 } });
@@ -774,7 +774,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     return draft;
   }
 
-  async function givenDraftWithCreatedCategories(): Promise<ChangesScenario> {
+  async function givenDraftWithCreatedCategories(): Promise<BranchScenario> {
     const draft = await givenCommittedProducts();
     await draft.createTable(CATEGORIES, categorySchema);
     await draft.createRows(CATEGORIES, {
@@ -785,7 +785,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     return draft;
   }
 
-  async function givenDraftChangingRowsOfLargeTable(): Promise<ChangesScenario> {
+  async function givenDraftChangingRowsOfLargeTable(): Promise<BranchScenario> {
     const draft = await givenCommittedLargeProducts();
 
     for (const rowId of CHANGED_ROW_IDS) {
@@ -795,8 +795,8 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     return draft;
   }
 
-  async function givenCommittedLargeProducts(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
+  async function givenCommittedLargeProducts(): Promise<BranchScenario> {
+    const draft = await BranchScenario.committed(kit, {
       [PRODUCTS]: {
         schema: productSchema,
         rows: { r0: { code: 'r0', price: 1 } },
@@ -817,7 +817,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
 
   // Native row writers validate row by row and exceed their transaction timeout at 5,000 rows.
   async function insertDraftProductsInBulk(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     rowIds: readonly string[],
   ): Promise<void> {
     const tableVersionId = await draft.tableVersionId('draft', PRODUCTS);
@@ -841,7 +841,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     `);
   }
 
-  async function givenDraftWithPendingMigrations(): Promise<ChangesScenario> {
+  async function givenDraftWithPendingMigrations(): Promise<BranchScenario> {
     const draft = await givenCommittedProducts();
     await draft.updateTable(PRODUCTS, [addField('stock', num())]);
     await draft.createTable(CATEGORIES, categorySchema);
@@ -849,7 +849,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     return draft;
   }
 
-  async function givenDraftWithEveryKindOfChange(): Promise<ChangesScenario> {
+  async function givenDraftWithEveryKindOfChange(): Promise<BranchScenario> {
     const draft = await givenCommittedProductsAndCategories();
     await draft.updateRow(PRODUCTS, 'p1', { code: 'one', price: 11 });
     await draft.createRows(PRODUCTS, { p4: { code: 'four', price: 4 } });
@@ -863,8 +863,8 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     return draft;
   }
 
-  async function givenHeadImageWithDraftDroppingTheImageField(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
+  async function givenHeadImageWithDraftDroppingTheImageField(): Promise<BranchScenario> {
+    const draft = await BranchScenario.committed(kit, {
       [DOCUMENTS]: {
         schema: documentSchema,
         rows: { d1: { title: 'one', image: emptyFile } },
@@ -878,7 +878,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
   }
 
   async function rowVersionsOf(
-    draft: ChangesScenario,
+    draft: BranchScenario,
     side: RevisionSide,
     tableId: string,
   ): Promise<Record<string, string>> {
@@ -947,7 +947,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
   }
 
   async function readonlyFlagsOfBranch(
-    draft: ChangesScenario,
+    draft: BranchScenario,
   ): Promise<ReadonlyFlags> {
     const tables = await kit.prisma.table.findMany({
       where: { revisions: { some: { branchId: draft.branchId } } },
@@ -993,7 +993,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
     return tables.map((table) => table.versionId);
   }
 
-  async function rowWritesOf(draft: ChangesScenario): Promise<RowWrites> {
+  async function rowWritesOf(draft: BranchScenario): Promise<RowWrites> {
     const rows = await kit.prisma.$queryRaw<
       { versionId: string; writingTransactionId: string }[]
     >`
@@ -1012,12 +1012,6 @@ describe('DraftRevisionCommitToTargetHandler', () => {
 
   function revision(revisionId: string) {
     return kit.prisma.revision.findUniqueOrThrow({ where: { id: revisionId } });
-  }
-
-  async function hasChanges(draft: ChangesScenario): Promise<boolean> {
-    const { hasChanges } = await revision(await draft.revisionId('draft'));
-
-    return hasChanges;
   }
 
   async function blobIdsOf(rowVersionId: string): Promise<string[]> {

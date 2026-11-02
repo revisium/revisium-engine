@@ -1,6 +1,6 @@
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import type { JsonValue, Row } from 'src/engine-prisma-types';
-import type { ChangesScenario } from './changes-scenario';
+import type { BranchScenario } from './branch-scenario';
 
 const ISO_TIMESTAMP = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g;
 
@@ -19,8 +19,8 @@ export interface BranchContent {
 
 // Twin branches differ only in when they were built: migration ids, schema history dates and publishedAt.
 export async function branchContentOf(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
 ): Promise<BranchContent> {
   return {
     head: await revisionContentOf(kit, await draft.revisionId('head')),
@@ -30,7 +30,7 @@ export async function branchContentOf(
 }
 
 async function revisionContentOf(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
   revisionId: string,
 ): Promise<TableContent[]> {
   const tables = await kit.prisma.table.findMany({

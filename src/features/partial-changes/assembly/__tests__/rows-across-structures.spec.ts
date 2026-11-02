@@ -14,12 +14,12 @@ import {
   removeField,
   replaceField,
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
-import { ChangesScenario } from '../../__tests__/support/changes-scenario';
-import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 import {
   completeAsyncMigrationInPlace,
   recordLedgerRepair,
-} from '../../__tests__/support/head-schema-damage';
+} from 'src/__tests__/fixtures/head-schema-damage';
+import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 
 const PRODUCTS = 'products';
 const ORDERS = 'orders';

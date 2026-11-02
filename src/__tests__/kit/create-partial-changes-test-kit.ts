@@ -1,18 +1,8 @@
-import { CacheModule } from '@nestjs/cache-manager';
-import { ConfigModule } from '@nestjs/config';
-import { CommandBus, CqrsModule } from '@nestjs/cqrs';
-import { Test, TestingModule } from '@nestjs/testing';
-import { CommittedVersionsGuard } from 'src/__tests__/assertions/committed-versions-guard';
-import type { ProviderOverride } from 'src/__tests__/kit/create-database-service-test-kit';
-import { createStorageMock } from 'src/__tests__/kit/storage.mock';
-import { BranchModule } from 'src/features/branch/branch.module';
-import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
-import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
-import { DraftApiService } from 'src/features/draft/draft-api.service';
-import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
-import { DraftModule } from 'src/features/draft/draft.module';
-import { FileUsageModule } from 'src/features/file-usage/file-usage.module';
-import { MigrationModule } from 'src/features/migration/migration.module';
+import {
+  type BranchScenarioTestKit,
+  type BranchScenarioTestKitOptions,
+  createBranchScenarioTestKit,
+} from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import { PartialChangesApiService } from 'src/features/partial-changes/partial-changes-api.service';
@@ -22,36 +12,10 @@ import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { ComparedSnapshotReader } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import { TargetValidator } from 'src/features/partial-changes/validation/target-validator';
-import { PluginModule } from 'src/features/plugin/plugin.module';
-import { RevisionModule } from 'src/features/revision/revision.module';
-import { RowModule } from 'src/features/row/row.module';
-import { JsonSchemaStoreService } from 'src/features/share/json-schema-store.service';
-import {
-  NativeSchemaRules,
-  type SchemaRefs,
-} from 'src/features/share/ledger-replay/native-schema-rules';
-import { ShareModule } from 'src/features/share/share.module';
+import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 import { ViewsMigrationService } from 'src/features/share/views-migration.service';
-import { TableModule } from 'src/features/table/table.module';
-import { ViewsApiService } from 'src/features/views/views-api.service';
-import { ViewsModule } from 'src/features/views/views.module';
-import { DatabaseModule } from 'src/infrastructure/database/database.module';
-import { PrismaService } from 'src/infrastructure/database/prisma.service';
-import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
-import { STORAGE_SERVICE } from 'src/infrastructure/storage/storage.interface';
-import { StorageModule } from 'src/infrastructure/storage/storage.module';
-import { WITHOUT_RECURRING_SWEEP } from 'src/__tests__/kit/without-recurring-sweep';
-import { restrictedMigrationRecovery } from 'src/__tests__/kit/migration-recovery-scope';
 
-export interface PartialChangesTestKit {
-  module: TestingModule;
-  prisma: PrismaService;
-  transactionService: TransactionPrismaService;
-  commandBus: CommandBus;
-  draftApi: DraftApiService;
-  draftRevisionApi: DraftRevisionApiService;
-  draftWriteAdmission: DraftWriteAdmissionService;
-  viewsApi: ViewsApiService;
+export interface PartialChangesTestKit extends BranchScenarioTestKit {
   partialChangesApi: PartialChangesApiService;
   snapshotReader: ChangesSnapshotReader;
   comparedSnapshotReader: ComparedSnapshotReader;
@@ -61,65 +25,25 @@ export interface PartialChangesTestKit {
   targetValidator: TargetValidator;
   planFingerprint: PlanFingerprint;
   schemaRules: NativeSchemaRules;
-  schemaRefs: SchemaRefs;
   viewsMigration: ViewsMigrationService;
-  guard: CommittedVersionsGuard;
-  close(): Promise<void>;
 }
 
-export interface PartialChangesTestKitOptions {
-  readonly settings?: Record<string, string>;
-  readonly overrides?: readonly ProviderOverride[];
-}
+export type PartialChangesTestKitOptions = Omit<
+  BranchScenarioTestKitOptions,
+  'featureModules'
+>;
 
-export async function createPartialChangesTestKit({
-  settings = {},
-  overrides = [],
-}: PartialChangesTestKitOptions = {}): Promise<PartialChangesTestKit> {
-  const builder = Test.createTestingModule({
-    imports: [
-      ConfigModule.forRoot({ isGlobal: true, load: [() => settings] }),
-      DatabaseModule,
-      CqrsModule,
-      StorageModule.forRoot(),
-      ShareModule,
-      PluginModule,
-      MigrationModule.forRoot(WITHOUT_RECURRING_SWEEP),
-      restrictedMigrationRecovery(),
-      RevisionModule,
-      BranchModule,
-      TableModule,
-      RowModule,
-      DraftRevisionModule,
-      DraftModule,
-      ViewsModule,
-      FileUsageModule,
-      PartialChangesModule,
-      CacheModule.register(),
-    ],
-  })
-    .overrideProvider(STORAGE_SERVICE)
-    .useValue(createStorageMock());
-
-  for (const { provide, useValue } of overrides) {
-    builder.overrideProvider(provide).useValue(useValue);
-  }
-
-  const module = await builder.compile();
-
-  await module.init();
-
-  const prisma = module.get(PrismaService);
+export async function createPartialChangesTestKit(
+  options: PartialChangesTestKitOptions = {},
+): Promise<PartialChangesTestKit> {
+  const kit = await createBranchScenarioTestKit({
+    ...options,
+    featureModules: [PartialChangesModule],
+  });
+  const { module } = kit;
 
   return {
-    module,
-    prisma,
-    transactionService: module.get(TransactionPrismaService),
-    commandBus: module.get(CommandBus),
-    draftApi: module.get(DraftApiService),
-    draftRevisionApi: module.get(DraftRevisionApiService),
-    draftWriteAdmission: module.get(DraftWriteAdmissionService),
-    viewsApi: module.get(ViewsApiService),
+    ...kit,
     partialChangesApi: module.get(PartialChangesApiService),
     snapshotReader: module.get(ChangesSnapshotReader),
     comparedSnapshotReader: module.get(ComparedSnapshotReader),
@@ -129,11 +53,6 @@ export async function createPartialChangesTestKit({
     targetValidator: module.get(TargetValidator),
     planFingerprint: module.get(PlanFingerprint),
     schemaRules: module.get(NativeSchemaRules),
-    schemaRefs: module.get(JsonSchemaStoreService).refs,
     viewsMigration: module.get(ViewsMigrationService),
-    guard: new CommittedVersionsGuard(prisma),
-    async close() {
-      await module.close();
-    },
   };
 }

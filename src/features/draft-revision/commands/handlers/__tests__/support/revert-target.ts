@@ -1,10 +1,10 @@
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import type {
   TableWritePlan,
   TargetWritePlan,
 } from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
-import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
+import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 import { type TableTarget, TablePlans } from './table-plans';
 
@@ -12,8 +12,8 @@ export class RevertTarget {
   private readonly tablePlans: TablePlans;
 
   constructor(
-    private readonly kit: PartialChangesTestKit,
-    private readonly draft: ChangesScenario,
+    private readonly kit: BranchScenarioTestKit,
+    private readonly draft: BranchScenario,
   ) {
     this.tablePlans = new TablePlans(kit, draft, 'draft');
   }

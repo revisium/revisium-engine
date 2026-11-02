@@ -1,5 +1,6 @@
 import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { Migration } from '@revisium/schema-toolkit/types';
+import { describeMigration } from 'src/__tests__/fixtures/stored-ledger';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { Row } from 'src/engine-prisma-types';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
@@ -194,14 +195,6 @@ function describeSystemRow(snapshot: ChangesSnapshot, row: Row): string {
   }
 
   return `unknown ${row.id}`;
-}
-
-export function describeMigration(migration: Migration): string {
-  if (migration.changeType === 'rename') {
-    return `rename ${migration.tableId} to ${migration.nextTableId}`;
-  }
-
-  return `${migration.changeType} ${migration.tableId}`;
 }
 
 function isIn(rows: RevisionRows, row: Row): boolean {

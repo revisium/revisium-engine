@@ -15,12 +15,12 @@ import type {
 import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
 import {
   failingFirstSnapshotRead,
   transactionModeOfSnapshotRead,
 } from '../../__tests__/support/change-preview';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
-import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
 import {
   sourceLedgersOf,
   sourceReplaysDuring,

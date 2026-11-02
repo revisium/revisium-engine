@@ -1,7 +1,7 @@
 import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
-import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import { rowHashReasonOf } from 'src/features/migration/ledger-scan/schema-checks';
 import { BranchApiService } from 'src/features/branch/branch-api.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
@@ -13,8 +13,9 @@ import type {
   SchemaLedgerFinding,
   SchemaLedgerScan,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
-import type { ChangesScenario } from 'src/features/partial-changes/__tests__/support/changes-scenario';
-import type { RevisionSide } from 'src/features/partial-changes/__tests__/support/snapshot-reading';
+import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
+import { acceptDamagedCommittedVersions } from 'src/__tests__/fixtures/head-schema-damage';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
 import {
   type LedgerReplayInput,
   replayLedger,
@@ -52,31 +53,31 @@ type InteractiveTransaction = (
 ) => Promise<unknown>;
 
 export function scanLedgers(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
   data: ScanSchemaLedgerData,
 ): Promise<SchemaLedgerScan> {
   return kit.module.get(MigrationApiService).scanSchemaLedger(data);
 }
 
 export function scanBranch(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   options: ScanOptions = {},
 ): Promise<SchemaLedgerScan> {
   return scanLedgers(kit, { ...draft.branch, ...options });
 }
 
 export function scanProject(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   options: ScanOptions = {},
 ): Promise<SchemaLedgerScan> {
   return scanLedgers(kit, { projectId: draft.branch.projectId, ...options });
 }
 
 export async function scanProjectPages(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   limit: number,
 ): Promise<SchemaLedgerScan[]> {
   const pages = [await scanProject(kit, draft, { limit })];
@@ -99,7 +100,7 @@ export function findingsOf(
 }
 
 export function findingOf(
-  draft: ChangesScenario,
+  draft: BranchScenario,
   role: FindingRole,
   revisionIds: readonly string[],
   expected: ExpectedFinding,
@@ -108,7 +109,7 @@ export function findingOf(
 }
 
 export async function findingAt(
-  draft: ChangesScenario,
+  draft: BranchScenario,
   side: RevisionSide,
   expected: ExpectedFinding,
 ): Promise<SchemaLedgerFinding> {
@@ -140,7 +141,7 @@ export function hashOf(schema: JsonSchema): string {
 }
 
 export async function schemaRowHashOf(
-  draft: ChangesScenario,
+  draft: BranchScenario,
   side: RevisionSide,
   tableId: string,
 ): Promise<string> {
@@ -150,7 +151,7 @@ export async function schemaRowHashOf(
 }
 
 export async function rowSchemaHashOf(
-  draft: ChangesScenario,
+  draft: BranchScenario,
   tableId: string,
   rowId: string,
 ): Promise<string> {
@@ -160,8 +161,8 @@ export async function rowSchemaHashOf(
 }
 
 export async function userTableVersionCountOf(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
 ): Promise<number> {
   const [{ count }] = await kit.prisma.$queryRaw<[{ count: number }]>(sql`
     SELECT count(DISTINCT t."versionId")::int AS "count"
@@ -175,8 +176,8 @@ export async function userTableVersionCountOf(
 }
 
 export async function committedRevisionIds(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
 ): Promise<string[]> {
   const revisions = await kit.prisma.revision.findMany({
     where: { branchId: draft.branchId, isDraft: false },
@@ -188,8 +189,8 @@ export async function committedRevisionIds(
 }
 
 export async function createBranchFromHead(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   branchName: string,
 ): Promise<void> {
   await kit.module.get(BranchApiService).apiCreateBranchByRevisionId({
@@ -198,48 +199,8 @@ export async function createBranchFromHead(
   });
 }
 
-export async function pendingMigrationOf(
-  draft: ChangesScenario,
-  changeType: Migration['changeType'],
-  tableId: string,
-): Promise<Migration> {
-  const { migrations } = (await draft.readSnapshot()).systemRows;
-  const publishedIds = new Set(migrations.head.map(({ id }) => id));
-  const migration = migrations.draft
-    .filter(({ id }) => !publishedIds.has(id))
-    .map(({ data }) => data as unknown as Migration)
-    .find(
-      (pending) =>
-        pending.changeType === changeType && pending.tableId === tableId,
-    );
-
-  if (!migration) {
-    throw new Error(`The Draft has no pending ${changeType} of ${tableId}`);
-  }
-
-  return migration;
-}
-
-export async function dropPendingMigration(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
-  changeType: Migration['changeType'],
-  tableId: string,
-): Promise<void> {
-  const migration = await pendingMigrationOf(draft, changeType, tableId);
-  const revisionId = await draft.revisionId('draft');
-
-  await kit.draftWriteAdmission.runSerializableRevisionWrite(revisionId, () =>
-    kit.draftRevisionApi.removeRows({
-      revisionId,
-      tableId: SystemTables.Migration,
-      rowIds: [migration.id],
-    }),
-  );
-}
-
 export async function transactionModesDuring(
-  kit: PartialChangesTestKit,
+  kit: BranchScenarioTestKit,
   action: () => Promise<unknown>,
 ): Promise<TransactionMode[]> {
   const modes: TransactionMode[] = [];
@@ -282,8 +243,8 @@ async function transactionModeOf(
 }
 
 export async function removeSchemaRow(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
   tableId: string,
 ): Promise<void> {
   const schemaTableVersionId = await draft.tableVersionId(
@@ -300,8 +261,8 @@ export async function removeSchemaRow(
 }
 
 export async function removeSchemaTable(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
 ): Promise<void> {
   const schemaTableVersionId = await draft.tableVersionId(
     'head',
@@ -312,16 +273,6 @@ export async function removeSchemaTable(
     DELETE FROM "_RevisionToTable" WHERE "B" = ${schemaTableVersionId}
   `);
   await acceptDamagedCommittedVersions(kit, draft);
-}
-
-export async function storedHeadLedgerOf(
-  draft: ChangesScenario,
-): Promise<Migration[]> {
-  const { migrations } = (await draft.readSnapshot()).systemRows;
-
-  return migrations.head
-    .map(({ data }) => data as unknown as Migration)
-    .sort((left, right) => compareCodePoints(left.id, right.id));
 }
 
 export async function ledgerReplaysDuring<T>(
@@ -351,13 +302,4 @@ export function isStoredLedgerReplay(
   storedLedger: readonly Migration[],
 ): boolean {
   return schemas === undefined && deepEqual(ledger, storedLedger);
-}
-
-async function acceptDamagedCommittedVersions(
-  kit: PartialChangesTestKit,
-  draft: ChangesScenario,
-): Promise<void> {
-  kit.guard.forget();
-  kit.guard.track(draft.branchId);
-  await kit.guard.verify();
 }

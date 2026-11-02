@@ -6,12 +6,10 @@ import {
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { addField } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
+import type { TableFixture } from 'src/__tests__/fixtures/branch-scenario';
+import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
 import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
-import {
-  ChangesScenario,
-  type TableFixture,
-} from '../../__tests__/support/changes-scenario';
-import { completeAsyncMigrationInPlace } from '../../__tests__/support/head-schema-damage';
+import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import type { BlockerView } from '../../__tests__/support/selection-resolving';
 
 const CATEGORIES = 'categories';

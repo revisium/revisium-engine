@@ -27,7 +27,7 @@ import {
 } from 'src/features/share/ledger-replay/__tests__/support/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
-import { branchContentOf } from '../../__tests__/support/branch-content';
+import { branchContentOf } from 'src/__tests__/fixtures/branch-content';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
 import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';

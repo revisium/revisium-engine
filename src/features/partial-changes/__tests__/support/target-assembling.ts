@@ -27,11 +27,8 @@ import type {
   SystemTableRows,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import {
-  type AddressedUnit,
-  addressedUnitOf,
-  describeMigration,
-} from './catalogue-reading';
+import { describeMigration } from 'src/__tests__/fixtures/stored-ledger';
+import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
 import {
   type BlockerView,
   blockerView,

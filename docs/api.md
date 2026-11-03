@@ -522,7 +522,7 @@ engine.tableChanges({
 
 Returns: `{ edges: [{ cursor, node: TableChange }], pageInfo, totalCount }`
 
-The engine orders table changes by the table's id in `revisionId` (for a removed table, its id in the compared revision), then by `createdId`, so pages neither skip nor repeat a table.
+The engine orders table changes by the table's id in `revisionId` (for a removed table, its id in the compared revision), then by `createdId`, so while the compared revisions do not change, pages neither skip nor repeat a table.
 
 ### rowChanges
 

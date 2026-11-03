@@ -130,8 +130,11 @@ A Draft leaf is **unchanged** by the structure when all hold:
    unchanged);
 3. no pending migration of the table touches its path or an ancestor: any `add`, `remove`, `replace` or `move` patch
    (both `from` and `path` of a move) at the leaf's pointer or above it. A patch path is mapped to the data pointer it
-   affects before this check: a path inside an atomic leaf's schema (array `items`, the File schema) touches that leaf,
-   because the leaf's value is one unit (§3.2).
+   affects before this check, by the replay that describes the structure (§5.2): each path is read against the schema
+   its patch applies to, and a path inside an atomic leaf's schema (array `items`, the File schema) touches that leaf,
+   because the leaf's value is one unit (§3.2). When the pending patches of the table do not replay, each path is
+   mapped by its leading `/properties/<name>` segments alone: a path into array `items` still maps to the array, while
+   a path inside the File schema maps below the File leaf and touches no leaf.
 
 Every other leaf of either schema is a **changed** (structure-bound) field. Its values belong to the table's structure
 unit (REQ-001.BR-007), also when a later patch restored the leaf schema (values the migration converted stay with the
@@ -1829,6 +1832,16 @@ Moved fields and replaced tables in `structureChange`:
 - §5.2: a `replaced` table lists its fields: the leaves of the removed Head table against those of the Draft table
   created at its id, as `added`, `removed` or `changed`. Before, its `fields` was empty.
 - §13.6: AS-60a covers moves and replaced tables.
+
+Patches inside a File:
+
+- §3.3: a pending patch inside a File schema binds the File field to the structure unit, as a patch inside array
+  `items` binds the array. Patch paths are mapped by the replay that describes the structure (§5.2), which reads each
+  path against the schema its patch applies to. Before, a path such as `/properties/cover/properties/fileName` was
+  mapped by its `properties` segments to `/cover/fileName`, which touches no leaf: `/cover` stayed unchanged, so a File
+  value that a row changed in the Draft was a `field` unit while `structureChange` reported `/cover` as `changed`.
+  Paths into array `items` and object fields bind the same leaves as before. When the pending patches do not replay,
+  paths are still mapped by their `properties` segments, and a path inside a File touches no leaf.
 
 ### Version 1.2 (2026-11-02)
 

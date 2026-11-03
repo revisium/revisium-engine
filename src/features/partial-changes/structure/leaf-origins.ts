@@ -42,6 +42,14 @@ export function replayPendingPatches(
   }
 }
 
+export function pointersTouchedBy(effect: PatchEffect): JsonPointer[] {
+  if (effect.kind === 'carry') {
+    return [effect.from, effect.to];
+  }
+
+  return [effect.at];
+}
+
 export class LeafOrigins {
   private readonly originsByPointer: ReadonlyMap<string, LeafOrigin>;
 

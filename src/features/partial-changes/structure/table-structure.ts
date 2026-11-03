@@ -9,6 +9,7 @@ import {
   type LeafOrigin,
   LeafOrigins,
   type PatchEffect,
+  pointersTouchedBy,
   replayPendingPatches,
 } from 'src/features/partial-changes/structure/leaf-origins';
 import { normalizedLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
@@ -79,10 +80,15 @@ export function analyzeTableStructure(
     input.draft.history,
   );
   const pendingBatches = input.pendingMigrations.flatMap(patchBatchOf);
+  const pendingEffects = replayPendingPatches(
+    input.head.schema,
+    pendingBatches,
+    rules,
+  );
   const leaves = new LeafComparison(
     input.head,
     input.draft,
-    pendingBatches.flat(),
+    pendingPatchPointers(pendingBatches, pendingEffects),
   );
   const changedPointers = leaves.changedPointers();
 
@@ -94,9 +100,7 @@ export function analyzeTableStructure(
     differs: structureDiffers(input, pendingHistory, changedPointers),
     unchangedLeaves: leaves.unchanged,
     changedPointers,
-    changedLeaves: leaves.changedLeaves(
-      pendingEffectsOf(input.head.schema, pendingBatches, rules),
-    ),
+    changedLeaves: leaves.changedLeaves(pendingEffects ?? WITHOUT_PROVENANCE),
     publishedAtOwner: leaves.publishedAtOwner(),
   };
 }
@@ -107,17 +111,6 @@ export function changedLeavesOfReplacedTable(
 ): ChangedLeaf[] {
   return new LeafComparison(removed, created, []).changedLeaves(
     WITHOUT_PROVENANCE,
-  );
-}
-
-function pendingEffectsOf(
-  headSchema: JsonSchema,
-  pendingBatches: readonly JsonPatch[][],
-  rules: NativeSchemaRules,
-): readonly PatchEffect[] {
-  return (
-    replayPendingPatches(headSchema, pendingBatches, rules) ??
-    WITHOUT_PROVENANCE
   );
 }
 
@@ -151,16 +144,14 @@ class LeafComparison {
 
   private readonly headLeaves: SchemaLeaves;
   private readonly draftLeaves: SchemaLeaves;
-  private readonly pendingPatchPointers: readonly JsonPointer[];
 
   constructor(
     private readonly head: TableSide,
     private readonly draft: TableSide,
-    pendingPatches: readonly JsonPatch[],
+    private readonly pendingPatchPointers: readonly JsonPointer[],
   ) {
     this.headLeaves = SchemaLeaves.of(head.schema);
     this.draftLeaves = SchemaLeaves.of(draft.schema);
-    this.pendingPatchPointers = pendingPatchPointers(pendingPatches);
     this.unchanged = this.draftLeaves.all.filter((leaf) =>
       this.isUnchanged(leaf),
     );
@@ -311,7 +302,18 @@ function isMoved(draftLeaf: TracedLeaf): draftLeaf is MovedLeaf {
   return origin !== undefined && pointerKey(origin.leaf) !== pointerKey(leaf);
 }
 
-function pendingPatchPointers(patches: readonly JsonPatch[]): JsonPointer[] {
+function pendingPatchPointers(
+  pendingBatches: readonly JsonPatch[][],
+  pendingEffects: readonly PatchEffect[] | undefined,
+): JsonPointer[] {
+  if (pendingEffects === undefined) {
+    return pointersOfPatchPaths(pendingBatches.flat());
+  }
+
+  return pendingEffects.flatMap(pointersTouchedBy);
+}
+
+function pointersOfPatchPaths(patches: readonly JsonPatch[]): JsonPointer[] {
   return patches
     .flatMap(schemaPathsOf)
     .map((schemaPath) => dataPointerOfSchemaPath(schemaPath));

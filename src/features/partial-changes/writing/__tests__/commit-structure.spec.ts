@@ -1,5 +1,10 @@
-import { num, numFormula, obj, str } from '@revisium/schema-toolkit/mocks';
-import type { JsonSchema, Migration } from '@revisium/schema-toolkit/types';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import { num, numFormula, obj, ref, str } from '@revisium/schema-toolkit/mocks';
+import type {
+  JsonPatch,
+  JsonSchema,
+  Migration,
+} from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
 import {
   createPartialChangesTestKit,
@@ -45,6 +50,7 @@ const GROUPS = 'groups';
 const BRANDS = 'brands';
 const TAGS = 'tags';
 const DRAFTS = 'drafts';
+const MEDIA = 'media';
 
 const productSchema = obj({ title: str(), price: num() });
 const colouredProductSchema = obj({ title: str(), price: num(), color: str() });
@@ -56,6 +62,26 @@ const categorisedProductSchema = obj({
 });
 const tagSchema = obj({ label: str() });
 const brandSchema = obj({ name: str() });
+const mediaSchema = obj({ title: str(), cover: ref(SystemSchemaIds.File) });
+
+const emptyFile = {
+  status: '',
+  fileId: '',
+  url: '',
+  fileName: '',
+  hash: '',
+  extension: '',
+  mimeType: '',
+  size: 0,
+  width: 0,
+  height: 0,
+};
+
+const replaceCoverFileName: JsonPatch = {
+  op: 'replace',
+  path: '/properties/cover/properties/fileName',
+  value: str(),
+};
 
 const priceOf = (rowId: string): FieldRef => ({
   tableId: PRODUCTS,
@@ -206,6 +232,66 @@ describe('commitChanges of structure units', () => {
         price: 3,
         color: 'green',
       });
+    });
+
+    it('keeps the Head File of a row committed without the structure that patched inside the File', async () => {
+      const draft = await givenCoverUploadedAfterAPatchInsideTheFile();
+      const headCover = await coverOf(draft, 'head', 'm1');
+
+      await expectApplied(
+        draft.commitChanges({ selection: { rows: [rowOf(MEDIA, 'm1')] } }),
+      );
+
+      await expectRow(draft, 'head', MEDIA, 'm1', {
+        title: 'edited',
+        cover: headCover,
+      });
+      expect(unitsOf(await draft.listEveryUnit())).toEqual([
+        { kind: 'structure' },
+      ]);
+    });
+
+    it('defers the File of a created row committed without the structure that patched inside the File, and gives the row a new empty File', async () => {
+      const draft = await givenMediaWithAPatchInsideTheCover();
+      await draft.createRows(MEDIA, { m2: { title: 'two', cover: emptyFile } });
+      await draft.uploadFile(MEDIA, 'm2', 'cover');
+      const selection: Selection = { rows: [rowOf(MEDIA, 'm2')] };
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection,
+      });
+      await expectApplied(draft.commitChanges({ selection }));
+
+      expect(preview).toMatchObject({
+        status: 'ready',
+        deferred: [
+          {
+            unit: { kind: 'rowCreate', tableId: MEDIA, rowId: 'm2' },
+            paths: ['/cover'],
+            structure: structureOf(MEDIA),
+          },
+        ],
+      });
+      expect(await coverOf(draft, 'head', 'm2')).toEqual({
+        ...emptyFile,
+        status: 'ready',
+        fileId: expect.stringMatching(/.+/),
+      });
+    });
+
+    it('commits the Draft File of a row together with the structure that patched inside the File', async () => {
+      const draft = await givenCoverUploadedAfterAPatchInsideTheFile();
+      const { data } = await draft.row('draft', MEDIA, 'm1');
+
+      await expectApplied(
+        draft.commitChanges({
+          selection: { tables: [MEDIA], rows: [rowOf(MEDIA, 'm1')] },
+        }),
+      );
+
+      await expectRow(draft, 'head', MEDIA, 'm1', data);
+      expect(await draft.listEveryUnit()).toEqual([]);
     });
 
     it('migrates a Head row whose deletion stays in the Draft into the committed structure, and computes formulas with that structure (AS-15)', async () => {
@@ -702,6 +788,16 @@ describe('commitChanges of structure units', () => {
     return row.data as unknown as JsonSchema;
   }
 
+  async function coverOf(
+    draft: ChangesScenario,
+    side: RevisionSide,
+    rowId: string,
+  ): Promise<JsonValue> {
+    const row = await draft.row(side, MEDIA, rowId);
+
+    return (row.data as { cover: JsonValue }).cover;
+  }
+
   async function viewsOf(
     draft: ChangesScenario,
     side: RevisionSide,
@@ -767,6 +863,26 @@ describe('commitChanges of structure units', () => {
       price: 20,
       color: 'blue',
     });
+
+    return draft;
+  }
+
+  async function givenMediaWithAPatchInsideTheCover(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [MEDIA]: {
+        schema: mediaSchema,
+        rows: { m1: { title: 'one', cover: emptyFile } },
+      },
+    });
+    await draft.updateTable(MEDIA, [replaceCoverFileName]);
+
+    return draft;
+  }
+
+  async function givenCoverUploadedAfterAPatchInsideTheFile(): Promise<ChangesScenario> {
+    const draft = await givenMediaWithAPatchInsideTheCover();
+    await draft.updateRow(MEDIA, 'm1', { title: 'edited', cover: emptyFile });
+    await draft.uploadFile(MEDIA, 'm1', 'cover');
 
     return draft;
   }

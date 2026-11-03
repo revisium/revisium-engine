@@ -1,11 +1,17 @@
 import type { Row } from 'src/engine-prisma-types';
-import type {
-  ChangesSnapshot,
-  ComparedTable,
-  RevisionRows,
-  TablePair,
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import {
+  type ChangesSnapshot,
+  type ComparedTable,
+  type RevisionRows,
+  type TablePair,
+  versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
+import { tableSideOf } from 'src/features/partial-changes/snapshot/table-side';
+import type {
+  TableSide,
+  TableStructure,
+} from 'src/features/partial-changes/structure/table-structure';
 
 export interface SidedRows {
   readonly head?: Row;
@@ -50,6 +56,10 @@ export class CatalogueTables {
     }
 
     return structure;
+  }
+
+  public sideOf(pair: TablePair, side: RevisionSide): TableSide {
+    return tableSideOf(this.pairs, versionOn(pair, side), side);
   }
 
   public schemaRowsOf(pair: TablePair): SidedRows {

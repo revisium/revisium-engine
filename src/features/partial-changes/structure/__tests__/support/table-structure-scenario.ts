@@ -10,6 +10,7 @@ import type {
 } from '@revisium/schema-toolkit/types';
 import {
   analyzeTableStructure,
+  type FieldChange,
   type TableStructure,
 } from 'src/features/partial-changes/structure/table-structure';
 import { refs, update, validator } from 'src/__tests__/fixtures/ledger-steps';
@@ -63,6 +64,12 @@ export function analyzeStructure(scenario: StructureScenario): TableStructure {
   );
 }
 
+export interface DescribedChange {
+  readonly pointer: string;
+  readonly change: FieldChange;
+  readonly from?: string;
+}
+
 export function pendingUpdate(...patches: JsonPatch[]): UpdateMigration {
   return update(TABLE_ID, patches);
 }
@@ -88,6 +95,16 @@ export function unchangedPointersOf(structure: TableStructure): string[] {
 
 export function changedPointersOf(structure: TableStructure): string[] {
   return structure.changedPointers.map((pointer) => pointer.toString());
+}
+
+export function describedChangesOf(
+  structure: TableStructure,
+): DescribedChange[] {
+  return structure.changedLeaves.map(({ pointer, change, from }) => ({
+    pointer: pointer.toString(),
+    change,
+    from: from?.toString(),
+  }));
 }
 
 function patchesOf(migration: Migration): JsonPatch[][] {

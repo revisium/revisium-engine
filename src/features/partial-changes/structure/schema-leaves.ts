@@ -5,6 +5,7 @@ import {
   type JsonSchema,
 } from '@revisium/schema-toolkit/types';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+import type { NativeSchemaStore } from 'src/features/share/ledger-replay/native-schema-rules';
 import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
 
 export type LeafKind = 'value' | 'atomic' | 'publishedAt' | 'computed';
@@ -13,6 +14,11 @@ export interface SchemaLeaf {
   readonly pointer: JsonPointer;
   readonly kind: LeafKind;
   readonly schema: JsonSchema;
+}
+
+export interface DataTarget {
+  readonly pointer: JsonPointer;
+  readonly isNode: boolean;
 }
 
 const PROPERTIES = 'properties';
@@ -52,6 +58,39 @@ export function dataPointerOfSchemaPath(schemaPath: string): JsonPointer {
     (pointer, name) => pointer.child(name),
     JsonPointer.root,
   );
+}
+
+export function dataTargetOfSchemaPath(
+  store: NativeSchemaStore,
+  schemaPath: string,
+): DataTarget {
+  return dataTargetBelow(
+    store,
+    JsonPointer.root,
+    JsonPointer.parse(schemaPath).segments,
+  );
+}
+
+function dataTargetBelow(
+  store: NativeSchemaStore,
+  pointer: JsonPointer,
+  schemaSegments: readonly string[],
+): DataTarget {
+  if (schemaSegments.length === 0) {
+    return { pointer, isNode: true };
+  }
+
+  const [keyword, name, ...rest] = schemaSegments;
+
+  if (
+    keyword !== PROPERTIES ||
+    name === undefined ||
+    !store.hasObjectSchemaAt(pointer.segments)
+  ) {
+    return { pointer, isNode: false };
+  }
+
+  return dataTargetBelow(store, pointer.child(name), rest);
 }
 
 function dataSegmentsOf(schemaSegments: readonly string[]): string[] {

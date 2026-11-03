@@ -1,5 +1,10 @@
-import { arr, num, obj, str } from '@revisium/schema-toolkit/mocks';
-import type { JsonPatch } from '@revisium/schema-toolkit/types';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import { arr, num, obj, ref, str } from '@revisium/schema-toolkit/mocks';
+import type {
+  JsonPatch,
+  JsonSchema,
+  Migration,
+} from '@revisium/schema-toolkit/types';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 import {
   addField,
@@ -11,6 +16,8 @@ import {
   analyzeStructure,
   changedPointersOf,
   createdWith,
+  describedChangesOf,
+  type DescribedChange,
   foreignKeyRewrite,
   pendingUpdate,
   type StructureScenario,
@@ -25,6 +32,54 @@ const replaceTagItems: JsonPatch = {
   path: '/properties/tags/items',
   value: str(),
 };
+const moveColorOutOfVariantItems: JsonPatch = {
+  op: 'move',
+  from: '/properties/variants/items/properties/color',
+  path: '/properties/color',
+};
+const moveColorIntoVariantItems: JsonPatch = {
+  op: 'move',
+  from: '/properties/color',
+  path: '/properties/variants/items/properties/color',
+};
+const moveFileNameOutOfCover: JsonPatch = {
+  op: 'move',
+  from: '/properties/cover/properties/fileName',
+  path: '/properties/name',
+};
+const moveTitleIntoCover: JsonPatch = {
+  op: 'move',
+  from: '/properties/title',
+  path: '/properties/cover/properties/title',
+};
+const replaceAssetFileName: JsonPatch = {
+  op: 'replace',
+  path: '/properties/asset/properties/fileName',
+  value: num(),
+};
+const addCustomIntoCover: JsonPatch = {
+  op: 'add',
+  path: '/properties/cover/properties/custom',
+  value: obj({ x: str() }),
+};
+const moveCustomOutOfCover: JsonPatch = {
+  op: 'move',
+  from: '/properties/cover/properties/custom',
+  path: '/properties/extracted',
+};
+const moveTitleIntoExtracted: JsonPatch = {
+  op: 'move',
+  from: '/properties/title',
+  path: '/properties/extracted/properties/newTitle',
+};
+const file = () => ref(SystemSchemaIds.File);
+
+const codeAndPrice = obj({ code: str(), price: num() });
+const coverAndTitle = obj({ cover: file(), title: str() });
+const coverAndExtracted = obj({
+  cover: file(),
+  extracted: obj({ x: str(), newTitle: str() }),
+});
 
 describe('TableStructure: unchanged and changed leaves', () => {
   it.each<{ name: string; scenario: StructureScenario }>([
@@ -209,6 +264,198 @@ describe('TableStructure: unchanged and changed leaves', () => {
       '/legacy',
     ]);
   });
+});
+
+describe('TableStructure: moved leaves', () => {
+  it.each<{
+    name: string;
+    head: JsonSchema;
+    draft: JsonSchema;
+    pending: Migration[];
+    structureBound: string[];
+    unchanged: string[];
+  }>([
+    {
+      name: 'the source and the target of a move',
+      head: codeAndPrice,
+      draft: obj({ sku: str(), price: num() }),
+      pending: [pendingUpdate(moveField('code', 'sku'))],
+      structureBound: ['/sku', '/code'],
+      unchanged: ['/price'],
+    },
+    {
+      name: 'the pointer of a move reverted inside the Draft',
+      head: codeAndPrice,
+      draft: obj({ code: str(), price: num() }),
+      pending: [
+        pendingUpdate(moveField('code', 'sku')),
+        pendingUpdate(moveField('sku', 'code')),
+      ],
+      structureBound: ['/code'],
+      unchanged: ['/price'],
+    },
+    {
+      name: 'the fields of one migration that moves a field into an object taken out of a File',
+      head: coverAndTitle,
+      draft: coverAndExtracted,
+      pending: [
+        pendingUpdate(
+          addCustomIntoCover,
+          moveCustomOutOfCover,
+          moveTitleIntoExtracted,
+        ),
+      ],
+      structureBound: ['/extracted/x', '/extracted/newTitle', '/title'],
+      unchanged: ['/cover'],
+    },
+  ])(
+    'keeps $name structure-bound',
+    ({ head, draft, pending, structureBound, unchanged }) => {
+      const structure = analyzeStructure({ head, draft, pending });
+
+      expect(changedPointersOf(structure)).toEqual(structureBound);
+      expect(unchangedPointersOf(structure)).toEqual(unchanged);
+    },
+  );
+
+  it.each<{
+    name: string;
+    scenario: StructureScenario;
+    described: DescribedChange[];
+  }>([
+    {
+      name: 'out of the items of an array as added, and the array as changed',
+      scenario: {
+        head: obj({ variants: arr(obj({ color: str(), size: str() })) }),
+        draft: obj({ variants: arr(obj({ size: str() })), color: str() }),
+        pending: [pendingUpdate(moveColorOutOfVariantItems)],
+      },
+      described: [
+        { pointer: '/variants', change: 'changed' },
+        { pointer: '/color', change: 'added' },
+      ],
+    },
+    {
+      name: 'into the items of an array as removed, and the array as changed',
+      scenario: {
+        head: obj({ variants: arr(obj({ size: str() })), color: str() }),
+        draft: obj({ variants: arr(obj({ color: str(), size: str() })) }),
+        pending: [pendingUpdate(moveColorIntoVariantItems)],
+      },
+      described: [
+        { pointer: '/variants', change: 'changed' },
+        { pointer: '/color', change: 'removed' },
+      ],
+    },
+    {
+      name: 'out of a File as added, and the File as changed',
+      scenario: {
+        head: obj({ cover: file() }),
+        draft: obj({ cover: file(), name: str() }),
+        pending: [pendingUpdate(moveFileNameOutOfCover)],
+      },
+      described: [
+        { pointer: '/cover', change: 'changed' },
+        { pointer: '/name', change: 'added' },
+      ],
+    },
+    {
+      name: 'into a File as removed, and the File as changed',
+      scenario: {
+        head: obj({ title: str(), cover: file() }),
+        draft: obj({ cover: file() }),
+        pending: [pendingUpdate(moveTitleIntoCover)],
+      },
+      described: [
+        { pointer: '/cover', change: 'changed' },
+        { pointer: '/title', change: 'removed' },
+      ],
+    },
+  ])('describes a field moved $name', ({ scenario, described }) => {
+    expect(describedChangesOf(analyzeStructure(scenario))).toEqual(described);
+  });
+
+  it('describes a File moved to the path of a removed object and rewritten inside as changed from its Head path', () => {
+    const structure = analyzeStructure({
+      head: obj({ asset: obj({ fileName: str() }), cover: file() }),
+      draft: obj({ asset: file() }),
+      pending: [
+        pendingUpdate(removeField('asset')),
+        pendingUpdate(moveField('cover', 'asset')),
+        pendingUpdate(replaceAssetFileName),
+      ],
+    });
+
+    expect(describedChangesOf(structure)).toEqual([
+      { pointer: '/asset', change: 'changed', from: '/cover' },
+      { pointer: '/asset/fileName', change: 'removed' },
+    ]);
+  });
+
+  it('describes a field moved into an object that the same migration took out of a File as moved from its Head path', () => {
+    const structure = analyzeStructure({
+      head: coverAndTitle,
+      draft: coverAndExtracted,
+      pending: [
+        pendingUpdate(
+          addCustomIntoCover,
+          moveCustomOutOfCover,
+          moveTitleIntoExtracted,
+        ),
+      ],
+    });
+
+    expect(describedChangesOf(structure)).toEqual([
+      { pointer: '/cover', change: 'changed' },
+      { pointer: '/extracted/x', change: 'added' },
+      { pointer: '/extracted/newTitle', change: 'moved', from: '/title' },
+    ]);
+  });
+});
+
+describe('TableStructure: pending migrations that do not replay', () => {
+  it.each<{
+    name: string;
+    scenario: StructureScenario;
+    described: DescribedChange[];
+  }>([
+    {
+      name: 'a patch addresses no field',
+      scenario: {
+        head: codeAndPrice,
+        draft: obj({ sku: str(), price: num() }),
+        pending: [
+          pendingUpdate(moveField('code', 'sku'), removeField('stock')),
+        ],
+      },
+      described: [
+        { pointer: '/sku', change: 'added' },
+        { pointer: '/code', change: 'removed' },
+      ],
+    },
+    {
+      name: 'the patches that take a field out of a File are split across migrations, which native refuses',
+      scenario: {
+        head: coverAndTitle,
+        draft: coverAndExtracted,
+        pending: [
+          pendingUpdate(addCustomIntoCover),
+          pendingUpdate(moveCustomOutOfCover),
+          pendingUpdate(moveTitleIntoExtracted),
+        ],
+      },
+      described: [
+        { pointer: '/extracted/x', change: 'added' },
+        { pointer: '/extracted/newTitle', change: 'added' },
+        { pointer: '/title', change: 'removed' },
+      ],
+    },
+  ])(
+    'compares the leaves of Head and Draft without moves when $name',
+    ({ scenario, described }) => {
+      expect(describedChangesOf(analyzeStructure(scenario))).toEqual(described);
+    },
+  );
 });
 
 function expectUnchanged(structure: TableStructure, pointer: string): void {

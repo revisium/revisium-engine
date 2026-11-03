@@ -280,18 +280,21 @@ describe('commitChanges of structure units', () => {
       });
     });
 
-    it('commits the Draft File of a row together with the structure that patched inside the File', async () => {
+    it('commits the Draft File of a row with the structure that patched inside the File, and leaves the row edits of other fields pending', async () => {
       const draft = await givenCoverUploadedAfterAPatchInsideTheFile();
-      const { data } = await draft.row('draft', MEDIA, 'm1');
+      const draftCover = await coverOf(draft, 'draft', 'm1');
 
       await expectApplied(
-        draft.commitChanges({
-          selection: { tables: [MEDIA], rows: [rowOf(MEDIA, 'm1')] },
-        }),
+        draft.commitChanges({ selection: { tables: [MEDIA] } }),
       );
 
-      await expectRow(draft, 'head', MEDIA, 'm1', data);
-      expect(await draft.listEveryUnit()).toEqual([]);
+      await expectRow(draft, 'head', MEDIA, 'm1', {
+        title: 'one',
+        cover: draftCover,
+      });
+      expect(unitsOf(await draft.listEveryUnit())).toEqual([
+        { kind: 'field', rowId: 'm1', path: '/title' },
+      ]);
     });
 
     it('migrates a Head row whose deletion stays in the Draft into the committed structure, and computes formulas with that structure (AS-15)', async () => {

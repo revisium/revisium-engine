@@ -6,10 +6,13 @@ import type {
   TableChange,
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
+import {
+  type ChangedLeaf,
+  changedLeavesOfReplacedTable,
+} from 'src/features/partial-changes/structure/table-structure';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
-type WholeTableChange = Exclude<TableChange, 'changed'>;
+type WholeTableChange = Exclude<TableChange, 'changed' | 'replaced'>;
 
 export function structureChangeOf(
   { tableIdentities }: CatalogueUnit,
@@ -21,11 +24,32 @@ export function structureChangeOf(
   if (changedTable) {
     return {
       table: 'changed',
-      fields: changedFieldsOf(tables.structureOf(changedTable)),
+      fields: changedFieldsOf(tables.structureOf(changedTable).changedLeaves),
+    };
+  }
+
+  const removed = pairs.find(isRemoved);
+  const created = pairs.find(isCreated);
+
+  if (removed && created) {
+    return {
+      table: 'replaced',
+      fields: changedFieldsOf(replacedTableLeavesOf(removed, created, tables)),
     };
   }
 
   return { table: wholeTableChangeOf(pairs), fields: [] };
+}
+
+function replacedTableLeavesOf(
+  removed: TablePair,
+  created: TablePair,
+  tables: CatalogueTables,
+): ChangedLeaf[] {
+  return changedLeavesOfReplacedTable(
+    tables.sideOf(removed, 'head'),
+    tables.sideOf(created, 'draft'),
+  );
 }
 
 function wholeTableChangeOf(pairs: readonly TablePair[]): WholeTableChange {
@@ -37,17 +61,21 @@ function wholeTableChangeOf(pairs: readonly TablePair[]): WholeTableChange {
     return 'created';
   }
 
-  if (pairs.every(isRemoved)) {
-    return 'removed';
-  }
-
-  return 'replaced';
+  return 'removed';
 }
 
-function changedFieldsOf({ changedLeaves }: TableStructure): ChangedField[] {
-  return changedLeaves
-    .map(({ pointer, change }) => ({ path: pointer.toString(), change }))
+function changedFieldsOf(leaves: readonly ChangedLeaf[]): ChangedField[] {
+  return leaves
+    .map(changedFieldOf)
     .sort((left, right) => compareCodePoints(left.path, right.path));
+}
+
+function changedFieldOf({ pointer, change, from }: ChangedLeaf): ChangedField {
+  if (!from) {
+    return { path: pointer.toString(), change };
+  }
+
+  return { path: pointer.toString(), change, from: from.toString() };
 }
 
 function isOnBothSides({ head, draft }: TablePair): boolean {

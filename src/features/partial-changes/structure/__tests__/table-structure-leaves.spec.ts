@@ -1,5 +1,9 @@
 import { arr, num, obj, str } from '@revisium/schema-toolkit/mocks';
-import type { JsonPatch } from '@revisium/schema-toolkit/types';
+import type {
+  JsonPatch,
+  JsonSchema,
+  Migration,
+} from '@revisium/schema-toolkit/types';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 import {
   addField,
@@ -11,6 +15,8 @@ import {
   analyzeStructure,
   changedPointersOf,
   createdWith,
+  describedChangesOf,
+  type DescribedChange,
   foreignKeyRewrite,
   pendingUpdate,
   type StructureScenario,
@@ -24,6 +30,16 @@ const replaceTagItems: JsonPatch = {
   op: 'replace',
   path: '/properties/tags/items',
   value: str(),
+};
+const moveColorOutOfVariantItems: JsonPatch = {
+  op: 'move',
+  from: '/properties/variants/items/properties/color',
+  path: '/properties/color',
+};
+const moveColorIntoVariantItems: JsonPatch = {
+  op: 'move',
+  from: '/properties/color',
+  path: '/properties/variants/items/properties/color',
 };
 
 describe('TableStructure: unchanged and changed leaves', () => {
@@ -208,6 +224,73 @@ describe('TableStructure: unchanged and changed leaves', () => {
       '/stock',
       '/legacy',
     ]);
+  });
+});
+
+describe('TableStructure: moved leaves', () => {
+  it.each<{
+    name: string;
+    draft: JsonSchema;
+    pending: Migration[];
+    structureBound: string[];
+  }>([
+    {
+      name: 'the source and the target of a move',
+      draft: obj({ sku: str(), price: num() }),
+      pending: [pendingUpdate(moveField('code', 'sku'))],
+      structureBound: ['/sku', '/code'],
+    },
+    {
+      name: 'the pointer of a move reverted inside the Draft',
+      draft: obj({ code: str(), price: num() }),
+      pending: [
+        pendingUpdate(moveField('code', 'sku')),
+        pendingUpdate(moveField('sku', 'code')),
+      ],
+      structureBound: ['/code'],
+    },
+  ])('keeps $name structure-bound', ({ draft, pending, structureBound }) => {
+    const structure = analyzeStructure({
+      head: obj({ code: str(), price: num() }),
+      draft,
+      pending,
+    });
+
+    expect(changedPointersOf(structure)).toEqual(structureBound);
+    expect(unchangedPointersOf(structure)).toEqual(['/price']);
+  });
+
+  it.each<{
+    name: string;
+    scenario: StructureScenario;
+    described: DescribedChange[];
+  }>([
+    {
+      name: 'out of the items of an array as added, and the array as changed',
+      scenario: {
+        head: obj({ variants: arr(obj({ color: str(), size: str() })) }),
+        draft: obj({ variants: arr(obj({ size: str() })), color: str() }),
+        pending: [pendingUpdate(moveColorOutOfVariantItems)],
+      },
+      described: [
+        { pointer: '/variants', change: 'changed' },
+        { pointer: '/color', change: 'added' },
+      ],
+    },
+    {
+      name: 'into the items of an array as removed, and the array as changed',
+      scenario: {
+        head: obj({ variants: arr(obj({ size: str() })), color: str() }),
+        draft: obj({ variants: arr(obj({ color: str(), size: str() })) }),
+        pending: [pendingUpdate(moveColorIntoVariantItems)],
+      },
+      described: [
+        { pointer: '/variants', change: 'changed' },
+        { pointer: '/color', change: 'removed' },
+      ],
+    },
+  ])('describes a field moved $name', ({ scenario, described }) => {
+    expect(describedChangesOf(analyzeStructure(scenario))).toEqual(described);
   });
 });
 

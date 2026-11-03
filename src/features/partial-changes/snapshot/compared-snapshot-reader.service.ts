@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import {
   checkHeadSchema,
   type HeadSchemaCheck,
@@ -9,7 +8,6 @@ import type {
   ChangesBranch,
   ChangesSnapshot,
   ComparedTable,
-  TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
   attributeLedger,
@@ -17,10 +15,8 @@ import {
   pendingMigrationsOf,
 } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
-import {
-  analyzeTableStructure,
-  type TableSide,
-} from 'src/features/partial-changes/structure/table-structure';
+import { tableSideOf } from 'src/features/partial-changes/snapshot/table-side';
+import { analyzeTableStructure } from 'src/features/partial-changes/structure/table-structure';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
 
@@ -75,8 +71,8 @@ export class ComparedSnapshotReader {
 
       const structure = analyzeTableStructure(
         {
-          head: sideOf(snapshot, head, 'head'),
-          draft: sideOf(snapshot, draft, 'draft'),
+          head: tableSideOf(snapshot.tables, head, 'head'),
+          draft: tableSideOf(snapshot.tables, draft, 'draft'),
           pendingMigrations: pendingMigrationsOf(ledger, identity),
           replayedHeadSchema: headSchema.replayedHeadSchemas.get(identity),
         },
@@ -93,27 +89,4 @@ export class ComparedSnapshotReader {
       ];
     });
   }
-}
-
-function sideOf(
-  snapshot: ChangesSnapshot,
-  version: TableVersion,
-  side: RevisionSide,
-): TableSide {
-  const tableIdentities = new Map<string, string>();
-
-  for (const pair of snapshot.tables) {
-    const sideVersion = pair[side];
-
-    if (sideVersion) {
-      tableIdentities.set(sideVersion.id, pair.identity);
-    }
-  }
-
-  return {
-    tableId: version.id,
-    schema: version.schema,
-    history: version.history,
-    tableIdentities,
-  };
 }

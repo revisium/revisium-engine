@@ -26,6 +26,7 @@ export type TableChange = (typeof TABLE_CHANGES)[number];
 export interface ChangedField {
   readonly path: string;
   readonly change: FieldChange;
+  readonly from?: string;
 }
 
 export interface StructureChange {

@@ -37,6 +37,13 @@ export class JsonPointer {
     );
   }
 
+  public relocated(from: JsonPointer, to: JsonPointer): JsonPointer {
+    return new JsonPointer([
+      ...to.segments,
+      ...this.segments.slice(from.segments.length),
+    ]);
+  }
+
   public valueIn(data: unknown): unknown {
     return this.segments.reduce<unknown>(
       (value, segment) => ownPropertyOf(value, segment),

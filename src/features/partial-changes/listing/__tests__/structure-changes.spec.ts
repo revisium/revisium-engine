@@ -39,6 +39,13 @@ const productSchema = obj({
   variants: arr(obj({ color: str() })),
 });
 
+const productRow = {
+  code: 'p1',
+  price: 1,
+  address: { city: 'Riga', street: 'Main' },
+  variants: [{ color: 'red' }],
+};
+
 const addZipToAddress: JsonPatch = {
   op: 'add',
   path: '/properties/address/properties/zip',
@@ -83,13 +90,9 @@ describe('listChanges: structure changes', () => {
         fields: [{ path: '/price', change: 'changed' }],
       },
       {
-        change:
-          'a moved field as removed at its Head path and added at its Draft path',
+        change: 'a field moved to another path',
         patches: [moveField('code', 'sku')],
-        fields: [
-          { path: '/code', change: 'removed' },
-          { path: '/sku', change: 'added' },
-        ],
+        fields: [{ path: '/sku', change: 'moved', from: '/code' }],
       },
       {
         change: 'a field added to a nested object',
@@ -155,6 +158,96 @@ describe('listChanges: structure changes', () => {
 
       expect(structure.structureChange).toEqual({ table: 'changed', fields });
     });
+
+    it.each<{ change: string; updates: JsonPatch[][]; fields: ChangedField[] }>(
+      [
+        {
+          change:
+            'a moved field whose type changed as changed from its Head path',
+          updates: [
+            [moveField('price', 'cost')],
+            [replaceField('cost', str())],
+          ],
+          fields: [{ path: '/cost', change: 'changed', from: '/price' }],
+        },
+        {
+          change: 'a field moved twice as moved from its first path',
+          updates: [[moveField('code', 'sku')], [moveField('sku', 'article')]],
+          fields: [{ path: '/article', change: 'moved', from: '/code' }],
+        },
+        {
+          change: 'a field added where a moved field was as added',
+          updates: [[moveField('code', 'sku')], [addField('code', num())]],
+          fields: [
+            { path: '/code', change: 'added' },
+            { path: '/sku', change: 'moved', from: '/code' },
+          ],
+        },
+        {
+          change: 'every field of a moved object as moved from its Head path',
+          updates: [[moveField('address', 'location')]],
+          fields: [
+            { path: '/location/city', change: 'moved', from: '/address/city' },
+            {
+              path: '/location/street',
+              change: 'moved',
+              from: '/address/street',
+            },
+          ],
+        },
+        {
+          change: 'a move reverted inside the Draft as no field',
+          updates: [[moveField('code', 'sku')], [moveField('sku', 'code')]],
+          fields: [],
+        },
+      ],
+    )('describes $change', async ({ updates, fields }) => {
+      const draft = await givenCommittedProducts();
+
+      for (const patches of updates) {
+        await draft.updateTable(PRODUCTS, patches);
+      }
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({ table: 'changed', fields });
+    });
+
+    it.each([
+      {
+        change: 'a moved field',
+        updates: [[moveField('code', 'sku')]],
+        editedRow: {
+          sku: 'edited',
+          price: 2,
+          address: productRow.address,
+          variants: productRow.variants,
+        },
+      },
+      {
+        change: 'a field whose move was reverted',
+        updates: [[moveField('code', 'sku')], [moveField('sku', 'code')]],
+        editedRow: { ...productRow, code: 'edited', price: 2 },
+      },
+    ])(
+      'keeps the values of $change with the structure unit',
+      async ({ updates, editedRow }) => {
+        const draft = await givenCommittedProducts();
+
+        for (const patches of updates) {
+          await draft.updateTable(PRODUCTS, patches);
+        }
+
+        await draft.updateRow(PRODUCTS, 'p1', editedRow);
+
+        const { units } = await draft.listChanges({ tableId: PRODUCTS });
+
+        expect(units.map(addressedUnitOfListed)).toEqual([
+          { kind: 'structure', tableId: PRODUCTS },
+          { kind: 'field', tableId: PRODUCTS, rowId: 'p1', path: '/price' },
+        ]);
+      },
+    );
 
     it('lists input and computed fields in code-point order of their paths', async () => {
       const draft = await givenCommittedProducts();
@@ -223,7 +316,13 @@ describe('listChanges: structure changes', () => {
           kind: 'structure',
           tableId: CATEGORIES,
           selector: { tables: [CATEGORIES] },
-          structureChange: { table: 'replaced', fields: [] },
+          structureChange: {
+            table: 'replaced',
+            fields: [
+              { path: '/label', change: 'added' },
+              { path: '/title', change: 'removed' },
+            ],
+          },
         },
       },
       {
@@ -248,6 +347,28 @@ describe('listChanges: structure changes', () => {
       const page = await draft.listChanges();
 
       expect(page.units).toEqual([listed]);
+    });
+
+    it('lists the fields of a replaced table against the removed Head table', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.removeTable(PRODUCTS);
+      await draft.createTable(
+        PRODUCTS,
+        obj({ code: str(), price: str(), sku: str() }),
+      );
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'replaced',
+        fields: [
+          { path: '/address/city', change: 'removed' },
+          { path: '/address/street', change: 'removed' },
+          { path: '/price', change: 'changed' },
+          { path: '/sku', change: 'added' },
+          { path: '/variants', change: 'removed' },
+        ],
+      });
     });
 
     it('covers every value of TABLE_CHANGES', () => {
@@ -350,14 +471,7 @@ describe('listChanges: structure changes', () => {
     return ChangesScenario.committed(kit, {
       [PRODUCTS]: {
         schema: productSchema,
-        rows: {
-          p1: {
-            code: 'p1',
-            price: 1,
-            address: { city: 'Riga', street: 'Main' },
-            variants: [{ color: 'red' }],
-          },
-        },
+        rows: { p1: productRow },
       },
     });
   }

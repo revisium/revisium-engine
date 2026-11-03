@@ -54,6 +54,25 @@ export function dataPointerOfSchemaPath(schemaPath: string): JsonPointer {
   );
 }
 
+export function dataNodeOfSchemaPath(
+  schemaPath: string,
+): JsonPointer | undefined {
+  const pointer = dataPointerOfSchemaPath(schemaPath);
+
+  if (schemaPathOf(pointer).toString() !== schemaPath) {
+    return undefined;
+  }
+
+  return pointer;
+}
+
+function schemaPathOf(dataPointer: JsonPointer): JsonPointer {
+  return dataPointer.segments.reduce(
+    (schemaPath, name) => schemaPath.child(PROPERTIES).child(name),
+    JsonPointer.root,
+  );
+}
+
 function dataSegmentsOf(schemaSegments: readonly string[]): string[] {
   const [keyword, name, ...rest] = schemaSegments;
 

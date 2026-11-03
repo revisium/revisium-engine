@@ -348,8 +348,8 @@ Output:
 | `selector` | Selection | Resolves to exactly this unit with no required units, blockers or unmatched items: `fields` for a field, `rows` for row lifecycle units, `renames` for a rename, `rowColumns` for row columns, `tables` for a structure, `views`, `sharedSchemas`. |
 
 **StructureChange** `{ table: TableChange; fields: ChangedField[] }` describes a structure unit. The listing and the
-plan compute it from the structure analysis that every listing page and every plan already run for every table on both
-sides (§6.2 step 3), and read nothing more for it.
+plan compute it from the table schemas and the structure analysis that every listing page and every plan already read
+and run for every table on both sides (§6.2 step 3), and read nothing more for it.
 
 | `table` | The structure unit holds |
 | --- | --- |
@@ -359,14 +359,43 @@ sides (§6.2 step 3), and read nothing more for it.
 | `transient` | Only the pending migrations of tables created and removed inside the Draft (§3.5). |
 | `changed` | A table on both sides whose structure differs (§3.4); a renamed table keeps `previousTableId`. |
 
-**ChangedField** `{ path: string; change: 'added' | 'removed' | 'changed' }`. For a `changed` table, `fields` holds
-every changed leaf of §3.3, input and computed alike, as a data JSON Pointer, in code-point order of `path`. A leaf
-only in the Draft schema is `added`; a leaf only in the Head schema is `removed`, at its Head pointer; a leaf in both
-is `changed`, because its leaf schema differs or a pending patch touches it. A moved field therefore reads as
-`removed` at its Head pointer and `added` at its Draft pointer, and a change inside an array or File value reads as
-the pointer of the whole value (§3.2). For every other `table` value, `fields` is empty: the whole table is the unit.
-The values of these fields in every row travel with the structure unit; a row that differs only there has no unit of
-its own (§3.1).
+**ChangedField** `{ path: string; change: 'added' | 'removed' | 'changed' | 'moved'; from?: string }`. `path` and
+`from` are data JSON Pointers; `fields` names each `path` once, in code-point order. A change inside an array or File
+value reads as the pointer of the whole value (§3.2).
+
+For a `changed` table, `fields` describes the changed leaves of §3.3, input and computed alike, net of the table's
+pending moves. The listing follows the value of every Head leaf through the pending patches of the table in ledger
+order:
+
+- A `move` whose `from` and `path` both address data nodes (chains of `/properties/<name>`, so neither lies inside an
+  array or File schema) carries the values at or below `from` to the same place below `path`, and ends the other
+  values at or below `path`. A chain of moves resolves to its first source: a→b→c gives `from: a`.
+- Every other patch acts at each of its paths (both paths of a `move`). At a data node, a `replace` rewrites the values
+  at or below it, and an `add`, a `remove` or a `move` ends them. A path that addresses no data node, such as one
+  inside an array or File schema, rewrites the values at or below the data pointer it maps to (§3.3).
+
+A Draft leaf **comes from** the Head leaf whose value is at its pointer after these patches. Each Draft leaf is
+described as follows:
+
+- It comes from a Head leaf at another pointer: `moved` when its leaf schema equals that leaf's (§3.3, condition 2)
+  and no patch rewrote its value, otherwise `changed`; `from` is the Head pointer. That Head pointer is not reported
+  as `removed`.
+- It comes from the Head leaf at its own pointer: not reported when its leaf schema is equal and no patch rewrote its
+  value (an unchanged leaf, or a move reverted inside the Draft), otherwise `changed`.
+- It comes from no Head leaf: `added` when Head has no leaf at its pointer or that Head leaf's value moved to another
+  Draft leaf (a field added where a moved field was), otherwise `changed` (a field removed and added again).
+
+A Head leaf with no Draft leaf at its pointer that no Draft leaf comes from is `removed`, at its Head pointer.
+
+The description does not change which leaves are structure-bound; §3.3 alone decides that. The source and the target
+of a move, and the pointer of a move reverted inside the Draft, stay structure-bound: their values in every row travel
+with the structure unit, and a row that differs only there has no unit of its own (§3.1).
+
+For a `replaced` table, `fields` compares the leaves of the removed Head table with the leaves of the Draft table
+created at its id: a leaf only in the Draft table is `added`, a leaf only in the Head table is `removed`, a leaf in
+both is `changed` when the leaf schemas differ (§3.3, condition 2). No ledger links the two tables, so no leaf is
+`moved`; every row of both tables still travels with the unit. For `created`, `removed` and `transient` tables,
+`fields` is empty: the whole table is the unit.
 
 `structureChange` is not part of a unit's identity, internal key or selector, or of the fingerprint (§9.1).
 
@@ -596,7 +625,7 @@ type Unit = {
 };
 type UnitRef = Unit & { side?: Side; selector: Selection };   // selector resolves to exactly this unit
 type TableChange = 'created' | 'removed' | 'replaced' | 'transient' | 'changed';
-type ChangedField = { path: string; change: 'added' | 'removed' | 'changed' }; // JSON Pointer
+type ChangedField = { path: string; change: 'added' | 'removed' | 'changed' | 'moved'; from?: string }; // JSON Pointers
 type StructureChange = { table: TableChange; fields: ChangedField[] };
 type DescribedUnitRef = UnitRef & { structureChange?: StructureChange }; // structure units only
 type ListedUnit = DescribedUnitRef & { structure?: UnitRef };
@@ -1561,9 +1590,12 @@ versions unchanged" (§14) holds in every scenario.
   UnitRef whose selector resolves to exactly that structure unit (also in a table that took over the id of a removed
   table), and a selector that previews exactly that unit; paging with the cursor; read-only.
 - AS-60a Every listed structure unit carries its `structureChange`: an added, a removed and a type-changed field, a
-  moved field (`removed` + `added`), a field of a nested object and a field of array items (the array's pointer), input
-  and computed fields in code-point order; `created`, `removed`, `replaced` and `transient` tables with empty `fields`;
-  a renamed table with a field change as `changed` with `previousTableId`.
+  field of a nested object and a field of array items (the array's pointer), input and computed fields in code-point
+  order; a moved field once as `moved` with `from`, also through a chain of moves and for every leaf of a moved
+  object; a moved and retyped field as `changed` with `from`; a field added where a moved field was as `added`; a move
+  reverted inside the Draft not at all, while its values stay with the structure unit; a `replaced` table with its
+  added, removed and changed fields; `created`, `removed` and `transient` tables with empty `fields`; a renamed table
+  with a field change as `changed` with `previousTableId`.
 - AS-60b A structure unit that a preview names as a required unit, as the `structure` of a deferred row, in `sample`
   or as the `unit` of a blocker, and that a refused commit or revert names in `required` or in a blocker, carries the
   `structureChange` the listing gives for that unit; over random Drafts, the `sample` of each listed selector holds
@@ -1772,6 +1804,17 @@ Structure units in results:
   units, so a caller explains a preview without listing the Draft. ListedUnit is a DescribedUnitRef plus `structure`,
   with its fields unchanged.
 - §13.6: AS-60b covers `structureChange` in preview and apply results.
+
+Moved fields and replaced tables in `structureChange`:
+
+- §5.2, §5.11: `ChangedField` gains `from`, and `FIELD_CHANGES` gains `moved` (appended). A Draft field whose
+  values came from a Head field through pending `move` patches is reported once at its Draft pointer, as `moved` or,
+  when its schema or values also changed, `changed`, with the Head pointer as `from`; before, it read as `removed` at
+  the Head pointer and `added` at the Draft pointer. A field added where a moved field was is `added`, and a move
+  reverted inside the Draft is not reported. Which fields are structure-bound does not change.
+- §5.2: a `replaced` table lists its fields: the leaves of the removed Head table against those of the Draft table
+  created at its id, as `added`, `removed` or `changed`. Before, its `fields` was empty.
+- §13.6: AS-60a covers moves and replaced tables.
 
 ### Version 1.2 (2026-11-02)
 

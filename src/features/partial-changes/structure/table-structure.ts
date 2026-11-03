@@ -5,6 +5,10 @@ import type {
   Migration,
 } from '@revisium/schema-toolkit/types';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+import {
+  type LeafOrigin,
+  LeafOrigins,
+} from 'src/features/partial-changes/structure/leaf-origins';
 import { normalizedLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
   dataPointerOfSchemaPath,
@@ -42,13 +46,14 @@ export type PublishedAtOwner =
   | { readonly owner: 'structure' }
   | { readonly owner: 'rowColumns' };
 
-export const FIELD_CHANGES = ['added', 'removed', 'changed'] as const;
+export const FIELD_CHANGES = ['added', 'removed', 'changed', 'moved'] as const;
 
 export type FieldChange = (typeof FIELD_CHANGES)[number];
 
 export interface ChangedLeaf {
   readonly pointer: JsonPointer;
   readonly change: FieldChange;
+  readonly from?: JsonPointer;
 }
 
 export interface TableStructure {
@@ -70,8 +75,7 @@ export function analyzeTableStructure(
     input.draft.history,
   );
   const leaves = new LeafComparison(input);
-  const changedLeaves = leaves.changedLeaves();
-  const changedPointers = changedLeaves.map(({ pointer }) => pointer);
+  const changedPointers = leaves.changedPointers();
 
   return {
     pendingHistory,
@@ -81,9 +85,20 @@ export function analyzeTableStructure(
     differs: structureDiffers(input, pendingHistory, changedPointers),
     unchangedLeaves: leaves.unchanged,
     changedPointers,
-    changedLeaves,
+    changedLeaves: leaves.changedLeaves(),
     publishedAtOwner: leaves.publishedAtOwner(),
   };
+}
+
+export function changedLeavesOfReplacedTable(
+  removed: TableSide,
+  created: TableSide,
+): ChangedLeaf[] {
+  return new LeafComparison({
+    head: removed,
+    draft: created,
+    pendingMigrations: [],
+  }).changedLeaves();
 }
 
 function headBaselinesOf({
@@ -116,28 +131,47 @@ class LeafComparison {
 
   private readonly headLeaves: SchemaLeaves;
   private readonly draftLeaves: SchemaLeaves;
+  private readonly pendingPatches: readonly JsonPatch[];
   private readonly pendingPatchPointers: readonly JsonPointer[];
 
   constructor(private readonly input: TableStructureInput) {
     this.headLeaves = SchemaLeaves.of(input.head.schema);
     this.draftLeaves = SchemaLeaves.of(input.draft.schema);
-    this.pendingPatchPointers = pendingPatchPointers(input.pendingMigrations);
+    this.pendingPatches = input.pendingMigrations.flatMap(patchesOf);
+    this.pendingPatchPointers = pendingPatchPointers(this.pendingPatches);
     this.unchanged = this.draftLeaves.all.filter((leaf) =>
       this.isUnchanged(leaf),
     );
   }
 
-  public changedLeaves(): ChangedLeaf[] {
+  public changedPointers(): JsonPointer[] {
     const unchanged = new Set(this.unchanged.map(pointerKey));
-    const changed = new Map<string, ChangedLeaf>();
+    const changed = new Map<string, JsonPointer>();
 
     for (const leaf of [...this.draftLeaves.all, ...this.headLeaves.all]) {
       if (!unchanged.has(pointerKey(leaf))) {
-        changed.set(pointerKey(leaf), this.changedLeafOf(leaf));
+        changed.set(pointerKey(leaf), leaf.pointer);
       }
     }
 
     return [...changed.values()];
+  }
+
+  public changedLeaves(): ChangedLeaf[] {
+    const origins = new LeafOrigins(this.headLeaves.all, this.pendingPatches);
+    const draftLeaves = this.draftLeaves.all.map(
+      (leaf): TracedLeaf => ({ leaf, origin: origins.at(leaf.pointer) }),
+    );
+    const movedAway = new Set(
+      draftLeaves.filter(isMoved).map(({ origin }) => pointerKey(origin.leaf)),
+    );
+
+    return [
+      ...draftLeaves.flatMap((draftLeaf) =>
+        this.changesOfDraftLeaf(draftLeaf, movedAway),
+      ),
+      ...this.removedLeaves(movedAway),
+    ];
   }
 
   public publishedAtOwner(): PublishedAtOwner {
@@ -154,20 +188,63 @@ class LeafComparison {
     return { owner: 'structure' };
   }
 
-  private changedLeafOf({ pointer }: SchemaLeaf): ChangedLeaf {
-    return { pointer, change: this.changeAt(pointer) };
+  private changesOfDraftLeaf(
+    draftLeaf: TracedLeaf,
+    movedAway: ReadonlySet<string>,
+  ): ChangedLeaf[] {
+    const { leaf, origin } = draftLeaf;
+
+    if (!origin) {
+      return [
+        {
+          pointer: leaf.pointer,
+          change: this.changeOfNewLeaf(leaf, movedAway),
+        },
+      ];
+    }
+
+    if (isMoved(draftLeaf)) {
+      return [this.movedLeafOf(draftLeaf)];
+    }
+
+    if (this.keepsValue(origin, leaf)) {
+      return [];
+    }
+
+    return [{ pointer: leaf.pointer, change: 'changed' }];
   }
 
-  private changeAt(pointer: JsonPointer): FieldChange {
-    if (!this.headLeaves.at(pointer)) {
+  private changeOfNewLeaf(
+    leaf: SchemaLeaf,
+    movedAway: ReadonlySet<string>,
+  ): FieldChange {
+    if (!this.headLeaves.at(leaf.pointer) || movedAway.has(pointerKey(leaf))) {
       return 'added';
     }
 
-    if (!this.draftLeaves.at(pointer)) {
-      return 'removed';
-    }
-
     return 'changed';
+  }
+
+  private movedLeafOf({ leaf, origin }: MovedLeaf): ChangedLeaf {
+    return {
+      pointer: leaf.pointer,
+      change: this.keepsValue(origin, leaf) ? 'moved' : 'changed',
+      from: origin.leaf.pointer,
+    };
+  }
+
+  private removedLeaves(movedAway: ReadonlySet<string>): ChangedLeaf[] {
+    return this.headLeaves.all
+      .filter(
+        (leaf) =>
+          !this.draftLeaves.at(leaf.pointer) &&
+          !movedAway.has(pointerKey(leaf)),
+      )
+      .map(({ pointer }) => ({ pointer, change: 'removed' }));
+  }
+
+  private keepsValue(origin: LeafOrigin, draftLeaf: SchemaLeaf): boolean {
+    return !origin.rewritten && this.haveEqualSchemas(origin.leaf, draftLeaf);
   }
 
   private isUnchanged(draftLeaf: SchemaLeaf): boolean {
@@ -197,9 +274,23 @@ class LeafComparison {
   }
 }
 
-function pendingPatchPointers(migrations: readonly Migration[]): JsonPointer[] {
-  return migrations
-    .flatMap(patchesOf)
+interface TracedLeaf {
+  readonly leaf: SchemaLeaf;
+  readonly origin?: LeafOrigin;
+}
+
+interface MovedLeaf extends TracedLeaf {
+  readonly origin: LeafOrigin;
+}
+
+function isMoved(draftLeaf: TracedLeaf): draftLeaf is MovedLeaf {
+  const { leaf, origin } = draftLeaf;
+
+  return origin !== undefined && pointerKey(origin.leaf) !== pointerKey(leaf);
+}
+
+function pendingPatchPointers(patches: readonly JsonPatch[]): JsonPointer[] {
+  return patches
     .flatMap(schemaPathsOf)
     .map((schemaPath) => dataPointerOfSchemaPath(schemaPath));
 }

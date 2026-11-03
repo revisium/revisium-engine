@@ -57,6 +57,11 @@ const replaceAssetFileName: JsonPatch = {
   path: '/properties/asset/properties/fileName',
   value: num(),
 };
+const replaceCoverFileName: JsonPatch = {
+  op: 'replace',
+  path: '/properties/cover/properties/fileName',
+  value: str(),
+};
 const addCustomIntoCover: JsonPatch = {
   op: 'add',
   path: '/properties/cover/properties/custom',
@@ -223,6 +228,15 @@ describe('TableStructure: unchanged and changed leaves', () => {
       leaf: '/tags',
     },
     {
+      name: 'a pending patch replaced a field inside its File',
+      scenario: {
+        head: coverAndTitle,
+        draft: coverAndTitle,
+        pending: [pendingUpdate(replaceCoverFileName)],
+      },
+      leaf: '/cover',
+    },
+    {
       name: 'a pending move took a field from its pointer',
       scenario: {
         head: obj({ code: str(), sku: str() }),
@@ -305,8 +319,13 @@ describe('TableStructure: moved leaves', () => {
           moveTitleIntoExtracted,
         ),
       ],
-      structureBound: ['/extracted/x', '/extracted/newTitle', '/title'],
-      unchanged: ['/cover'],
+      structureBound: [
+        '/cover',
+        '/extracted/x',
+        '/extracted/newTitle',
+        '/title',
+      ],
+      unchanged: [],
     },
   ])(
     'keeps $name structure-bound',
@@ -456,6 +475,19 @@ describe('TableStructure: pending migrations that do not replay', () => {
       expect(describedChangesOf(analyzeStructure(scenario))).toEqual(described);
     },
   );
+
+  it('keeps the leaf that a patch path names structure-bound', () => {
+    const structure = analyzeStructure({
+      head: codeAndPrice,
+      draft: codeAndPrice,
+      pending: [
+        pendingUpdate(replaceField('price', num()), removeField('stock')),
+      ],
+    });
+
+    expect(changedPointersOf(structure)).toEqual(['/price']);
+    expect(unchangedPointersOf(structure)).toEqual(['/code']);
+  });
 });
 
 function expectUnchanged(structure: TableStructure, pointer: string): void {

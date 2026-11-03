@@ -50,6 +50,19 @@ const productSchema = obj({
 
 const mediaSchema = obj({ title: str(), cover: ref(SystemSchemaIds.File) });
 
+const emptyFile = {
+  status: '',
+  fileId: '',
+  url: '',
+  fileName: '',
+  hash: '',
+  extension: '',
+  mimeType: '',
+  size: 0,
+  width: 0,
+  height: 0,
+};
+
 const productRow = {
   code: 'p1',
   price: 1,
@@ -274,6 +287,24 @@ describe('listChanges: structure changes', () => {
         ]);
       },
     );
+
+    it('keeps a File that a row changed after a pending patch inside the File with the structure unit, which lists the File as changed', async () => {
+      const draft = await givenCommittedMediaWithEmptyCover();
+      await draft.updateTable(MEDIA, [replaceFileNameOf('cover', str())]);
+      await draft.updateRow(MEDIA, 'm1', { title: 'edited', cover: emptyFile });
+      await draft.uploadFile(MEDIA, 'm1', 'cover');
+
+      const { units } = await draft.listChanges({ tableId: MEDIA });
+
+      expect(units.map(addressedUnitOfListed)).toEqual([
+        { kind: 'structure', tableId: MEDIA },
+        { kind: 'field', tableId: MEDIA, rowId: 'm1', path: '/title' },
+      ]);
+      expect(unitOfKind(units, 'structure').structureChange).toEqual({
+        table: 'changed',
+        fields: [{ path: '/cover', change: 'changed' }],
+      });
+    });
 
     it('describes a moved File whose content a later patch rewrote as changed from its Head path', async () => {
       const draft = await givenCommittedMedia();
@@ -539,6 +570,15 @@ describe('listChanges: structure changes', () => {
   function givenCommittedMedia(): Promise<ChangesScenario> {
     return ChangesScenario.committed(kit, {
       [MEDIA]: { schema: mediaSchema, rows: {} },
+    });
+  }
+
+  function givenCommittedMediaWithEmptyCover(): Promise<ChangesScenario> {
+    return ChangesScenario.committed(kit, {
+      [MEDIA]: {
+        schema: mediaSchema,
+        rows: { m1: { title: 'one', cover: emptyFile } },
+      },
     });
   }
 

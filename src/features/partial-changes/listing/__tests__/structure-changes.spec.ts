@@ -67,6 +67,21 @@ const addSizeToVariantItems: JsonPatch = {
   path: '/properties/variants/items/properties/size',
   value: str(),
 };
+const addCustomIntoCover: JsonPatch = {
+  op: 'add',
+  path: '/properties/cover/properties/custom',
+  value: obj({ x: str() }),
+};
+const moveCustomOutOfCover: JsonPatch = {
+  op: 'move',
+  from: '/properties/cover/properties/custom',
+  path: '/properties/extracted',
+};
+const moveTitleIntoExtracted: JsonPatch = {
+  op: 'move',
+  from: '/properties/title',
+  path: '/properties/extracted/properties/newTitle',
+};
 
 describe('listChanges: structure changes', () => {
   let kit: PartialChangesTestKit;
@@ -271,6 +286,26 @@ describe('listChanges: structure changes', () => {
       expect(structure.structureChange).toEqual({
         table: 'changed',
         fields: [{ path: '/asset', change: 'changed', from: '/cover' }],
+      });
+    });
+
+    it('describes a field moved, in the update that took an object out of a File, into that object as moved from its Head path', async () => {
+      const draft = await givenCommittedMedia();
+      await draft.updateTable(MEDIA, [
+        addCustomIntoCover,
+        moveCustomOutOfCover,
+        moveTitleIntoExtracted,
+      ]);
+
+      const structure = await listedStructureOf(draft, MEDIA);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          { path: '/cover', change: 'changed' },
+          { path: '/extracted/newTitle', change: 'moved', from: '/title' },
+          { path: '/extracted/x', change: 'added' },
+        ],
       });
     });
 

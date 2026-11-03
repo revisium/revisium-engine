@@ -8,8 +8,8 @@ import type { JsonPointer } from 'src/features/partial-changes/structure/json-po
 import {
   type LeafOrigin,
   LeafOrigins,
-  type SchemaPatch,
-  schemaPatchesFrom,
+  type PatchEffect,
+  replayPendingPatches,
 } from 'src/features/partial-changes/structure/leaf-origins';
 import { normalizedLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
@@ -68,6 +68,8 @@ export interface TableStructure {
   readonly publishedAtOwner: PublishedAtOwner;
 }
 
+const WITHOUT_PROVENANCE: readonly PatchEffect[] = [];
+
 export function analyzeTableStructure(
   input: TableStructureInput,
   rules: NativeSchemaRules,
@@ -76,10 +78,11 @@ export function analyzeTableStructure(
     input.head.history,
     input.draft.history,
   );
+  const pendingBatches = input.pendingMigrations.flatMap(patchBatchOf);
   const leaves = new LeafComparison(
     input.head,
     input.draft,
-    pendingPatchesOf(input, rules),
+    pendingBatches.flat(),
   );
   const changedPointers = leaves.changedPointers();
 
@@ -91,7 +94,9 @@ export function analyzeTableStructure(
     differs: structureDiffers(input, pendingHistory, changedPointers),
     unchangedLeaves: leaves.unchanged,
     changedPointers,
-    changedLeaves: leaves.changedLeaves(),
+    changedLeaves: leaves.changedLeaves(
+      pendingEffectsOf(input.head.schema, pendingBatches, rules),
+    ),
     publishedAtOwner: leaves.publishedAtOwner(),
   };
 }
@@ -100,17 +105,19 @@ export function changedLeavesOfReplacedTable(
   removed: TableSide,
   created: TableSide,
 ): ChangedLeaf[] {
-  return new LeafComparison(removed, created, []).changedLeaves();
+  return new LeafComparison(removed, created, []).changedLeaves(
+    WITHOUT_PROVENANCE,
+  );
 }
 
-function pendingPatchesOf(
-  { head, pendingMigrations }: TableStructureInput,
+function pendingEffectsOf(
+  headSchema: JsonSchema,
+  pendingBatches: readonly JsonPatch[][],
   rules: NativeSchemaRules,
-): SchemaPatch[] {
-  return schemaPatchesFrom(
-    head.schema,
-    pendingMigrations.flatMap(patchesOf),
-    rules,
+): readonly PatchEffect[] {
+  return (
+    replayPendingPatches(headSchema, pendingBatches, rules) ??
+    WITHOUT_PROVENANCE
   );
 }
 
@@ -149,13 +156,11 @@ class LeafComparison {
   constructor(
     private readonly head: TableSide,
     private readonly draft: TableSide,
-    private readonly pendingPatches: readonly SchemaPatch[],
+    pendingPatches: readonly JsonPatch[],
   ) {
     this.headLeaves = SchemaLeaves.of(head.schema);
     this.draftLeaves = SchemaLeaves.of(draft.schema);
-    this.pendingPatchPointers = pendingPatchPointers(
-      pendingPatches.map(({ patch }) => patch),
-    );
+    this.pendingPatchPointers = pendingPatchPointers(pendingPatches);
     this.unchanged = this.draftLeaves.all.filter((leaf) =>
       this.isUnchanged(leaf),
     );
@@ -174,8 +179,8 @@ class LeafComparison {
     return [...changed.values()];
   }
 
-  public changedLeaves(): ChangedLeaf[] {
-    const origins = new LeafOrigins(this.headLeaves.all, this.pendingPatches);
+  public changedLeaves(pendingEffects: readonly PatchEffect[]): ChangedLeaf[] {
+    const origins = new LeafOrigins(this.headLeaves.all, pendingEffects);
     const draftLeaves = this.draftLeaves.all.map(
       (leaf): TracedLeaf => ({ leaf, origin: origins.at(leaf.pointer) }),
     );
@@ -312,12 +317,12 @@ function pendingPatchPointers(patches: readonly JsonPatch[]): JsonPointer[] {
     .map((schemaPath) => dataPointerOfSchemaPath(schemaPath));
 }
 
-function patchesOf(migration: Migration): JsonPatch[] {
+function patchBatchOf(migration: Migration): JsonPatch[][] {
   if (migration.changeType !== 'update') {
     return [];
   }
 
-  return migration.patches;
+  return [migration.patches];
 }
 
 function schemaPathsOf(patch: JsonPatch): string[] {

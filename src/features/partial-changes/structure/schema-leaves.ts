@@ -5,6 +5,7 @@ import {
   type JsonSchema,
 } from '@revisium/schema-toolkit/types';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+import type { NativeSchemaStore } from 'src/features/share/ledger-replay/native-schema-rules';
 import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
 
 export type LeafKind = 'value' | 'atomic' | 'publishedAt' | 'computed';
@@ -60,18 +61,18 @@ export function dataPointerOfSchemaPath(schemaPath: string): JsonPointer {
 }
 
 export function dataTargetOfSchemaPath(
-  schema: JsonSchema,
+  store: NativeSchemaStore,
   schemaPath: string,
 ): DataTarget {
   return dataTargetBelow(
-    schema,
+    store,
     JsonPointer.root,
     JsonPointer.parse(schemaPath).segments,
   );
 }
 
 function dataTargetBelow(
-  node: JsonSchema | undefined,
+  store: NativeSchemaStore,
   pointer: JsonPointer,
   schemaSegments: readonly string[],
 ): DataTarget {
@@ -81,28 +82,15 @@ function dataTargetBelow(
 
   const [keyword, name, ...rest] = schemaSegments;
 
-  if (keyword !== PROPERTIES || name === undefined || !holdsProperties(node)) {
+  if (
+    keyword !== PROPERTIES ||
+    name === undefined ||
+    !store.hasObjectSchemaAt(pointer.segments)
+  ) {
     return { pointer, isNode: false };
   }
 
-  return dataTargetBelow(propertyOf(node, name), pointer.child(name), rest);
-}
-
-function holdsProperties(
-  node: JsonSchema | undefined,
-): node is JsonObjectSchema {
-  return node !== undefined && isObjectNode(node);
-}
-
-function propertyOf(
-  node: JsonObjectSchema,
-  name: string,
-): JsonSchema | undefined {
-  if (!Object.prototype.hasOwnProperty.call(node.properties, name)) {
-    return undefined;
-  }
-
-  return node.properties[name];
+  return dataTargetBelow(store, pointer.child(name), rest);
 }
 
 function dataSegmentsOf(schemaSegments: readonly string[]): string[] {

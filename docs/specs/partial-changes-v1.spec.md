@@ -365,10 +365,14 @@ value reads as the pointer of the whole value (§3.2).
 
 For a `changed` table, `fields` describes the changed leaves of §3.3, input and computed alike, net of the table's
 pending moves. The listing follows the value of every Head leaf through the pending patches of the table in ledger
-order. Each patch path is read against the schema that patch applies to: it addresses a data node when it descends
-from the root only through `/properties/<name>` of object schemas. A path that goes on into an array, a File or
-another schema keyword lies inside the value where it stops; for example, `/properties/asset/properties/fileName` lies
-inside the File at `/asset` while `/asset` is a File.
+order, replaying them as native applies them: the patches of one `update` migration apply in turn to one schema built
+from the schema that migration starts from, and the next migration starts from the serialized result. Each patch path
+is read against the schema that patch applies to. Within one migration that is the schema native holds between the
+patches, not its serialized form: serializing a File keeps only its `$ref`, so a field that an earlier patch of the
+migration added inside the File and a later one moved out of it exists only in the held schema. A path addresses a
+data node when it descends from the root only through `/properties/<name>` of object schemas. A path that goes on
+into an array, a File or another schema keyword lies inside the value where it stops; for example,
+`/properties/asset/properties/fileName` lies inside the File at `/asset` while `/asset` is a File.
 
 - A `move` whose `from` and `path` both address data nodes carries the values at or below `from` to the same place
   below `path`, and ends the other values at or below `path`. A chain of moves resolves to its first source: a→b→c
@@ -389,6 +393,10 @@ described as follows:
   Draft leaf (a field added where a moved field was), otherwise `changed` (a field removed and added again).
 
 A Head leaf with no Draft leaf at its pointer that no Draft leaf comes from is `removed`, at its Head pointer.
+
+Native accepted every pending migration, so a patch that this replay cannot apply means the replay diverged from
+native. The listing then follows no value through the patches: `fields` compares the Head leaves with the Draft leaves
+by pointer, as for a `replaced` table below, and reports no `moved` and no `from`.
 
 The description does not change which leaves are structure-bound; §3.3 alone decides that. The source and the target
 of a move, and the pointer of a move reverted inside the Draft, stay structure-bound: their values in every row travel
@@ -1815,7 +1823,9 @@ Moved fields and replaced tables in `structureChange`:
   when its schema or values also changed, `changed`, with the Head pointer as `from`; before, it read as `removed` at
   the Head pointer and `added` at the Draft pointer. A field added where a moved field was is `added`, and a move
   reverted inside the Draft is not reported. Patch paths are read against the schema each patch applies to, so a patch
-  inside an array or File rewrites that whole value. Which fields are structure-bound does not change.
+  inside an array or File rewrites that whole value; within one migration that schema is the one native holds between
+  the patches, not its serialized form. When the pending patches do not replay, `fields` compares the Head and Draft
+  leaves by pointer, without `moved` or `from`. Which fields are structure-bound does not change.
 - §5.2: a `replaced` table lists its fields: the leaves of the removed Head table against those of the Draft table
   created at its id, as `added`, `removed` or `changed`. Before, its `fields` was empty.
 - §13.6: AS-60a covers moves and replaced tables.

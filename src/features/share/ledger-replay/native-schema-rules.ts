@@ -1,12 +1,24 @@
 import { validateSchemaFormulas } from '@revisium/schema-toolkit/formula';
 import {
+  applyAddPatch,
+  applyMovePatch,
+  applyRemovePatch,
+  applyReplacePatch,
   createJsonSchemaStore,
   getForeignKeyPatchesFromSchema,
   getForeignKeysFromSchema,
   getInvalidFieldNamesInSchema,
   SchemaTable,
 } from '@revisium/schema-toolkit/lib';
-import type { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
+import type {
+  JsonObjectStore,
+  JsonSchemaStore,
+} from '@revisium/schema-toolkit/model';
+import {
+  type JsonPatch,
+  type JsonSchema,
+  JsonSchemaTypeName,
+} from '@revisium/schema-toolkit/types';
 import { formatFormulaValidationMessage } from 'src/features/share/exceptions/formula-validation-message';
 import { invalidFieldNamesMessage } from 'src/features/share/utils/validateUrlLikeId/validateJsonFieldName';
 
@@ -37,6 +49,10 @@ export class NativeSchemaRules {
     schemaTable.applyPatches(patches);
 
     return schemaTable.getSchema();
+  }
+
+  public schemaStore(schema: JsonSchema): NativeSchemaStore {
+    return new NativeSchemaStore(schema, this.refs);
   }
 
   public renamedForeignKeys(
@@ -107,6 +123,44 @@ export class NativeSchemaRules {
   }
 }
 
+export class NativeSchemaStore {
+  private root: JsonSchemaStore;
+
+  constructor(
+    schema: JsonSchema,
+    private readonly refs: SchemaRefs,
+  ) {
+    this.root = createJsonSchemaStore(schema, refs);
+  }
+
+  public applyPatch(patch: JsonPatch): void {
+    switch (patch.op) {
+      case 'add':
+        applyAddPatch(this.root, patch, this.refs);
+        return;
+      case 'move':
+        applyMovePatch(this.root, patch);
+        return;
+      case 'remove':
+        applyRemovePatch(this.root, patch);
+        return;
+      case 'replace':
+        this.root = applyReplacePatch(this.root, patch, this.refs);
+        return;
+    }
+  }
+
+  public hasObjectSchemaAt(fieldPath: readonly string[]): boolean {
+    return isObjectSchema(
+      fieldPath.reduce<JsonSchemaStore | undefined>(propertyOf, this.root),
+    );
+  }
+
+  public schema(): JsonSchema {
+    return this.root.getPlainSchema();
+  }
+}
+
 export function patchValues(patches: JsonPatch[]): JsonSchema[] {
   return patches.flatMap((patch) =>
     patch.op === 'add' || patch.op === 'replace' ? [patch.value] : [],
@@ -120,4 +174,21 @@ function detailsOf({ errors }: ValidationOutcome): string {
         `${instancePath} ${message ?? '<no message>'}`,
     )
     .join('; ');
+}
+
+function propertyOf(
+  node: JsonSchemaStore | undefined,
+  name: string,
+): JsonSchemaStore | undefined {
+  if (!isObjectSchema(node)) {
+    return undefined;
+  }
+
+  return node.getProperty(name);
+}
+
+function isObjectSchema(
+  node: JsonSchemaStore | undefined,
+): node is JsonObjectStore {
+  return node?.type === JsonSchemaTypeName.Object && !node.$ref;
 }

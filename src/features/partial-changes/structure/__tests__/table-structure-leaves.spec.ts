@@ -57,7 +57,29 @@ const replaceAssetFileName: JsonPatch = {
   path: '/properties/asset/properties/fileName',
   value: num(),
 };
+const addCustomIntoCover: JsonPatch = {
+  op: 'add',
+  path: '/properties/cover/properties/custom',
+  value: obj({ x: str() }),
+};
+const moveCustomOutOfCover: JsonPatch = {
+  op: 'move',
+  from: '/properties/cover/properties/custom',
+  path: '/properties/extracted',
+};
+const moveTitleIntoExtracted: JsonPatch = {
+  op: 'move',
+  from: '/properties/title',
+  path: '/properties/extracted/properties/newTitle',
+};
 const file = () => ref(SystemSchemaIds.File);
+
+const codeAndPrice = obj({ code: str(), price: num() });
+const coverAndTitle = obj({ cover: file(), title: str() });
+const coverAndExtracted = obj({
+  cover: file(),
+  extracted: obj({ x: str(), newTitle: str() }),
+});
 
 describe('TableStructure: unchanged and changed leaves', () => {
   it.each<{ name: string; scenario: StructureScenario }>([
@@ -247,35 +269,54 @@ describe('TableStructure: unchanged and changed leaves', () => {
 describe('TableStructure: moved leaves', () => {
   it.each<{
     name: string;
+    head: JsonSchema;
     draft: JsonSchema;
     pending: Migration[];
     structureBound: string[];
+    unchanged: string[];
   }>([
     {
       name: 'the source and the target of a move',
+      head: codeAndPrice,
       draft: obj({ sku: str(), price: num() }),
       pending: [pendingUpdate(moveField('code', 'sku'))],
       structureBound: ['/sku', '/code'],
+      unchanged: ['/price'],
     },
     {
       name: 'the pointer of a move reverted inside the Draft',
+      head: codeAndPrice,
       draft: obj({ code: str(), price: num() }),
       pending: [
         pendingUpdate(moveField('code', 'sku')),
         pendingUpdate(moveField('sku', 'code')),
       ],
       structureBound: ['/code'],
+      unchanged: ['/price'],
     },
-  ])('keeps $name structure-bound', ({ draft, pending, structureBound }) => {
-    const structure = analyzeStructure({
-      head: obj({ code: str(), price: num() }),
-      draft,
-      pending,
-    });
+    {
+      name: 'the fields of one migration that moves a field into an object taken out of a File',
+      head: coverAndTitle,
+      draft: coverAndExtracted,
+      pending: [
+        pendingUpdate(
+          addCustomIntoCover,
+          moveCustomOutOfCover,
+          moveTitleIntoExtracted,
+        ),
+      ],
+      structureBound: ['/extracted/x', '/extracted/newTitle', '/title'],
+      unchanged: ['/cover'],
+    },
+  ])(
+    'keeps $name structure-bound',
+    ({ head, draft, pending, structureBound, unchanged }) => {
+      const structure = analyzeStructure({ head, draft, pending });
 
-    expect(changedPointersOf(structure)).toEqual(structureBound);
-    expect(unchangedPointersOf(structure)).toEqual(['/price']);
-  });
+      expect(changedPointersOf(structure)).toEqual(structureBound);
+      expect(unchangedPointersOf(structure)).toEqual(unchanged);
+    },
+  );
 
   it.each<{
     name: string;
@@ -350,6 +391,71 @@ describe('TableStructure: moved leaves', () => {
       { pointer: '/asset/fileName', change: 'removed' },
     ]);
   });
+
+  it('describes a field moved into an object that the same migration took out of a File as moved from its Head path', () => {
+    const structure = analyzeStructure({
+      head: coverAndTitle,
+      draft: coverAndExtracted,
+      pending: [
+        pendingUpdate(
+          addCustomIntoCover,
+          moveCustomOutOfCover,
+          moveTitleIntoExtracted,
+        ),
+      ],
+    });
+
+    expect(describedChangesOf(structure)).toEqual([
+      { pointer: '/cover', change: 'changed' },
+      { pointer: '/extracted/x', change: 'added' },
+      { pointer: '/extracted/newTitle', change: 'moved', from: '/title' },
+    ]);
+  });
+});
+
+describe('TableStructure: pending migrations that do not replay', () => {
+  it.each<{
+    name: string;
+    scenario: StructureScenario;
+    described: DescribedChange[];
+  }>([
+    {
+      name: 'a patch addresses no field',
+      scenario: {
+        head: codeAndPrice,
+        draft: obj({ sku: str(), price: num() }),
+        pending: [
+          pendingUpdate(moveField('code', 'sku'), removeField('stock')),
+        ],
+      },
+      described: [
+        { pointer: '/sku', change: 'added' },
+        { pointer: '/code', change: 'removed' },
+      ],
+    },
+    {
+      name: 'the patches that take a field out of a File are split across migrations, which native refuses',
+      scenario: {
+        head: coverAndTitle,
+        draft: coverAndExtracted,
+        pending: [
+          pendingUpdate(addCustomIntoCover),
+          pendingUpdate(moveCustomOutOfCover),
+          pendingUpdate(moveTitleIntoExtracted),
+        ],
+      },
+      described: [
+        { pointer: '/extracted/x', change: 'added' },
+        { pointer: '/extracted/newTitle', change: 'added' },
+        { pointer: '/title', change: 'removed' },
+      ],
+    },
+  ])(
+    'compares the leaves of Head and Draft without moves when $name',
+    ({ scenario, described }) => {
+      expect(describedChangesOf(analyzeStructure(scenario))).toEqual(described);
+    },
+  );
 });
 
 function expectUnchanged(structure: TableStructure, pointer: string): void {

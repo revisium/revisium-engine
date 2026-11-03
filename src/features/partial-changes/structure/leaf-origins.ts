@@ -5,12 +5,10 @@ import {
   dataTargetOfSchemaPath,
   type SchemaLeaf,
 } from 'src/features/partial-changes/structure/schema-leaves';
-import type { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
-
-export interface SchemaPatch {
-  readonly patch: JsonPatch;
-  readonly schema: JsonSchema;
-}
+import type {
+  NativeSchemaRules,
+  NativeSchemaStore,
+} from 'src/features/share/ledger-replay/native-schema-rules';
 
 export interface LeafOrigin {
   readonly leaf: SchemaLeaf;
@@ -27,25 +25,21 @@ interface Carry {
   readonly to: JsonPointer;
 }
 
-type PatchEffect =
+export type PatchEffect =
   | Carry
   | { readonly kind: 'rewrite'; readonly at: JsonPointer }
   | { readonly kind: 'end'; readonly at: JsonPointer };
 
-export function schemaPatchesFrom(
-  schema: JsonSchema,
-  patches: readonly JsonPatch[],
+export function replayPendingPatches(
+  headSchema: JsonSchema,
+  pendingBatches: readonly (readonly JsonPatch[])[],
   rules: NativeSchemaRules,
-): SchemaPatch[] {
-  const schemaPatches: SchemaPatch[] = [];
-  let current = schema;
-
-  for (const patch of patches) {
-    schemaPatches.push({ patch, schema: current });
-    current = schemaAfter(current, patch, rules);
+): PatchEffect[] | undefined {
+  try {
+    return effectsOfBatches(headSchema, pendingBatches, rules);
+  } catch {
+    return undefined;
   }
-
-  return schemaPatches;
 }
 
 export class LeafOrigins {
@@ -53,15 +47,12 @@ export class LeafOrigins {
 
   constructor(
     headLeaves: readonly SchemaLeaf[],
-    patches: readonly SchemaPatch[],
+    effects: readonly PatchEffect[],
   ) {
-    const values = patches
-      .flatMap(effectsOf)
-      .reduce(
-        (traced, effect) =>
-          traced.flatMap((value) => valueAfter(value, effect)),
-        headLeaves.map(valueAtItsLeaf),
-      );
+    const values = effects.reduce(
+      (traced, effect) => traced.flatMap((value) => valueAfter(value, effect)),
+      headLeaves.map(valueAtItsLeaf),
+    );
 
     this.originsByPointer = new Map(
       values.map(({ pointer, leaf, rewritten }) => [
@@ -76,25 +67,40 @@ export class LeafOrigins {
   }
 }
 
-function schemaAfter(
-  schema: JsonSchema,
-  patch: JsonPatch,
+function effectsOfBatches(
+  headSchema: JsonSchema,
+  batches: readonly (readonly JsonPatch[])[],
   rules: NativeSchemaRules,
-): JsonSchema {
-  try {
-    return rules.patchedSchema(schema, [patch]);
-  } catch {
-    return schema;
+): PatchEffect[] {
+  const effects: PatchEffect[] = [];
+  let schema = headSchema;
+
+  for (const batch of batches) {
+    const store = rules.schemaStore(schema);
+    effects.push(...effectsOfBatch(batch, store));
+    schema = store.schema();
   }
+
+  return effects;
 }
 
-function valueAtItsLeaf(leaf: SchemaLeaf): TracedValue {
-  return { leaf, pointer: leaf.pointer, rewritten: false };
+function effectsOfBatch(
+  batch: readonly JsonPatch[],
+  store: NativeSchemaStore,
+): PatchEffect[] {
+  const effects: PatchEffect[] = [];
+
+  for (const patch of batch) {
+    effects.push(...effectsOf(patch, store));
+    store.applyPatch(patch);
+  }
+
+  return effects;
 }
 
-function effectsOf({ patch, schema }: SchemaPatch): PatchEffect[] {
+function effectsOf(patch: JsonPatch, store: NativeSchemaStore): PatchEffect[] {
   const targetOf = (schemaPath: string) =>
-    dataTargetOfSchemaPath(schema, schemaPath);
+    dataTargetOfSchemaPath(store, schemaPath);
 
   if (patch.op === 'replace') {
     return [{ kind: 'rewrite', at: targetOf(patch.path).pointer }];
@@ -121,6 +127,10 @@ function effectOfAddOrRemoveAt({ pointer, isNode }: DataTarget): PatchEffect {
   }
 
   return { kind: 'end', at: pointer };
+}
+
+function valueAtItsLeaf(leaf: SchemaLeaf): TracedValue {
+  return { leaf, pointer: leaf.pointer, rewritten: false };
 }
 
 function valueAfter(value: TracedValue, effect: PatchEffect): TracedValue[] {

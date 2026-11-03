@@ -10,8 +10,8 @@ import type {
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
+  DescribedUnitRef,
   RequiredUnit,
-  UnitRef,
 } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
@@ -33,7 +33,7 @@ export interface PreviewChangesResult {
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly Blocker[];
   readonly deferred: readonly Deferred[];
-  readonly sample: readonly UnitRef[];
+  readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelection;
   readonly estimate: Estimate;
 }

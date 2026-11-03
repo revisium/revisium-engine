@@ -21,7 +21,6 @@ import {
   validateOperation,
   validateSelection,
 } from 'src/features/partial-changes/selection/selection-validator';
-import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
 import type {
   ChangesBranch,
   ChangesSnapshot,
@@ -35,8 +34,6 @@ interface PreviewRequest {
   readonly selection: Selection;
   readonly includeRequired: boolean;
 }
-
-const SAMPLE_SIZE = 20;
 
 @QueryHandler(PreviewDraftChangesQuery)
 export class PreviewDraftChangesHandler implements IQueryHandler<
@@ -124,7 +121,7 @@ function previewResultOf(
     required: plan.required,
     blockers: plan.blockers,
     deferred: plan.deferred,
-    sample: plan.appliedUnits.slice(0, SAMPLE_SIZE).map(unitRefOf),
+    sample: plan.sample,
     unmatched: plan.unmatched,
     estimate: plan.estimate,
   };

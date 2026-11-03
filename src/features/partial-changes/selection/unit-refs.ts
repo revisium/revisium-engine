@@ -1,10 +1,13 @@
+import type { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
+import { structureChangeOf } from 'src/features/partial-changes/catalogue/structure-changes';
 import type {
   HeadQualifier,
   Unit,
 } from 'src/features/partial-changes/catalogue/unit';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type { StructureChange } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type {
   RowRef,
   Selection,
@@ -16,8 +19,12 @@ export type UnitRef = Unit & {
   readonly selector: Selection;
 };
 
+export type DescribedUnitRef = UnitRef & {
+  readonly structureChange?: StructureChange;
+};
+
 export interface RequiredUnit {
-  readonly unit: UnitRef;
+  readonly unit: DescribedUnitRef;
   readonly reason: Reason;
 }
 
@@ -31,6 +38,19 @@ export function unitRefOf({ unit, side }: CatalogueUnit): UnitRef {
   return { ...unit, side, selector };
 }
 
+export function describedUnitRefOf(
+  unit: CatalogueUnit,
+  tables: CatalogueTables,
+): DescribedUnitRef {
+  const ref = unitRefOf(unit);
+
+  if (unit.unit.kind !== 'structure') {
+    return ref;
+  }
+
+  return { ...ref, structureChange: structureChangeOf(unit, tables) };
+}
+
 export function requiredUnitsOf(
   catalogue: ChangeCatalogue,
   required: ReadonlyMap<string, Reason>,
@@ -42,7 +62,7 @@ export function requiredUnitsOf(
       return [];
     }
 
-    return [{ unit: unitRefOf(unit), reason }];
+    return [{ unit: describedUnitRefOf(unit, catalogue.tables), reason }];
   });
 }
 

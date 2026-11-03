@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.2 |
+| Version | 1.3 |
 | Status | Accepted |
 | Date | 2026-11-02 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
@@ -282,17 +282,24 @@ and Draft.
 selector that resolves to exactly this unit, so a caller can add it, or exclude it, by public ids alone (also a
 Head-side unit whose id a rename took over).
 
-**RequiredUnit** `{ unit: UnitRef; reason: Reason }`; **Reason** `{ code: RequiredReasonCode; tableId: string; rowId?:
-string; path?: string; because: string }`. One reason per unit (the first found).
+**DescribedUnitRef** = UnitRef plus `structureChange?: StructureChange` (§5.2), set on structure units only. Every unit
+a result names is a DescribedUnitRef: the listed units (§5.2), and `required`, `deferred` (`unit` and `structure`),
+`sample` and the `unit` of a blocker in the results of `previewChanges`, `commitChanges` and `revertChanges`. A
+structure unit carries the same `structureChange` in each of them, so a caller explains a preview or a refused apply
+without listing the Draft. Only the link `ListedUnit.structure` stays a UnitRef: the listing lists that structure unit
+itself, with its `structureChange`.
 
-**Blocker** `{ code: BlockerCode; tableId?: string; rowId?: string; path?: string; message: string; unit?: UnitRef;
-reason?: Reason }`, deduplicated by code, table, row and path. `unit` names the unit to remove or change when there is
-one: the excluded required unit for `requiredExcluded` (with the `reason` that required it), the applied unit whose
-target would dangle for `danglingInSource`, the unit of an invalid row for `invalidRow`.
+**RequiredUnit** `{ unit: DescribedUnitRef; reason: Reason }`; **Reason** `{ code: RequiredReasonCode; tableId: string;
+rowId?: string; path?: string; because: string }`. One reason per unit (the first found).
 
-**Deferred** `{ unit: UnitRef; paths: string[]; structure: UnitRef }`: a created or replaced row committed without its
-table's structure; `paths` are the changed fields that get Head defaults; `structure` is the unit that would carry
-their Draft values.
+**Blocker** `{ code: BlockerCode; tableId?: string; rowId?: string; path?: string; message: string; unit?:
+DescribedUnitRef; reason?: Reason }`, deduplicated by code, table, row and path. `unit` names the unit to remove or
+change when there is one: the excluded required unit for `requiredExcluded` (with the `reason` that required it), the
+applied unit whose target would dangle for `danglingInSource`, the unit of an invalid row for `invalidRow`.
+
+**Deferred** `{ unit: DescribedUnitRef; paths: string[]; structure: DescribedUnitRef }`: a created or replaced row
+committed without its table's structure; `paths` are the changed fields that get Head defaults; `structure` is the unit
+that would carry their Draft values.
 
 **Estimate** (§6.5; an upper bound: a merge that turns out content-equal to one side is still counted):
 
@@ -331,7 +338,7 @@ Output:
 | `nextCursor` | string or `null` | Cursor of the next page; `null` only at the end of the listing. |
 | `refusedTables` | `{ tableId: string; code: 'headSchemaInconsistent' \| 'unledgeredTable' }[]` | Every refused table of the branch (§6.10); their units are not computed or listed. |
 
-**ListedUnit** = UnitRef (§5.1) plus `structure` and `structureChange`:
+**ListedUnit** = DescribedUnitRef (§5.1) plus `structure`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -340,8 +347,9 @@ Output:
 | `structureChange` | StructureChange, structure units only | What the structure unit consists of (below). |
 | `selector` | Selection | Resolves to exactly this unit with no required units, blockers or unmatched items: `fields` for a field, `rows` for row lifecycle units, `renames` for a rename, `rowColumns` for row columns, `tables` for a structure, `views`, `sharedSchemas`. |
 
-**StructureChange** `{ table: TableChange; fields: ChangedField[] }` describes a structure unit. The listing computes it
-from the structure analysis that every page already runs (§6.2 step 3) and reads nothing more for it.
+**StructureChange** `{ table: TableChange; fields: ChangedField[] }` describes a structure unit. The listing and the
+plan compute it from the structure analysis that every listing page and every plan already run for every table on both
+sides (§6.2 step 3), and read nothing more for it.
 
 | `table` | The structure unit holds |
 | --- | --- |
@@ -360,8 +368,7 @@ the pointer of the whole value (§3.2). For every other `table` value, `fields` 
 The values of these fields in every row travel with the structure unit; a row that differs only there has no unit of
 its own (§3.1).
 
-Only the listing carries `structureChange`. It is not part of a unit's identity, internal key or selector, of the
-preview `sample`, `required`, `deferred` or blocker units, or of the fingerprint (§9.1).
+`structureChange` is not part of a unit's identity, internal key or selector, or of the fingerprint (§9.1).
 
 Order: `tableId`, `rowId` (table-level units first), `kind`, `path`, `previousTableId`, `previousRowId`, in code-point
 order, and finally the internal unit key (carried in the cursor) so the order is total. The cursor carries the sort
@@ -416,7 +423,7 @@ Output:
 | `required` | RequiredUnit[] | Every required addition with its reason. |
 | `blockers` | Blocker[] | Every blocker, including `migrationInProgress`. |
 | `deferred` | Deferred[] | Commit only. |
-| `sample` | UnitRef[] | Up to 20 applied units in listing order (display only; `listChanges` is the complete list). |
+| `sample` | DescribedUnitRef[] | Up to 20 applied units in listing order (display only; `listChanges` is the complete list). |
 | `unmatched` | Selection items | §4.5; empty object when all selectors matched. |
 | `estimate` | Estimate | §5.1, §6.5; limits in §11. |
 
@@ -591,13 +598,14 @@ type UnitRef = Unit & { side?: Side; selector: Selection };   // selector resolv
 type TableChange = 'created' | 'removed' | 'replaced' | 'transient' | 'changed';
 type ChangedField = { path: string; change: 'added' | 'removed' | 'changed' }; // JSON Pointer
 type StructureChange = { table: TableChange; fields: ChangedField[] };
-type ListedUnit = UnitRef & { structure?: UnitRef; structureChange?: StructureChange };
+type DescribedUnitRef = UnitRef & { structureChange?: StructureChange }; // structure units only
+type ListedUnit = DescribedUnitRef & { structure?: UnitRef };
 
 type Reason = { code: RequiredReasonCode; tableId: string; rowId?: string; path?: string; because: string };
-type RequiredUnit = { unit: UnitRef; reason: Reason };
+type RequiredUnit = { unit: DescribedUnitRef; reason: Reason };
 type Blocker = { code: BlockerCode; tableId?: string; rowId?: string; path?: string; message: string;
-  unit?: UnitRef; reason?: Reason };
-type Deferred = { unit: UnitRef; paths: string[]; structure: UnitRef };
+  unit?: DescribedUnitRef; reason?: Reason };
+type Deferred = { unit: DescribedUnitRef; paths: string[]; structure: DescribedUnitRef };
 type Estimate = { changedRows: number; mergedRows: number; perRowWorkRows: number;
   mixedTables: Array<{ tableId: string; linksCopied: number; linksAdded: number }> };
 type Counts = { selected: number; required: number; remaining: number };
@@ -613,7 +621,7 @@ type PreviewChangesInput = { branch: Branch; operation: 'commit' | 'revert'; sel
 type PreviewChangesResult = { status: 'ready' | 'required' | 'blocked' | 'empty';
   headRevisionId: string; draftRevisionId: string; fingerprint: string; counts: Counts; unreadTables: number;
   refusedTables: RefusedTable[];
-  required: RequiredUnit[]; blockers: Blocker[]; deferred: Deferred[]; sample: UnitRef[];
+  required: RequiredUnit[]; blockers: Blocker[]; deferred: Deferred[]; sample: DescribedUnitRef[];
   unmatched: SelectionItems & { exclude?: SelectionItems }; estimate: Estimate };
 
 type CommitChangesInput = { branch: Branch; selection: SelectionInput; includeRequired?: boolean | null;
@@ -1556,6 +1564,10 @@ versions unchanged" (§14) holds in every scenario.
   moved field (`removed` + `added`), a field of a nested object and a field of array items (the array's pointer), input
   and computed fields in code-point order; `created`, `removed`, `replaced` and `transient` tables with empty `fields`;
   a renamed table with a field change as `changed` with `previousTableId`.
+- AS-60b A structure unit that a preview names as a required unit, as the `structure` of a deferred row, in `sample`
+  or as the `unit` of a blocker, and that a refused commit or revert names in `required` or in a blocker, carries the
+  `structureChange` the listing gives for that unit; over random Drafts, the `sample` of each listed selector holds
+  the listed unit with its `structureChange` (AS-61).
 - AS-61 Property over random Drafts: each listed selector alone previews one unit with no `unmatched` or
   `notSelectable`; the union of the listed selectors previews with the same status, counts and fingerprint as
   `all: true`, for commit and revert.
@@ -1750,6 +1762,16 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    `unledgeredTable`, and their ledger backfill is a stage-0 design item (§6.10, §12).
 
 ## Changelog
+
+### Version 1.3 (2026-11-03)
+
+Structure units in results:
+
+- §5.1, §5.2, §5.3, §5.11: preview and apply results describe the structure units they name as the listing does:
+  `required`, `deferred`, `sample` and blocker units are DescribedUnitRefs, which carry `structureChange` on structure
+  units, so a caller explains a preview without listing the Draft. ListedUnit is a DescribedUnitRef plus `structure`,
+  with its fields unchanged.
+- §13.6: AS-60b covers `structureChange` in preview and apply results.
 
 ### Version 1.2 (2026-11-02)
 

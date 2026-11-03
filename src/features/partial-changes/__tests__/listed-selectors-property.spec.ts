@@ -72,7 +72,7 @@ describe('listed selectors over random Drafts (AS-61)', () => {
         notSelectable: [],
       },
     });
-    expect(preview.sample).toContainEqual(unitRefOf(unit));
+    expect(preview.sample).toContainEqual(sampledUnitOf(unit));
   }
 
   async function expectUnionToPreviewAsWholeDraft(
@@ -107,10 +107,6 @@ function decisionOf({ status, counts, fingerprint }: PreviewChangesResult) {
   return { status, counts, fingerprint };
 }
 
-function unitRefOf({
-  structure: _structure,
-  structureChange: _structureChange,
-  ...unit
-}: ListedUnit) {
+function sampledUnitOf({ structure: _structure, ...unit }: ListedUnit) {
   return unit;
 }

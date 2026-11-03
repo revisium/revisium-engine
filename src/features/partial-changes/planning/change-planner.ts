@@ -24,6 +24,7 @@ import {
   blockerRefOf,
   type Deferred,
   deferredRefOf,
+  sampleOf,
 } from 'src/features/partial-changes/planning/plan-refs';
 import {
   type ScopedCatalogue,
@@ -35,7 +36,10 @@ import {
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
-import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
+import type {
+  DescribedUnitRef,
+  RequiredUnit,
+} from 'src/features/partial-changes/selection/unit-refs';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
@@ -81,6 +85,7 @@ export interface ChangePlan {
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly Blocker[];
   readonly deferred: readonly Deferred[];
+  readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelection;
   readonly estimate: Estimate;
   readonly target?: PlannedTarget;
@@ -252,12 +257,11 @@ function planOf({
     unreadTables,
     refusedTables: headSchema.refusedTables,
     required: closure.required,
-    blockers: blockers.map((blocker) =>
-      blockerRefOf(catalogue.lookup, blocker),
-    ),
+    blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),
     deferred: deferredValuesOf(validated).map((deferred) =>
-      deferredRefOf(catalogue.lookup, deferred),
+      deferredRefOf(catalogue, deferred),
     ),
+    sample: sampleOf(catalogue, appliedUnits),
     unmatched: closure.unmatched,
     estimate: closure.estimate,
     target: validated.target,
@@ -293,6 +297,7 @@ function planRefusedBeforeCatalogue(
     required: [],
     blockers: [blocker],
     deferred: [],
+    sample: [],
     unmatched: {},
     estimate: {
       changedRows: changedRowCount,

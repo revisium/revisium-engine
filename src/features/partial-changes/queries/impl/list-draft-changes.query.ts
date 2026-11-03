@@ -1,5 +1,8 @@
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
-import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
+import type {
+  DescribedUnitRef,
+  UnitRef,
+} from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { FieldChange } from 'src/features/partial-changes/structure/table-structure';
 
@@ -30,9 +33,8 @@ export interface StructureChange {
   readonly fields: readonly ChangedField[];
 }
 
-export type ListedUnit = UnitRef & {
+export type ListedUnit = DescribedUnitRef & {
   readonly structure?: UnitRef;
-  readonly structureChange?: StructureChange;
 };
 
 export interface ListChangesResult {

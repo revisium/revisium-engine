@@ -1,9 +1,11 @@
 import type { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { structureChangeOf } from 'src/features/partial-changes/listing/structure-changes';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
-import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
+import {
+  describedUnitRefOf,
+  unitRefOf,
+} from 'src/features/partial-changes/selection/unit-refs';
 
 type StructuresByTable = ReadonlyMap<string, CatalogueUnit>;
 
@@ -21,12 +23,11 @@ function listedUnitOf(
   structures: StructuresByTable,
   tables: CatalogueTables,
 ): ListedUnit {
-  const listed = unitRefOf(unit);
-
   if (unit.unit.kind === 'structure') {
-    return { ...listed, structureChange: structureChangeOf(unit, tables) };
+    return describedUnitRefOf(unit, tables);
   }
 
+  const listed = unitRefOf(unit);
   const structure = structureOfSameTable(unit, structures);
 
   if (!structure) {

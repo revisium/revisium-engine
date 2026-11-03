@@ -8,6 +8,8 @@ import type { JsonPointer } from 'src/features/partial-changes/structure/json-po
 import {
   type LeafOrigin,
   LeafOrigins,
+  type SchemaPatch,
+  schemaPatchesFrom,
 } from 'src/features/partial-changes/structure/leaf-origins';
 import { normalizedLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
@@ -74,7 +76,11 @@ export function analyzeTableStructure(
     input.head.history,
     input.draft.history,
   );
-  const leaves = new LeafComparison(input);
+  const leaves = new LeafComparison(
+    input.head,
+    input.draft,
+    pendingPatchesOf(input, rules),
+  );
   const changedPointers = leaves.changedPointers();
 
   return {
@@ -94,11 +100,18 @@ export function changedLeavesOfReplacedTable(
   removed: TableSide,
   created: TableSide,
 ): ChangedLeaf[] {
-  return new LeafComparison({
-    head: removed,
-    draft: created,
-    pendingMigrations: [],
-  }).changedLeaves();
+  return new LeafComparison(removed, created, []).changedLeaves();
+}
+
+function pendingPatchesOf(
+  { head, pendingMigrations }: TableStructureInput,
+  rules: NativeSchemaRules,
+): SchemaPatch[] {
+  return schemaPatchesFrom(
+    head.schema,
+    pendingMigrations.flatMap(patchesOf),
+    rules,
+  );
 }
 
 function headBaselinesOf({
@@ -131,14 +144,18 @@ class LeafComparison {
 
   private readonly headLeaves: SchemaLeaves;
   private readonly draftLeaves: SchemaLeaves;
-  private readonly pendingPatches: readonly JsonPatch[];
   private readonly pendingPatchPointers: readonly JsonPointer[];
 
-  constructor(private readonly input: TableStructureInput) {
-    this.headLeaves = SchemaLeaves.of(input.head.schema);
-    this.draftLeaves = SchemaLeaves.of(input.draft.schema);
-    this.pendingPatches = input.pendingMigrations.flatMap(patchesOf);
-    this.pendingPatchPointers = pendingPatchPointers(this.pendingPatches);
+  constructor(
+    private readonly head: TableSide,
+    private readonly draft: TableSide,
+    private readonly pendingPatches: readonly SchemaPatch[],
+  ) {
+    this.headLeaves = SchemaLeaves.of(head.schema);
+    this.draftLeaves = SchemaLeaves.of(draft.schema);
+    this.pendingPatchPointers = pendingPatchPointers(
+      pendingPatches.map(({ patch }) => patch),
+    );
     this.unchanged = this.draftLeaves.all.filter((leaf) =>
       this.isUnchanged(leaf),
     );
@@ -262,8 +279,8 @@ class LeafComparison {
     draftLeaf: SchemaLeaf,
   ): boolean {
     return deepEqual(
-      normalizedLeafSchema(headLeaf.schema, this.input.head.tableIdentities),
-      normalizedLeafSchema(draftLeaf.schema, this.input.draft.tableIdentities),
+      normalizedLeafSchema(headLeaf.schema, this.head.tableIdentities),
+      normalizedLeafSchema(draftLeaf.schema, this.draft.tableIdentities),
     );
   }
 

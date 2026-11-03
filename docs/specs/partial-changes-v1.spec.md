@@ -365,14 +365,17 @@ value reads as the pointer of the whole value (§3.2).
 
 For a `changed` table, `fields` describes the changed leaves of §3.3, input and computed alike, net of the table's
 pending moves. The listing follows the value of every Head leaf through the pending patches of the table in ledger
-order:
+order. Each patch path is read against the schema that patch applies to: it addresses a data node when it descends
+from the root only through `/properties/<name>` of object schemas. A path that goes on into an array, a File or
+another schema keyword lies inside the value where it stops; for example, `/properties/asset/properties/fileName` lies
+inside the File at `/asset` while `/asset` is a File.
 
-- A `move` whose `from` and `path` both address data nodes (chains of `/properties/<name>`, so neither lies inside an
-  array or File schema) carries the values at or below `from` to the same place below `path`, and ends the other
-  values at or below `path`. A chain of moves resolves to its first source: a→b→c gives `from: a`.
+- A `move` whose `from` and `path` both address data nodes carries the values at or below `from` to the same place
+  below `path`, and ends the other values at or below `path`. A chain of moves resolves to its first source: a→b→c
+  gives `from: a`.
 - Every other patch acts at each of its paths (both paths of a `move`). At a data node, a `replace` rewrites the values
-  at or below it, and an `add`, a `remove` or a `move` ends them. A path that addresses no data node, such as one
-  inside an array or File schema, rewrites the values at or below the data pointer it maps to (§3.3).
+  at or below it, and an `add`, a `remove` or a `move` ends them. A path inside a value rewrites that whole value, so
+  no value moves into or out of an array or File.
 
 A Draft leaf **comes from** the Head leaf whose value is at its pointer after these patches. Each Draft leaf is
 described as follows:
@@ -1592,10 +1595,10 @@ versions unchanged" (§14) holds in every scenario.
 - AS-60a Every listed structure unit carries its `structureChange`: an added, a removed and a type-changed field, a
   field of a nested object and a field of array items (the array's pointer), input and computed fields in code-point
   order; a moved field once as `moved` with `from`, also through a chain of moves and for every leaf of a moved
-  object; a moved and retyped field as `changed` with `from`; a field added where a moved field was as `added`; a move
-  reverted inside the Draft not at all, while its values stay with the structure unit; a `replaced` table with its
-  added, removed and changed fields; `created`, `removed` and `transient` tables with empty `fields`; a renamed table
-  with a field change as `changed` with `previousTableId`.
+  object; a moved and retyped field, and a moved File rewritten inside, as `changed` with `from`; a field added where a
+  moved field was as `added`; a move reverted inside the Draft not at all, while its values stay with the structure
+  unit; a `replaced` table with its added, removed and changed fields; `created`, `removed` and `transient` tables with
+  empty `fields`; a renamed table with a field change as `changed` with `previousTableId`.
 - AS-60b A structure unit that a preview names as a required unit, as the `structure` of a deferred row, in `sample`
   or as the `unit` of a blocker, and that a refused commit or revert names in `required` or in a blocker, carries the
   `structureChange` the listing gives for that unit; over random Drafts, the `sample` of each listed selector holds
@@ -1811,7 +1814,8 @@ Moved fields and replaced tables in `structureChange`:
   values came from a Head field through pending `move` patches is reported once at its Draft pointer, as `moved` or,
   when its schema or values also changed, `changed`, with the Head pointer as `from`; before, it read as `removed` at
   the Head pointer and `added` at the Draft pointer. A field added where a moved field was is `added`, and a move
-  reverted inside the Draft is not reported. Which fields are structure-bound does not change.
+  reverted inside the Draft is not reported. Patch paths are read against the schema each patch applies to, so a patch
+  inside an array or File rewrites that whole value. Which fields are structure-bound does not change.
 - §5.2: a `replaced` table lists its fields: the leaves of the removed Head table against those of the Draft table
   created at its id, as `added`, `removed` or `changed`. Before, its `fields` was empty.
 - §13.6: AS-60a covers moves and replaced tables.

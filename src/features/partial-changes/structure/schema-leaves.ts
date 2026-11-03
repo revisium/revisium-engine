@@ -15,6 +15,11 @@ export interface SchemaLeaf {
   readonly schema: JsonSchema;
 }
 
+export interface DataTarget {
+  readonly pointer: JsonPointer;
+  readonly isNode: boolean;
+}
+
 const PROPERTIES = 'properties';
 
 export class SchemaLeaves {
@@ -54,23 +59,50 @@ export function dataPointerOfSchemaPath(schemaPath: string): JsonPointer {
   );
 }
 
-export function dataNodeOfSchemaPath(
+export function dataTargetOfSchemaPath(
+  schema: JsonSchema,
   schemaPath: string,
-): JsonPointer | undefined {
-  const pointer = dataPointerOfSchemaPath(schemaPath);
+): DataTarget {
+  return dataTargetBelow(
+    schema,
+    JsonPointer.root,
+    JsonPointer.parse(schemaPath).segments,
+  );
+}
 
-  if (schemaPathOf(pointer).toString() !== schemaPath) {
+function dataTargetBelow(
+  node: JsonSchema | undefined,
+  pointer: JsonPointer,
+  schemaSegments: readonly string[],
+): DataTarget {
+  if (schemaSegments.length === 0) {
+    return { pointer, isNode: true };
+  }
+
+  const [keyword, name, ...rest] = schemaSegments;
+
+  if (keyword !== PROPERTIES || name === undefined || !holdsProperties(node)) {
+    return { pointer, isNode: false };
+  }
+
+  return dataTargetBelow(propertyOf(node, name), pointer.child(name), rest);
+}
+
+function holdsProperties(
+  node: JsonSchema | undefined,
+): node is JsonObjectSchema {
+  return node !== undefined && isObjectNode(node);
+}
+
+function propertyOf(
+  node: JsonObjectSchema,
+  name: string,
+): JsonSchema | undefined {
+  if (!Object.prototype.hasOwnProperty.call(node.properties, name)) {
     return undefined;
   }
 
-  return pointer;
-}
-
-function schemaPathOf(dataPointer: JsonPointer): JsonPointer {
-  return dataPointer.segments.reduce(
-    (schemaPath, name) => schemaPath.child(PROPERTIES).child(name),
-    JsonPointer.root,
-  );
+  return node.properties[name];
 }
 
 function dataSegmentsOf(schemaSegments: readonly string[]): string[] {

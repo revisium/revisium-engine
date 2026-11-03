@@ -1,4 +1,5 @@
-import { arr, num, obj, str } from '@revisium/schema-toolkit/mocks';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import { arr, num, obj, ref, str } from '@revisium/schema-toolkit/mocks';
 import type {
   JsonPatch,
   JsonSchema,
@@ -41,6 +42,22 @@ const moveColorIntoVariantItems: JsonPatch = {
   from: '/properties/color',
   path: '/properties/variants/items/properties/color',
 };
+const moveFileNameOutOfCover: JsonPatch = {
+  op: 'move',
+  from: '/properties/cover/properties/fileName',
+  path: '/properties/name',
+};
+const moveTitleIntoCover: JsonPatch = {
+  op: 'move',
+  from: '/properties/title',
+  path: '/properties/cover/properties/title',
+};
+const replaceAssetFileName: JsonPatch = {
+  op: 'replace',
+  path: '/properties/asset/properties/fileName',
+  value: num(),
+};
+const file = () => ref(SystemSchemaIds.File);
 
 describe('TableStructure: unchanged and changed leaves', () => {
   it.each<{ name: string; scenario: StructureScenario }>([
@@ -289,8 +306,49 @@ describe('TableStructure: moved leaves', () => {
         { pointer: '/color', change: 'removed' },
       ],
     },
+    {
+      name: 'out of a File as added, and the File as changed',
+      scenario: {
+        head: obj({ cover: file() }),
+        draft: obj({ cover: file(), name: str() }),
+        pending: [pendingUpdate(moveFileNameOutOfCover)],
+      },
+      described: [
+        { pointer: '/cover', change: 'changed' },
+        { pointer: '/name', change: 'added' },
+      ],
+    },
+    {
+      name: 'into a File as removed, and the File as changed',
+      scenario: {
+        head: obj({ title: str(), cover: file() }),
+        draft: obj({ cover: file() }),
+        pending: [pendingUpdate(moveTitleIntoCover)],
+      },
+      described: [
+        { pointer: '/cover', change: 'changed' },
+        { pointer: '/title', change: 'removed' },
+      ],
+    },
   ])('describes a field moved $name', ({ scenario, described }) => {
     expect(describedChangesOf(analyzeStructure(scenario))).toEqual(described);
+  });
+
+  it('describes a File moved to the path of a removed object and rewritten inside as changed from its Head path', () => {
+    const structure = analyzeStructure({
+      head: obj({ asset: obj({ fileName: str() }), cover: file() }),
+      draft: obj({ asset: file() }),
+      pending: [
+        pendingUpdate(removeField('asset')),
+        pendingUpdate(moveField('cover', 'asset')),
+        pendingUpdate(replaceAssetFileName),
+      ],
+    });
+
+    expect(describedChangesOf(structure)).toEqual([
+      { pointer: '/asset', change: 'changed', from: '/cover' },
+      { pointer: '/asset/fileName', change: 'removed' },
+    ]);
   });
 });
 

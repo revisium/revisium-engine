@@ -1,5 +1,13 @@
-import { arr, num, numFormula, obj, str } from '@revisium/schema-toolkit/mocks';
-import type { JsonPatch } from '@revisium/schema-toolkit/types';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import {
+  arr,
+  num,
+  numFormula,
+  obj,
+  ref,
+  str,
+} from '@revisium/schema-toolkit/mocks';
+import type { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -23,6 +31,7 @@ import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const CATEGORIES = 'categories';
 const GROUPS = 'groups';
+const MEDIA = 'media';
 const MEMOS = 'memos';
 const NOTES = 'notes';
 const PRODUCTS = 'products';
@@ -38,6 +47,8 @@ const productSchema = obj({
   address: addressSchema,
   variants: arr(obj({ color: str() })),
 });
+
+const mediaSchema = obj({ title: str(), cover: ref(SystemSchemaIds.File) });
 
 const productRow = {
   code: 'p1',
@@ -248,6 +259,20 @@ describe('listChanges: structure changes', () => {
         ]);
       },
     );
+
+    it('describes a moved File whose content a later patch rewrote as changed from its Head path', async () => {
+      const draft = await givenCommittedMedia();
+      await draft.updateTable(MEDIA, [moveField('cover', 'asset')]);
+      await draft.updateTable(MEDIA, [replaceFileNameOf('asset', num())]);
+      await draft.updateTable(MEDIA, [replaceFileNameOf('asset', str())]);
+
+      const structure = await listedStructureOf(draft, MEDIA);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [{ path: '/asset', change: 'changed', from: '/cover' }],
+      });
+    });
 
     it('lists input and computed fields in code-point order of their paths', async () => {
       const draft = await givenCommittedProducts();
@@ -476,6 +501,12 @@ describe('listChanges: structure changes', () => {
     });
   }
 
+  function givenCommittedMedia(): Promise<ChangesScenario> {
+    return ChangesScenario.committed(kit, {
+      [MEDIA]: { schema: mediaSchema, rows: {} },
+    });
+  }
+
   function givenCommittedCategories(): Promise<ChangesScenario> {
     return ChangesScenario.committed(kit, {
       [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
@@ -489,6 +520,14 @@ describe('listChanges: structure changes', () => {
     });
   }
 });
+
+function replaceFileNameOf(field: string, value: JsonSchema): JsonPatch {
+  return {
+    op: 'replace',
+    path: `/properties/${field}/properties/fileName`,
+    value,
+  };
+}
 
 interface FieldCase {
   readonly change: string;

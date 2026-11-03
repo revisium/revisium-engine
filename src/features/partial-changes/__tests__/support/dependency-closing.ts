@@ -11,6 +11,7 @@ import type {
   ChangeOperation,
 } from 'src/features/partial-changes/plan/change-operation';
 import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { Reason } from 'src/features/partial-changes/plan/reason';
 import {
   isWholeDraftSelection,
   type ItemKind,
@@ -32,9 +33,14 @@ export type ClosureBlockerView = Omit<PlanBlocker, 'unitKey'> & {
   readonly unit?: UnitRef;
 };
 
+export interface ClosureRequiredView {
+  readonly unit: UnitRef;
+  readonly reason: Reason;
+}
+
 export interface ClosureView {
   readonly kind: DependencyClosureResult['kind'];
-  readonly required: readonly RequiredUnit[];
+  readonly required: readonly ClosureRequiredView[];
   readonly blockers: readonly ClosureBlockerView[];
   readonly estimate: Estimate;
 }
@@ -65,7 +71,7 @@ export function readClosedDependencies(
 
     return {
       kind: closure.kind,
-      required: closure.required,
+      required: closure.required.map(closureRequiredView),
       blockers: closure.blockers.map((blocker) =>
         closureBlockerView(source.catalogue, blocker),
       ),
@@ -129,6 +135,13 @@ function withItems(selection: Selection, items: SelectionItems): Selection {
   }
 
   return { ...selection, ...merged };
+}
+
+function closureRequiredView({
+  unit: { structureChange: _structureChange, ...unit },
+  reason,
+}: RequiredUnit): ClosureRequiredView {
+  return { unit, reason };
 }
 
 function closureBlockerView(

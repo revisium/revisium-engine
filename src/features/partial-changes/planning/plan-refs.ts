@@ -1,39 +1,58 @@
 import type { DeferredValues } from 'src/features/partial-changes/assembly/target-assembler';
-import type { CatalogueLookup } from 'src/features/partial-changes/catalogue/catalogue-lookup';
+import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
-  type UnitRef,
-  unitRefOf,
+  type DescribedUnitRef,
+  describedUnitRefOf,
 } from 'src/features/partial-changes/selection/unit-refs';
 
 export type Blocker = Omit<PlanBlocker, 'unitKey'> & {
-  readonly unit?: UnitRef;
+  readonly unit?: DescribedUnitRef;
 };
 
 export interface Deferred {
-  readonly unit: UnitRef;
+  readonly unit: DescribedUnitRef;
   readonly paths: readonly string[];
-  readonly structure: UnitRef;
+  readonly structure: DescribedUnitRef;
 }
 
+const SAMPLE_SIZE = 20;
+
 export function blockerRefOf(
-  lookup: CatalogueLookup,
+  catalogue: ChangeCatalogue,
   { unitKey, ...blocker }: PlanBlocker,
 ): Blocker {
   if (unitKey === undefined) {
     return blocker;
   }
 
-  return { ...blocker, unit: unitRefOf(lookup.unit(unitKey)) };
+  return { ...blocker, unit: describedUnitRefOfKey(catalogue, unitKey) };
 }
 
 export function deferredRefOf(
-  lookup: CatalogueLookup,
+  catalogue: ChangeCatalogue,
   { unitKey, paths, structureKey }: DeferredValues,
 ): Deferred {
   return {
-    unit: unitRefOf(lookup.unit(unitKey)),
+    unit: describedUnitRefOfKey(catalogue, unitKey),
     paths,
-    structure: unitRefOf(lookup.unit(structureKey)),
+    structure: describedUnitRefOfKey(catalogue, structureKey),
   };
+}
+
+export function sampleOf(
+  { tables }: ChangeCatalogue,
+  appliedUnits: readonly CatalogueUnit[],
+): DescribedUnitRef[] {
+  return appliedUnits
+    .slice(0, SAMPLE_SIZE)
+    .map((unit) => describedUnitRefOf(unit, tables));
+}
+
+function describedUnitRefOfKey(
+  { lookup, tables }: ChangeCatalogue,
+  unitKey: string,
+): DescribedUnitRef {
+  return describedUnitRefOf(lookup.unit(unitKey), tables);
 }

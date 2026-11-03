@@ -224,6 +224,55 @@ export async function createMultipleTableChangesScenario(
   return { fromRevision, toRevision };
 }
 
+export async function createMixedTableChangesScenario(
+  prismaService: PrismaService,
+) {
+  const { revisions } = await createRevisionChain(prismaService, TWO_REVISIONS);
+  const { fromRevision, toRevision } = expectRevisionPair(revisions);
+
+  const addToHead = (id: string, createdId?: string) =>
+    createTableVersion({
+      prismaService,
+      revisionId: fromRevision.id,
+      id,
+      createdId,
+    });
+
+  const addToDraft = (id: string, createdId?: string) =>
+    createTableVersion({
+      prismaService,
+      revisionId: toRevision.id,
+      id,
+      createdId,
+    });
+
+  const products = await addToDraft('products');
+  const headInvoices = await addToHead('invoices');
+  const invoices = await addToDraft('invoices', headInvoices.createdId);
+  const customers = await addToHead('customers');
+  const accounts = await addToDraft('accounts', customers.createdId);
+  const legacy = await addToHead('legacy');
+  const brands = await addToDraft('brands');
+  const recreatedPosts = await addToDraft('posts', `b-${nanoid()}`);
+  const originalPosts = await addToHead('posts', `a-${nanoid()}`);
+  const reviews = await addToDraft('reviews');
+
+  return {
+    fromRevision,
+    toRevision,
+    tables: {
+      products,
+      invoices,
+      accounts,
+      legacy,
+      brands,
+      recreatedPosts,
+      originalPosts,
+      reviews,
+    },
+  };
+}
+
 export async function createTablesWithSystemScenario(
   prismaService: PrismaService,
 ) {

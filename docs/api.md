@@ -522,6 +522,8 @@ engine.tableChanges({
 
 Returns: `{ edges: [{ cursor, node: TableChange }], pageInfo, totalCount }`
 
+The engine orders table changes by the table's id in `revisionId` (for a removed table, its id in the compared revision), then by `createdId`, so pages neither skip nor repeat a table.
+
 ### rowChanges
 
 Get detailed row-level changes with pagination.

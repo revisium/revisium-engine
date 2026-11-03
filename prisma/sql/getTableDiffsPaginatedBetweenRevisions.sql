@@ -45,7 +45,9 @@ WHERE (pt."createdId" IS NULL
            WHEN pt."id" != ct."id" THEN 'renamed'
            WHEN ct."versionId" != pt."versionId" THEN 'modified'
            END) = ANY(ARRAY(SELECT LOWER(jsonb_array_elements_text($3::jsonb)))))
-
+ORDER BY
+    COALESCE(ct."id", pt."id") ASC,
+    "createdId" ASC
 LIMIT $4
 OFFSET $5
 

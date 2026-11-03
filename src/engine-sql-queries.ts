@@ -72,7 +72,9 @@ WHEN pt."id" != ct."id" AND ct."versionId" != pt."versionId" THEN 'renamed_and_m
 WHEN pt."id" != ct."id" THEN 'renamed'
 WHEN ct."versionId" != pt."versionId" THEN 'modified'
 END) = ANY(ARRAY(SELECT LOWER(jsonb_array_elements_text(${changeTypes}::jsonb)))))
-
+ORDER BY
+COALESCE(ct."id", pt."id") ASC,
+"createdId" ASC
 LIMIT ${limit}
 OFFSET ${offset}
   `;

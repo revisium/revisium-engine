@@ -1,5 +1,8 @@
 import { GetTableChangesHandler } from '../get-table-changes.handler';
-import { GetTableChangesQuery } from '../../impl/get-table-changes.query';
+import {
+  GetTableChangesQuery,
+  GetTableChangesQueryReturnType,
+} from '../../impl/get-table-changes.query';
 import { DiffService } from 'src/features/share/diff.service';
 import { SchemaImpactService } from '../../../services/schema-impact.service';
 import { RevisionComparisonService } from '../../../services/revision-comparison.service';
@@ -8,6 +11,7 @@ import { TableChangeMapper } from '../../../mappers/table-change.mapper';
 import { ChangeType, MigrationType, ViewChange } from '../../../types';
 import { createRevisionChangesTestKit } from 'src/features/revision-changes/__tests__/revision-changes-test-kit';
 import {
+  createMixedTableChangesScenario,
   createMultipleRevisions,
   createMultipleTableChangesScenario,
   createRenamedTableScenario,
@@ -87,6 +91,51 @@ describe('GetTableChangesHandler', () => {
       );
 
       expect(page2.edges.length).toBeGreaterThan(0);
+    });
+
+    it('lists changed tables by Draft table id, then by created id', async () => {
+      const { toRevision, tables } = await createMixedTableChangesScenario(
+        kit.prismaService,
+      );
+
+      const result = await handler.execute(
+        new GetTableChangesQuery({
+          revisionId: toRevision.id,
+          first: 10,
+        }),
+      );
+
+      expect(tableCreatedIds(result)).toEqual([
+        tables.accounts.createdId,
+        tables.brands.createdId,
+        tables.invoices.createdId,
+        tables.legacy.createdId,
+        tables.originalPosts.createdId,
+        tables.recreatedPosts.createdId,
+        tables.products.createdId,
+        tables.reviews.createdId,
+      ]);
+    });
+
+    it('returns every changed table exactly once across small pages', async () => {
+      const { toRevision } = await createMixedTableChangesScenario(
+        kit.prismaService,
+      );
+
+      const singlePage = await handler.execute(
+        new GetTableChangesQuery({
+          revisionId: toRevision.id,
+          first: 10,
+        }),
+      );
+
+      const walkedPages = await walkTableChangePages(handler, {
+        revisionId: toRevision.id,
+        pageSize: 3,
+      });
+
+      expect(walkedPages).toEqual(tableCreatedIds(singlePage));
+      expect(new Set(walkedPages).size).toBe(singlePage.totalCount);
     });
 
     it('excludes system tables by default', async () => {
@@ -366,3 +415,28 @@ describe('GetTableChangesHandler', () => {
     await kit.close();
   });
 });
+
+function tableCreatedIds(result: GetTableChangesQueryReturnType): string[] {
+  return result.edges.map((edge) => edge.node.tableCreatedId);
+}
+
+async function walkTableChangePages(
+  handler: GetTableChangesHandler,
+  { revisionId, pageSize }: { revisionId: string; pageSize: number },
+): Promise<string[]> {
+  const createdIds: string[] = [];
+  let after: string | undefined;
+  let hasNextPage = true;
+
+  while (hasNextPage) {
+    const page = await handler.execute(
+      new GetTableChangesQuery({ revisionId, first: pageSize, after }),
+    );
+
+    createdIds.push(...tableCreatedIds(page));
+    after = page.pageInfo.endCursor;
+    hasNextPage = page.pageInfo.hasNextPage;
+  }
+
+  return createdIds;
+}

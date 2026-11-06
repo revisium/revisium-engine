@@ -126,7 +126,7 @@ ProjectFileUsage (per-project byte counter, keyed by opaque projectId)
 - [API Reference](docs/api.md) — all `EngineApiService` methods with inputs/outputs
 - [Integration Guide](docs/integration.md) — how to use in your NestJS app
 - [Versioning System](docs/versioning.md) — data model, copy-on-write, commit/revert, invariants
-- [Partial Commit and Revert](docs/adr/ADR-001-partial-commit-and-revert.md) — accepted, not implemented yet
+- [Partial Commit and Revert](docs/adr/ADR-001-partial-commit-and-revert.md) — commit or revert a selected part of the Draft through `EngineApiService.changes` ([API](docs/api.md), [SPEC](docs/specs/partial-changes-v1.spec.md))
 - [File Usage Tracking](docs/file-usage.md) — dedup-aware file byte counters, reconciliation API
 
 ## Development

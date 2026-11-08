@@ -12,7 +12,6 @@ import type {
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
@@ -22,6 +21,7 @@ import {
 } from '../../__tests__/support/change-preview';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
+import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input-refusal';
 import {
   sourceLedgersOf,
   sourceReplaysDuring,
@@ -861,16 +861,14 @@ describe('previewChanges', () => {
       'refuses $input before any transaction',
       async ({ selection, operation, includeRequired }) => {
         const draft = await givenEditedAndCreatedCategories();
-        const reads = jest.spyOn(kit.snapshotReader, 'readSnapshot');
 
-        await expect(
+        await expectRefusedBeforeAnyTransaction(kit, () =>
           draft.previewChanges({
             operation: operation as ChangeOperation,
             selection: selection as Selection,
             includeRequired: includeRequired as boolean,
           }),
-        ).rejects.toThrow(SelectionValidationError);
-        expect(reads).not.toHaveBeenCalled();
+        );
       },
     );
   });

@@ -1,15 +1,19 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import type { Row } from 'src/engine-prisma-types';
-import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import {
+  type CatalogueUnit,
+  isExistenceUnit,
+} from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type {
-  ChangesSnapshot,
-  RowPair,
-  TablePair,
-  TableVersion,
+import {
+  type ChangesSnapshot,
+  type RowPair,
+  type TablePair,
+  type TableVersion,
+  versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
@@ -17,7 +21,7 @@ import { compareCodePoints } from 'src/features/share/utils/compare-code-points'
 export interface FingerprintedPlan {
   readonly operation: ChangeOperation;
   readonly snapshot: ChangesSnapshot;
-  readonly catalogue: Pick<ChangeCatalogue, 'units' | 'rows'>;
+  readonly catalogue: Pick<ChangeCatalogue, 'units' | 'rows' | 'tables'>;
   readonly applied: ReadonlySet<string>;
 }
 
@@ -90,6 +94,7 @@ class PlanCoverage {
   private readonly units: readonly CatalogueUnit[];
   private readonly tablePairs: ReadonlyMap<string, TablePair>;
   private readonly rowPairs: ReadonlyMap<string, ReadonlyMap<string, RowPair>>;
+  private readonly structureMoves: ReadonlyMap<string, string | null>;
 
   constructor(private readonly plan: FingerprintedPlan) {
     this.units = plan.catalogue.units.filter(({ key }) =>
@@ -104,6 +109,7 @@ class PlanCoverage {
         new Map(rows.map(({ pair }) => [pair.identity, pair])),
       ]),
     );
+    this.structureMoves = this.structureMovesOfExistenceUnits();
   }
 
   public rowVersionIdGroups(): string[][] {
@@ -146,6 +152,8 @@ class PlanCoverage {
   ): FingerprintRecord {
     return [
       unit.key,
+      unit.unit.columns ?? null,
+      this.structureMoveOf(unit),
       this.coveredRowsOf(unit).map(({ head, draft }) => [
         textOf(reads, head),
         textOf(reads, draft),
@@ -207,6 +215,44 @@ class PlanCoverage {
 
       return pair;
     });
+  }
+
+  private structureMoveOf(unit: CatalogueUnit): string | null {
+    if (!isExistenceUnit(unit)) {
+      return null;
+    }
+
+    return this.structureMoves.get(tableIdentityOf(unit)) ?? null;
+  }
+
+  private structureMovesOfExistenceUnits(): Map<string, string | null> {
+    const tableIdentities = new Set(
+      this.units.filter(isExistenceUnit).map(tableIdentityOf),
+    );
+
+    return new Map(
+      [...tableIdentities].map((identity) => [
+        identity,
+        this.structureMoveOfTable(identity),
+      ]),
+    );
+  }
+
+  private structureMoveOfTable(identity: string): string | null {
+    const { tables } = this.plan.catalogue;
+    const pair = tables.pairOf(identity);
+    const structure = tables.structureOf(pair);
+
+    if (!structure.differs) {
+      return null;
+    }
+
+    return digestOf([
+      versionOn(pair, 'head').schema,
+      versionOn(pair, 'draft').schema,
+      structure.pendingHistory,
+      structure.unchangedLeaves.map(({ pointer }) => pointer.toString()),
+    ]);
   }
 
   private tablePairsOf({ tableIdentities }: CatalogueUnit): TablePair[] {
@@ -277,6 +323,10 @@ function textOf(
   }
 
   return text;
+}
+
+function digestOf(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
 function isMutable(version: TableVersion | undefined): version is TableVersion {

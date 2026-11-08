@@ -2,7 +2,10 @@ import type {
   AddressedRow,
   CatalogueLookup,
 } from 'src/features/partial-changes/catalogue/catalogue-lookup';
-import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import {
+  type CatalogueUnit,
+  isExistenceUnit,
+} from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import type {
   Reason,
@@ -63,7 +66,7 @@ export class FieldNormalisation {
 
   private matchUnitsOfRow(): SelectorMatch {
     const units = this.units.unitsOfRow(this.row);
-    const existence = units.find(isExistence);
+    const existence = units.find(isExistenceUnit);
 
     if (existence) {
       return this.requireExistence(existence);
@@ -151,14 +154,6 @@ export class FieldNormalisation {
 
     return { code, tableId, rowId, path, because };
   }
-}
-
-function isExistence({ unit }: CatalogueUnit): boolean {
-  return (
-    unit.kind === 'rowCreate' ||
-    unit.kind === 'rowDelete' ||
-    unit.kind === 'rowReplace'
-  );
 }
 
 function pointerOf({ unit }: CatalogueUnit): JsonPointer {

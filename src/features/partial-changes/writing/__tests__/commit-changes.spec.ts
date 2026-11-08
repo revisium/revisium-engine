@@ -21,7 +21,6 @@ import type {
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
-import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
 import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
@@ -29,6 +28,7 @@ import type { CommitOptions } from '../../__tests__/support/change-committing';
 import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
+import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input-refusal';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const CATEGORIES = 'categories';
@@ -198,6 +198,26 @@ describe('commitChanges', () => {
         options: { selection: categoryOfP1, includeRequired: true },
       },
       {
+        input: 'includeRequired given as a string',
+        options: { selection: categoryOfP1, includeRequired: 'false' },
+      },
+      {
+        input: 'includeRequired given as a number',
+        options: { selection: categoryOfP1, includeRequired: 1 },
+      },
+      {
+        input: 'an empty expected',
+        options: { selection: categoryOfP1, expected: '' },
+      },
+      {
+        input: 'expected given as a number',
+        options: { selection: categoryOfP1, expected: 1 },
+      },
+      {
+        input: 'comment given as a number',
+        options: { selection: categoryOfP1, comment: 1 },
+      },
+      {
         input: 'a malformed selection',
         options: {
           selection: {
@@ -215,12 +235,10 @@ describe('commitChanges', () => {
       })),
     ])('refuses $input before any transaction', async ({ options }) => {
       const draft = await givenProductOfCreatedCategory();
-      const reads = jest.spyOn(kit.snapshotReader, 'readSnapshot');
 
-      await expect(
+      await expectRefusedBeforeAnyTransaction(kit, () =>
         draft.commitChanges(options as CommitOptions),
-      ).rejects.toThrow(SelectionValidationError);
-      expect(reads).not.toHaveBeenCalled();
+      );
     });
 
     it('applies with includeRequired, expected, comment and optional selection fields given as null as it applies without them', async () => {

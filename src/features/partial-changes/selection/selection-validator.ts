@@ -10,8 +10,13 @@ import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer
 export class SelectionValidationError extends BadRequestException {}
 
 export interface RequiredAdditionsAcceptance {
-  readonly includeRequired?: boolean;
+  readonly includeRequired: boolean;
   readonly expected?: string;
+}
+
+interface RequiredAdditionsAcceptanceInput {
+  readonly includeRequired?: unknown;
+  readonly expected?: unknown;
 }
 
 type Check = (value: unknown, at: string) => unknown;
@@ -39,14 +44,43 @@ export function validateOperation(input: unknown): ChangeOperation {
   return input as ChangeOperation;
 }
 
+export function validateIncludeRequired(input: unknown): boolean {
+  return optionalInputOf(input, 'includeRequired', checkBoolean) === true;
+}
+
 export function validateRequiredAdditionsAcceptance({
   includeRequired,
   expected,
-}: RequiredAdditionsAcceptance): void {
-  if (includeRequired === true && expected === undefined) {
-    throw new SelectionValidationError('includeRequired requires expected');
+}: RequiredAdditionsAcceptanceInput): RequiredAdditionsAcceptance {
+  const acceptance = {
+    includeRequired: validateIncludeRequired(includeRequired),
+    expected: validateExpected(expected),
+  };
+
+  if (acceptance.includeRequired && acceptance.expected === undefined) {
+    throw invalid('includeRequired requires expected');
   }
+
+  return acceptance;
 }
+
+export function validateComment(input: unknown): string | undefined {
+  return optionalInputOf(input, 'comment', checkString) as string | undefined;
+}
+
+function validateExpected(input: unknown): string | undefined {
+  const expected = optionalInputOf(input, 'expected', checkNonEmptyString);
+
+  return expected as string | undefined;
+}
+
+const checkString: Check = (value, at) => {
+  if (typeof value !== 'string') {
+    throw invalid(`${at} must be a string`);
+  }
+
+  return value;
+};
 
 const checkNonEmptyString: Check = (value, at) => {
   if (typeof value !== 'string' || value === '') {
@@ -165,7 +199,19 @@ function checkedFieldsOf(
 }
 
 function isOmitted(field: Field, value: unknown): boolean {
-  return field.optional && (value === undefined || value === null);
+  return field.optional && isAbsent(value);
+}
+
+function optionalInputOf(value: unknown, at: string, check: Check): unknown {
+  if (isAbsent(value)) {
+    return undefined;
+  }
+
+  return check(value, at);
+}
+
+function isAbsent(value: unknown): boolean {
+  return value === undefined || value === null;
 }
 
 function arrayOf(checkItem: Check): Check {

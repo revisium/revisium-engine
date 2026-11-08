@@ -12,7 +12,6 @@ import type {
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
@@ -22,6 +21,7 @@ import {
 } from '../../__tests__/support/change-preview';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
+import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input-refusal';
 import {
   sourceLedgersOf,
   sourceReplaysDuring,
@@ -807,7 +807,12 @@ describe('previewChanges', () => {
       );
     });
 
-    it.each<{ input: string; selection: unknown; operation: unknown }>([
+    it.each<{
+      input: string;
+      selection: unknown;
+      operation: unknown;
+      includeRequired?: unknown;
+    }>([
       {
         input: 'a malformed selection',
         selection: {
@@ -835,6 +840,18 @@ describe('previewChanges', () => {
         selection: { rows: [{ tableId: CATEGORIES, rowId: null }] },
         operation: 'commit',
       },
+      {
+        input: 'includeRequired given as a string',
+        selection: titleOfC1,
+        operation: 'commit',
+        includeRequired: 'false',
+      },
+      {
+        input: 'includeRequired given as a number',
+        selection: titleOfC1,
+        operation: 'commit',
+        includeRequired: 1,
+      },
       ...FORBIDDEN_NULL_FIELDS.map(({ field, selection }) => ({
         input: `${field} given as null`,
         selection,
@@ -842,17 +859,16 @@ describe('previewChanges', () => {
       })),
     ])(
       'refuses $input before any transaction',
-      async ({ selection, operation }) => {
+      async ({ selection, operation, includeRequired }) => {
         const draft = await givenEditedAndCreatedCategories();
-        const reads = jest.spyOn(kit.snapshotReader, 'readSnapshot');
 
-        await expect(
+        await expectRefusedBeforeAnyTransaction(kit, () =>
           draft.previewChanges({
             operation: operation as ChangeOperation,
             selection: selection as Selection,
+            includeRequired: includeRequired as boolean,
           }),
-        ).rejects.toThrow(SelectionValidationError);
-        expect(reads).not.toHaveBeenCalled();
+        );
       },
     );
   });

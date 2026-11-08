@@ -119,12 +119,10 @@ function applyRequestOf(
   operation: ChangeOperation,
   { branch, selection, includeRequired, expected }: ApplyChangesInput,
 ): ApplyRequest {
-  const acceptance = {
-    includeRequired: includeRequired ?? false,
-    expected: expected ?? undefined,
-  };
-
-  validateRequiredAdditionsAcceptance(acceptance);
+  const acceptance = validateRequiredAdditionsAcceptance({
+    includeRequired,
+    expected,
+  });
 
   return {
     operation,

@@ -15,7 +15,6 @@ import type {
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import { SelectionValidationError } from 'src/features/partial-changes/selection/selection-validator';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
@@ -29,6 +28,7 @@ import {
   type RevertOptions,
 } from '../../__tests__/support/change-reverting';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input-refusal';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const CATEGORIES = 'categories';
@@ -154,6 +154,22 @@ describe('revertChanges', () => {
         options: { selection: creationOfC9, includeRequired: true },
       },
       {
+        input: 'includeRequired given as a string',
+        options: { selection: creationOfC9, includeRequired: 'false' },
+      },
+      {
+        input: 'includeRequired given as a number',
+        options: { selection: creationOfC9, includeRequired: 1 },
+      },
+      {
+        input: 'an empty expected',
+        options: { selection: creationOfC9, expected: '' },
+      },
+      {
+        input: 'expected given as a number',
+        options: { selection: creationOfC9, expected: 1 },
+      },
+      {
         input: 'a malformed selection',
         options: {
           selection: {
@@ -167,12 +183,10 @@ describe('revertChanges', () => {
       },
     ])('refuses $input before any transaction', async ({ options }) => {
       const draft = await givenProductOfCreatedCategory();
-      const reads = jest.spyOn(kit.snapshotReader, 'readSnapshot');
 
-      await expect(
+      await expectRefusedBeforeAnyTransaction(kit, () =>
         draft.revertChanges(options as RevertOptions),
-      ).rejects.toThrow(SelectionValidationError);
-      expect(reads).not.toHaveBeenCalled();
+      );
     });
 
     it('applies with includeRequired, expected and optional selection fields given as null as it applies without them', async () => {

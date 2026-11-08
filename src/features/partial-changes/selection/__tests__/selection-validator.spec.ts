@@ -1,5 +1,6 @@
 import {
   SelectionValidationError,
+  validateComment,
   validateOperation,
   validateRequiredAdditionsAcceptance,
   validateSelection,
@@ -220,6 +221,36 @@ describe('SelectionValidator', () => {
     {},
   ])('accepts required additions acceptance %o', (acceptance) => {
     expect(() => validateRequiredAdditionsAcceptance(acceptance)).not.toThrow();
+  });
+
+  it.each([
+    {
+      error: 'includeRequired given as a string',
+      acceptance: { includeRequired: 'false' },
+      message: 'includeRequired must be a boolean',
+    },
+    {
+      error: 'an empty expected',
+      acceptance: { includeRequired: true, expected: '' },
+      message: 'expected must be a non-empty string',
+    },
+    {
+      error: 'expected given as a number',
+      acceptance: { expected: 1 },
+      message: 'expected must be a non-empty string',
+    },
+  ])(
+    'refuses required additions acceptance with $error',
+    ({ acceptance, message }) => {
+      expectValidationError(
+        () => validateRequiredAdditionsAcceptance(acceptance),
+        message,
+      );
+    },
+  );
+
+  it('refuses a comment that is not a string', () => {
+    expectValidationError(() => validateComment(1), 'comment must be a string');
   });
 });
 

@@ -1,4 +1,5 @@
-import { num, obj, str } from '@revisium/schema-toolkit/mocks';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import { num, obj, ref, str } from '@revisium/schema-toolkit/mocks';
 import objectHash from 'object-hash';
 import {
   createPartialChangesTestKit,
@@ -7,6 +8,8 @@ import {
 import type { JsonValue } from 'src/engine-prisma-types';
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
+import { createExpressFile } from 'src/__tests__/utils/file';
+import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
@@ -15,9 +18,13 @@ import type {
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import { addField } from 'src/__tests__/fixtures/ledger-steps';
+import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
+import {
+  type IStorageService,
+  STORAGE_SERVICE,
+} from 'src/infrastructure/storage/storage.interface';
 import {
   expectCopiedInsteadOfEdited,
   givenReadonlyDraftVersion,
@@ -36,6 +43,8 @@ const PRODUCTS = 'products';
 const TAGS = 'tags';
 const GOODS = 'goods';
 const ADDRESS = 'address';
+const DOCUMENTS = 'documents';
+const ARCHIVE = 'archive';
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({
@@ -46,6 +55,23 @@ const pricedSchema = obj({ title: str(), price: num() });
 const tagSchema = obj({ title: str() });
 const addressSchema = obj({ city: str() });
 const editedAddressSchema = obj({ city: str(), street: str() });
+const documentSchema = obj({
+  title: str(),
+  attachment: ref(SystemSchemaIds.File),
+});
+
+const emptyFile = {
+  status: '',
+  fileId: '',
+  url: '',
+  fileName: '',
+  hash: '',
+  extension: '',
+  mimeType: '',
+  size: 0,
+  width: 0,
+  height: 0,
+};
 
 const titleOf = (tableId: string, rowId: string): FieldRef => ({
   tableId,
@@ -54,12 +80,17 @@ const titleOf = (tableId: string, rowId: string): FieldRef => ({
 });
 const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
 
+const INJECTED_FAILURE = 'Injected failure after the writes';
+
 const titleOfP1: Selection = { fields: [titleOf(PRODUCTS, 'p1')] };
 const categoryOfP1: Selection = {
   fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/category' }],
 };
 const creationOfC9: Selection = { rows: [rowOf(CATEGORIES, 'c9')] };
 const rowP1: Selection = { rows: [rowOf(PRODUCTS, 'p1')] };
+const attachmentOfD1: Selection = {
+  fields: [{ tableId: DOCUMENTS, rowId: 'd1', path: '/attachment' }],
+};
 
 describe('revertChanges', () => {
   let kit: PartialChangesTestKit;
@@ -571,6 +602,58 @@ describe('revertChanges', () => {
     });
   });
 
+  describe('files', () => {
+    it('restores the Head file of a reverted file field, linked back without an upload, and leaves the blob links and project bytes of native revertChanges (AS-38)', async () => {
+      const native = await givenAttachmentReplacedNextToATitleEdit();
+      const partial = await givenAttachmentReplacedNextToATitleEdit();
+      const headAttachment = await attachmentOf(partial, 'head', 'd1');
+      const uploads = recordFileUploads();
+
+      await native.revertNatively();
+      await expectApplied(partial.revertChanges({ selection: attachmentOfD1 }));
+
+      await expectDraftRow(partial, DOCUMENTS, 'd1', {
+        title: 'uno',
+        attachment: headAttachment,
+      });
+      expect(uploads).not.toHaveBeenCalled();
+      expect(await partial.readFileAccounting()).toEqual(
+        await native.readFileAccounting(),
+      );
+    });
+
+    it.each<FileStructureRevert>([
+      {
+        structure: 'the rename of a table with a File field',
+        given: givenRenamedDocumentsWithATitleEdit,
+        selection: { tables: [ARCHIVE] },
+      },
+      {
+        structure: 'the removal of a File field',
+        given: givenRemovedAttachmentFieldWithATitleEdit,
+        selection: { tables: [DOCUMENTS] },
+      },
+    ])(
+      'restores the Head files on a revert of $structure, keeps the title edit of the row, and leaves the blob links and project bytes of native revertChanges (AS-38)',
+      async ({ given, selection }) => {
+        const native = await given();
+        const partial = await given();
+        const headAttachment = await attachmentOf(partial, 'head', 'd1');
+
+        await native.revertNatively();
+        await expectApplied(partial.revertChanges({ selection }));
+
+        await expectDraftRow(partial, DOCUMENTS, 'd1', {
+          title: 'uno',
+          attachment: headAttachment,
+        });
+        expect(await partial.readFileAccounting()).toEqual(
+          await native.readFileAccounting(),
+        );
+      },
+    );
+  });
+
   describe('the whole Draft', () => {
     it.each<{ holding: string; given: () => Promise<ChangesScenario> }>([
       {
@@ -623,6 +706,40 @@ describe('revertChanges', () => {
 
       expect(notifications).toEqual([]);
     });
+  });
+
+  describe('a failure after the writes', () => {
+    it.each<FailingRevert>([
+      {
+        holding: 'a file field restored from Head',
+        given: givenAttachmentReplacedNextToATitleEdit,
+        selection: attachmentOfD1,
+      },
+      {
+        holding: 'rows without files',
+        given: givenEditedPrices,
+        selection: titleOfP1,
+      },
+    ])(
+      'persists nothing of a revert of $holding, file references included, and notifies nothing (AS-39)',
+      async ({ given, selection }) => {
+        const draft = await given();
+        const contents = await branchContentsOf(kit, draft);
+        const fileReferences = await draft.readFileReferences();
+        const notifications = recordEndpointNotifications(kit, () =>
+          Promise.resolve(undefined),
+        );
+        failingAfterTheWrites();
+
+        await expect(draft.revertChanges({ selection })).rejects.toThrow(
+          INJECTED_FAILURE,
+        );
+
+        expect(await branchContentsOf(kit, draft)).toEqual(contents);
+        expect(await draft.readFileReferences()).toEqual(fileReferences);
+        expect(notifications).toEqual([]);
+      },
+    );
   });
 
   describe('during an async migration', () => {
@@ -717,6 +834,33 @@ describe('revertChanges', () => {
     return row.data;
   }
 
+  async function attachmentOf(
+    draft: ChangesScenario,
+    side: RevisionSide,
+    rowId: string,
+  ): Promise<JsonValue> {
+    const row = await draft.row(side, DOCUMENTS, rowId);
+
+    return (row.data as { attachment: JsonValue }).attachment;
+  }
+
+  function recordFileUploads(): jest.SpyInstance {
+    const storage = kit.module.get<IStorageService>(STORAGE_SERVICE);
+
+    return jest.spyOn(storage, 'uploadFile').mockClear();
+  }
+
+  function failingAfterTheWrites(): void {
+    const api = kit.module.get(DraftRevisionTargetApiService);
+    const revertToTarget = api.revertToTarget.bind(api);
+
+    jest.spyOn(api, 'revertToTarget').mockImplementation(async (plan) => {
+      await revertToTarget(plan);
+
+      throw new Error(INJECTED_FAILURE);
+    });
+  }
+
   async function migrationStatusesOf(draft: ChangesScenario) {
     const migrations = await kit.prisma.tableMigration.findMany({
       where: { revisionId: await draft.revisionId('draft') },
@@ -790,6 +934,49 @@ describe('revertChanges', () => {
     return draft;
   }
 
+  async function givenCommittedAttachment(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [DOCUMENTS]: {
+        schema: documentSchema,
+        rows: { d1: { title: 'one', attachment: emptyFile } },
+      },
+    });
+    await draft.uploadFile(DOCUMENTS, 'd1', 'attachment');
+    await draft.commit();
+
+    return draft;
+  }
+
+  async function givenAttachmentReplacedNextToATitleEdit(): Promise<ChangesScenario> {
+    const draft = await givenCommittedAttachment();
+    await draft.updateRow(DOCUMENTS, 'd1', {
+      title: 'uno',
+      attachment: emptyFile,
+    });
+    await draft.uploadFile(DOCUMENTS, 'd1', 'attachment', createExpressFile());
+
+    return draft;
+  }
+
+  async function givenRenamedDocumentsWithATitleEdit(): Promise<ChangesScenario> {
+    const draft = await givenCommittedAttachment();
+    await draft.renameTable(DOCUMENTS, ARCHIVE);
+    await draft.updateRow(ARCHIVE, 'd1', {
+      title: 'uno',
+      attachment: await attachmentOf(draft, 'head', 'd1'),
+    });
+
+    return draft;
+  }
+
+  async function givenRemovedAttachmentFieldWithATitleEdit(): Promise<ChangesScenario> {
+    const draft = await givenCommittedAttachment();
+    await draft.updateTable(DOCUMENTS, [removeField('attachment')]);
+    await draft.updateRow(DOCUMENTS, 'd1', { title: 'uno' });
+
+    return draft;
+  }
+
   async function givenCategoryEditNextToContentEqualProduct(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
@@ -819,6 +1006,18 @@ describe('revertChanges', () => {
     return draft;
   }
 });
+
+interface FileStructureRevert {
+  readonly structure: string;
+  readonly given: () => Promise<ChangesScenario>;
+  readonly selection: Selection;
+}
+
+interface FailingRevert {
+  readonly holding: string;
+  readonly given: () => Promise<ChangesScenario>;
+  readonly selection: Selection;
+}
 
 function productViews(name: string): TableViewsData {
   return {

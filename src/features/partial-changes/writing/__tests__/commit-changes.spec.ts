@@ -85,6 +85,10 @@ const categoryOfP1: Selection = {
   fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/category' }],
 };
 const creationOfC9: Selection = { rows: [rowOf(CATEGORIES, 'c9')] };
+const titleOfD1: Selection = { fields: [titleOf(DOCUMENTS, 'd1')] };
+const imageOfD1: Selection = {
+  fields: [{ tableId: DOCUMENTS, rowId: 'd1', path: '/image' }],
+};
 
 describe('commitChanges', () => {
   let kit: PartialChangesTestKit;
@@ -638,6 +642,26 @@ describe('commitChanges', () => {
       );
       expect(await blobIdsOf(merged.versionId)).toHaveLength(1);
     });
+
+    it('commits an uploaded file field alone, keeps the other edit of its row in the Draft, and leaves the blob links and project bytes of native createRevision of the whole Draft (AS-38)', async () => {
+      const native = await givenUploadedImageNextToATitleEdit();
+      const partial = await givenUploadedImageNextToATitleEdit();
+      const uploadedImage = await imageOf(partial, 'draft', 'd1');
+
+      await native.commit();
+      await expectApplied(partial.commitChanges({ selection: imageOfD1 }));
+
+      await expectRow(partial, 'head', DOCUMENTS, 'd1', {
+        title: 'one',
+        image: uploadedImage,
+      });
+      expect(unitsOf(await partial.listChanges())).toEqual([
+        { kind: 'field', rowId: 'd1', path: '/title' },
+      ]);
+      expect(await partial.readFileAccounting()).toEqual(
+        await native.readFileAccounting(),
+      );
+    });
   });
 
   describe('tables without remaining units', () => {
@@ -755,26 +779,37 @@ describe('commitChanges', () => {
   });
 
   describe('a failure after the writes', () => {
-    it('persists nothing, file references included, and notifies nothing', async () => {
-      const draft = await givenHeadImageWithDraftDroppingTheImageField();
-      await draft.updateRow(DOCUMENTS, 'd1', { title: 'uno' });
-      const contents = await branchContentsOf(kit, draft);
-      const fileReferences = await fileReferencesOf(draft);
-      const notifications = recordEndpointNotifications(kit, () =>
-        Promise.resolve(undefined),
-      );
-      failingAfterTheWrites();
+    it.each<FailingCommit>([
+      {
+        holding: 'a merged row with a File',
+        given: givenTitleEditOfAHeadImageWhoseFieldTheDraftDropped,
+        selection: titleOfD1,
+      },
+      {
+        holding: 'rows without files',
+        given: givenEditedPrices,
+        selection: titleOfP1,
+      },
+    ])(
+      'persists nothing of a commit over $holding, file references included, and notifies nothing (AS-39)',
+      async ({ given, selection }) => {
+        const draft = await given();
+        const contents = await branchContentsOf(kit, draft);
+        const fileReferences = await draft.readFileReferences();
+        const notifications = recordEndpointNotifications(kit, () =>
+          Promise.resolve(undefined),
+        );
+        failingAfterTheWrites();
 
-      await expect(
-        draft.commitChanges({
-          selection: { fields: [titleOf(DOCUMENTS, 'd1')] },
-        }),
-      ).rejects.toThrow(INJECTED_FAILURE);
+        await expect(draft.commitChanges({ selection })).rejects.toThrow(
+          INJECTED_FAILURE,
+        );
 
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-      expect(await fileReferencesOf(draft)).toEqual(fileReferences);
-      expect(notifications).toEqual([]);
-    });
+        expect(await branchContentsOf(kit, draft)).toEqual(contents);
+        expect(await draft.readFileReferences()).toEqual(fileReferences);
+        expect(notifications).toEqual([]);
+      },
+    );
   });
 
   describe('a required unit of a table the plan did not read', () => {
@@ -898,6 +933,16 @@ describe('commitChanges', () => {
     return row.data;
   }
 
+  async function imageOf(
+    draft: ChangesScenario,
+    side: RevisionSide,
+    rowId: string,
+  ): Promise<JsonValue> {
+    const row = await draft.row(side, DOCUMENTS, rowId);
+
+    return (row.data as { image: JsonValue }).image;
+  }
+
   async function commentOf(revisionId: string): Promise<string> {
     const revision = await kit.prisma.revision.findUniqueOrThrow({
       where: { id: revisionId },
@@ -914,19 +959,6 @@ describe('commitChanges', () => {
     });
 
     return row.fileBlobs.map((blob) => blob.id).sort();
-  }
-
-  async function fileReferencesOf(draft: ChangesScenario): Promise<string[]> {
-    const blobs = await kit.prisma.fileBlob.findMany({
-      where: { projectId: draft.branch.projectId },
-      select: { id: true, rows: { select: { versionId: true } } },
-    });
-
-    return blobs
-      .flatMap(({ id, rows }) =>
-        rows.map(({ versionId }) => `${id}/${versionId}`),
-      )
-      .sort();
   }
 
   function notReading(identity: string): void {
@@ -1129,6 +1161,26 @@ describe('commitChanges', () => {
 
     return draft;
   }
+
+  async function givenTitleEditOfAHeadImageWhoseFieldTheDraftDropped(): Promise<ChangesScenario> {
+    const draft = await givenHeadImageWithDraftDroppingTheImageField();
+    await draft.updateRow(DOCUMENTS, 'd1', { title: 'uno' });
+
+    return draft;
+  }
+
+  async function givenUploadedImageNextToATitleEdit(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [DOCUMENTS]: {
+        schema: documentSchema,
+        rows: { d1: { title: 'one', image: emptyFile } },
+      },
+    });
+    await draft.updateRow(DOCUMENTS, 'd1', { title: 'uno', image: emptyFile });
+    await draft.uploadFile(DOCUMENTS, 'd1', 'image');
+
+    return draft;
+  }
 });
 
 class ExclusionOfP2 {
@@ -1140,6 +1192,12 @@ class ExclusionOfP2 {
 interface WholeDraft {
   readonly holding: string;
   readonly given: () => Promise<ChangesScenario>;
+}
+
+interface FailingCommit {
+  readonly holding: string;
+  readonly given: () => Promise<ChangesScenario>;
+  readonly selection: Selection;
 }
 
 function productViews(name: string): TableViewsData {

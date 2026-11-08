@@ -248,6 +248,7 @@ export class BranchScenario {
     tableId: string,
     rowId: string,
     field: string,
+    file: Express.Multer.File = createExpressImageFile(),
   ): Promise<void> {
     const row = await this.row('draft', tableId, rowId);
     const data = row.data as Record<string, { fileId: string }>;
@@ -257,7 +258,7 @@ export class BranchScenario {
       tableId,
       rowId,
       fileId: data[field]?.fileId ?? '',
-      file: createExpressImageFile(),
+      file,
     });
   }
 

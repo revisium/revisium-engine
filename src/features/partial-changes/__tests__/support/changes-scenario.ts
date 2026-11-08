@@ -31,6 +31,11 @@ import {
 import { previewChanges, type PreviewOptions } from './change-preview';
 import { revertChanges, type RevertOptions } from './change-reverting';
 import { type ClosureView, readClosedDependencies } from './dependency-closing';
+import {
+  type FileAccounting,
+  readFileAccounting,
+  readFileReferences,
+} from './file-accounting';
 import { type PlanVariant, readPlanFingerprint } from './plan-fingerprinting';
 import {
   readScopedCatalogue,
@@ -197,6 +202,14 @@ export class ChangesScenario extends BranchScenario {
       selection,
       variant,
     );
+  }
+
+  public readFileAccounting(): Promise<FileAccounting> {
+    return readFileAccounting(this.kit, this);
+  }
+
+  public readFileReferences(): Promise<string[]> {
+    return readFileReferences(this.kit, this);
   }
 
   public async readDraftRowDigest(tableId: string): Promise<string> {

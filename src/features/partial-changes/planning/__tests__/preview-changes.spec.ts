@@ -560,6 +560,104 @@ describe('previewChanges', () => {
     });
   });
 
+  describe('the whole Draft', () => {
+    const danglingDrafts: DanglingDraft[] = [
+      {
+        holding: 'a value that references a row of neither revision',
+        given: givenProductReferencingMissingCategory,
+        blocker: {
+          code: 'danglingInSource',
+          tableId: PRODUCTS,
+          rowId: 'p1',
+          path: '/category',
+          message:
+            'No unit can restore consistency: products/p1/category references categories/c404, which the new Head does not contain',
+          unit: {
+            kind: 'field',
+            tableId: PRODUCTS,
+            rowId: 'p1',
+            path: '/category',
+            selector: categoryOfP1,
+          },
+        },
+      },
+      {
+        holding: 'an unchanged row that references a row the Draft deleted',
+        given: givenCategoryDeletedUnderUnchangedProduct,
+        blocker: {
+          code: 'danglingInSource',
+          tableId: PRODUCTS,
+          rowId: 'p1',
+          message:
+            'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
+          unit: {
+            kind: 'rowDelete',
+            tableId: CATEGORIES,
+            rowId: 'c1',
+            selector: { rows: [rowOf(CATEGORIES, 'c1')] },
+          },
+        },
+      },
+    ];
+
+    it.each(danglingDrafts)(
+      'blocks a commit of exactly { all: true } with danglingInSource when the Draft holds $holding (AS-36)',
+      async ({ given, blocker }) => {
+        const draft = await given();
+
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection: { all: true },
+        });
+
+        expect(preview).toMatchObject({
+          status: 'blocked',
+          required: [],
+          blockers: [blocker],
+        });
+      },
+    );
+
+    it.each(danglingDrafts)(
+      'plans a revert of exactly { all: true } as ready when the Draft holds $holding, since the Head it restores holds no dangling reference (AS-36)',
+      async ({ given }) => {
+        const draft = await given();
+
+        const preview = await draft.previewChanges({
+          operation: 'revert',
+          selection: { all: true },
+        });
+
+        expect(preview).toMatchObject({
+          status: 'ready',
+          required: [],
+          blockers: [],
+        });
+      },
+    );
+
+    it.each(OPERATIONS)(
+      'is empty for a %s of exactly { all: true } of a Draft holding only content-equal versions (AS-54)',
+      async (operation) => {
+        const draft = await givenOnlyContentEqualVersions();
+
+        const preview = await draft.previewChanges({
+          operation,
+          selection: { all: true },
+        });
+
+        expect(preview).toMatchObject({
+          status: 'empty',
+          counts: { selected: 0, required: 0, remaining: 0 },
+          unreadTables: 0,
+          blockers: [],
+          sample: [],
+          unmatched: {},
+        });
+      },
+    );
+  });
+
   describe('ledger replays', () => {
     it('replays the Head and Draft ledgers once each to plan a revert that moves pending migrations', async () => {
       const draft = await givenTwoTablesWithNewFields();
@@ -898,6 +996,51 @@ describe('previewChanges', () => {
     return draft;
   }
 
+  function givenCommittedCatalog(): Promise<ChangesScenario> {
+    return ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', category: 'c1' } },
+      },
+    });
+  }
+
+  async function givenProductReferencingMissingCategory(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.writeDanglingReference(PRODUCTS, 'p1', {
+      title: 'one',
+      category: 'c404',
+    });
+
+    return draft;
+  }
+
+  async function givenCategoryDeletedUnderUnchangedProduct(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.removeReferencedRows(CATEGORIES, ['c1']);
+
+    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(false);
+
+    return draft;
+  }
+
+  async function givenOnlyContentEqualVersions(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: pricedSchema,
+        rows: { p1: { title: 'one', price: 1 } },
+      },
+    });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 1 });
+
+    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(true);
+    expect(await draft.hasChanges()).toBe(true);
+
+    return draft;
+  }
+
   async function givenTitleAndPriceEdits(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: {
@@ -1084,6 +1227,12 @@ describe('previewChanges', () => {
     return draft;
   }
 });
+
+interface DanglingDraft {
+  readonly holding: string;
+  readonly given: () => Promise<ChangesScenario>;
+  readonly blocker: Blocker;
+}
 
 function wholeRowOfC9() {
   return {

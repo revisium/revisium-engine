@@ -2,6 +2,7 @@ import type { Row } from 'src/engine-prisma-types';
 import type {
   HeadQualifier,
   Unit,
+  UnitKind,
 } from 'src/features/partial-changes/catalogue/unit';
 import type { RowPair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { WholeColumn } from 'src/features/partial-changes/structure/column-owners';
@@ -20,4 +21,14 @@ export interface CatalogueRow {
   readonly existence?: string;
   readonly columns: ReadonlyMap<WholeColumn, string>;
   readonly leaves: ReadonlyMap<string, string>;
+}
+
+const EXISTENCE_UNIT_KINDS: ReadonlySet<UnitKind> = new Set([
+  'rowCreate',
+  'rowDelete',
+  'rowReplace',
+]);
+
+export function isExistenceUnit({ unit }: CatalogueUnit): boolean {
+  return EXISTENCE_UNIT_KINDS.has(unit.kind);
 }

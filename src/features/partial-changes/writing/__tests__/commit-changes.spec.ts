@@ -38,6 +38,7 @@ const DOCUMENTS = 'documents';
 const LOGS = 'logs';
 const ADDRESS = 'address';
 const GROUPS = 'groups';
+const GOODS = 'goods';
 const TAGS = 'tags';
 
 const categorySchema = obj({ title: str() });
@@ -89,6 +90,8 @@ const titleOfD1: Selection = { fields: [titleOf(DOCUMENTS, 'd1')] };
 const imageOfD1: Selection = {
   fields: [{ tableId: DOCUMENTS, rowId: 'd1', path: '/image' }],
 };
+const rowColumnsOfP1: Selection = { rowColumns: [rowOf(PRODUCTS, 'p1')] };
+const deletionOfP1: Selection = { rows: [rowOf(PRODUCTS, 'p1')] };
 
 describe('commitChanges', () => {
   let kit: PartialChangesTestKit;
@@ -339,6 +342,46 @@ describe('commitChanges', () => {
 
       expect(result).toEqual<CommitChangesResult>({ status: 'stale' });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    });
+
+    it('is stale and writes nothing when a rename of the table after the preview hands the schemaHash of the selected row columns to the structure', async () => {
+      const draft = await givenCommittedPrices();
+      await draft.writeRowColumns(PRODUCTS, 'p1', {
+        meta: { note: 'draft' },
+        schemaHash: STALE_SCHEMA_HASH,
+      });
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: rowColumnsOfP1,
+      });
+      await draft.renameTable(PRODUCTS, GOODS);
+      const contents = await branchContentsOf(kit, draft);
+
+      const result = await draft.commitChanges({
+        selection: rowColumnsOfP1,
+        expected: preview.fingerprint,
+      });
+
+      expect(result).toEqual<CommitChangesResult>({ status: 'stale' });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    });
+
+    it('applies a deletion with the fingerprint of its preview after a Draft schema change, since the deleted row moves into no structure', async () => {
+      const draft = await givenCommittedPrices();
+      await draft.removeRow(PRODUCTS, 'p1');
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: deletionOfP1,
+      });
+      await draft.updateTable(PRODUCTS, [addField('color', str())]);
+
+      const result = await draft.commitChanges({
+        selection: deletionOfP1,
+        expected: preview.fingerprint,
+      });
+
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(await draft.rowIds('head', PRODUCTS)).toEqual(['p2']);
     });
 
     it.each<{

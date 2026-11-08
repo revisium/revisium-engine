@@ -293,6 +293,24 @@ describe('revertChanges', () => {
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
 
+    it('is stale and writes nothing when the Draft structure that the restored row moves into changes after the preview', async () => {
+      const draft = await givenDeletedRowOfChangedStructure();
+      const preview = await draft.previewChanges({
+        operation: 'revert',
+        selection: rowP1,
+      });
+      await draft.updateTable(PRODUCTS, [addField('size', str())]);
+      const contents = await branchContentsOf(kit, draft);
+
+      const result = await draft.revertChanges({
+        selection: rowP1,
+        expected: preview.fingerprint,
+      });
+
+      expect(result).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    });
+
     it('is stale with the fingerprint of a commit preview of the same selection', async () => {
       const draft = await givenEditedPrices();
       const commitPreview = await draft.previewChanges({
@@ -920,6 +938,14 @@ describe('revertChanges', () => {
     const draft = await givenCommittedPrices();
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
     await draft.updateRow(PRODUCTS, 'p2', { title: 'dos', price: 2 });
+
+    return draft;
+  }
+
+  async function givenDeletedRowOfChangedStructure(): Promise<ChangesScenario> {
+    const draft = await givenCommittedPrices();
+    await draft.updateTable(PRODUCTS, [addField('color', str())]);
+    await draft.removeRow(PRODUCTS, 'p1');
 
     return draft;
   }

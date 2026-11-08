@@ -3,12 +3,17 @@ import type {
   CatalogueRow,
   CatalogueUnit,
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import { CatalogueLookup } from 'src/features/partial-changes/catalogue/catalogue-lookup';
+import { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import { fieldUnitKey } from 'src/features/partial-changes/catalogue/unit-key';
 import {
   type FingerprintedPlan,
   PlanFingerprint,
 } from 'src/features/partial-changes/planning/plan-fingerprint';
-import type { SystemTableRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type {
+  ChangesSnapshot,
+  SystemTableRows,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
@@ -41,26 +46,35 @@ function givenAppliedFieldUnits(count: number): FingerprintedPlan {
     editedRow(`row-${index}`),
   );
   const units = rows.map(({ pair }) => titleUnitOf(pair.identity));
+  const rowsByTable = new Map([[TABLE_IDENTITY, rows]]);
+  const snapshot = snapshotWithoutTables();
 
   return {
     operation: 'commit',
-    snapshot: {
-      branchId: 'branch',
-      headRevisionId: 'head',
-      draftRevisionId: 'draft',
-      tables: [],
-      systemRows: {
-        schemas: noRows(),
-        migrations: noRows(),
-        views: noRows(),
-        sharedSchemas: noRows(),
-      },
-    },
+    applied: new Set(units.map(({ key }) => key)),
+    wholeDraft: false,
+    snapshot,
     catalogue: {
       units,
-      rows: new Map([[TABLE_IDENTITY, rows]]),
+      rows: rowsByTable,
+      tables: new CatalogueTables(snapshot, []),
+      lookup: new CatalogueLookup(units, rowsByTable),
     },
-    applied: new Set(units.map(({ key }) => key)),
+  };
+}
+
+function snapshotWithoutTables(): ChangesSnapshot {
+  return {
+    branchId: 'branch',
+    headRevisionId: 'head',
+    draftRevisionId: 'draft',
+    tables: [],
+    systemRows: {
+      schemas: noRows(),
+      migrations: noRows(),
+      views: noRows(),
+      sharedSchemas: noRows(),
+    },
   };
 }
 

@@ -3,7 +3,13 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { FieldRef } from 'src/features/partial-changes/selection/selection';
+import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
+import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import type {
+  FieldRef,
+  RowRef,
+  Selection,
+} from 'src/features/partial-changes/selection/selection';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
@@ -18,7 +24,9 @@ import {
 
 const PRODUCTS = 'products';
 const CATEGORIES = 'categories';
+const GOODS = 'goods';
 const RELEASE_DATE = '2030-01-01T00:00:00.000Z';
+const STALE_SCHEMA_HASH = 'stale-schema-hash';
 const SHA_256_HEX = /^[0-9a-f]{64}$/;
 
 const productSchema = obj({ title: str(), price: num() });
@@ -27,10 +35,18 @@ const categorySchema = obj({ title: str() });
 const priceOfP1: FieldRef = { tableId: PRODUCTS, rowId: 'p1', path: '/price' };
 const priceSelection = { fields: [priceOfP1] };
 const productsStructure = { tables: [PRODUCTS] };
+const productRow = (rowId: string): RowRef => ({ tableId: PRODUCTS, rowId });
 
 interface EditCase {
   readonly edit: string;
   readonly apply: (draft: ChangesScenario) => Promise<void>;
+}
+
+interface StructureOwnershipCase {
+  readonly unit: UnitKind;
+  readonly operation: ChangeOperation;
+  readonly selection: Selection;
+  readonly given: () => Promise<ChangesScenario>;
 }
 
 describe('PlanFingerprint', () => {
@@ -154,6 +170,45 @@ describe('PlanFingerprint', () => {
     },
   );
 
+  it.each<StructureOwnershipCase>([
+    {
+      unit: 'rowColumns',
+      operation: 'commit',
+      selection: { rowColumns: [productRow('p1')] },
+      given: givenStaleSchemaHashNextToMetaEdit,
+    },
+    {
+      unit: 'rowCreate',
+      operation: 'commit',
+      selection: { rows: [productRow('p3')] },
+      given: givenCreatedRowWithStaleSchemaHash,
+    },
+    {
+      unit: 'rowReplace',
+      operation: 'commit',
+      selection: { rows: [productRow('p1')] },
+      given: givenReplacedRowWithStaleSchemaHash,
+    },
+    {
+      unit: 'rowDelete',
+      operation: 'revert',
+      selection: { rows: [productRow('p1')] },
+      given: givenDeletedRowWithStaleSchemaHash,
+    },
+  ])(
+    'changes when a rename of the table hands the schemaHash that a selected $unit unit applies to the structure',
+    async ({ operation, selection, given }) => {
+      const draft = await given();
+      const before = await draft.fingerprintPlan(operation, selection);
+
+      await draft.renameTable(PRODUCTS, GOODS);
+
+      expect(await draft.fingerprintPlan(operation, selection)).not.toBe(
+        before,
+      );
+    },
+  );
+
   it.each<EditCase>([
     {
       edit: 'another row of the table',
@@ -178,6 +233,26 @@ describe('PlanFingerprint', () => {
       );
     },
   );
+
+  it('does not change for a revert of a created row when a rename of the table makes its structures differ, since the reverted row moves into no structure', async () => {
+    const draft = await givenCreatedRowWithStaleSchemaHash();
+    const creationOfP3 = { rows: [productRow('p3')] };
+    const before = await draft.fingerprintPlan('revert', creationOfP3);
+
+    await draft.renameTable(PRODUCTS, GOODS);
+
+    expect(await draft.fingerprintPlan('revert', creationOfP3)).toBe(before);
+  });
+
+  it('does not change for a selected created row of an unchanged structure when the structure of another table changes', async () => {
+    const draft = await givenCreatedProductNextToCategories();
+    const creationOfP3 = { rows: [productRow('p3')] };
+    const before = await draft.fingerprintPlan('commit', creationOfP3);
+
+    await draft.updateTable(CATEGORIES, [addField('color', str())]);
+
+    expect(await draft.fingerprintPlan('commit', creationOfP3)).toBe(before);
+  });
 
   it('reads a number of statements that does not grow with the covered rows', async () => {
     const reads = await statementsOfFingerprintCovering(12);
@@ -252,6 +327,73 @@ describe('PlanFingerprint', () => {
     });
     await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 10 });
     await draft.updateRow(CATEGORIES, 'c1', { title: 'renamed' });
+
+    return draft;
+  }
+
+  function givenCommittedProducts(): Promise<ChangesScenario> {
+    return ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: {
+          p1: { title: 'one', price: 1 },
+          p2: { title: 'two', price: 2 },
+        },
+      },
+    });
+  }
+
+  async function givenStaleSchemaHashNextToMetaEdit(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProducts();
+    await draft.writeRowColumns(PRODUCTS, 'p1', {
+      meta: { note: 'checked' },
+      schemaHash: STALE_SCHEMA_HASH,
+    });
+
+    return draft;
+  }
+
+  async function givenCreatedRowWithStaleSchemaHash(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProducts();
+    await draft.createRows(PRODUCTS, { p3: { title: 'three', price: 3 } });
+    await draft.writeRowColumns(PRODUCTS, 'p3', {
+      schemaHash: STALE_SCHEMA_HASH,
+    });
+
+    return draft;
+  }
+
+  async function givenReplacedRowWithStaleSchemaHash(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProducts();
+    await draft.removeRow(PRODUCTS, 'p1');
+    await draft.createRows(PRODUCTS, { p1: { title: 'new one', price: 9 } });
+    await draft.writeRowColumns(PRODUCTS, 'p1', {
+      schemaHash: STALE_SCHEMA_HASH,
+    });
+
+    return draft;
+  }
+
+  async function givenDeletedRowWithStaleSchemaHash(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProducts();
+    await draft.writeRowColumns(PRODUCTS, 'p1', {
+      schemaHash: STALE_SCHEMA_HASH,
+    });
+    await draft.commit();
+    await draft.removeRow(PRODUCTS, 'p1');
+
+    return draft;
+  }
+
+  async function givenCreatedProductNextToCategories(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: { schema: productSchema },
+      [CATEGORIES]: {
+        schema: categorySchema,
+        rows: { c1: { title: 'first' } },
+      },
+    });
+    await draft.createRows(PRODUCTS, { p3: { title: 'three', price: 3 } });
 
     return draft;
   }

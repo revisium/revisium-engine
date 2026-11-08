@@ -27,7 +27,7 @@ export function readTablesOf({
     return {
       pair,
       structure: requiredOf(tables, identity).structure,
-      units: unitsOf(pair, catalogue.lookup),
+      units: tableUnitsOf(pair, catalogue.lookup),
       rows,
     };
   });
@@ -35,12 +35,15 @@ export function readTablesOf({
 
 export function tableRulesOf(
   rules: OutcomeRules,
-  { units, structure }: ReadTable,
+  { units, structure }: Pick<ReadTable, 'units' | 'structure'>,
 ): TableOutcomeRules {
   return rules.forTable({ units, structureDiffers: structure.differs });
 }
 
-function unitsOf(pair: TablePair, lookup: CatalogueLookup): TableUnits {
+export function tableUnitsOf(
+  pair: TablePair,
+  lookup: CatalogueLookup,
+): TableUnits {
   return {
     structure: lookup.tableUnitOf('structure', pair)?.key,
     rows: lookup.rowLevelUnitsOf(pair).map(({ key }) => key),

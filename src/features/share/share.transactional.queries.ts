@@ -16,6 +16,7 @@ import {
   FindHeadRevisionInBranchOrThrowQuery,
   FindRowInTableOrThrowQuery,
   FindTableInRevisionOrThrowQuery,
+  FindTableInRevisionQuery,
   GetTableSchemaQuery,
   GetTableSchemaQueryReturnType,
 } from 'src/features/share/queries/impl';
@@ -41,11 +42,15 @@ export class ShareTransactionalQueries {
     revisionId: string,
     tableId: string,
   ): Promise<FindTableInRevisionType | null> {
-    try {
-      return await this.findTableInRevisionOrThrow(revisionId, tableId);
-    } catch {
-      return null;
-    }
+    return this.queryBus.execute<
+      FindTableInRevisionQuery,
+      FindTableInRevisionType | null
+    >(
+      new FindTableInRevisionQuery({
+        revisionId,
+        tableId,
+      }),
+    );
   }
 
   public async findRowInTableOrThrow(tableVersionId: string, rowId: string) {
@@ -139,7 +144,9 @@ export class ShareTransactionalQueries {
   public async findViewsRowInRevision(
     revisionId: string,
     tableId: string,
-  ): Promise<(FindRowInTableType & { tableVersionId: string }) | null> {
+  ): Promise<
+    (FindRowsInTableType[number] & { tableVersionId: string }) | null
+  > {
     const viewsTable = await this.findTableInRevision(
       revisionId,
       SystemTables.Views,
@@ -149,14 +156,12 @@ export class ShareTransactionalQueries {
       return null;
     }
 
-    try {
-      const row = await this.findRowInTableOrThrow(
-        viewsTable.versionId,
-        tableId,
-      );
-      return { ...row, tableVersionId: viewsTable.versionId };
-    } catch {
+    const [row] = await this.findRowsInTable(viewsTable.versionId, [tableId]);
+
+    if (!row) {
       return null;
     }
+
+    return { ...row, tableVersionId: viewsTable.versionId };
   }
 }

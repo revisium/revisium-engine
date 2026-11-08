@@ -6,12 +6,14 @@ import { FindDraftRevisionInBranchOrThrowHandler } from 'src/features/share/quer
 import { FindHeadRevisionInBranchOrThrowHandler } from 'src/features/share/queries/handlers/transactional/find-head-revision-in-branch-or-throw.handler';
 import { FindRowInTableOrThrowHandler } from 'src/features/share/queries/handlers/transactional/find-row-in-table-or-throw.handler';
 import { FindTableInRevisionOrThrowHandler } from 'src/features/share/queries/handlers/transactional/find-table-in-revision-or-throw.handler';
+import { FindTableInRevisionHandler } from 'src/features/share/queries/handlers/transactional/find-table-in-revision.handler';
 
 export const SHARE_QUERIES_HANDLERS = [
   FindRowInTableOrThrowHandler,
   FindRowsInTableOrThrowHandler,
   FindRowsInTableHandler,
   FindTableInRevisionOrThrowHandler,
+  FindTableInRevisionHandler,
   FindBranchInProjectOrThrowHandler,
   FindDraftRevisionInBranchOrThrowHandler,
   FindHeadRevisionInBranchOrThrowHandler,

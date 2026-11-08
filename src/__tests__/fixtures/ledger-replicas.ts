@@ -26,6 +26,10 @@ export class HeadSyncedReplica {
   public async syncWith(source: BranchScenario): Promise<void> {
     const migrations = await newMigrationsOf(this.replica, source, 'head');
 
+    if (migrations.length === 0) {
+      return;
+    }
+
     await importMigrations(this.kit, this.replica, migrations);
     await this.replica.commit();
   }
@@ -33,6 +37,12 @@ export class HeadSyncedReplica {
   public async expectSchemasOf(source: BranchScenario): Promise<void> {
     expect(await storedSchemasOf(this.replica, 'head')).toEqual(
       await storedSchemasOf(source, 'head'),
+    );
+  }
+
+  public async expectLedgerOf(source: BranchScenario): Promise<void> {
+    expect(await storedLedgerOf(this.replica, 'head')).toEqual(
+      await storedLedgerOf(source, 'head'),
     );
   }
 }
@@ -73,13 +83,17 @@ export async function expectHeadSyncedReplicaToReproduceTheHead(
 export async function expectPendingMigrationsAfterPublished(
   draft: BranchScenario,
 ): Promise<void> {
+  expect(await pendingMigrationsNotAfterPublished(draft)).toEqual([]);
+}
+
+export async function pendingMigrationsNotAfterPublished(
+  draft: BranchScenario,
+): Promise<string[]> {
   const published = await ledgerIdsOf(draft, 'head');
   const lastPublished = published.at(-1) ?? '';
   const pending = await pendingMigrationIds(draft);
 
-  expect(
-    pending.filter((id) => compareCodePoints(id, lastPublished) <= 0),
-  ).toEqual([]);
+  return pending.filter((id) => compareCodePoints(id, lastPublished) <= 0);
 }
 
 export async function importMigrations(

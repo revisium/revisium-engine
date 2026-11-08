@@ -40,6 +40,11 @@ export interface RandomDraftTwins {
   readonly twin: ChangesScenario;
 }
 
+export interface RandomDraftInEditing {
+  readonly draft: ChangesScenario;
+  readonly writer: RandomDraftWriter;
+}
+
 interface VacatedRowId extends TableRow {
   readonly rowId: string;
 }
@@ -81,9 +86,21 @@ const EDIT_WEIGHTS = {
   editSharedSchema: 2,
 } as const;
 
-type RandomEdit = keyof typeof EDIT_WEIGHTS;
+export type RandomEdit = keyof typeof EDIT_WEIGHTS;
 
 const RANDOM_EDITS = Object.keys(EDIT_WEIGHTS) as RandomEdit[];
+
+const SCHEMA_EDITS: readonly RandomEdit[] = [
+  'createTable',
+  'renameTable',
+  'renameTableIntoVacatedId',
+  'removeTable',
+  'addField',
+  'removeField',
+  'renameField',
+];
+
+const DATA_EDITS = RANDOM_EDITS.filter((edit) => !SCHEMA_EDITS.includes(edit));
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
@@ -126,6 +143,18 @@ export async function givenRandomDraft(
   await writeRandomEdits(draft, seed);
 
   return draft;
+}
+
+export async function givenRandomDraftInEditing(
+  kit: PartialChangesTestKit,
+  random: SeededRandom,
+): Promise<RandomDraftInEditing> {
+  const draft = await givenCommittedCatalogue(kit);
+  const writer = await RandomDraftWriter.over(draft, random);
+
+  await writer.writeRandomEdits(EDITS_PER_DRAFT);
+
+  return { draft, writer };
 }
 
 export async function givenRandomDraftTwins(
@@ -175,29 +204,60 @@ async function writeRandomEdits(
   draft: ChangesScenario,
   seed: number,
 ): Promise<void> {
-  const writer = new RandomDraftWriter(
-    draft,
-    seededRandom(seed),
-    await readHeadTables(draft),
-  );
+  const writer = await RandomDraftWriter.over(draft, seededRandom(seed));
 
-  for (let written = 0; written < EDITS_PER_DRAFT; written += 1) {
-    await writer.writeRandomEdit(await DraftTables.read(draft));
-  }
+  await writer.writeRandomEdits(EDITS_PER_DRAFT);
 }
 
-class RandomDraftWriter {
+// One writer keeps its fresh ids and published-at edits for the whole Draft, so later edits never reuse an id.
+export class RandomDraftWriter {
   private freshCount = 0;
   private readonly rowsWithPublishedAtEdits = new Set<string>();
 
-  constructor(
+  private constructor(
     private readonly draft: ChangesScenario,
     private readonly random: SeededRandom,
-    private readonly headTables: ReadonlyMap<string, HeadTable>,
+    private headTables: ReadonlyMap<string, HeadTable>,
   ) {}
 
-  public writeRandomEdit(tables: DraftTables): Promise<void> {
-    switch (this.random.pick(this.applicableEdits(tables))) {
+  public static async over(
+    draft: ChangesScenario,
+    random: SeededRandom,
+  ): Promise<RandomDraftWriter> {
+    return new RandomDraftWriter(draft, random, await readHeadTables(draft));
+  }
+
+  public async writeRandomEdits(count: number): Promise<void> {
+    for (let written = 0; written < count; written += 1) {
+      await this.writeRandomEditAmong(RANDOM_EDITS);
+    }
+  }
+
+  public writeRandomSchemaEdit(): Promise<RandomEdit> {
+    return this.writeRandomEditAmong(SCHEMA_EDITS);
+  }
+
+  public writeRandomDataEdit(): Promise<RandomEdit> {
+    return this.writeRandomEditAmong(DATA_EDITS);
+  }
+
+  public async followHead(): Promise<void> {
+    this.headTables = await readHeadTables(this.draft);
+  }
+
+  private async writeRandomEditAmong(
+    edits: readonly RandomEdit[],
+  ): Promise<RandomEdit> {
+    const tables = await DraftTables.read(this.draft);
+    const edit = this.random.pick(this.applicableEdits(tables, edits));
+
+    await this.writeEdit(edit, tables);
+
+    return edit;
+  }
+
+  private writeEdit(edit: RandomEdit, tables: DraftTables): Promise<void> {
+    switch (edit) {
       case 'editValue':
         return this.editValue(tables);
       case 'editReference':
@@ -239,10 +299,15 @@ class RandomDraftWriter {
     }
   }
 
-  private applicableEdits(tables: DraftTables): RandomEdit[] {
-    return RANDOM_EDITS.filter((edit) =>
-      this.isApplicable(edit, tables),
-    ).flatMap((edit) => Array.from({ length: EDIT_WEIGHTS[edit] }, () => edit));
+  private applicableEdits(
+    tables: DraftTables,
+    edits: readonly RandomEdit[],
+  ): RandomEdit[] {
+    return edits
+      .filter((edit) => this.isApplicable(edit, tables))
+      .flatMap((edit) =>
+        Array.from({ length: EDIT_WEIGHTS[edit] }, () => edit),
+      );
   }
 
   private isApplicable(edit: RandomEdit, tables: DraftTables): boolean {

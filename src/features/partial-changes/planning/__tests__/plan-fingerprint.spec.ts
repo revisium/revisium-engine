@@ -234,6 +234,16 @@ describe('PlanFingerprint', () => {
     },
   );
 
+  it('does not change for a revert of a created row when a rename of the table makes its structures differ, since the reverted row moves into no structure', async () => {
+    const draft = await givenCreatedRowWithStaleSchemaHash();
+    const creationOfP3 = { rows: [productRow('p3')] };
+    const before = await draft.fingerprintPlan('revert', creationOfP3);
+
+    await draft.renameTable(PRODUCTS, GOODS);
+
+    expect(await draft.fingerprintPlan('revert', creationOfP3)).toBe(before);
+  });
+
   it('does not change for a selected created row of an unchanged structure when the structure of another table changes', async () => {
     const draft = await givenCreatedProductNextToCategories();
     const creationOfP3 = { rows: [productRow('p3')] };

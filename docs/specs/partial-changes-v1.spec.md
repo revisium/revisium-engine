@@ -1275,8 +1275,9 @@ SHA-256 (unsigned, opaque) over:
 - for every applied unit, in unit order:
   - row units: per covered row, the Head and Draft row versions as `versionId`, `updatedAt` and the compared columns
     (`id`, `hash`, `schemaHash`, `publishedAt`, `meta`); for a `rowColumns` unit, the columns it owns (§3.4); for a
-    `rowCreate`, `rowDelete` or `rowReplace` unit whose table structures differ, the structures its row moves between
-    (§6.7): the Head and Draft schemas, the pending schema history and the unchanged fields (§3.3);
+    `rowCreate`, `rowDelete` or `rowReplace` unit that moves a row into the other structure (§6.7, row outcome 1), the
+    structures it moves the row between: the Head and Draft schemas, the pending schema history and the unchanged
+    fields (§3.3);
   - table-level units (structure, views, shared schema): the Head and Draft table version ids and the owned system
     rows (schema, views, pending migration rows) as above;
   - structure units whose Draft table version is mutable: a digest over the row count and the `versionId` and compared
@@ -1289,16 +1290,23 @@ that others keep editing keeps returning `stale` (S3, S4), and the digest costs 
 table version per plan, O(table rows); this cost was not measured and must be measured before release (§11). The
 fingerprint covers applied units only, so it does not depend on which tables were read (AS-74).
 
-The owned columns and the structures are needed because ownership follows the structure as well as the row versions
-(§3.1). A table rename after the preview leaves every row version as it was but hands `schemaHash` to the structure
-unit: a `rowColumns` unit then owns fewer columns, and a created, deleted or replaced row moves into the other
-structure and takes the hash of the target schema (§6.7). A Draft schema change after the preview of a table whose
-structures already differ leaves a Head row version as it was but changes the Draft structure that a restored row is
-migrated into. Each of these changes the fingerprint, so the operation returns `stale` instead of writing a row that
-the preview did not show. The structures are covered only while they differ, so a schema change of another table
-leaves the fingerprint of an existence unit unchanged. Field and rename units need no such entry: the key of a `field`
-unit names its leaf, and the unit no longer exists once that leaf is structure-bound; `id` always belongs to the
-`rowRename` unit.
+The fingerprint covers the selected content and the structures that an existence unit moves a row between. Ownership
+follows the structure as well as the row versions (§3.1): a table rename after the preview leaves every row version as
+it was but hands `schemaHash` to the structure unit, so a `rowColumns` unit then owns fewer columns, and a created,
+deleted or replaced row starts to move into the other structure. A Draft schema change after the preview of a table
+whose structures already differ leaves a Head row version as it was but changes the Draft structure that a restored
+row is migrated into. Each of these changes the fingerprint, so the operation returns `stale` instead of writing a row
+that the preview did not show. The structures are covered only for a unit that moves a row: a committed deletion and a
+reverted creation write no row, and a schema change of another table changes nothing in the unit's table, so their
+fingerprints stay the same. A `field` unit names its leaf in its key and no longer exists once that leaf is
+structure-bound, and `id` always belongs to the `rowRename` unit.
+
+The `schemaHash` of every written row follows the schema of its target table at apply time, also for a `field`,
+`rowRename` or `rowColumns` unit whose ownership did not change: after a native rename of a referenced table rewrote
+the referrer's Draft schema, a referrer row that a revert merges takes the hash of the rewritten schema. This column
+is technical state, not selected content. Values that the apply generates, such as timestamps or the new `fileId`
+that the File plugin assigns when a restored row is migrated through a pending File field, come from the apply, and
+the preview does not fix them.
 
 ### 9.2 Rules
 
@@ -1636,7 +1644,8 @@ versions unchanged" (§14) holds in every scenario.
   of a structure-bound field, a table rename or a views edit after preview → `stale`; a table rename after preview
   that hands the `schemaHash` of a selected `rowColumns`, `rowCreate`, `rowDelete` or `rowReplace` unit to the
   structure (§9.1) → `stale`, nothing written; a Draft schema change after preview of a table whose structures
-  already differ, with a selected deleted row → `stale`, nothing written; another table changed → applied.
+  already differ, with a selected deleted row → `stale`, nothing written; a Draft schema change after the preview of a
+  committed deletion → applied; another table changed → applied.
 - AS-64 `includeRequired` without `expected` → validation error; a commit fingerprint does not pass a revert; one
   unmatched selector (included or excluded) → `blocked`; nothing matched → `empty` with current ids; a repeated
   commit → `empty`, no revision; a malformed pointer or selector → validation error (§5.9); `includeRequired`,
@@ -1871,13 +1880,15 @@ Input types:
 Ownership in the fingerprint:
 
 - §9.1: the fingerprint of a `rowColumns` unit covers the columns it owns, and the fingerprint of a `rowCreate`,
-  `rowDelete` or `rowReplace` unit covers the structures its row moves between while its table structures differ.
-  Before, a row unit contributed its key and its row versions only. A table rename after the preview hands
+  `rowDelete` or `rowReplace` unit that moves a row into the other structure covers the structures it moves the row
+  between. Before, a row unit contributed its key and its row versions only. A table rename after the preview hands
   `schemaHash` to the structure unit without changing a row version, so the fingerprint stayed the same and a commit
   with `expected` applied: Head got the selected `meta` but not the previewed `schemaHash`, and a created, deleted or
   replaced row was written with the hash of the target schema. Likewise, a revert with `expected` restored a deleted
-  row into a Draft structure that had changed after the preview.
-- §13.6: AS-63 covers these renames and Draft schema changes.
+  row into a Draft structure that had changed after the preview. §9.1 also states that the `schemaHash` of a written
+  row follows its target table's schema at apply time and that values generated by the apply are not fixed by the
+  preview.
+- §13.6: AS-63 covers these renames and Draft schema changes, and a committed deletion that stays applicable.
 
 ### Version 1.2 (2026-11-02)
 

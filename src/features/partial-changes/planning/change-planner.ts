@@ -221,10 +221,9 @@ export class ChangePlanner {
     await deadline.checkpoint();
 
     const fingerprint = await this.planFingerprint.fingerprintOf({
-      operation,
+      ...target.choice,
       snapshot: source.snapshot,
       catalogue: source.catalogue,
-      applied: closure.applied,
     });
 
     return { fingerprint, blockers, target };

@@ -27,10 +27,9 @@ export function readPlanFingerprint(
 
     return kit.planFingerprint.fingerprintOf(
       variant({
-        operation,
+        ...choice,
         snapshot: source.snapshot,
         catalogue: source.catalogue,
-        applied: choice.applied,
       }),
     );
   });

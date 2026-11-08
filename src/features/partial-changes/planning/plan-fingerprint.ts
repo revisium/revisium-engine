@@ -2,12 +2,21 @@ import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import type { Row } from 'src/engine-prisma-types';
 import {
+  OutcomeRules,
+  type TableOutcomeRules,
+} from 'src/features/partial-changes/assembly/outcome-rules';
+import {
+  tableRulesOf,
+  tableUnitsOf,
+} from 'src/features/partial-changes/assembly/read-tables';
+import {
+  type CatalogueRow,
   type CatalogueUnit,
   isExistenceUnit,
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
 import {
   type ChangesSnapshot,
   type RowPair,
@@ -18,11 +27,12 @@ import {
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
-export interface FingerprintedPlan {
-  readonly operation: ChangeOperation;
+export interface FingerprintedPlan extends AppliedUnits {
   readonly snapshot: ChangesSnapshot;
-  readonly catalogue: Pick<ChangeCatalogue, 'units' | 'rows' | 'tables'>;
-  readonly applied: ReadonlySet<string>;
+  readonly catalogue: Pick<
+    ChangeCatalogue,
+    'units' | 'rows' | 'tables' | 'lookup'
+  >;
 }
 
 interface CoveredReads {
@@ -93,8 +103,9 @@ export class PlanFingerprint {
 class PlanCoverage {
   private readonly units: readonly CatalogueUnit[];
   private readonly tablePairs: ReadonlyMap<string, TablePair>;
-  private readonly rowPairs: ReadonlyMap<string, ReadonlyMap<string, RowPair>>;
-  private readonly structureMoves: ReadonlyMap<string, string | null>;
+  private readonly rows: ReadonlyMap<string, ReadonlyMap<string, CatalogueRow>>;
+  private readonly rules: OutcomeRules;
+  private readonly movedStructures: ReadonlyMap<string, string>;
 
   constructor(private readonly plan: FingerprintedPlan) {
     this.units = plan.catalogue.units.filter(({ key }) =>
@@ -103,13 +114,14 @@ class PlanCoverage {
     this.tablePairs = new Map(
       plan.snapshot.tables.map((pair) => [pair.identity, pair]),
     );
-    this.rowPairs = new Map(
+    this.rows = new Map(
       [...plan.catalogue.rows].map(([identity, rows]) => [
         identity,
-        new Map(rows.map(({ pair }) => [pair.identity, pair])),
+        new Map(rows.map((row) => [row.pair.identity, row])),
       ]),
     );
-    this.structureMoves = this.structureMovesOfExistenceUnits();
+    this.rules = new OutcomeRules(plan);
+    this.movedStructures = this.structuresOfMovingUnits();
   }
 
   public rowVersionIdGroups(): string[][] {
@@ -153,8 +165,8 @@ class PlanCoverage {
     return [
       unit.key,
       unit.unit.columns ?? null,
-      this.structureMoveOf(unit),
-      this.coveredRowsOf(unit).map(({ head, draft }) => [
+      this.movedStructures.get(unit.key) ?? null,
+      this.coveredRowsOf(unit).map(({ pair: { head, draft } }) => [
         textOf(reads, head),
         textOf(reads, draft),
       ]),
@@ -182,8 +194,9 @@ class PlanCoverage {
     for (const unit of this.units.filter(isRowUnit)) {
       const tableIdentity = tableIdentityOf(unit);
       const tableVersionIds = versionIds.get(tableIdentity) ?? new Set();
-      const coveredVersionIds =
-        this.coveredRowsOf(unit).flatMap(rowVersionIdsOf);
+      const coveredVersionIds = this.coveredRowsOf(unit).flatMap(({ pair }) =>
+        rowVersionIdsOf(pair),
+      );
 
       for (const versionId of coveredVersionIds) {
         tableVersionIds.add(versionId);
@@ -203,49 +216,67 @@ class PlanCoverage {
     return [...new Set(versionIds)];
   }
 
-  private coveredRowsOf(unit: CatalogueUnit): RowPair[] {
-    const rows = this.rowPairs.get(tableIdentityOf(unit));
+  private coveredRowsOf(unit: CatalogueUnit): CatalogueRow[] {
+    const rows = this.rows.get(tableIdentityOf(unit));
 
     return unit.rowIdentities.map((rowIdentity) => {
-      const pair = rows?.get(rowIdentity);
+      const row = rows?.get(rowIdentity);
 
-      if (!pair) {
+      if (!row) {
         throw new Error(`Row ${rowIdentity} of ${unit.key} was not read`);
       }
 
-      return pair;
+      return row;
     });
   }
 
-  private structureMoveOf(unit: CatalogueUnit): string | null {
-    if (!isExistenceUnit(unit)) {
-      return null;
+  private structuresOfMovingUnits(): Map<string, string> {
+    const structures = new Map<string, string>();
+
+    for (const [identity, units] of existenceUnitsByTable(this.units)) {
+      const movingUnits = this.unitsMovingRows(identity, units);
+
+      if (movingUnits.length === 0) {
+        continue;
+      }
+
+      const movedBetween = this.structuresOfTable(identity);
+
+      for (const { key } of movingUnits) {
+        structures.set(key, movedBetween);
+      }
     }
 
-    return this.structureMoves.get(tableIdentityOf(unit)) ?? null;
+    return structures;
   }
 
-  private structureMovesOfExistenceUnits(): Map<string, string | null> {
-    const tableIdentities = new Set(
-      this.units.filter(isExistenceUnit).map(tableIdentityOf),
-    );
+  private unitsMovingRows(
+    identity: string,
+    units: readonly CatalogueUnit[],
+  ): CatalogueUnit[] {
+    const rules = this.rulesOfTable(identity);
 
-    return new Map(
-      [...tableIdentities].map((identity) => [
-        identity,
-        this.structureMoveOfTable(identity),
-      ]),
+    return units.filter((unit) =>
+      this.coveredRowsOf(unit).some(
+        (row) => rules.rowOutcomeOf(row).kind === 'move',
+      ),
     );
   }
 
-  private structureMoveOfTable(identity: string): string | null {
+  private rulesOfTable(identity: string): TableOutcomeRules {
+    const { tables, lookup } = this.plan.catalogue;
+    const pair = tables.pairOf(identity);
+
+    return tableRulesOf(this.rules, {
+      units: tableUnitsOf(pair, lookup),
+      structure: tables.structureOf(pair),
+    });
+  }
+
+  private structuresOfTable(identity: string): string {
     const { tables } = this.plan.catalogue;
     const pair = tables.pairOf(identity);
     const structure = tables.structureOf(pair);
-
-    if (!structure.differs) {
-      return null;
-    }
 
     return digestOf([
       versionOn(pair, 'head').schema,
@@ -266,6 +297,22 @@ class PlanCoverage {
 
 function isRowUnit({ unit }: CatalogueUnit): boolean {
   return !NON_ROW_UNIT_KINDS.has(unit.kind);
+}
+
+function existenceUnitsByTable(
+  units: readonly CatalogueUnit[],
+): Map<string, CatalogueUnit[]> {
+  const byTable = new Map<string, CatalogueUnit[]>();
+
+  for (const unit of units.filter(isExistenceUnit)) {
+    const tableIdentity = tableIdentityOf(unit);
+    const tableUnits = byTable.get(tableIdentity) ?? [];
+
+    tableUnits.push(unit);
+    byTable.set(tableIdentity, tableUnits);
+  }
+
+  return byTable;
 }
 
 function tableIdentityOf({ key, tableIdentities }: CatalogueUnit): string {

@@ -1301,10 +1301,11 @@ reverted creation write no row, and a schema change of another table changes not
 fingerprints stay the same. A `field` unit names its leaf in its key and no longer exists once that leaf is
 structure-bound, and `id` always belongs to the `rowRename` unit.
 
-The `schemaHash` of every written row follows the schema of its target table at apply time, also for a `field`,
-`rowRename` or `rowColumns` unit whose ownership did not change: after a native rename of a referenced table rewrote
-the referrer's Draft schema, a referrer row that a revert merges takes the hash of the rewritten schema. This column
-is technical state, not selected content. Values that the apply generates, such as timestamps or the new `fileId`
+Unless an applied `rowColumns` unit owns it (§6.7), the `schemaHash` of a written row follows the schema of its target
+table at apply time, also for a `field`, `rowRename` or `rowColumns` unit whose ownership did not change: after a
+native rename of a referenced table rewrote the referrer's Draft schema, a referrer row that a revert merges takes the
+hash of the rewritten schema. That hash is technical state, not selected content; a `schemaHash` that a `rowColumns`
+unit owns is selected content and is written as the preview showed. Values that the apply generates, such as timestamps or the new `fileId`
 that the File plugin assigns when a restored row is migrated through a pending File field, come from the apply, and
 the preview does not fix them.
 

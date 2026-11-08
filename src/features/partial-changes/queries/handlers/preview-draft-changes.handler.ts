@@ -18,6 +18,7 @@ import {
 } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import {
+  validateIncludeRequired,
   validateOperation,
   validateSelection,
 } from 'src/features/partial-changes/selection/selection-validator';
@@ -94,7 +95,7 @@ function previewRequestOf({
     branch,
     operation: validateOperation(operation),
     selection: validateSelection(selection),
-    includeRequired: includeRequired ?? false,
+    includeRequired: validateIncludeRequired(includeRequired),
   };
 }
 

@@ -198,6 +198,26 @@ describe('commitChanges', () => {
         options: { selection: categoryOfP1, includeRequired: true },
       },
       {
+        input: 'includeRequired given as a string',
+        options: { selection: categoryOfP1, includeRequired: 'false' },
+      },
+      {
+        input: 'includeRequired given as a number',
+        options: { selection: categoryOfP1, includeRequired: 1 },
+      },
+      {
+        input: 'an empty expected',
+        options: { selection: categoryOfP1, expected: '' },
+      },
+      {
+        input: 'expected given as a number',
+        options: { selection: categoryOfP1, expected: 1 },
+      },
+      {
+        input: 'comment given as a number',
+        options: { selection: categoryOfP1, comment: 1 },
+      },
+      {
         input: 'a malformed selection',
         options: {
           selection: {

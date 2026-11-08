@@ -154,6 +154,22 @@ describe('revertChanges', () => {
         options: { selection: creationOfC9, includeRequired: true },
       },
       {
+        input: 'includeRequired given as a string',
+        options: { selection: creationOfC9, includeRequired: 'false' },
+      },
+      {
+        input: 'includeRequired given as a number',
+        options: { selection: creationOfC9, includeRequired: 1 },
+      },
+      {
+        input: 'an empty expected',
+        options: { selection: creationOfC9, expected: '' },
+      },
+      {
+        input: 'expected given as a number',
+        options: { selection: creationOfC9, expected: 1 },
+      },
+      {
         input: 'a malformed selection',
         options: {
           selection: {

@@ -557,6 +557,7 @@ added (§6.9).
 | Condition | Result |
 | --- | --- |
 | `includeRequired: true` without `expected` | Validation error before any transaction. |
+| `includeRequired` other than a boolean, `expected` other than a non-empty string, or `comment` other than a string (`null` in any of them is absent, §5) | Validation error before any transaction. |
 | A malformed selection: an unknown field, a wrong type (`null` in an optional field is absent, §5), an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
 | Invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
 | Unknown project or branch | Not-found error (native). |
@@ -1622,7 +1623,8 @@ versions unchanged" (§14) holds in every scenario.
   of a structure-bound field, a table rename or a views edit after preview → `stale`; another table changed → applied.
 - AS-64 `includeRequired` without `expected` → validation error; a commit fingerprint does not pass a revert; one
   unmatched selector (included or excluded) → `blocked`; nothing matched → `empty` with current ids; a repeated
-  commit → `empty`, no revision; a malformed pointer or selector → validation error (§5.9).
+  commit → `empty`, no revision; a malformed pointer or selector → validation error (§5.9); `includeRequired`,
+  `expected` or `comment` of a wrong type → validation error before any transaction (§5.9).
 - AS-65 Completeness properties over random Drafts with `publishedAt` edits, renames, creations, deletions,
   replacements, files and structure changes, each listed unit applied alone (with `includeRequired` and `expected`
   when its preview requires additions): (a) reverting them one by one until nothing is listed leaves the Draft equal
@@ -1842,6 +1844,13 @@ Patches inside a File:
   value that a row changed in the Draft was a `field` unit while `structureChange` reported `/cover` as `changed`.
   Paths into array `items` and object fields bind the same leaves as before. When the pending patches do not replay,
   paths are still mapped by their `properties` segments, and a path inside a File touches no leaf.
+
+Input types:
+
+- §5.9, §13.6: `includeRequired` other than a boolean, `expected` other than a non-empty string and `comment` other
+  than a string are validation errors before any transaction. Before, their types were not checked: a non-boolean
+  `includeRequired` such as `'false'` applied required additions without `expected`, and an empty `expected` returned
+  `stale`.
 
 ### Version 1.2 (2026-11-02)
 

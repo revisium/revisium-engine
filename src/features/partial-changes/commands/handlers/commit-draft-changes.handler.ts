@@ -7,6 +7,7 @@ import {
   type CommittedDraft,
   type RenumberedMigration,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
+import { validateComment } from 'src/features/partial-changes/selection/selection-validator';
 import {
   type ApplicablePlan,
   appliedCountsOf,
@@ -29,8 +30,9 @@ export class CommitDraftChangesHandler implements ICommandHandler<
   public async execute({
     data,
   }: CommitDraftChangesCommand): Promise<CommitChangesResult> {
+    const comment = validateComment(data.comment);
     const result = await this.changeApplier.apply('commit', data, (plan) =>
-      this.commitDraft(plan, data.comment ?? undefined),
+      this.commitDraft(plan, comment),
     );
 
     await this.notifyWhenCommitted(result);

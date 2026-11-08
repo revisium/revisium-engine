@@ -807,7 +807,12 @@ describe('previewChanges', () => {
       );
     });
 
-    it.each<{ input: string; selection: unknown; operation: unknown }>([
+    it.each<{
+      input: string;
+      selection: unknown;
+      operation: unknown;
+      includeRequired?: unknown;
+    }>([
       {
         input: 'a malformed selection',
         selection: {
@@ -835,6 +840,18 @@ describe('previewChanges', () => {
         selection: { rows: [{ tableId: CATEGORIES, rowId: null }] },
         operation: 'commit',
       },
+      {
+        input: 'includeRequired given as a string',
+        selection: titleOfC1,
+        operation: 'commit',
+        includeRequired: 'false',
+      },
+      {
+        input: 'includeRequired given as a number',
+        selection: titleOfC1,
+        operation: 'commit',
+        includeRequired: 1,
+      },
       ...FORBIDDEN_NULL_FIELDS.map(({ field, selection }) => ({
         input: `${field} given as null`,
         selection,
@@ -842,7 +859,7 @@ describe('previewChanges', () => {
       })),
     ])(
       'refuses $input before any transaction',
-      async ({ selection, operation }) => {
+      async ({ selection, operation, includeRequired }) => {
         const draft = await givenEditedAndCreatedCategories();
         const reads = jest.spyOn(kit.snapshotReader, 'readSnapshot');
 
@@ -850,6 +867,7 @@ describe('previewChanges', () => {
           draft.previewChanges({
             operation: operation as ChangeOperation,
             selection: selection as Selection,
+            includeRequired: includeRequired as boolean,
           }),
         ).rejects.toThrow(SelectionValidationError);
         expect(reads).not.toHaveBeenCalled();

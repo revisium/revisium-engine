@@ -581,6 +581,15 @@ describe('revertChanges', () => {
         holding: 'an empty shared-schema table that Head lacks',
         given: givenEmptySharedSchemaTableNextToAnEdit,
       },
+      {
+        holding: 'a value that references a row of neither revision (AS-36)',
+        given: givenProductReferencingMissingCategory,
+      },
+      {
+        holding:
+          'an unchanged row that references a row the Draft deleted (AS-36)',
+        given: givenCategoryDeletedUnderUnchangedProduct,
+      },
     ])(
       'reverts exactly { all: true } of a Draft holding $holding as native revertChanges does: the Draft links exactly the Head table versions',
       async ({ given }) => {
@@ -594,6 +603,23 @@ describe('revertChanges', () => {
         expect(await draft.hasChanges()).toBe(false);
       },
     );
+
+    it('is empty for exactly { all: true } of a Draft holding only content-equal versions: it writes nothing and leaves hasChanges true (AS-54)', async () => {
+      const draft = await givenOnlyContentEqualVersions();
+      const headRevisionId = await draft.revisionId('head');
+      const draftRevisionId = await draft.revisionId('draft');
+      const contents = await branchContentsOf(kit, draft);
+
+      const result = await draft.revertChanges({ selection: { all: true } });
+
+      expect(result).toEqual<RevertChangesResult>({
+        status: 'empty',
+        headRevisionId,
+        draftRevisionId,
+      });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+      expect(await draft.hasChanges()).toBe(true);
+    });
   });
 
   describe('endpoint notification', () => {
@@ -801,6 +827,46 @@ describe('revertChanges', () => {
     await draft.updateRow(CATEGORIES, 'c1', { title: 'uno' });
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c1' });
     await draft.updateRow(PRODUCTS, 'p1', { title: 'one', category: 'c1' });
+
+    return draft;
+  }
+
+  function givenCommittedCatalog(): Promise<ChangesScenario> {
+    return ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', category: 'c1' } },
+      },
+    });
+  }
+
+  async function givenProductReferencingMissingCategory(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.writeDanglingReference(PRODUCTS, 'p1', {
+      title: 'one',
+      category: 'c404',
+    });
+
+    return draft;
+  }
+
+  async function givenCategoryDeletedUnderUnchangedProduct(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.removeReferencedRows(CATEGORIES, ['c1']);
+
+    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(false);
+
+    return draft;
+  }
+
+  async function givenOnlyContentEqualVersions(): Promise<ChangesScenario> {
+    const draft = await givenCommittedPrices();
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 1 });
+
+    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(true);
+    expect(await draft.hasChanges()).toBe(true);
 
     return draft;
   }

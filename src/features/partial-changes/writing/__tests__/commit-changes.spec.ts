@@ -722,6 +722,55 @@ describe('commitChanges', () => {
         expect(await draft.hasChanges()).toBe(false);
       },
     );
+
+    it.each<WholeDraft>([
+      {
+        holding: 'a value that references a row of neither revision',
+        given: givenProductReferencingMissingCategory,
+      },
+      {
+        holding: 'an unchanged row that references a row the Draft deleted',
+        given: givenCategoryDeletedUnderUnchangedProduct,
+      },
+    ])(
+      'refuses exactly { all: true } as blocked with danglingInSource when the Draft holds $holding, and writes nothing (AS-36)',
+      async ({ given }) => {
+        const draft = await given();
+        const contents = await branchContentsOf(kit, draft);
+
+        const result = await draft.commitChanges({ selection: { all: true } });
+
+        expect(result).toEqual<CommitChangesResult>({
+          status: 'blocked',
+          blockers: [
+            expect.objectContaining({
+              code: 'danglingInSource',
+              tableId: PRODUCTS,
+              rowId: 'p1',
+            }),
+          ],
+          required: [],
+        });
+        expect(await branchContentsOf(kit, draft)).toEqual(contents);
+      },
+    );
+
+    it('is empty for exactly { all: true } of a Draft holding only content-equal versions: it creates no revision, writes nothing and leaves hasChanges true (AS-54)', async () => {
+      const draft = await givenOnlyContentEqualVersions();
+      const headRevisionId = await draft.revisionId('head');
+      const draftRevisionId = await draft.revisionId('draft');
+      const contents = await branchContentsOf(kit, draft);
+
+      const result = await draft.commitChanges({ selection: { all: true } });
+
+      expect(result).toEqual<CommitChangesResult>({
+        status: 'empty',
+        headRevisionId,
+        draftRevisionId,
+      });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+      expect(await draft.hasChanges()).toBe(true);
+    });
   });
 
   describe('endpoint notification', () => {
@@ -1014,6 +1063,36 @@ describe('commitChanges', () => {
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c1' });
     await draft.updateRow(CATEGORIES, 'c1', { title: 'other' });
     await draft.updateRow(CATEGORIES, 'c1', { title: 'one' });
+
+    return draft;
+  }
+
+  async function givenProductReferencingMissingCategory(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.writeDanglingReference(PRODUCTS, 'p1', {
+      title: 'one',
+      category: 'c404',
+    });
+
+    return draft;
+  }
+
+  async function givenCategoryDeletedUnderUnchangedProduct(): Promise<ChangesScenario> {
+    const draft = await givenCommittedCatalog();
+    await draft.removeReferencedRows(CATEGORIES, ['c1']);
+
+    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(false);
+
+    return draft;
+  }
+
+  async function givenOnlyContentEqualVersions(): Promise<ChangesScenario> {
+    const draft = await givenCommittedPrices();
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 1 });
+
+    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(true);
+    expect(await draft.hasChanges()).toBe(true);
 
     return draft;
   }

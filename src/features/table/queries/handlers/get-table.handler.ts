@@ -25,24 +25,21 @@ export class GetTableHandler implements IQueryHandler<
   }
 
   private async transactionHandler(data: GetTableQuery['data']) {
-    try {
-      const { versionId: tableId } =
-        await this.shareTransactionalQueries.findTableInRevisionOrThrow(
-          data.revisionId,
-          data.tableId,
-        );
+    const table = await this.shareTransactionalQueries.findTableInRevision(
+      data.revisionId,
+      data.tableId,
+    );
 
-      return {
-        ...(await this.getTable(tableId)),
-        context: {
-          revisionId: data.revisionId,
-        },
-      };
-    } catch (e) {
-      console.error(e);
-
+    if (!table) {
       return null;
     }
+
+    return {
+      ...(await this.getTable(table.versionId)),
+      context: {
+        revisionId: data.revisionId,
+      },
+    };
   }
 
   private getTable(tableId: string) {

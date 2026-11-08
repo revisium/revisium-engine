@@ -21,39 +21,35 @@ export class GetRowHandler implements IQueryHandler<
   }
 
   async execute({ data }: GetRowQuery): Promise<GetRowQueryReturnType> {
-    try {
-      const row = await this.prisma.row.findFirst({
-        where: {
-          id: data.rowId,
-          tables: {
-            some: {
-              id: data.tableId,
-              revisions: { some: { id: data.revisionId } },
-            },
+    const row = await this.prisma.row.findFirst({
+      where: {
+        id: data.rowId,
+        tables: {
+          some: {
+            id: data.tableId,
+            revisions: { some: { id: data.revisionId } },
           },
         },
-      });
+      },
+    });
 
-      if (!row) {
-        return null;
-      }
-
-      const { formulaErrors } = await this.pluginService.computeRows({
-        revisionId: data.revisionId,
-        tableId: data.tableId,
-        rows: [row],
-      });
-
-      return {
-        ...row,
-        context: {
-          revisionId: data.revisionId,
-          tableId: data.tableId,
-        },
-        formulaErrors: formulaErrors?.get(row.id),
-      };
-    } catch {
+    if (!row) {
       return null;
     }
+
+    const { formulaErrors } = await this.pluginService.computeRows({
+      revisionId: data.revisionId,
+      tableId: data.tableId,
+      rows: [row],
+    });
+
+    return {
+      ...row,
+      context: {
+        revisionId: data.revisionId,
+        tableId: data.tableId,
+      },
+      formulaErrors: formulaErrors?.get(row.id),
+    };
   }
 }

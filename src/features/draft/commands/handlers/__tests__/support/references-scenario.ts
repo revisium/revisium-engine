@@ -20,6 +20,12 @@ export interface ReferencedTable {
   tableId: string;
 }
 
+export interface ReferringTable {
+  draftRevisionId: string;
+  tableId: string;
+  rowIds: string[];
+}
+
 interface DraftRowsInput {
   tableVersionIds: string[];
   rowIds: string[];
@@ -57,7 +63,7 @@ export async function givenTableReferencingRow(
     rowCount,
     referencedRowId,
   }: { tableId: string; rowCount: number; referencedRowId: string },
-): Promise<void> {
+): Promise<ReferringTable> {
   const schema = getTestLinkedSchema(referenced.tableId);
   const draftTableVersionId = await createTable(
     kit,
@@ -65,13 +71,16 @@ export async function givenTableReferencingRow(
     tableId,
     schema,
   );
+  const rowIds = numberedIds('row', rowCount);
 
   await insertDraftRows(kit, {
     tableVersionIds: [draftTableVersionId],
-    rowIds: numberedIds('row', rowCount),
+    rowIds,
     data: { link: referencedRowId },
     schema,
   });
+
+  return { draftRevisionId: referenced.draftRevisionId, tableId, rowIds };
 }
 
 export async function givenTablesReferencingRow(

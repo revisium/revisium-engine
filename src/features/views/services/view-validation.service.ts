@@ -77,7 +77,7 @@ export class ViewValidationService {
     this.validateSuppliedSchemaFields(tableId, viewsData, schema);
   }
 
-  private validateSuppliedSchemaFields(
+  public validateSuppliedSchemaFields(
     tableId: string,
     viewsData: TableViewsData,
     schema: JsonSchema,

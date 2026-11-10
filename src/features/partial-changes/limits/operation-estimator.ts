@@ -165,7 +165,7 @@ export class OperationEstimation {
 
   private mixedSystemTables(rules: OutcomeRules): MixedTableEstimate[] {
     return systemTableTargetsOf(this.source, rules)
-      .filter(mayBeMixed)
+      .filter(isMixed)
       .map(systemTableEstimateOf);
   }
 
@@ -215,7 +215,7 @@ function convertedRowsIn(tables: readonly PlannedTable[]): number {
   );
 }
 
-function mayBeMixed(target: SystemTableTarget): boolean {
+function isMixed(target: SystemTableTarget): boolean {
   return systemTableOutcomeOf(target) === 'mixed';
 }
 

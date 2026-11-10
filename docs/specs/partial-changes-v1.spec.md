@@ -723,7 +723,7 @@ that rename: `idOccupied`, site `{ kind: 'tableId', tableId, migrationId }`, cau
 | `notSelectable` | A field selector addresses a computed value. | Select its inputs. |
 | `danglingInSource` | No unit can restore consistency: the source is inconsistent (for example a native rename rewrote at most 100 referrers), a selected deletion is still referenced by an unchanged row, or a required unit is already applied and the problem remains. | Change the selection or repair the Draft natively. |
 | `invalidRow` | An assembled row fails its target schema. | Change the selection. |
-| `invalidViews` | The views document is invalid for its structure on the same side. | Fix the views natively. |
+| `invalidViews` | A Draft views document that a commit publishes is invalid for its Draft structure (§6.9 step 5). | Fix the views natively. |
 | `ledgerInconsistent` | A resulting ledger does not replay to its schemas (a mismatch the operation introduces); a published migration is missing or changed in the Draft ledger; a pending migration cannot be attributed to a table (§10.1); or a Draft schema history does not extend its Head history. | Change the selection, or repair the Draft natively. |
 | `unrecordedStructureChange` | The Draft structure is not reproduced by its schema history and migrations (an async migration on a schema row the Draft already owned, until stage 0): its commit is refused, and Head rows cannot be migrated into it. Reverting it is allowed. | Commit other units; revert the structure. |
 | `headSchemaInconsistent` | Head schema check (§6.10): a selector or a required addition involves a table whose Head schema does not match the schema replayed from the Head ledger (left by a completed native async migration, published or not). `tableId` is set. Raised by every partial operation on that table, with no exception (`all: true` with `exclude` names every table). Not raised for exactly `{ all: true }`. | Commit or revert natively or with exactly `{ all: true }`; to make the table eligible again, run the forward-only repair (§12) and publish it with a native or exactly `{ all: true }` commit. Units of other tables are unaffected. |
@@ -1268,9 +1268,11 @@ Per user table on both sides, with structure side S and the opposite side O:
    `ledgerInconsistent`. Inconsistencies that exist natively are tolerated, except damaged Head tables (§6.10).
    Unledgered tables (§6.10) are left out of the comparison (only exactly `{ all: true }` can apply their units).
 4. Validate every merged row against its target schema → `invalidRow`.
-5. Validate every target views document that the operation changes against the target structure of its table, with
-   the views owner → `invalidViews`. Views and structure always come from the same side (§3.6), so a failure is a
-   document that does not fit its own side's structure (native damage), never a combination.
+5. Commit only: validate the Draft views document of every table whose structure or views unit the commit applies
+   against the table's Draft structure, with that unit as the owner → `invalidViews`. Views and structure always come
+   from the same side (§3.6), so a failure is a document that does not fit its own side's structure (native damage),
+   never a combination. A revert restores published Head documents and validates none; a table without an applied
+   structure or views unit keeps its document unvalidated, under exactly `{ all: true }` too.
 6. When unique constraints exist ([ADR-0029]): validate uniqueness over the whole target table, not only the written
    rows, because Head and Draft rows that are valid on their own sides can collide when combined.
 
@@ -2053,8 +2055,10 @@ versions unchanged" (§14) holds in every scenario.
   table whose structure changed and whose views did not is unmatched, included or excluded; a table without a structure change lists its
   views edit as a views unit that commits and reverts alone.
 - AS-83 No views combination is checked or migrated: over random Drafts with views edits and schema changes, every
-  commit and revert writes the views document of the structure side (or of the views unit's side), and a views
-  document invalid for its own structure (SQL fixture) gives `invalidViews`.
+  commit and revert writes the views document of the structure side (or of the views unit's side) unchanged; a Draft
+  views document invalid for its own structure (SQL fixture) blocks a commit of its structure or views unit with
+  `invalidViews` and nothing is written, while a commit of other units, a revert, and invalid Head views copied into
+  the Draft unchanged block nothing.
 - AS-84 Reason sites: each code arises at the site kinds of §5.7 with the listed fields: `referencedRowMissing` at a
   `row` site with the referring field as `path` and `references` of kind `row` (the referenced table as units address
   it, the id the reference holds), also for a reference that a structure brings wholesale and for an unchanged
@@ -2258,7 +2262,7 @@ Unit model and algorithm:
   views unit; its views document, independent edits included, belongs to the structure unit, and `views` of such a
   table requires it (`structureBoundData`). The closure's views fit check, the migration of the Head views document
   through the pending history, the reason `viewsDoNotFitStructure` and the role `counterpart` are removed;
-  `invalidViews` comes from target validation (§6.9 step 5).
+  `invalidViews` comes from target validation of the Draft documents a commit publishes (§6.9 step 5).
 - §5.2: structure descriptions report `annotated` fields with their `annotations` (`ANNOTATION_KEYWORDS`), and an
   object whose own annotations changed as an `annotated` entry at its pointer (PoC 1.4–1.6); `StructureChange.views`
   says that the unit carries a views change.

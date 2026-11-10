@@ -111,13 +111,19 @@ describe('TargetValidator', () => {
         owner: { kind: 'structure', tableId: PRODUCTS },
       },
       {
+        unit: 'a structure unit whose views document equals the Head one',
+        given: givenRemovedPriceWithHeadViews,
+        selection: { structures: [{ tableId: PRODUCTS }] },
+        owner: { kind: 'structure', tableId: PRODUCTS },
+      },
+      {
         unit: 'a views unit',
         given: givenViewsOfMissingField,
         selection: { views: [PRODUCTS] },
         owner: { kind: 'views', tableId: PRODUCTS },
       },
     ])(
-      'blocks a Draft views document that does not fit its own Draft structure, committed with $unit, as invalidViews',
+      'blocks a Draft views document that is invalid for its own Draft structure, committed with $unit, as invalidViews',
       async ({ given, selection, owner }) => {
         const draft = await given();
 
@@ -127,8 +133,9 @@ describe('TargetValidator', () => {
           {
             code: 'invalidViews',
             tableId: PRODUCTS,
-            message:
-              'The Draft views of products do not fit its Draft structure',
+            message: expect.stringMatching(
+              /^The Draft views of products are invalid for its Draft structure: Invalid fields in views: /,
+            ),
             unit: owner,
           },
         ]);
@@ -138,8 +145,9 @@ describe('TargetValidator', () => {
     it.each<{ operation: ChangeOperation; selection: Selection }>([
       { operation: 'commit', selection: { fields: [titleOfP1] } },
       { operation: 'revert', selection: { views: [PRODUCTS] } },
+      { operation: 'revert', selection: { all: true } },
     ])(
-      'accepts a $operation of $selection that does not take the invalid Draft views document',
+      'accepts a $operation of $selection that does not publish the invalid Draft views document',
       async ({ operation, selection }) => {
         const draft = await givenViewsOfMissingField();
         await draft.updateRow(PRODUCTS, 'p1', { title: 'edited', price: 1 });
@@ -149,6 +157,46 @@ describe('TargetValidator', () => {
         expect(blockers).toEqual([]);
       },
     );
+
+    it.each<{ operation: ChangeOperation; selection: Selection }>([
+      { operation: 'commit', selection: { all: true } },
+      { operation: 'revert', selection: { all: true } },
+      { operation: 'commit', selection: { fields: [titleOfP1] } },
+    ])(
+      'accepts a $operation of $selection over invalid Head views that the Draft holds as a content-equal copy, as native does',
+      async ({ operation, selection }) => {
+        const draft = await givenInvalidHeadViewsCopiedIntoTheDraft();
+
+        const blockers = await draft.validateTarget(operation, selection);
+
+        expect(blockers).toEqual([]);
+      },
+    );
+
+    it('accepts a revert of a structure that restores Head views already invalid for the Head structure', async () => {
+      const draft = await givenInvalidHeadViewsUnderAChangedStructure();
+
+      const blockers = await draft.validateTarget('revert', {
+        structures: [{ tableId: PRODUCTS }],
+      });
+
+      expect(blockers).toEqual([]);
+    });
+
+    it('blocks a commit of a structure that would publish views invalid for it, even when Head holds them already', async () => {
+      const draft = await givenInvalidHeadViewsUnderAChangedStructure();
+
+      const blockers = await draft.validateTarget('commit', {
+        structures: [{ tableId: PRODUCTS }],
+      });
+
+      expect(blockers).toEqual([
+        expect.objectContaining({
+          code: 'invalidViews',
+          unit: { kind: 'structure', tableId: PRODUCTS },
+        }),
+      ]);
+    });
   });
 
   describe('a Draft structure that its history does not record', () => {
@@ -511,6 +559,31 @@ describe('TargetValidator', () => {
   async function givenViewsOfMissingField(): Promise<ChangesScenario> {
     const draft = await givenCommittedProductsWithViews();
     await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'missing']));
+
+    return draft;
+  }
+
+  async function givenRemovedPriceWithHeadViews(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProductsWithViews();
+    await draft.updateTable(PRODUCTS, [removeField('price')]);
+    await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'price']));
+
+    return draft;
+  }
+
+  async function givenInvalidHeadViewsCopiedIntoTheDraft(): Promise<ChangesScenario> {
+    const draft = await givenViewsOfMissingField();
+    await draft.commit();
+    await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'missing']));
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'edited', price: 1 });
+
+    return draft;
+  }
+
+  async function givenInvalidHeadViewsUnderAChangedStructure(): Promise<ChangesScenario> {
+    const draft = await givenViewsOfMissingField();
+    await draft.commit();
+    await draft.updateTable(PRODUCTS, addColor);
 
     return draft;
   }

@@ -20,7 +20,6 @@ import { SystemTables } from 'src/features/share/system-tables.consts';
 export interface TableViews {
   readonly pair: TablePair;
   readonly tableId: string;
-  readonly tableSide: RevisionSide;
   readonly viewsSide: RevisionSide;
   readonly source: Row;
 }
@@ -157,7 +156,7 @@ class SystemTableTargets {
       return [];
     }
 
-    return [{ pair, tableId: table.id, tableSide, viewsSide, source }];
+    return [{ pair, tableId: table.id, viewsSide, source }];
   }
 
   private viewsSideOf(pair: TablePair, tableSide: RevisionSide): RevisionSide {

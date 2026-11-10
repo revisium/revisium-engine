@@ -3,6 +3,7 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { JsonValue } from 'src/engine-prisma-types';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
@@ -287,6 +288,82 @@ describe('views that follow the structure (AS-82)', () => {
 
       expect(await draft.hasTable('draft', SystemTables.Views)).toBe(false);
       expect(await draft.listEveryUnit()).toEqual([]);
+    });
+  });
+
+  describe('a removed or replaced table with views', () => {
+    it.each<{
+      change: string;
+      edit: (draft: ChangesScenario) => Promise<void>;
+      table: string;
+      views: boolean;
+    }>([
+      {
+        change: 'a removed table',
+        edit: (draft) => draft.removeTable(PRODUCTS),
+        table: 'removed',
+        views: true,
+      },
+      {
+        change: 'a table replaced by one with other views',
+        edit: async (draft) => {
+          await draft.removeTable(PRODUCTS);
+          await draft.createTable(PRODUCTS, productSchema);
+          await draft.updateViews(PRODUCTS, editedViews());
+        },
+        table: 'replaced',
+        views: true,
+      },
+      {
+        change: 'a table replaced by one with the same views',
+        edit: async (draft) => {
+          await draft.removeTable(PRODUCTS);
+          await draft.createTable(PRODUCTS, productSchema);
+          await draft.updateViews(PRODUCTS, headViews());
+        },
+        table: 'replaced',
+        views: false,
+      },
+    ])(
+      'says whether $change carries a views change',
+      async ({ edit, table, views }) => {
+        const draft = await givenCommittedProductsWithViews();
+        await edit(draft);
+
+        const [structure] = await draft.listEveryUnit();
+
+        expect(structure).toMatchObject({
+          kind: 'structure',
+          structureChange: { table, views },
+        });
+      },
+    );
+  });
+
+  describe('a Draft views document invalid for its own structure (AS-83)', () => {
+    it('blocks a commit of the structure that holds it with invalidViews and writes nothing', async () => {
+      const draft = await givenProductsWithStructureEdited();
+      await draft.writeInvalidViews(
+        PRODUCTS,
+        tableViews('Broken', ['missing']),
+      );
+      const contents = await branchContentsOf(kit, draft);
+
+      const result = await draft.commitChanges({
+        selection: { structures: [{ tableId: PRODUCTS }] },
+      });
+
+      expect(result).toMatchObject({
+        status: 'blocked',
+        blockers: [
+          {
+            code: 'invalidViews',
+            tableId: PRODUCTS,
+            unit: structureOf(PRODUCTS),
+          },
+        ],
+      });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
   });
 

@@ -916,26 +916,18 @@ describe('listChanges: structure changes', () => {
       });
     });
 
-    it('describes a referrer given a description after a rename of its referenced table as annotated by its description (AS-60c)', async () => {
-      const draft = await ChangesScenario.committed(kit, {
-        [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'c' } } },
-        [ITEMS]: {
-          schema: obj({ category: str({ foreignKey: CATEGORIES }) }),
-          rows: { i1: { category: 'c1' } },
-        },
-      });
-      await draft.renameTable(CATEGORIES, GROUPS);
-      await draft.updateTable(ITEMS, [
-        replaceField(
-          'category',
-          str({ foreignKey: GROUPS, description: 'Its group' }),
-        ),
-      ]);
-
-      const structure = await listedStructureOf(draft, ITEMS);
-
-      expect(structure.structureChange).toEqual({
-        table: 'changed',
+    it.each<{
+      change: string;
+      before: (draft: ChangesScenario) => Promise<void>;
+      foreignKey: string;
+      after?: (draft: ChangesScenario) => Promise<void>;
+      fields: ChangedField[];
+    }>([
+      {
+        change:
+          'a referrer given a description after a rename of its referenced table as annotated by its description',
+        before: (draft) => draft.renameTable(CATEGORIES, GROUPS),
+        foreignKey: GROUPS,
         fields: [
           {
             path: '/category',
@@ -943,9 +935,69 @@ describe('listChanges: structure changes', () => {
             annotations: ['description'],
           },
         ],
-        views: false,
-      });
-    });
+      },
+      {
+        change:
+          'a referrer given a description after its referenced table was renamed and another took its id as annotated, reading the replaced id as a Head id',
+        before: async (draft) => {
+          await draft.renameTable(CATEGORIES, GROUPS);
+          await draft.createTable(CATEGORIES, categorySchema);
+        },
+        foreignKey: GROUPS,
+        fields: [
+          {
+            path: '/category',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+      {
+        change:
+          'a referrer pointed at the table that took the id of its renamed referenced table as changed',
+        before: async (draft) => {
+          await draft.renameTable(CATEGORIES, GROUPS);
+          await draft.createTable(CATEGORIES, categorySchema);
+        },
+        foreignKey: CATEGORIES,
+        fields: [{ path: '/category', change: 'changed' }],
+      },
+      {
+        change:
+          'a referrer given a description between two renames of its referenced table as changed, since the id between them names no table',
+        before: (draft) => draft.renameTable(CATEGORIES, GROUPS),
+        foreignKey: GROUPS,
+        after: (draft) => draft.renameTable(GROUPS, TAGS),
+        fields: [{ path: '/category', change: 'changed' }],
+      },
+    ])(
+      'describes $change (AS-60c)',
+      async ({ before, foreignKey, after, fields }) => {
+        const draft = await ChangesScenario.committed(kit, {
+          [CATEGORIES]: { schema: categorySchema, rows: {} },
+          [ITEMS]: {
+            schema: obj({ category: str({ foreignKey: CATEGORIES }) }),
+            rows: {},
+          },
+        });
+        await before(draft);
+        await draft.updateTable(ITEMS, [
+          replaceField(
+            'category',
+            str({ foreignKey, description: 'Its group' }),
+          ),
+        ]);
+        await after?.(draft);
+
+        const structure = await listedStructureOf(draft, ITEMS);
+
+        expect(structure.structureChange).toEqual({
+          table: 'changed',
+          fields,
+          views: false,
+        });
+      },
+    );
 
     it('covers every value of ANNOTATION_KEYWORDS', async () => {
       const draft = await givenCommittedProducts();

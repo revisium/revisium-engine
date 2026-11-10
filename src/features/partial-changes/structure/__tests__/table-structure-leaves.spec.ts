@@ -433,6 +433,48 @@ describe('TableStructure: moved leaves', () => {
   });
 });
 
+describe('TableStructure: annotating replaces', () => {
+  it.each<{ name: string; scenario: StructureScenario; pointer: string }>([
+    {
+      name: 'a published-at field replaced with a string and back',
+      pointer: '/releasedAt',
+      scenario: {
+        head: obj({ releasedAt: ref(SystemSchemaIds.RowPublishedAt) }),
+        draft: obj({ releasedAt: ref(SystemSchemaIds.RowPublishedAt) }),
+        pending: [
+          pendingUpdate(replaceField('releasedAt', str())),
+          pendingUpdate(
+            replaceField('releasedAt', ref(SystemSchemaIds.RowPublishedAt)),
+          ),
+        ],
+      },
+    },
+    {
+      name: 'a system field switched to another system field and back',
+      pointer: '/stamp',
+      scenario: {
+        head: obj({ stamp: ref(SystemSchemaIds.RowCreatedAt) }),
+        draft: obj({ stamp: ref(SystemSchemaIds.RowCreatedAt) }),
+        pending: [
+          pendingUpdate(
+            replaceField('stamp', ref(SystemSchemaIds.RowUpdatedAt)),
+          ),
+          pendingUpdate(
+            replaceField('stamp', ref(SystemSchemaIds.RowCreatedAt)),
+          ),
+        ],
+      },
+    },
+  ])(
+    'describes $name as changed, since a $ref is no annotation (AS-60c)',
+    ({ scenario, pointer }) => {
+      expect(describedChangesOf(analyzeStructure(scenario))).toEqual([
+        { pointer, change: 'changed' },
+      ]);
+    },
+  );
+});
+
 describe('TableStructure: pending migrations that do not replay', () => {
   it.each<{
     name: string;

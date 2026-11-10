@@ -473,13 +473,16 @@ into an array, a File or another schema keyword lies inside the value where it s
   gives `from: a`.
 - Every other patch acts at each of its paths (both paths of a `move`). At a data node, a `replace` rewrites the values
   at or below it, and an `add`, a `remove` or a `move` ends them. A `replace` at a data node whose value is not the
-  schema it replaces, and which changes the schema native holds at that node only in annotations, annotates the values
-  at or below it instead of rewriting them. That is decided on what native holds before and after the patch, File
-  contents included (a field a patch added inside a File and the replace dropped is a rewrite), and a `foreignKey` is
-  compared by the identity of the referenced table: an id the held schema names is read as a Head id, else a Draft id,
-  and an id the value names as a Draft id, else a Head id (the referrers of a renamed table record no patch). A path
-  inside a value rewrites that whole value, so no value moves into or out of an array or File. Annotating a value
-  touches its leaves as rewriting does (§3.3, condition 3).
+  schema native serializes at that node, and which changes the schema native holds there only in annotations,
+  annotates the values at or below it instead of rewriting them. That is decided on what native holds before and after
+  the patch, both serialized (so every `$ref` counts) and with File contents (a field a patch added inside a File and
+  the replace dropped is a rewrite). A `foreignKey` is compared by the identity of the referenced table, because the
+  referrers of a renamed table record no patch: an id the schema held before the patch names is read as a Head id, else
+  a Draft id, and an id the value names as a Draft id, else a Head id. An id that is neither, such as one between two
+  renames of the referenced table, names no table, so that replace is a rewrite; describing it as `changed` is the
+  conservative error, and the values travel with the structure unit either way. A path inside a value rewrites that
+  whole value, so no value moves into or out of an array or File. Annotating a value touches its leaves as rewriting
+  does (§3.3, condition 3).
 
 A Draft leaf **comes from** the Head leaf whose value is at its pointer after these patches. Each Draft leaf is
 described as follows:
@@ -1989,10 +1992,11 @@ versions unchanged" (§14) holds in every scenario.
   sorted `annotations`, also for an array replaced with annotated item fields or item object; an object whose own
   description changed is an `annotated` entry at its pointer beside the added or changed fields inside it; a field
   whose stored schema did not change is not reported; a moved field or object stays `moved` or `changed`; a referrer
-  given a description after a rename of its referenced table is `annotated`; a replace that drops a field held inside a
-  File, or one that also adds a field, rewrites; a `replaced` table and Head and Draft compared without a replay report
-  no object; the values of an annotated field and of the fields below an annotated object stay with the structure
-  unit and are committed and reverted with it.
+  given a description after a rename of its referenced table is `annotated`, also when another table took the old id,
+  while one pointed at that other table, or given a description between two renames, is `changed`; a replace that
+  drops a field held inside a File, one that also adds a field, or a `$ref` switched and switched back rewrites; a
+  `replaced` table and Head and Draft compared without a replay report no object; the values of an annotated field and
+  of the fields below an annotated object stay with the structure unit and are committed and reverted with it.
 - AS-61 Property over random Drafts: each listed selector alone previews one unit with no `unmatched` or
   `notSelectable`; the union of the listed selectors previews with the same status, counts and fingerprint as
   `all: true`, for commit and revert.
@@ -2279,8 +2283,8 @@ Unit model and algorithm:
   `invalidViews` comes from target validation of the Draft documents a commit publishes (§6.9 step 5).
 - §5.2: structure descriptions report `annotated` fields with their `annotations` (`ANNOTATION_KEYWORDS`), and an
   object whose own annotations changed as an `annotated` entry at its pointer (PoC 1.4–1.6); a `replace` counts as
-  annotating by what native holds before and after it, File contents included, with foreign keys compared by the
-  identity of the referenced table; `StructureChange.views` says that the unit carries a views change.
+  annotating by what native holds before and after it, serialized and with File contents, with foreign keys compared by
+  the identity of the referenced table; `StructureChange.views` says that the unit carries a views change.
 
 Selection (§4.1, §4.2, §4.5, §5.1):
 

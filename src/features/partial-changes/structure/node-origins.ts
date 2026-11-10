@@ -180,9 +180,15 @@ function changesOnlyAnnotations(
     return false;
   }
 
-  return deepEqual(
-    validatingSchema(replaced.held, tables.replaced),
-    validatingSchema(replacement.held, tables.replacement),
+  return (
+    deepEqual(
+      validatingSchema(replaced.schema, tables.replaced),
+      validatingSchema(replacement.schema, tables.replacement),
+    ) &&
+    deepEqual(
+      validatingSchema(replaced.held, tables.replaced),
+      validatingSchema(replacement.held, tables.replacement),
+    )
   );
 }
 

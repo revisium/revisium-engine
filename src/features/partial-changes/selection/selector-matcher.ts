@@ -139,8 +139,8 @@ export class SelectorMatcher {
 
     return requiringUnit(structure, {
       code: 'structureBoundData',
-      tableId,
       because: `the views of ${tableId} change with its structure`,
+      site: { kind: 'selector', tableId },
     });
   }
 

@@ -199,7 +199,7 @@ describe('commitChanges of structure units', () => {
         required: [
           {
             unit: structureOf(PRODUCTS),
-            reason: { code: 'structureBoundData', path: '/color' },
+            reason: { code: 'structureBoundData', site: { path: '/color' } },
           },
         ],
       });
@@ -396,7 +396,7 @@ describe('commitChanges of structure units', () => {
         required: [
           {
             unit: structureOf(PRODUCTS),
-            reason: { code: 'structureBoundData', path: '/category' },
+            reason: { code: 'structureBoundData', site: { path: '/category' } },
           },
         ],
       });
@@ -449,7 +449,7 @@ describe('commitChanges of structure units', () => {
         required: [
           {
             unit: structureOf(TAGS),
-            reason: { code: 'structureBoundData', tableId: TAGS },
+            reason: { code: 'structureBoundData', site: { tableId: TAGS } },
           },
         ],
       });

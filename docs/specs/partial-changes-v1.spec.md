@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 2.0 |
-| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PRs 4–7 and 12 are pending |
+| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#PR4); PRs 5–7 and 12 are pending |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
@@ -332,16 +332,18 @@ cause?: ReasonCause }` (§5.7):
   | `rowId` | `tableId`, `rowId` | A row id that two rows would hold in the target. |
   | `tableId` | `tableId`, `migrationId?` | A table id that two tables would hold in the target, or at the step of a pending migration (`migrationId`). |
 
-  At `selector`, `row`, `schema` and `rowId` sites, and at a `tableId` site without `migrationId`, ids are public ids
-  as units carry them (Draft id, else Head id); `path` is a JSON Pointer. At a `migration` site, and at a `tableId`
-  site with `migrationId`, ids are those of the ledger at that step, which can be ids no table holds now (a table
-  created and removed in the Draft): at a `migration` site `tableId` is the migration's own table id; at a `tableId`
-  site it is the id the migration takes (the table id of an `init`, the new id of a `rename`). `migrationId` is the
-  id the Draft ledger holds now, before any renumbering by the operation (§6.8). The units involved, the required unit
-  and `cause.unit`, carry the public ids.
+  At `selector`, `row` and `schema` sites, and for the table of a `rowId` site, ids are public ids as units carry them
+  (Draft id, else Head id); `path` is a JSON Pointer. The `rowId` of a `rowId` site and the `tableId` of a `tableId`
+  site without `migrationId` are the id the two rows or tables would hold in the target. At a `migration` site, and
+  at a `tableId` site with `migrationId`, ids are those of the ledger at that step, which can be ids no table holds
+  now (a table created and removed in the Draft): at a `migration` site `tableId` is the migration's own table id; at
+  a `tableId` site it is the id the migration takes (the table id of an `init`, the new id of a `rename`).
+  `migrationId` is the id the Draft ledger holds now, before any renumbering by the operation (§6.8). The units
+  involved, the required unit and `cause.unit`, carry the public ids.
 - `references` is what a `row`, `schema` or `migration` site references: `{ kind: 'row'; tableId; rowId }` (the
-  referenced table as units address it, the row id the reference holds) or `{ kind: 'table'; tableId }` (at a
-  `migration` site, the table id the step references, in the ledger's ids).
+  referenced table as units address it, the row id the reference holds) or `{ kind: 'table'; tableId }` (the table id
+  the foreign key holds at a `schema` site; at a `migration` site, the table id the step references, in the ledger's
+  ids).
 - `cause` is `{ unit: DescribedUnitRef; role: CauseRole }`: the applied unit (selected, or added before as required)
   whose application needs the unit to add, and how it stands to it (§5.7). It is absent at a `selector` site, which
   needs the unit by itself, and when no applied unit is the cause, for example at a ledger step that no applied
@@ -2140,9 +2142,8 @@ versions unchanged" (§14) holds in every scenario.
 - AS-85 Causes: every closure reason caused by an applied unit carries `cause` with that unit (a DescribedUnitRef with
   its exact selector) and the role of §5.7, including the `occupant` at a ledger step (the example of §5.7: a table
   created at `x` and renamed to `y`, another created at `x`, the second committed alone), the `remover` at a ledger
-  step (the `notes` / `links` example of §5.7) and the reverted removal as `occupant`; a ledger step whose id no
-  applied unit's migration changed before it has no `cause`; the `reason` of a `requiredExcluded` blocker carries the
-  same `cause`.
+  step (the `notes` / `links` example of §5.7) and the reverted removal as `occupant`; the `cause` of a result names its
+  unit as the listing describes it; the `reason` of a `requiredExcluded` blocker carries the same `cause`.
 - AS-86 Deferred values: a created row committed without its table's structure lists in `defaulted` each Head input
   field with the value the commit writes, equal to the value in the written row (a declared default, and a type default
   after a native schema update); fields the Head schema lacks or computes are in `omitted` as `{ path }`; a moved field

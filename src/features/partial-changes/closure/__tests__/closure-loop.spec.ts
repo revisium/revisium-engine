@@ -5,7 +5,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { TARGET_CHECKS } from 'src/features/partial-changes/closure/target-checks';
 import { OperationEstimation } from 'src/features/partial-changes/limits/operation-estimator';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type { CatalogueReason } from 'src/features/partial-changes/plan/reason';
 import type {
   FieldRef,
   Selection,
@@ -191,10 +191,14 @@ function fieldRefOf({ tableId, rowId, path }: AddressedUnit): FieldRef {
 }
 
 function reasonFor(
-  { tableId, rowId, path }: AddressedUnit,
+  { tableId, rowId = '', path = '' }: AddressedUnit,
   because: string,
-): Reason {
-  return { code: 'referencedRowMissing', tableId, rowId, path, because };
+): CatalogueReason {
+  return {
+    code: 'referencedRowMissing',
+    because,
+    site: { kind: 'row', tableId, rowId, path },
+  };
 }
 
 function observeSteps(kit: PartialChangesTestKit): () => Step[] {

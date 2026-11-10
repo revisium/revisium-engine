@@ -70,6 +70,13 @@ const creationOfC9: UnitRef = {
   rowId: 'c9',
   selector: { rows: [rowOf(CATEGORIES, 'c9')] },
 };
+const categoryOfP1Unit: UnitRef = {
+  kind: 'field',
+  tableId: PRODUCTS,
+  rowId: 'p1',
+  path: '/category',
+  selector: categoryOfP1,
+};
 const titleOfC1Unit: UnitRef = {
   kind: 'field',
   tableId: CATEGORIES,
@@ -308,7 +315,10 @@ describe('previewChanges', () => {
               side: 'head',
               selector: { structures: [{ tableId: ALPHA, side: 'head' }] },
             },
-            reason: { code: 'structureBoundData', tableId: ALPHA, rowId: 'a1' },
+            reason: {
+              code: 'structureBoundData',
+              site: { kind: 'selector', tableId: ALPHA, rowId: 'a1' },
+            },
           },
           {
             unit: {
@@ -317,7 +327,7 @@ describe('previewChanges', () => {
               previousTableId: BETA,
               selector: { structures: [{ tableId: ALPHA }] },
             },
-            reason: { code: 'idOccupied', tableId: ALPHA },
+            reason: { code: 'idOccupied', site: { tableId: ALPHA } },
           },
         ],
         blockers: [],
@@ -395,26 +405,22 @@ describe('previewChanges', () => {
             unit: creationOfC9,
             reason: {
               code: 'referencedRowMissing',
-              tableId: PRODUCTS,
-              rowId: 'p1',
-              path: '/category',
               because:
                 'products/p1/category references categories/c9, which exists only in the Draft',
+              site: {
+                kind: 'row',
+                tableId: PRODUCTS,
+                rowId: 'p1',
+                path: '/category',
+              },
+              references: { kind: 'row', tableId: CATEGORIES, rowId: 'c9' },
+              cause: { unit: categoryOfP1Unit, role: 'referrer' },
             },
           },
         ],
         blockers: [],
         deferred: [],
-        sample: [
-          creationOfC9,
-          {
-            kind: 'field',
-            tableId: PRODUCTS,
-            rowId: 'p1',
-            path: '/category',
-            selector: categoryOfP1,
-          },
-        ],
+        sample: [creationOfC9, categoryOfP1Unit],
         unmatched: {},
         estimate: {
           changedRows: 3,
@@ -588,8 +594,9 @@ describe('previewChanges', () => {
           code: 'danglingInSource',
           tableId: PRODUCTS,
           rowId: 'p1',
+          path: '/category',
           message:
-            'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
+            'No unit can restore consistency: products/p1/category references categories/c1, which the new Head loses',
           unit: {
             kind: 'rowDelete',
             tableId: CATEGORIES,
@@ -1237,10 +1244,13 @@ interface DanglingDraft {
 function wholeRowOfC9() {
   return {
     code: 'wholeRowUnit',
-    tableId: CATEGORIES,
-    rowId: 'c9',
-    path: '/title',
     because: 'categories/c9 is created, deleted or replaced as a whole row',
+    site: {
+      kind: 'selector',
+      tableId: CATEGORIES,
+      rowId: 'c9',
+      path: '/title',
+    },
   };
 }
 

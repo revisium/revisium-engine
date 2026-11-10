@@ -13,7 +13,13 @@ import {
   requiring,
 } from 'src/features/partial-changes/closure/findings';
 import { TableIdTimeline } from 'src/features/partial-changes/closure/table-id-timeline';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import {
+  type CatalogueCause,
+  type CatalogueReason,
+  type CauseRole,
+  causedBy,
+  causeOf,
+} from 'src/features/partial-changes/plan/reason';
 import {
   readTableIdsByStep,
   type SourceInconsistencies,
@@ -39,6 +45,7 @@ interface DependentStep {
 
 interface ResultingLedger {
   readonly replayed: ReplayedLedger;
+  readonly timeline: TableIdTimeline;
   readonly dependentSteps: readonly DependentStep[];
   readonly lineagesByStep: ReadonlyMap<string, string>;
 }
@@ -80,11 +87,13 @@ class LedgerDependencyChecking implements TargetChecking {
     }
 
     return Promise.resolve(
-      resultingRolesOf(this.source, choice, target.ledger).flatMap((role) =>
-        this.reportedDependentStepsOf(role).flatMap((step) =>
-          this.requirementsOf(step, role, rules),
-        ),
-      ),
+      resultingRolesOf(this.source, choice, target.ledger).flatMap((role) => {
+        const resulting = this.resultingLedgerOf(role.ledger);
+
+        return this.reportedDependentStepsOf(role, resulting).flatMap((step) =>
+          this.requirementsOf(step, role, resulting.timeline, rules),
+        );
+      }),
     );
   }
 
@@ -94,10 +103,10 @@ class LedgerDependencyChecking implements TargetChecking {
     );
   }
 
-  private reportedDependentStepsOf(role: ResultingRole): DependentStep[] {
-    const { replayed, dependentSteps, lineagesByStep } = this.resultingLedgerOf(
-      role.ledger,
-    );
+  private reportedDependentStepsOf(
+    role: ResultingRole,
+    { replayed, dependentSteps, lineagesByStep }: ResultingLedger,
+  ): DependentStep[] {
     const reported = new Set(
       this.inconsistenciesOfSource()
         .newInconsistenciesOf({ ...role, replayed })
@@ -131,12 +140,14 @@ class LedgerDependencyChecking implements TargetChecking {
 
   private replayResultingLedger(ledger: readonly Migration[]): ResultingLedger {
     const replayed = this.replayer.replay(ledger);
+    const timeline = new TableIdTimeline(ledger);
 
     return {
       replayed,
+      timeline,
       dependentSteps: new DependentSteps(
         this.draftLedger,
-        new TableIdTimeline(ledger),
+        timeline,
         readTableIdsByStep(replayed),
       ).of(ledger),
       lineagesByStep: lineagesByStepOf(replayed),
@@ -146,6 +157,7 @@ class LedgerDependencyChecking implements TargetChecking {
   private requirementsOf(
     step: DependentStep,
     role: ResultingRole,
+    resulting: TableIdTimeline,
     rules: OutcomeRules,
   ): Finding[] {
     const stepUnit = this.owners.get(step.migration.id);
@@ -155,7 +167,15 @@ class LedgerDependencyChecking implements TargetChecking {
     }
 
     if (!rules.isApplied(stepUnit)) {
-      return [requiring(stepUnit, reasonForStepUnit(step, role))];
+      return [
+        requiring(
+          stepUnit,
+          causedBy(
+            reasonForStepUnit(step, role),
+            this.changerBefore(step, resulting, rules),
+          ),
+        ),
+      ];
     }
 
     const provider = this.providerOf(step);
@@ -164,7 +184,35 @@ class LedgerDependencyChecking implements TargetChecking {
       return [];
     }
 
-    return [requiring(provider, reasonForProvider(step, role))];
+    return [
+      requiring(
+        provider,
+        causedBy(
+          reasonForProvider(step, role),
+          causeOf(stepUnit, stepUnitRoleOf(step)),
+        ),
+      ),
+    ];
+  }
+
+  // The applied unit that changed the id before the step: in the resulting
+  // ledger, which a commit publishes it into, else in the Draft ledger, which a
+  // revert takes it out of (SPEC §5.7).
+  private changerBefore(
+    step: DependentStep,
+    resulting: TableIdTimeline,
+    rules: OutcomeRules,
+  ): CatalogueCause | undefined {
+    for (const ledger of [resulting, this.draftLedger]) {
+      const change = ledger.lastChangeBefore(step.migration, step.tableId);
+      const owner = change && this.owners.get(change.migration.id);
+
+      if (owner !== undefined && rules.isApplied(owner)) {
+        return causeOf(owner, changerRoleOf(step));
+      }
+    }
+
+    return undefined;
   }
 
   private providerOf({
@@ -287,7 +335,10 @@ function takenTableIdsOf(migration: Migration): string[] {
   }
 }
 
-function reasonForStepUnit(step: DependentStep, role: ResultingRole): Reason {
+function reasonForStepUnit(
+  step: DependentStep,
+  role: ResultingRole,
+): CatalogueReason {
   if (step.dependency === 'occupied') {
     return idOccupiedOf(step, role);
   }
@@ -295,7 +346,10 @@ function reasonForStepUnit(step: DependentStep, role: ResultingRole): Reason {
   return referenceOf(step, role, 'referrerStillReferences');
 }
 
-function reasonForProvider(step: DependentStep, role: ResultingRole): Reason {
+function reasonForProvider(
+  step: DependentStep,
+  role: ResultingRole,
+): CatalogueReason {
   if (step.dependency === 'occupied') {
     return idOccupiedOf(step, role);
   }
@@ -307,11 +361,16 @@ function referenceOf(
   { migration, tableId, dependency }: DependentStep,
   { name }: ResultingRole,
   code: 'referrerStillReferences' | 'referencedTableMissing',
-): Reason {
+): CatalogueReason {
   return {
     code,
-    tableId: migration.tableId,
     because: `${migrationOf(migration)} references the table ${tableId}, ${whichIsReferenced(dependency, name)}`,
+    site: {
+      kind: 'migration',
+      tableId: migration.tableId,
+      migrationId: migration.id,
+    },
+    references: { kind: 'table', tableId },
   };
 }
 
@@ -329,12 +388,28 @@ function whichIsReferenced(
 function idOccupiedOf(
   { migration, tableId }: DependentStep,
   { name }: ResultingRole,
-): Reason {
+): CatalogueReason {
   return {
     code: 'idOccupied',
-    tableId,
     because: `${migrationOf(migration)} takes the table id ${tableId}, which the ${name} ledger already holds at that step`,
+    site: { kind: 'tableId', tableId, migrationId: migration.id },
   };
+}
+
+function stepUnitRoleOf({ dependency }: DependentStep): CauseRole {
+  if (dependency === 'occupied') {
+    return 'taker';
+  }
+
+  return 'referrer';
+}
+
+function changerRoleOf({ dependency }: DependentStep): CauseRole {
+  if (dependency === 'occupied') {
+    return 'occupant';
+  }
+
+  return 'remover';
 }
 
 function migrationOf({ id, tableId }: Migration): string {

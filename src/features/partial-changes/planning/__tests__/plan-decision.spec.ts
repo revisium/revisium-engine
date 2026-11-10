@@ -143,10 +143,9 @@ const REQUIRED_UNIT: RequiredUnit = {
   },
   reason: {
     code: 'referencedRowMissing',
-    tableId: 'products',
-    rowId: 'p1',
-    path: '/category',
     because: 'products/p1/category references categories/c9',
+    site: { kind: 'row', tableId: 'products', rowId: 'p1', path: '/category' },
+    references: { kind: 'row', tableId: 'categories', rowId: 'c9' },
   },
 };
 

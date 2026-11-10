@@ -3,7 +3,7 @@ import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catal
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { ClosureSource } from 'src/features/partial-changes/closure/dependency-closure';
 import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type { CatalogueReason } from 'src/features/partial-changes/plan/reason';
 import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
@@ -19,7 +19,7 @@ import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/com
 
 export interface RequiredUnitView {
   readonly unit: AddressedUnit;
-  readonly reason: Reason;
+  readonly reason: CatalogueReason;
 }
 
 export type BlockerView = Omit<CatalogueBlocker, 'unitKey'> & {
@@ -125,7 +125,7 @@ function unitsAmong(
 function reasonOf(
   resolution: SelectionResolution,
   { key }: CatalogueUnit,
-): Reason {
+): CatalogueReason {
   const reason = resolution.required.get(key);
 
   if (!reason) {

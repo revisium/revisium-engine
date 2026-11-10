@@ -13,12 +13,18 @@ import {
 import {
   referencedRowFinding,
   referenceReason,
+  referringSiteOf,
   type RowReference,
 } from 'src/features/partial-changes/closure/row-reference';
 import type {
   HeldRow,
   TargetTable,
 } from 'src/features/partial-changes/closure/target-tables';
+import {
+  type CatalogueCause,
+  causeOf,
+} from 'src/features/partial-changes/plan/reason';
+import { publicIdOrIdentityOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { getForeignKeyReferences } from 'src/features/share/foreign-key-references';
@@ -62,6 +68,7 @@ export class DanglingRowReferences implements TargetCheck, TargetChecking {
     }
 
     const schema = context.schemas.storeOf(referrer.version);
+    const fields = foreignKeyFieldsOf(context, referrer);
 
     return referrer.heldRows.flatMap((held) =>
       getForeignKeyReferences(schema, held.data as JsonValue).flatMap(
@@ -73,11 +80,11 @@ export class DanglingRowReferences implements TargetCheck, TargetChecking {
           }
 
           const pointer = JsonPointer.parse(legacyPath);
-          const site = {
-            tableId: referrer.tableId,
-            rowId: held.id,
-            path: pointer.toString(),
-          };
+          const site = referringSiteOf(
+            referrer,
+            publicIdOrIdentityOf(held.row.pair),
+            fieldOf(fields, pointer),
+          );
 
           return [
             { referrer, held, pointer, site, referenced, referencedId: rowId },
@@ -137,6 +144,8 @@ export class DanglingRowReferences implements TargetCheck, TargetChecking {
       reference.pointer,
     );
     const covering = coveringOf(reference.held.row, reference.pointer);
+    const culprit = this.culpritOf(context, covering, reference);
+    const cause = context.appliedCause(culprit);
     const { target } = context.names;
 
     if (structure !== undefined) {
@@ -145,7 +154,8 @@ export class DanglingRowReferences implements TargetCheck, TargetChecking {
         referenceReason(
           reference,
           'structureBoundData',
-          `which the ${target} does not contain; the value follows the structure of ${reference.referrer.tableId}`,
+          `which the ${target} does not contain; the value follows the structure of ${reference.site.tableId}`,
+          cause,
         ),
       );
     }
@@ -157,16 +167,40 @@ export class DanglingRowReferences implements TargetCheck, TargetChecking {
           reference,
           'referrerStillReferences',
           `which the ${target} no longer contains`,
+          cause,
         ),
       );
     }
 
-    return referencedRowFinding(
-      reference,
-      context.names,
-      this.appliedUnitOf(context, covering) ??
-        reference.referenced.unitLosing(reference.referencedId),
+    return referencedRowFinding(reference, context, culprit);
+  }
+
+  // The applied unit that brings the referring value into the target, else the
+  // unit that takes the referenced id away from it (SPEC §5.7).
+  private culpritOf(
+    context: CheckContext,
+    covering: Covering | undefined,
+    { referrer, pointer, referenced, referencedId }: Reference,
+  ): CatalogueCause | undefined {
+    return (
+      causeOf(
+        this.appliedUnitOf(context, covering) ??
+          this.appliedStructureBringing(context, referrer, pointer),
+        'referrer',
+      ) ?? causeOf(referenced.unitLosing(referencedId), 'remover')
     );
+  }
+
+  private appliedStructureBringing(
+    context: CheckContext,
+    referrer: TargetTable,
+    pointer: JsonPointer,
+  ): string | undefined {
+    if (!referrer.isBroughtWholesale() && !referrer.isChangedField(pointer)) {
+      return undefined;
+    }
+
+    return context.appliedUnitAmong([context.structureOf(referrer.pair)]);
   }
 
   private removesReference(
@@ -203,6 +237,27 @@ export class DanglingRowReferences implements TargetCheck, TargetChecking {
 
     return covering.unitKey;
   }
+}
+
+function foreignKeyFieldsOf(
+  context: CheckContext,
+  referrer: TargetTable,
+): JsonPointer[] {
+  return context.schemas
+    .referencedTablesOf(referrer.version)
+    .flatMap((tableId) =>
+      context.schemas
+        .foreignKeyLeavesOf(referrer.version, tableId)
+        .map(({ pointer }) => pointer),
+    );
+}
+
+// A reference inside an array lies in the array's value, which is one field.
+function fieldOf(
+  fields: readonly JsonPointer[],
+  pointer: JsonPointer,
+): JsonPointer {
+  return fields.find((field) => field.isAtOrAbove(pointer)) ?? pointer;
 }
 
 function coveringOf(

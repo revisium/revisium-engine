@@ -103,8 +103,8 @@ describe('views that follow the structure (AS-82)', () => {
               unit: structureOf(PRODUCTS),
               reason: {
                 code: 'structureBoundData',
-                tableId: PRODUCTS,
                 because: 'the views of products change with its structure',
+                site: { kind: 'selector', tableId: PRODUCTS },
               },
             },
           ],
@@ -143,7 +143,10 @@ describe('views that follow the structure (AS-82)', () => {
           {
             code: 'requiredExcluded',
             tableId: PRODUCTS,
-            reason: { code: 'structureBoundData', tableId: PRODUCTS },
+            reason: {
+              code: 'structureBoundData',
+              site: { kind: 'selector', tableId: PRODUCTS },
+            },
           },
         ],
       });
@@ -262,7 +265,10 @@ describe('views that follow the structure (AS-82)', () => {
         required: [
           {
             unit: structureOf(OFFERS),
-            reason: { code: 'structureBoundData', tableId: OFFERS },
+            reason: {
+              code: 'structureBoundData',
+              site: { kind: 'selector', tableId: OFFERS },
+            },
           },
         ],
       });

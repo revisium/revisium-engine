@@ -4,7 +4,7 @@ import {
   type CatalogueBlocker,
   refusalBlocker,
 } from 'src/features/partial-changes/plan/plan-blocker';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type { CatalogueReason } from 'src/features/partial-changes/plan/reason';
 import type {
   ItemKind,
   ItemSelector,
@@ -13,7 +13,7 @@ import type {
 
 export interface RequiredAddition {
   readonly key: string;
-  readonly reason: Reason;
+  readonly reason: CatalogueReason;
 }
 
 export interface SelectorMatch {
@@ -38,7 +38,7 @@ export function selectingUnit(unit: CatalogueUnit | undefined): SelectorMatch {
 
 export function requiringUnit(
   unit: CatalogueUnit | undefined,
-  reason: Reason,
+  reason: CatalogueReason,
 ): SelectorMatch {
   if (!unit) {
     return NO_MATCH;
@@ -76,7 +76,7 @@ export function combined(
 
 export class ItemsResolution {
   public readonly selected = new Set<string>();
-  public readonly required = new Map<string, Reason>();
+  public readonly required = new Map<string, CatalogueReason>();
   public readonly blockers: CatalogueBlocker[] = [];
 
   private readonly unmatched = new Map<ItemKind, unknown[]>();
@@ -111,7 +111,7 @@ export class ItemsResolution {
     this.blockers.push(...match.blockers);
   }
 
-  private addRequired(key: string, reason: Reason): void {
+  private addRequired(key: string, reason: CatalogueReason): void {
     if (!this.required.has(key)) {
       this.required.set(key, reason);
     }

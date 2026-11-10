@@ -28,7 +28,10 @@ import {
   type CatalogueBlocker,
   requiredExcluded,
 } from 'src/features/partial-changes/plan/plan-blocker';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import {
+  type CatalogueReason,
+  positionOf,
+} from 'src/features/partial-changes/plan/reason';
 import {
   isWholeDraftSelection,
   type Selection,
@@ -110,7 +113,7 @@ export class DependencyClosure {
 
 class SelectionClosure {
   private readonly applied: Set<string>;
-  private readonly required: Map<string, Reason>;
+  private readonly required: Map<string, CatalogueReason>;
 
   constructor(
     private readonly source: ClosureSource,
@@ -213,7 +216,7 @@ class SelectionClosure {
       );
     }
 
-    return danglingInSource(reason.because, reason, unitKey);
+    return danglingInSource(reason.because, positionOf(reason.site), unitKey);
   }
 
   private outcomeWith(

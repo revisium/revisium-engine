@@ -14,6 +14,7 @@ import {
   type SideNames,
   sideNamesOf,
 } from 'src/features/partial-changes/plan/change-operation';
+import type { CatalogueCause } from 'src/features/partial-changes/plan/reason';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
@@ -43,6 +44,25 @@ export class CheckContext {
 
   public structureOf(pair: TablePair): string | undefined {
     return this.source.catalogue.lookup.tableUnitOf('structure', pair)?.key;
+  }
+
+  public appliedUnitAmong(
+    units: readonly (string | undefined)[],
+  ): string | undefined {
+    return units.find(
+      (unit): unit is string =>
+        unit !== undefined && this.rules.isApplied(unit),
+    );
+  }
+
+  public appliedCause(
+    cause: CatalogueCause | undefined,
+  ): CatalogueCause | undefined {
+    if (cause === undefined || !this.rules.isApplied(cause.unitKey)) {
+      return undefined;
+    }
+
+    return cause;
   }
 
   public unappliedStructureHolding(

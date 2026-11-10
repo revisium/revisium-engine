@@ -5,10 +5,13 @@ import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-bl
 import {
   type DescribedUnitRef,
   describedUnitRefOf,
+  type RequiredReason,
+  requiredReasonOf,
 } from 'src/features/partial-changes/selection/unit-refs';
 
-export type PlanBlocker = Omit<CatalogueBlocker, 'unitKey'> & {
+export type PlanBlocker = Omit<CatalogueBlocker, 'unitKey' | 'reason'> & {
   readonly unit?: DescribedUnitRef;
+  readonly reason?: RequiredReason;
 };
 
 export interface Deferred {
@@ -21,13 +24,19 @@ const SAMPLE_SIZE = 20;
 
 export function blockerRefOf(
   catalogue: ChangeCatalogue,
-  { unitKey, ...blocker }: CatalogueBlocker,
+  { unitKey, reason, ...blocker }: CatalogueBlocker,
 ): PlanBlocker {
-  if (unitKey === undefined) {
-    return blocker;
+  let ref: PlanBlocker = blocker;
+
+  if (reason !== undefined) {
+    ref = { ...ref, reason: requiredReasonOf(catalogue, reason) };
   }
 
-  return { ...blocker, unit: describedUnitRefOfKey(catalogue, unitKey) };
+  if (unitKey !== undefined) {
+    ref = { ...ref, unit: describedUnitRefOfKey(catalogue, unitKey) };
+  }
+
+  return ref;
 }
 
 export function deferredRefOf(

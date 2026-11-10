@@ -88,10 +88,9 @@ describe('SelectionResolver: normalisation', () => {
         unit: { kind: 'structure', tableId: TAGS },
         reason: {
           code: 'structureBoundData',
-          tableId: TAGS,
-          rowId: 't1',
           because:
             'the rows of tags exist only with its structure (created or removed table)',
+          site: { kind: 'selector', tableId: TAGS, rowId: 't1' },
         },
       },
     },
@@ -103,11 +102,14 @@ describe('SelectionResolver: normalisation', () => {
         unit: { kind: 'structure', tableId: TAGS },
         reason: {
           code: 'structureBoundData',
-          tableId: TAGS,
-          rowId: 't1',
-          path: '/label',
           because:
             'the rows of tags exist only with its structure (created or removed table)',
+          site: {
+            kind: 'selector',
+            tableId: TAGS,
+            rowId: 't1',
+            path: '/label',
+          },
         },
       },
     },
@@ -119,9 +121,9 @@ describe('SelectionResolver: normalisation', () => {
         unit: { kind: 'structure', tableId: CATEGORIES },
         reason: {
           code: 'structureBoundData',
-          tableId: CATEGORIES,
           because:
             'the rows of categories exist only with its structure (created or removed table)',
+          site: { kind: 'selector', tableId: CATEGORIES },
         },
       },
     },
@@ -181,10 +183,8 @@ describe('SelectionResolver: normalisation', () => {
           unit: existence,
           reason: {
             code: 'wholeRowUnit',
-            tableId: PRODUCTS,
-            rowId,
-            path: '/code',
             because: `products/${rowId} is created, deleted or replaced as a whole row`,
+            site: { kind: 'selector', tableId: PRODUCTS, rowId, path: '/code' },
           },
         },
       ]);
@@ -225,11 +225,14 @@ describe('SelectionResolver: normalisation', () => {
         unit: fieldOfP1('/labels'),
         reason: {
           code: 'atomicValue',
-          tableId: PRODUCTS,
-          rowId: 'p1',
-          path: '/labels/0',
           because:
             '/labels/0 is inside the atomic value /labels of products/p1',
+          site: {
+            kind: 'selector',
+            tableId: PRODUCTS,
+            rowId: 'p1',
+            path: '/labels/0',
+          },
         },
       },
     },
@@ -248,11 +251,14 @@ describe('SelectionResolver: normalisation', () => {
         },
         reason: {
           code: 'atomicValue',
-          tableId: DOCUMENTS,
-          rowId: 'd1',
-          path: '/image/fileId',
           because:
             '/image/fileId is inside the atomic value /image of documents/d1',
+          site: {
+            kind: 'selector',
+            tableId: DOCUMENTS,
+            rowId: 'd1',
+            path: '/image/fileId',
+          },
         },
       },
     },
@@ -291,10 +297,8 @@ describe('SelectionResolver: normalisation', () => {
           unit: { kind: 'structure', tableId: PRODUCTS },
           reason: {
             code: 'structureBoundData',
-            tableId: PRODUCTS,
-            rowId: 'p1',
-            path,
             because: `products/p1${path} touches a new or changed field; its values belong to the structure of products`,
+            site: { kind: 'selector', tableId: PRODUCTS, rowId: 'p1', path },
           },
         },
       ]);
@@ -314,11 +318,14 @@ describe('SelectionResolver: normalisation', () => {
         unit: { kind: 'structure', tableId: PRODUCTS },
         reason: {
           code: 'structureBoundData',
-          tableId: PRODUCTS,
-          rowId: 'p2',
-          path: '/size/depth',
           because:
             'products/p2/size/depth touches a new or changed field; its values belong to the structure of products',
+          site: {
+            kind: 'selector',
+            tableId: PRODUCTS,
+            rowId: 'p2',
+            path: '/size/depth',
+          },
         },
       },
     ]);

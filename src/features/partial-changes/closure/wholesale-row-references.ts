@@ -5,15 +5,19 @@ import type {
   TargetChecking,
 } from 'src/features/partial-changes/closure/check-context';
 import type { Finding } from 'src/features/partial-changes/closure/findings';
-import { referencedRowFinding } from 'src/features/partial-changes/closure/row-reference';
+import {
+  referencedRowFinding,
+  referringSiteOf,
+} from 'src/features/partial-changes/closure/row-reference';
 import type { ForeignKeyLeaf } from 'src/features/partial-changes/closure/table-schemas';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
 import { UnresolvedReferences } from 'src/features/partial-changes/closure/unresolved-references';
+import { causeOf } from 'src/features/partial-changes/plan/reason';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 
 interface WholesaleRowsScan {
   readonly referrer: TargetTable;
-  readonly jsonPath: string;
+  readonly leaf: ForeignKeyLeaf;
   readonly referenced: TargetTable;
 }
 
@@ -37,7 +41,7 @@ class WholesaleRowReferencesChecking implements TargetChecking {
     for (const scan of this.wholesaleRowsScans(context)) {
       const unresolved = await this.references.from(
         scan.referrer,
-        scan.jsonPath,
+        scan.leaf.jsonPath,
         scan.referenced,
       );
 
@@ -75,7 +79,7 @@ class WholesaleRowReferencesChecking implements TargetChecking {
     }
 
     return this.foreignKeysBroughtWholesale(context, referrer, tableId).map(
-      ({ jsonPath }) => ({ referrer, jsonPath, referenced }),
+      (leaf) => ({ referrer, leaf, referenced }),
     );
   }
 
@@ -98,14 +102,18 @@ class WholesaleRowReferencesChecking implements TargetChecking {
 
   private bringReferencedRow(
     context: CheckContext,
-    { referrer, referenced }: WholesaleRowsScan,
+    { referrer, leaf, referenced }: WholesaleRowsScan,
     referencedId: string,
     rowId: string,
   ): Finding {
     return referencedRowFinding(
-      { site: { tableId: referrer.tableId, rowId }, referenced, referencedId },
-      context.names,
-      context.structureOf(referrer.pair),
+      {
+        site: referringSiteOf(referrer, rowId, leaf.pointer),
+        referenced,
+        referencedId,
+      },
+      context,
+      causeOf(context.structureOf(referrer.pair), 'referrer'),
     );
   }
 }

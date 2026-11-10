@@ -8,7 +8,7 @@ import {
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import type {
-  Reason,
+  CatalogueReason,
   RequiredReasonCode,
 } from 'src/features/partial-changes/plan/reason';
 import {
@@ -149,10 +149,10 @@ export class FieldNormalisation {
     };
   }
 
-  private reason(code: RequiredReasonCode, because: string): Reason {
+  private reason(code: RequiredReasonCode, because: string): CatalogueReason {
     const { tableId, rowId, path } = this.selector;
 
-    return { code, tableId, rowId, path, because };
+    return { code, because, site: { kind: 'selector', tableId, rowId, path } };
   }
 }
 

@@ -717,7 +717,7 @@ describe('listChanges: structure changes', () => {
           required: [
             {
               unit: { kind: 'structure', tableId: PRODUCTS },
-              reason: { code: 'structureBoundData', path },
+              reason: { code: 'structureBoundData', site: { path } },
             },
           ],
         });

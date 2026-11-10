@@ -7,7 +7,10 @@ import type {
   Unit,
   UnitAddress,
 } from 'src/features/partial-changes/catalogue/unit';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type {
+  CatalogueReason,
+  CauseRole,
+} from 'src/features/partial-changes/plan/reason';
 import type { StructureChange } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type {
   RowRef,
@@ -24,9 +27,18 @@ export type DescribedUnitRef = UnitRef & {
   readonly structureChange?: StructureChange;
 };
 
+export interface ReasonCause {
+  readonly unit: DescribedUnitRef;
+  readonly role: CauseRole;
+}
+
+export type RequiredReason = Omit<CatalogueReason, 'cause'> & {
+  readonly cause?: ReasonCause;
+};
+
 export interface RequiredUnit {
   readonly unit: DescribedUnitRef;
-  readonly reason: Reason;
+  readonly reason: RequiredReason;
 }
 
 export function unitRefOf({ unit: address, side }: CatalogueUnit): UnitRef {
@@ -55,7 +67,7 @@ export function describedUnitRefOf(
 
 export function requiredUnitsOf(
   catalogue: ChangeCatalogue,
-  required: ReadonlyMap<string, Reason>,
+  required: ReadonlyMap<string, CatalogueReason>,
 ): RequiredUnit[] {
   return catalogue.units.flatMap((unit) => {
     const reason = required.get(unit.key);
@@ -64,8 +76,30 @@ export function requiredUnitsOf(
       return [];
     }
 
-    return [{ unit: describedUnitRefOf(unit, catalogue.tables), reason }];
+    return [
+      {
+        unit: describedUnitRefOf(unit, catalogue.tables),
+        reason: requiredReasonOf(catalogue, reason),
+      },
+    ];
   });
+}
+
+export function requiredReasonOf(
+  { lookup, tables }: ChangeCatalogue,
+  { cause, ...reason }: CatalogueReason,
+): RequiredReason {
+  if (cause === undefined) {
+    return reason;
+  }
+
+  return {
+    ...reason,
+    cause: {
+      unit: describedUnitRefOf(lookup.unit(cause.unitKey), tables),
+      role: cause.role,
+    },
+  };
 }
 
 function unitOf(address: UnitAddress): Unit {

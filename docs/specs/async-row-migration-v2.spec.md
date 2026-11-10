@@ -509,11 +509,9 @@ plans `alreadyRepaired`; after a commit publishes the repair, `notDamaged`.
 
 Neither is a release gate; partial operations keep refusing the affected tables until a decision is implemented.
 
-**Ledger backfill** for `unledgeredTable` findings. Proposal: `backfillSchemaLedger`, per table an `init` migration with
-the Head schema row, positioned, numbered and verified as §6.3–§6.4, published by the next native or `{ all: true }`
-commit. Limits: a replica holding a same-id table created outside the ledger fails on the `init`; a referrer whose
-lineage starts before the backfilled table stays tainted. For `noMigrationTable`, creating a ledger competes with
-exempting such projects, since no Head-synced replica can exist there (§13, question 2).
+**Ledger backfill** for `unledgeredTable` findings with `reason: 'noMigrationTable'`: decided and specified in
+[schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md), which replaces the earlier proposal here. Unledgered
+tables in a branch that has a migration table come only from damage; they stay refused and are not backfilled.
 
 **Row remediation** for `rowsNeedMigration` findings. Candidate: reset the Draft schema row to the replayed schema and
 run a native `updateTable` to the Head schema, which migrates and records at the cost of a full table update. It needs
@@ -738,8 +736,8 @@ still rewrite committed rows during the scan.
 1. **Legacy jobs at upgrade** (§3.2) — decided: async migrations in flight at upgrade are cancelled (`LEGACY_JOB`) and
    must be rerun, because an imported one cannot be recorded under its source id. Completing them under native ids
    would keep interactive changes but break the next sync of any replica that imported one.
-2. **Projects without a migration table** (§7) — open, decided with the scan results: create a ledger for them, or
-   exempt them from `unledgeredTable`.
+2. **Projects without a migration table** (§7) — decided on 2026-11-10: they get a ledger
+   ([schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)), not an exemption from `unledgeredTable`.
 3. **Files possibly lost before the fix** — decided: a host-side storage check is part of reviewing the scan results
    before release (§12, PR 11). The loss is an inference from code, not reproduced: migrated rows had no blob links, so
    blobs referenced only by them could be tombstoned once their Draft-owned source rows were cleaned up, and deleted

@@ -10,6 +10,7 @@ Design: Accepted on 2026-10-31.
 | [ADR-001](adr/ADR-001-partial-commit-and-revert.md) | Accepted |
 | [partial-changes-v1](specs/partial-changes-v1.spec.md) | Accepted |
 | [async-row-migration-v2](specs/async-row-migration-v2.spec.md) | Accepted |
+| [schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md) | Accepted |
 | [PoC v2 summary](research/partial-changes-poc-v2.md) | Evidence for ADR-001 |
 
 ### Work order

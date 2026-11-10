@@ -1020,8 +1020,9 @@ Head structure), and §6.9 step 1 applies to commits only.
 
 **Refused tables.** A *partial operation* is anything other than exactly `{ all: true }` without `exclude`.
 
-1. An unledgered table is refused with the code `unledgeredTable`. A ledger backfill for such tables is a stage-0
-   design item (§12).
+1. An unledgered table is refused with the code `unledgeredTable`. A branch without a migration table becomes eligible
+   after [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md); other unledgered tables come from damage and
+   stay refused.
 2. A table that fails (b) in the Head (*damaged*, either shape) is refused with the code `headSchemaInconsistent`, by
    every partial operation and with no exception: data units, row units, its structure unit, commit and revert alike.
    It becomes eligible again only after the forward-only repair (§12) has been published by a native or exactly

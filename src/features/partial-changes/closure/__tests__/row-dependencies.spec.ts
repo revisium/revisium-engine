@@ -3,13 +3,15 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { RefusalCode } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type {
   FieldRef,
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
-import { replaceField } from 'src/__tests__/fixtures/ledger-steps';
+import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
+import { addField, replaceField } from 'src/__tests__/fixtures/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
 
@@ -60,6 +62,32 @@ const categoryOf = (rowId: string): FieldRef => ({
 });
 
 type Given = (kit: PartialChangesTestKit) => Promise<ChangesScenario>;
+
+interface RefusedProducts {
+  readonly damage: string;
+  readonly code: RefusalCode;
+  readonly message: string;
+  readonly committed: Given;
+  readonly product: (title: string, categoryId: string) => object;
+}
+
+const REFUSED_PRODUCTS: RefusedProducts[] = [
+  {
+    damage: 'a Head ledger without its init',
+    code: 'unledgeredTable',
+    message: 'products is refused: it has no intact ledger lineage',
+    committed: committedProductsWithoutInit,
+    product: (title, category) => ({ title, category }),
+  },
+  {
+    damage: 'an async migration completed in place and published natively',
+    code: 'headSchemaInconsistent',
+    message:
+      'products is refused: its Head schema does not match its Head ledger',
+    committed: committedProductsMigratedInPlace,
+    product: (title, category) => ({ title, category, color: '' }),
+  },
+];
 
 describe('DependencyClosure: references and ids of rows', () => {
   let kit: PartialChangesTestKit;
@@ -504,6 +532,38 @@ describe('DependencyClosure: references and ids of rows', () => {
         },
       ]);
     });
+  });
+
+  describe('a row of a refused table that references an id the target loses', () => {
+    it.each(
+      REFUSED_PRODUCTS.flatMap((refused) => [
+        {
+          ...refused,
+          operation: 'commit' as const,
+          selection: { rows: [category('c1')] },
+        },
+        {
+          ...refused,
+          operation: 'revert' as const,
+          selection: { rows: [category('c3')] },
+        },
+      ]),
+    )(
+      'blocks a $operation with the code of the referrer left by $damage, since only a change of it could keep the reference',
+      async ({ operation, selection, code, message, ...refused }) => {
+        const draft = await givenRefusedProductsRepointedAcrossCategories(
+          kit,
+          refused,
+        );
+
+        const closure = await draft.closeDependencies(operation, selection);
+
+        expect(closure.required).toEqual([]);
+        expect(closure.blockers).toEqual([
+          { code, tableId: PRODUCTS, message },
+        ]);
+      },
+    );
   });
 
   describe('a row of a table on one side only that references an id the target loses', () => {
@@ -969,6 +1029,48 @@ async function givenRenameIntoDeletedCategoryId(
   const draft = await givenCatalogue(kit, ['c1', 'c2'], {});
   await draft.removeRow(CATEGORIES, 'c1');
   await draft.renameRow(CATEGORIES, 'c2', 'c1');
+
+  return draft;
+}
+
+async function givenRefusedProductsRepointedAcrossCategories(
+  kit: PartialChangesTestKit,
+  { committed, product }: Pick<RefusedProducts, 'committed' | 'product'>,
+): Promise<ChangesScenario> {
+  const draft = await committed(kit);
+  await draft.updateRow(PRODUCTS, 'p1', product('p1', 'c2'));
+  await draft.removeRow(CATEGORIES, 'c1');
+  await draft.createRows(CATEGORIES, { c3: { title: 'c3' } });
+  await draft.createRows(PRODUCTS, { p2: product('p2', 'c3') });
+
+  return draft;
+}
+
+async function committedProductsWithoutInit(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: {
+      schema: categorySchema,
+      rows: { c1: { title: 'c1' }, c2: { title: 'c2' } },
+    },
+  });
+  await draft.createTable(PRODUCTS, productSchema);
+  await draft.createRows(PRODUCTS, { p1: { title: 'p1', category: 'c1' } });
+  await draft.dropFromDraftLedger('init', PRODUCTS);
+  await draft.commit();
+
+  return draft;
+}
+
+async function committedProductsMigratedInPlace(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await givenCatalogue(kit, ['c1', 'c2'], { p1: 'c1' });
+  await completeAsyncMigrationInPlace(kit, draft, PRODUCTS, [
+    addField('color', str()),
+  ]);
+  await draft.commit();
 
   return draft;
 }

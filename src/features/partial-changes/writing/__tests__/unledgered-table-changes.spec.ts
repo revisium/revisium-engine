@@ -18,10 +18,12 @@ import type {
   FieldRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
+import { SystemTables } from 'src/features/share/system-tables.consts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const CATEGORIES = 'categories';
+const KINDS = 'kinds';
 const PRODUCTS = 'products';
 
 const categorySchema = obj({ title: str() });
@@ -38,11 +40,13 @@ const titleOf = (tableId: string, rowId: string): FieldRef => ({
 
 const titleOfC1: Selection = { fields: [titleOf(CATEGORIES, 'c1')] };
 
-const unledgeredProducts: Blocker = {
+const unledgered = (tableId: string): Blocker => ({
   code: 'unledgeredTable',
-  tableId: PRODUCTS,
-  message: 'products is refused: it has no intact ledger lineage',
-};
+  tableId,
+  message: `${tableId} is refused: it has no intact ledger lineage`,
+});
+
+const unledgeredProducts = unledgered(PRODUCTS);
 
 describe('commitChanges and revertChanges next to an unledgered table', () => {
   let kit: PartialChangesTestKit;
@@ -174,6 +178,88 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
     },
   );
 
+  const requirementsOfUnledgered: RefusedRequirement[] = [
+    {
+      operation: 'commit',
+      selected:
+        'the deletion of a category that the Head of the unledgered table references',
+      given: givenUnledgeredProductsRepointedAcrossCategories,
+      apply: (draft) =>
+        draft.commitChanges({
+          selection: { rows: [{ tableId: CATEGORIES, rowId: 'c1' }] },
+        }),
+    },
+    {
+      operation: 'revert',
+      selected:
+        'the creation of a category that the Draft of the unledgered table references',
+      given: givenUnledgeredProductsRepointedAcrossCategories,
+      apply: (draft) =>
+        draft.revertChanges({
+          selection: { rows: [{ tableId: CATEGORIES, rowId: 'c3' }] },
+        }),
+    },
+    {
+      operation: 'commit',
+      selected: 'the rename of the table that the unledgered table references',
+      given: givenRenamedCategoriesUnderUnledgeredProducts,
+      apply: (draft) => draft.commitChanges({ selection: { tables: [KINDS] } }),
+    },
+    {
+      operation: 'revert',
+      selected: 'the rename of the table that the unledgered table references',
+      given: givenRenamedCategoriesUnderUnledgeredProducts,
+      apply: (draft) => draft.revertChanges({ selection: { tables: [KINDS] } }),
+    },
+  ];
+
+  it.each(requirementsOfUnledgered)(
+    'blocks a $operation of $selected with unledgeredTable, since only the unledgered table could keep its references, and writes nothing (AS-49)',
+    async ({ given, apply }) => {
+      const draft = await given();
+      const contents = await branchContentsOf(kit, draft);
+
+      const result = await apply(draft);
+
+      expect(result).toEqual<ChangesBlocked>({
+        status: 'blocked',
+        blockers: [unledgeredProducts],
+        required: [],
+      });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    },
+  );
+
+  it('commits a change of another table next to a content-equal Draft version of the unledgered table and keeps that Draft version (AS-49)', async () => {
+    const draft = await givenContentEqualUnledgeredProductsOfEditedCategory();
+    const headProducts = await draft.tableVersionId('head', PRODUCTS);
+    const draftProducts = await draft.tableVersionId('draft', PRODUCTS);
+
+    const result = await draft.commitChanges({ selection: titleOfC1 });
+
+    expect(result).toMatchObject({
+      status: 'applied',
+      remaining: { units: 0, unreadTables: 0 },
+    });
+    expect(await draft.tableVersionId('head', PRODUCTS)).toBe(headProducts);
+    expect(await draft.tableVersionId('draft', PRODUCTS)).toBe(draftProducts);
+  });
+
+  it('reverts a change of another table next to a content-equal Draft version of the unledgered table and keeps that Draft version (AS-49)', async () => {
+    const draft = await givenContentEqualUnledgeredProductsOfEditedCategory();
+    const headProducts = await draft.tableVersionId('head', PRODUCTS);
+    const draftProducts = await draft.tableVersionId('draft', PRODUCTS);
+
+    const result = await draft.revertChanges({ selection: titleOfC1 });
+
+    expect(result).toMatchObject({
+      status: 'applied',
+      remaining: { units: 0, unreadTables: 0 },
+    });
+    expect(await draft.tableVersionId('head', PRODUCTS)).toBe(headProducts);
+    expect(await draft.tableVersionId('draft', PRODUCTS)).toBe(draftProducts);
+  });
+
   it('commits exactly { all: true } with the changes of the unledgered table, as native createRevision does (AS-49)', async () => {
     const native = await givenUnledgeredProductsOfEditedCategories();
     const partial = await givenUnledgeredProductsOfEditedCategories();
@@ -220,6 +306,86 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
     });
   });
 
+  describe('in a project without a migration table', () => {
+    const refusedWithoutMigrationTable: (RefusedSelection & {
+      readonly refused: readonly string[];
+    })[] = [
+      {
+        selected: 'a change of one table',
+        selection: titleOfC1,
+        refused: [CATEGORIES],
+      },
+      {
+        selected: 'all: true with an exclusion',
+        selection: { all: true, exclude: titleOfC1 },
+        refused: [CATEGORIES, PRODUCTS],
+      },
+    ];
+
+    it.each(
+      operations.flatMap((operation) =>
+        refusedWithoutMigrationTable.map((refused) => ({
+          ...operation,
+          ...refused,
+        })),
+      ),
+    )(
+      'blocks a $operation of $selected with unledgeredTable for each table it involves and writes nothing (AS-49)',
+      async ({ apply, selection, refused }) => {
+        const draft = await givenEditedCatalogWithoutMigrationTable();
+        const contents = await branchContentsOf(kit, draft);
+
+        const result = await apply(draft, selection);
+
+        expect(result).toEqual<ChangesBlocked>({
+          status: 'blocked',
+          blockers: refused.map(unledgered),
+          required: [],
+        });
+        expect(await branchContentsOf(kit, draft)).toEqual(contents);
+      },
+    );
+
+    it('commits exactly { all: true } as native createRevision does and adds no migration table (AS-49)', async () => {
+      const native = await givenEditedCatalogWithoutMigrationTable();
+      const partial = await givenEditedCatalogWithoutMigrationTable();
+
+      await native.commit();
+      await expectApplied(partial.commitChanges({ selection: { all: true } }));
+
+      expect(await branchContentOf(kit, partial)).toEqual(
+        await branchContentOf(kit, native),
+      );
+      await expectRows(partial, 'head', PRODUCTS, {
+        p1: { title: 'uno', category: 'c1' },
+        p2: { title: 'two', category: 'c2' },
+      });
+      expect(await partial.hasTable('head', SystemTables.Migration)).toBe(
+        false,
+      );
+      expect(await partial.hasChanges()).toBe(false);
+    });
+
+    it('reverts exactly { all: true } as native revertChanges does and adds no migration table (AS-49)', async () => {
+      const native = await givenEditedCatalogWithoutMigrationTable();
+      const partial = await givenEditedCatalogWithoutMigrationTable();
+
+      await native.revertNatively();
+      await expectApplied(partial.revertChanges({ selection: { all: true } }));
+
+      expect(await branchContentOf(kit, partial)).toEqual(
+        await branchContentOf(kit, native),
+      );
+      await expectRows(partial, 'draft', PRODUCTS, {
+        p1: { title: 'one', category: 'c1' },
+      });
+      expect(await partial.hasTable('draft', SystemTables.Migration)).toBe(
+        false,
+      );
+      expect(await partial.hasChanges()).toBe(false);
+    });
+  });
+
   async function expectApplied(
     applying: Promise<CommitChangesResult | RevertChangesResult>,
   ): Promise<void> {
@@ -243,6 +409,45 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
   }
 
   async function givenUnledgeredProductsOfEditedCategories(): Promise<ChangesScenario> {
+    const draft = await givenCommittedUnledgeredProducts();
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c1' });
+    await draft.createRows(PRODUCTS, { p2: { title: 'two', category: 'c2' } });
+    await draft.updateRow(CATEGORIES, 'c1', { title: 'uno' });
+    await draft.updateRow(CATEGORIES, 'c2', { title: 'dos' });
+
+    return draft;
+  }
+
+  async function givenUnledgeredProductsRepointedAcrossCategories(): Promise<ChangesScenario> {
+    const draft = await givenCommittedUnledgeredProducts();
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', category: 'c2' });
+    await draft.removeRow(CATEGORIES, 'c1');
+    await draft.createRows(CATEGORIES, { c3: { title: 'three' } });
+    await draft.createRows(PRODUCTS, { p2: { title: 'two', category: 'c3' } });
+
+    return draft;
+  }
+
+  async function givenRenamedCategoriesUnderUnledgeredProducts(): Promise<ChangesScenario> {
+    const draft = await givenCommittedUnledgeredProducts();
+    await draft.renameTable(CATEGORIES, KINDS);
+
+    return draft;
+  }
+
+  async function givenContentEqualUnledgeredProductsOfEditedCategory(): Promise<ChangesScenario> {
+    const draft = await givenCommittedUnledgeredProducts();
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c1' });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', category: 'c1' });
+    await draft.updateRow(CATEGORIES, 'c1', { title: 'uno' });
+    expect(await draft.tableVersionId('draft', PRODUCTS)).not.toBe(
+      await draft.tableVersionId('head', PRODUCTS),
+    );
+
+    return draft;
+  }
+
+  async function givenCommittedUnledgeredProducts(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [CATEGORIES]: {
         schema: categorySchema,
@@ -254,10 +459,25 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
     await draft.dropFromDraftLedger('init', PRODUCTS);
     await draft.commit();
     expect(await describedLedgerOf(draft, 'head')).toEqual(['init categories']);
+
+    return draft;
+  }
+
+  async function givenEditedCatalogWithoutMigrationTable(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committedWithoutLedger(kit, {
+      [CATEGORIES]: {
+        schema: categorySchema,
+        rows: { c1: { title: 'one' }, c2: { title: 'two' } },
+      },
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', category: 'c1' } },
+      },
+    });
+    expect(await draft.hasTable('head', SystemTables.Migration)).toBe(false);
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c1' });
     await draft.createRows(PRODUCTS, { p2: { title: 'two', category: 'c2' } });
     await draft.updateRow(CATEGORIES, 'c1', { title: 'uno' });
-    await draft.updateRow(CATEGORIES, 'c2', { title: 'dos' });
 
     return draft;
   }
@@ -274,4 +494,13 @@ interface ApplyingOperation {
 interface RefusedSelection {
   readonly selected: string;
   readonly selection: Selection;
+}
+
+interface RefusedRequirement {
+  readonly operation: string;
+  readonly selected: string;
+  readonly given: () => Promise<ChangesScenario>;
+  readonly apply: (
+    draft: ChangesScenario,
+  ) => Promise<CommitChangesResult | RevertChangesResult>;
 }

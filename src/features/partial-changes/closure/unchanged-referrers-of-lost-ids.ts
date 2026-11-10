@@ -6,6 +6,7 @@ import type {
 } from 'src/features/partial-changes/closure/check-context';
 import {
   type Finding,
+  refusedBy,
   requiring,
   requiringOrDangling,
 } from 'src/features/partial-changes/closure/findings';
@@ -113,8 +114,14 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
       );
     }
 
+    const provider = losing.providerOf(referencedId);
+
+    if (provider === undefined && referrer.refusal) {
+      return refusedBy(referrer.refusal);
+    }
+
     return requiringOrDangling(
-      losing.providerOf(referencedId),
+      provider,
       referenceReason(
         { site, referenced: losing, referencedId },
         'referencedRowMissing',

@@ -151,13 +151,23 @@ export class NativeSchemaStore {
   }
 
   public hasObjectSchemaAt(fieldPath: readonly string[]): boolean {
-    return isObjectSchema(
-      fieldPath.reduce<JsonSchemaStore | undefined>(propertyOf, this.root),
-    );
+    return isObjectSchema(this.storeAt(fieldPath));
+  }
+
+  public schemaAt(fieldPath: readonly string[]): JsonSchema | undefined {
+    return this.storeAt(fieldPath)?.getPlainSchema();
+  }
+
+  public heldSchemaAt(fieldPath: readonly string[]): JsonSchema | undefined {
+    return this.storeAt(fieldPath)?.getPlainSchema({ skip$Ref: true });
   }
 
   public schema(): JsonSchema {
     return this.root.getPlainSchema();
+  }
+
+  private storeAt(fieldPath: readonly string[]): JsonSchemaStore | undefined {
+    return fieldPath.reduce<JsonSchemaStore | undefined>(propertyOf, this.root);
   }
 }
 

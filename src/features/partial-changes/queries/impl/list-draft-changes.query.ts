@@ -4,6 +4,7 @@ import type {
   UnitRef,
 } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { AnnotationKeyword } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import type { StructureFieldChange } from 'src/features/partial-changes/structure/table-structure';
 
 export interface ListChangesInput {
@@ -27,6 +28,7 @@ export interface ChangedField {
   readonly path: string;
   readonly change: StructureFieldChange;
   readonly from?: string;
+  readonly annotations?: readonly AnnotationKeyword[];
 }
 
 export interface StructureChange {

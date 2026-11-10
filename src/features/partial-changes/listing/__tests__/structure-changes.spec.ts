@@ -24,18 +24,22 @@ import {
   type ListedUnit,
   STRUCTURE_TABLE_CHANGES,
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import { ANNOTATION_KEYWORDS } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import { STRUCTURE_FIELD_CHANGES } from 'src/features/partial-changes/structure/table-structure';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
+const ALBUMS = 'albums';
 const CATEGORIES = 'categories';
 const GROUPS = 'groups';
+const ITEMS = 'items';
 const MEDIA = 'media';
 const MEMOS = 'memos';
 const NOTES = 'notes';
 const PRODUCTS = 'products';
 const SCRATCH = 'scratch';
+const SHIPMENTS = 'shipments';
 const TAGS = 'tags';
 
 const categorySchema = obj({ title: str() });
@@ -48,7 +52,20 @@ const productSchema = obj({
   variants: arr(obj({ color: str() })),
 });
 
+const describedAddressSchema = obj(
+  { city: str(), street: str() },
+  { description: 'Where to ship' },
+);
+const parcelsSchema = arr(obj({ weight: num() }));
+const shipmentSchema = obj({
+  code: str(),
+  shipping: obj({ address: addressSchema, parcels: parcelsSchema }),
+});
+
 const mediaSchema = obj({ title: str(), cover: ref(SystemSchemaIds.File) });
+const albumSchema = obj({
+  album: obj({ cover: ref(SystemSchemaIds.File), name: str() }),
+});
 
 const emptyFile = {
   status: '',
@@ -75,10 +92,19 @@ const addZipToAddress: JsonPatch = {
   path: '/properties/address/properties/zip',
   value: str(),
 };
+const removeStreetFromAddress: JsonPatch = {
+  op: 'remove',
+  path: '/properties/address/properties/street',
+};
 const addSizeToVariantItems: JsonPatch = {
   op: 'add',
   path: '/properties/variants/items/properties/size',
   value: str(),
+};
+const describeVariantItems: JsonPatch = {
+  op: 'replace',
+  path: '/properties/variants/items',
+  value: obj({ color: str() }, { description: 'A colour variant' }),
 };
 const addCustomIntoCover: JsonPatch = {
   op: 'add',
@@ -143,6 +169,13 @@ describe('listChanges: structure changes', () => {
           'a field added to the items of an array as a change of the array',
         patches: [addSizeToVariantItems],
         fields: [{ path: '/variants', change: 'changed' }],
+      },
+      {
+        change: 'a field whose description changed',
+        patches: [replaceField('price', num({ description: 'In euros' }))],
+        fields: [
+          { path: '/price', change: 'annotated', annotations: ['description'] },
+        ],
       },
     ];
 
@@ -262,6 +295,735 @@ describe('listChanges: structure changes', () => {
         fields,
         views: false,
       });
+    });
+
+    it.each<{ change: string; updates: JsonPatch[][]; fields: ChangedField[] }>(
+      [
+        {
+          change:
+            'a field replaced with another default, which the stored schema does not keep, as no field',
+          updates: [[replaceField('code', str({ default: 'none' }))]],
+          fields: [],
+        },
+        {
+          change:
+            'a field given a title and a description as annotated by both, in code-point order',
+          updates: [
+            [
+              replaceField(
+                'code',
+                str({ title: 'Code', description: 'Article code' }),
+              ),
+            ],
+          ],
+          fields: [
+            {
+              path: '/code',
+              change: 'annotated',
+              annotations: ['description', 'title'],
+            },
+          ],
+        },
+        {
+          change: 'a field given a title and deprecated as annotated by both',
+          updates: [
+            [replaceField('code', str({ title: 'Code', deprecated: true }))],
+          ],
+          fields: [
+            {
+              path: '/code',
+              change: 'annotated',
+              annotations: ['deprecated', 'title'],
+            },
+          ],
+        },
+        {
+          change:
+            'a field whose description was changed twice as annotated by its description',
+          updates: [
+            [replaceField('code', str({ description: 'Code' }))],
+            [replaceField('code', str({ description: 'Article code' }))],
+          ],
+          fields: [
+            {
+              path: '/code',
+              change: 'annotated',
+              annotations: ['description'],
+            },
+          ],
+        },
+        {
+          change: 'a field made read-only and given a media type as annotated',
+          updates: [
+            [
+              replaceField(
+                'code',
+                str({ readOnly: true, contentMediaType: 'text/markdown' }),
+              ),
+            ],
+          ],
+          fields: [
+            {
+              path: '/code',
+              change: 'annotated',
+              annotations: ['contentMediaType', 'readOnly'],
+            },
+          ],
+        },
+        {
+          change:
+            'an object whose description changed as that object annotated by its description, and none of its unchanged fields',
+          updates: [[replaceField('address', describedAddressSchema)]],
+          fields: [
+            {
+              path: '/address',
+              change: 'annotated',
+              annotations: ['description'],
+            },
+          ],
+        },
+        {
+          change:
+            'a field added to an object that a later patch gave a description as the annotated object and the added field',
+          updates: [
+            [addZipToAddress],
+            [
+              replaceField(
+                'address',
+                obj(
+                  { city: str(), street: str(), zip: str() },
+                  { description: 'Where to ship' },
+                ),
+              ),
+            ],
+          ],
+          fields: [
+            {
+              path: '/address',
+              change: 'annotated',
+              annotations: ['description'],
+            },
+            { path: '/address/zip', change: 'added' },
+          ],
+        },
+        {
+          change:
+            'an object that lost a field and then got a description as the annotated object and the removed field',
+          updates: [
+            [removeStreetFromAddress],
+            [
+              replaceField(
+                'address',
+                obj({ city: str() }, { description: 'Where to ship' }),
+              ),
+            ],
+          ],
+          fields: [
+            {
+              path: '/address',
+              change: 'annotated',
+              annotations: ['description'],
+            },
+            { path: '/address/street', change: 'removed' },
+          ],
+        },
+        {
+          change:
+            'a field given a description by a replace of its object as that field alone',
+          updates: [
+            [
+              replaceField(
+                'address',
+                obj({ city: str({ description: 'Town' }), street: str() }),
+              ),
+            ],
+          ],
+          fields: [
+            {
+              path: '/address/city',
+              change: 'annotated',
+              annotations: ['description'],
+            },
+          ],
+        },
+        {
+          change:
+            'an object and one of its fields given descriptions and a title as both, each by its own keywords',
+          updates: [
+            [
+              replaceField(
+                'address',
+                obj(
+                  { city: str({ description: 'Town' }), street: str() },
+                  { title: 'Address', description: 'Where to ship' },
+                ),
+              ),
+            ],
+          ],
+          fields: [
+            {
+              path: '/address',
+              change: 'annotated',
+              annotations: ['description', 'title'],
+            },
+            {
+              path: '/address/city',
+              change: 'annotated',
+              annotations: ['description'],
+            },
+          ],
+        },
+        {
+          change:
+            'an array whose item field got a description as annotated by that keyword',
+          updates: [
+            [
+              replaceField(
+                'variants',
+                arr(obj({ color: str({ description: 'Colour' }) })),
+              ),
+            ],
+          ],
+          fields: [
+            {
+              path: '/variants',
+              change: 'annotated',
+              annotations: ['description'],
+            },
+          ],
+        },
+        {
+          change:
+            'the items of an array given a description as a change of the array',
+          updates: [[describeVariantItems]],
+          fields: [{ path: '/variants', change: 'changed' }],
+        },
+        {
+          change:
+            'an array whose item object got a description through a replace of the array as the array annotated by that keyword',
+          updates: [
+            [
+              replaceField(
+                'variants',
+                arr(obj({ color: str() }, { description: 'A colour variant' })),
+              ),
+            ],
+          ],
+          fields: [
+            {
+              path: '/variants',
+              change: 'annotated',
+              annotations: ['description'],
+            },
+          ],
+        },
+        {
+          change: 'a field whose default and type changed as changed',
+          updates: [[replaceField('price', str({ default: 'free' }))]],
+          fields: [{ path: '/price', change: 'changed' }],
+        },
+        {
+          change:
+            'a field whose type changed and was restored with a description as changed',
+          updates: [
+            [replaceField('price', str())],
+            [replaceField('price', num({ description: 'In euros' }))],
+          ],
+          fields: [{ path: '/price', change: 'changed' }],
+        },
+        {
+          change:
+            'a moved object that a later patch gave a description as its changed leaves and no object',
+          updates: [
+            [moveField('address', 'location')],
+            [replaceField('location', describedAddressSchema)],
+          ],
+          fields: [
+            {
+              path: '/location/city',
+              change: 'changed',
+              from: '/address/city',
+            },
+            {
+              path: '/location/street',
+              change: 'changed',
+              from: '/address/street',
+            },
+          ],
+        },
+        {
+          change:
+            'a moved field whose description changed as changed from its Head path',
+          updates: [
+            [moveField('code', 'sku')],
+            [replaceField('sku', str({ description: 'Article' }))],
+          ],
+          fields: [{ path: '/sku', change: 'changed', from: '/code' }],
+        },
+      ],
+    )('describes $change (AS-60c)', async ({ updates, fields }) => {
+      const draft = await givenCommittedProducts();
+
+      for (const patches of updates) {
+        await draft.updateTable(PRODUCTS, patches);
+      }
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields,
+        views: false,
+      });
+    });
+
+    it('describes a field whose stored default changed as annotated by its default (AS-60c)', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: obj({ code: str({ default: 'none' }), price: num() }),
+        },
+      });
+      await draft.updateTable(PRODUCTS, [
+        replaceField('code', str({ default: 'unknown' })),
+      ]);
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          { path: '/code', change: 'annotated', annotations: ['default'] },
+        ],
+        views: false,
+      });
+    });
+
+    it.each<{ change: string; shipping: JsonSchema; fields: ChangedField[] }>([
+      {
+        change: 'an outer object given a description as that object alone',
+        shipping: obj(
+          { address: addressSchema, parcels: parcelsSchema },
+          { description: 'How it travels' },
+        ),
+        fields: [
+          {
+            path: '/shipping',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+      {
+        change: 'an inner object given a description as the inner object alone',
+        shipping: obj({
+          address: describedAddressSchema,
+          parcels: parcelsSchema,
+        }),
+        fields: [
+          {
+            path: '/shipping/address',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+      {
+        change:
+          'an outer and an inner object given descriptions as both objects',
+        shipping: obj(
+          { address: describedAddressSchema, parcels: parcelsSchema },
+          { description: 'How it travels' },
+        ),
+        fields: [
+          {
+            path: '/shipping',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+          {
+            path: '/shipping/address',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+      {
+        change:
+          'the item object of an array inside an object given a description as the array',
+        shipping: obj({
+          address: addressSchema,
+          parcels: arr(obj({ weight: num() }, { description: 'One box' })),
+        }),
+        fields: [
+          {
+            path: '/shipping/parcels',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+    ])(
+      'describes in nested objects $change (AS-60c)',
+      async ({ shipping, fields }) => {
+        const draft = await givenCommittedShipments();
+        await draft.updateTable(SHIPMENTS, [
+          replaceField('shipping', shipping),
+        ]);
+
+        const structure = await listedStructureOf(draft, SHIPMENTS);
+
+        expect(structure.structureChange).toEqual({
+          table: 'changed',
+          fields,
+          views: false,
+        });
+      },
+    );
+
+    it.each([
+      {
+        change: 'a field below an object whose description changed',
+        patches: [replaceField('address', describedAddressSchema)],
+        editedRow: {
+          ...productRow,
+          address: { city: 'Tallinn', street: 'Main' },
+        },
+        path: '/address/city',
+      },
+      {
+        change: 'an annotated field',
+        patches: [replaceField('code', str({ description: 'Article' }))],
+        editedRow: { ...productRow, code: 'edited' },
+        path: '/code',
+      },
+    ])(
+      'keeps the values of $change with the structure unit, which a field selector requires (AS-60c)',
+      async ({ patches, editedRow, path }) => {
+        const draft = await givenCommittedProducts();
+        await draft.updateTable(PRODUCTS, patches);
+        await draft.updateRow(PRODUCTS, 'p1', editedRow);
+
+        const { units } = await draft.listChanges({ tableId: PRODUCTS });
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection: { fields: [{ tableId: PRODUCTS, rowId: 'p1', path }] },
+        });
+
+        expect(units.map(addressedUnitOfListed)).toEqual([
+          { kind: 'structure', tableId: PRODUCTS },
+        ]);
+        expect(preview).toMatchObject({
+          status: 'required',
+          required: [
+            {
+              unit: { kind: 'structure', tableId: PRODUCTS },
+              reason: { code: 'structureBoundData', path },
+            },
+          ],
+        });
+      },
+    );
+
+    it.each([
+      { operation: 'commit', side: 'head', code: 'edited', city: 'Tallinn' },
+      { operation: 'revert', side: 'draft', code: 'p1', city: 'Riga' },
+    ] as const)(
+      'applies the values of annotated fields and objects with the structure on $operation (AS-60c)',
+      async ({ operation, side, code, city }) => {
+        const draft = await givenCommittedProducts();
+        await draft.updateTable(PRODUCTS, [
+          replaceField('code', str({ description: 'Article' })),
+          replaceField('address', describedAddressSchema),
+        ]);
+        await draft.updateRow(PRODUCTS, 'p1', {
+          ...productRow,
+          code: 'edited',
+          address: { city: 'Tallinn', street: 'Main' },
+        });
+        const options = {
+          selection: { structures: [{ tableId: PRODUCTS }] },
+        };
+
+        const result =
+          operation === 'commit'
+            ? await draft.commitChanges(options)
+            : await draft.revertChanges(options);
+
+        expect(result).toMatchObject({ status: 'applied' });
+        expect(
+          (await draft.rows(side, PRODUCTS)).map(({ data }) => data),
+        ).toEqual([{ ...productRow, code, address: { city, street: 'Main' } }]);
+      },
+    );
+
+    it.each<{
+      change: string;
+      updates: JsonPatch[][];
+      fields: ChangedField[];
+    }>([
+      {
+        change:
+          'an object removed and added again with a description as its fields and no object',
+        updates: [
+          [removeField('address')],
+          [addField('address', describedAddressSchema)],
+        ],
+        fields: [
+          { path: '/address/city', change: 'changed' },
+          { path: '/address/street', change: 'changed' },
+        ],
+      },
+      {
+        change:
+          'an object replaced with its own schema with unsorted required and a description as the annotated object alone',
+        updates: [
+          [
+            replaceField('address', {
+              ...describedAddressSchema,
+              required: ['street', 'city'],
+            } as JsonSchema),
+          ],
+        ],
+        fields: [
+          {
+            path: '/address',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+    ])('describes $change (AS-60c)', async ({ updates, fields }) => {
+      const draft = await givenCommittedProducts();
+
+      for (const patches of updates) {
+        await draft.updateTable(PRODUCTS, patches);
+      }
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields,
+        views: false,
+      });
+    });
+
+    it('describes an object one replace gave a field and a description as the annotated object, the added field and its rewritten fields (AS-60c)', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: { schema: productSchema, rows: {} },
+      });
+      await draft.updateTable(PRODUCTS, [
+        replaceField(
+          'address',
+          obj(
+            { city: str(), street: str(), zip: str() },
+            { description: 'Where to ship' },
+          ),
+        ),
+      ]);
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          {
+            path: '/address',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+          { path: '/address/city', change: 'changed' },
+          { path: '/address/street', change: 'changed' },
+          { path: '/address/zip', change: 'added' },
+        ],
+        views: false,
+      });
+    });
+
+    it('describes a default that a later update of another field reset as annotated by its default (AS-60c)', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: obj({ code: str({ default: 'none' }), price: num() }),
+        },
+      });
+      await draft.updateTable(PRODUCTS, [replaceField('price', str())]);
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          { path: '/code', change: 'annotated', annotations: ['default'] },
+          { path: '/price', change: 'changed' },
+        ],
+        views: false,
+      });
+    });
+
+    it('describes a File given a description as annotated by its description (AS-60c)', async () => {
+      const draft = await givenCommittedMedia();
+      await draft.updateTable(MEDIA, [
+        replaceField(
+          'cover',
+          ref(SystemSchemaIds.File, { description: 'Cover image' }),
+        ),
+      ]);
+
+      const structure = await listedStructureOf(draft, MEDIA);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          {
+            path: '/cover',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+        views: false,
+      });
+    });
+
+    it('describes an object whose replace dropped a field held inside its File as rewritten, although the replace adds only a description (AS-60c)', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [ALBUMS]: { schema: albumSchema, rows: {} },
+      });
+      await draft.updateTable(ALBUMS, [
+        {
+          op: 'add',
+          path: '/properties/album/properties/cover/properties/custom',
+          value: obj({ x: str() }),
+        },
+        replaceField(
+          'album',
+          obj(
+            { cover: ref(SystemSchemaIds.File), name: str() },
+            { description: 'An album' },
+          ),
+        ),
+      ]);
+
+      const structure = await listedStructureOf(draft, ALBUMS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          { path: '/album', change: 'annotated', annotations: ['description'] },
+          { path: '/album/cover', change: 'changed' },
+          { path: '/album/name', change: 'changed' },
+        ],
+        views: false,
+      });
+    });
+
+    it.each<{
+      change: string;
+      before: (draft: ChangesScenario) => Promise<void>;
+      foreignKey: string;
+      after?: (draft: ChangesScenario) => Promise<void>;
+      fields: ChangedField[];
+    }>([
+      {
+        change:
+          'a referrer given a description after a rename of its referenced table as annotated by its description',
+        before: (draft) => draft.renameTable(CATEGORIES, GROUPS),
+        foreignKey: GROUPS,
+        fields: [
+          {
+            path: '/category',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+      {
+        change:
+          'a referrer given a description after its referenced table was renamed and another took its id as annotated, reading the replaced id as a Head id',
+        before: async (draft) => {
+          await draft.renameTable(CATEGORIES, GROUPS);
+          await draft.createTable(CATEGORIES, categorySchema);
+        },
+        foreignKey: GROUPS,
+        fields: [
+          {
+            path: '/category',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+      {
+        change:
+          'a referrer pointed at the table that took the id of its renamed referenced table as changed',
+        before: async (draft) => {
+          await draft.renameTable(CATEGORIES, GROUPS);
+          await draft.createTable(CATEGORIES, categorySchema);
+        },
+        foreignKey: CATEGORIES,
+        fields: [{ path: '/category', change: 'changed' }],
+      },
+      {
+        change:
+          'a referrer given a description between two renames of its referenced table as changed, since the id between them names no table',
+        before: (draft) => draft.renameTable(CATEGORIES, GROUPS),
+        foreignKey: GROUPS,
+        after: (draft) => draft.renameTable(GROUPS, TAGS),
+        fields: [{ path: '/category', change: 'changed' }],
+      },
+    ])(
+      'describes $change (AS-60c)',
+      async ({ before, foreignKey, after, fields }) => {
+        const draft = await ChangesScenario.committed(kit, {
+          [CATEGORIES]: { schema: categorySchema, rows: {} },
+          [ITEMS]: {
+            schema: obj({ category: str({ foreignKey: CATEGORIES }) }),
+            rows: {},
+          },
+        });
+        await before(draft);
+        await draft.updateTable(ITEMS, [
+          replaceField(
+            'category',
+            str({ foreignKey, description: 'Its group' }),
+          ),
+        ]);
+        await after?.(draft);
+
+        const structure = await listedStructureOf(draft, ITEMS);
+
+        expect(structure.structureChange).toEqual({
+          table: 'changed',
+          fields,
+          views: false,
+        });
+      },
+    );
+
+    it('covers every value of ANNOTATION_KEYWORDS', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateTable(PRODUCTS, [
+        replaceField(
+          'code',
+          str({
+            title: 'Code',
+            description: 'Article code',
+            deprecated: true,
+            readOnly: true,
+            contentMediaType: 'text/markdown',
+          }),
+        ),
+      ]);
+      const created = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: { schema: obj({ code: str({ default: 'none' }) }) },
+      });
+      await created.updateTable(PRODUCTS, [addField('sku', str())]);
+
+      const annotations = [
+        ...changedFieldsOf(await listedStructureOf(draft, PRODUCTS)),
+        ...changedFieldsOf(await listedStructureOf(created, PRODUCTS)),
+      ].flatMap((field) => field.annotations ?? []);
+
+      expect(new Set(annotations)).toEqual(new Set(ANNOTATION_KEYWORDS));
     });
 
     it.each([
@@ -462,7 +1224,7 @@ describe('listChanges: structure changes', () => {
       await draft.removeTable(PRODUCTS);
       await draft.createTable(
         PRODUCTS,
-        obj({ code: str(), price: str(), sku: str() }),
+        obj({ code: str({ default: 'none' }), price: str(), sku: str() }),
       );
 
       const structure = await listedStructureOf(draft, PRODUCTS);
@@ -472,10 +1234,33 @@ describe('listChanges: structure changes', () => {
         fields: [
           { path: '/address/city', change: 'removed' },
           { path: '/address/street', change: 'removed' },
+          { path: '/code', change: 'annotated', annotations: ['default'] },
           { path: '/price', change: 'changed' },
           { path: '/sku', change: 'added' },
           { path: '/variants', change: 'removed' },
         ],
+        views: false,
+      });
+    });
+
+    it('reports no object of a replaced table, nor a leaf whose description alone changed (AS-60c)', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.removeTable(PRODUCTS);
+      await draft.createTable(
+        PRODUCTS,
+        obj({
+          code: str({ description: 'Article code' }),
+          price: num(),
+          address: describedAddressSchema,
+          variants: arr(obj({ color: str() })),
+        }),
+      );
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'replaced',
+        fields: [],
         views: false,
       });
     });
@@ -581,6 +1366,27 @@ describe('listChanges: structure changes', () => {
       [PRODUCTS]: {
         schema: productSchema,
         rows: { p1: productRow },
+      },
+    });
+  }
+
+  function changedFieldsOf(unit: ListedUnit): readonly ChangedField[] {
+    return unit.structureChange?.fields ?? [];
+  }
+
+  function givenCommittedShipments(): Promise<ChangesScenario> {
+    return ChangesScenario.committed(kit, {
+      [SHIPMENTS]: {
+        schema: shipmentSchema,
+        rows: {
+          s1: {
+            code: 's1',
+            shipping: {
+              address: { city: 'Riga', street: 'Main' },
+              parcels: [{ weight: 1 }],
+            },
+          },
+        },
       },
     });
   }

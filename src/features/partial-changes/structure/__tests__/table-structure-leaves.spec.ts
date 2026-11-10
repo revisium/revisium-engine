@@ -14,6 +14,7 @@ import {
 } from 'src/__tests__/fixtures/ledger-steps';
 import {
   analyzeStructure,
+  annotatedObjectsOf,
   changedPointersOf,
   createdWith,
   describedChangesOf,
@@ -432,6 +433,48 @@ describe('TableStructure: moved leaves', () => {
   });
 });
 
+describe('TableStructure: annotating replaces', () => {
+  it.each<{ name: string; scenario: StructureScenario; pointer: string }>([
+    {
+      name: 'a published-at field replaced with a string and back',
+      pointer: '/releasedAt',
+      scenario: {
+        head: obj({ releasedAt: ref(SystemSchemaIds.RowPublishedAt) }),
+        draft: obj({ releasedAt: ref(SystemSchemaIds.RowPublishedAt) }),
+        pending: [
+          pendingUpdate(replaceField('releasedAt', str())),
+          pendingUpdate(
+            replaceField('releasedAt', ref(SystemSchemaIds.RowPublishedAt)),
+          ),
+        ],
+      },
+    },
+    {
+      name: 'a system field switched to another system field and back',
+      pointer: '/stamp',
+      scenario: {
+        head: obj({ stamp: ref(SystemSchemaIds.RowCreatedAt) }),
+        draft: obj({ stamp: ref(SystemSchemaIds.RowCreatedAt) }),
+        pending: [
+          pendingUpdate(
+            replaceField('stamp', ref(SystemSchemaIds.RowUpdatedAt)),
+          ),
+          pendingUpdate(
+            replaceField('stamp', ref(SystemSchemaIds.RowCreatedAt)),
+          ),
+        ],
+      },
+    },
+  ])(
+    'describes $name as changed, since a $ref is no annotation (AS-60c)',
+    ({ scenario, pointer }) => {
+      expect(describedChangesOf(analyzeStructure(scenario))).toEqual([
+        { pointer, change: 'changed' },
+      ]);
+    },
+  );
+});
+
 describe('TableStructure: pending migrations that do not replay', () => {
   it.each<{
     name: string;
@@ -475,6 +518,27 @@ describe('TableStructure: pending migrations that do not replay', () => {
       expect(describedChangesOf(analyzeStructure(scenario))).toEqual(described);
     },
   );
+
+  it('describes a leaf whose Head and Draft schemas differ only in a validating annotation as annotated, and no object, when the patches do not replay (AS-60c)', () => {
+    const structure = analyzeStructure({
+      head: obj({
+        code: str({ default: 'none' }),
+        price: num(),
+        address: obj({ city: str() }),
+      }),
+      draft: obj({
+        code: str(),
+        price: num({ description: 'In euros' }),
+        address: obj({ city: str() }, { description: 'Where to ship' }),
+      }),
+      pending: [pendingUpdate(removeField('stock'))],
+    });
+
+    expect(describedChangesOf(structure)).toEqual([
+      { pointer: '/code', change: 'annotated', annotations: ['default'] },
+    ]);
+    expect(annotatedObjectsOf(structure)).toEqual([]);
+  });
 
   it('keeps the leaf that a patch path names structure-bound', () => {
     const structure = analyzeStructure({

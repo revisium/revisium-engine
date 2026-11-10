@@ -10,10 +10,13 @@ import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
 
 export type LeafKind = 'value' | 'atomic' | 'publishedAt' | 'computed';
 
-export interface SchemaLeaf {
+export interface SchemaNode {
   readonly pointer: JsonPointer;
-  readonly kind: LeafKind;
   readonly schema: JsonSchema;
+}
+
+export interface SchemaLeaf extends SchemaNode {
+  readonly kind: LeafKind;
 }
 
 export interface DataTarget {
@@ -47,6 +50,10 @@ export class SchemaLeaves {
   public publishedAtField(): SchemaLeaf | undefined {
     return this.all.find((leaf) => leaf.kind === 'publishedAt');
   }
+}
+
+export function nestedObjectsOf(schema: JsonSchema): SchemaNode[] {
+  return objectsBelow(schema, JsonPointer.root);
 }
 
 export function storesValueInData(leaf: SchemaLeaf): boolean {
@@ -115,6 +122,25 @@ function collectLeaves(
   }
 
   return [{ pointer, kind: leafKindOf(node, publishedAtRefs), schema: node }];
+}
+
+function objectsBelow(node: JsonSchema, pointer: JsonPointer): SchemaNode[] {
+  if (!isObjectNode(node)) {
+    return [];
+  }
+
+  return Object.entries(node.properties).flatMap(([name, child]) => {
+    if (!isObjectNode(child)) {
+      return [];
+    }
+
+    const childPointer = pointer.child(name);
+
+    return [
+      { pointer: childPointer, schema: child },
+      ...objectsBelow(child, childPointer),
+    ];
+  });
 }
 
 function leafKindOf(node: JsonSchema, publishedAtRefs: number): LeafKind {

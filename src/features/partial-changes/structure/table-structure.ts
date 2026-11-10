@@ -6,17 +6,25 @@ import type {
 } from '@revisium/schema-toolkit/types';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import {
-  type LeafOrigin,
-  LeafOrigins,
+  type NodeOrigin,
+  NodeOrigins,
   type PatchEffect,
   pointersTouchedBy,
   replayPendingPatches,
-} from 'src/features/partial-changes/structure/leaf-origins';
-import { normalizedLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
+} from 'src/features/partial-changes/structure/node-origins';
+import {
+  type AnnotationKeyword,
+  annotationsDifferingBetween,
+  normalizedLeafSchema,
+  ownAnnotationsDifferingBetween,
+  validatingSchema,
+} from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
   dataPointerOfSchemaPath,
+  nestedObjectsOf,
   type SchemaLeaf,
   SchemaLeaves,
+  type SchemaNode,
 } from 'src/features/partial-changes/structure/schema-leaves';
 import { isStructureRecorded } from 'src/features/partial-changes/structure/structure-recorded';
 import {
@@ -54,6 +62,7 @@ export const STRUCTURE_FIELD_CHANGES = [
   'removed',
   'changed',
   'moved',
+  'annotated',
 ] as const;
 
 export type StructureFieldChange = (typeof STRUCTURE_FIELD_CHANGES)[number];
@@ -62,6 +71,12 @@ export interface ChangedLeaf {
   readonly pointer: JsonPointer;
   readonly change: StructureFieldChange;
   readonly from?: JsonPointer;
+  readonly annotations?: readonly AnnotationKeyword[];
+}
+
+export interface AnnotatedObject {
+  readonly pointer: JsonPointer;
+  readonly annotations: readonly AnnotationKeyword[];
 }
 
 export interface TableStructure {
@@ -72,8 +87,11 @@ export interface TableStructure {
   readonly unchangedLeaves: readonly SchemaLeaf[];
   readonly changedPointers: readonly JsonPointer[];
   readonly changedLeaves: readonly ChangedLeaf[];
+  readonly annotatedObjects: readonly AnnotatedObject[];
   readonly publishedAtOwner: PublishedAtOwner;
 }
+
+type LeafOrigin = NodeOrigin<SchemaLeaf>;
 
 const WITHOUT_PROVENANCE: readonly PatchEffect[] = [];
 
@@ -90,6 +108,7 @@ export function analyzeTableStructure(
     input.head.schema,
     pendingBatches,
     rules,
+    { head: input.head.tableIdentities, draft: input.draft.tableIdentities },
   );
   const leaves = new LeafComparison(
     input.head,
@@ -113,6 +132,9 @@ export function analyzeTableStructure(
     unchangedLeaves: leaves.unchanged,
     changedPointers,
     changedLeaves: leaves.changedLeaves(pendingEffects ?? WITHOUT_PROVENANCE),
+    annotatedObjects: leaves.annotatedObjects(
+      pendingEffects ?? WITHOUT_PROVENANCE,
+    ),
     publishedAtOwner: leaves.publishedAtOwner(),
   };
 }
@@ -193,12 +215,12 @@ class LeafComparison {
   }
 
   public changedLeaves(pendingEffects: readonly PatchEffect[]): ChangedLeaf[] {
-    const origins = new LeafOrigins(this.headLeaves.all, pendingEffects);
+    const origins = new NodeOrigins(this.headLeaves.all, pendingEffects);
     const draftLeaves = this.draftLeaves.all.map(
       (leaf): TracedLeaf => ({ leaf, origin: origins.at(leaf.pointer) }),
     );
     const movedAway = new Set(
-      draftLeaves.filter(isMoved).map(({ origin }) => pointerKey(origin.leaf)),
+      draftLeaves.filter(isMoved).map(({ origin }) => pointerKey(origin.node)),
     );
 
     return [
@@ -207,6 +229,19 @@ class LeafComparison {
       ),
       ...this.removedLeaves(movedAway),
     ];
+  }
+
+  public annotatedObjects(
+    pendingEffects: readonly PatchEffect[],
+  ): AnnotatedObject[] {
+    const origins = new NodeOrigins(
+      nestedObjectsOf(this.head.schema),
+      pendingEffects,
+    );
+
+    return nestedObjectsOf(this.draft.schema).flatMap((draftObject) =>
+      annotatedObjectOf(draftObject, origins.at(draftObject.pointer)),
+    );
   }
 
   public publishedAtOwner(): PublishedAtOwner {
@@ -246,7 +281,34 @@ class LeafComparison {
       return [];
     }
 
-    return [{ pointer: leaf.pointer, change: 'changed' }];
+    return this.changesAtItsPointer(origin, leaf);
+  }
+
+  private changesAtItsPointer(
+    origin: LeafOrigin,
+    draftLeaf: SchemaLeaf,
+  ): ChangedLeaf[] {
+    if (!origin.rewritten && this.validateAlike(origin.node, draftLeaf)) {
+      return this.annotatedLeafOf(origin.node, draftLeaf);
+    }
+
+    return [{ pointer: draftLeaf.pointer, change: 'changed' }];
+  }
+
+  private annotatedLeafOf(
+    headLeaf: SchemaLeaf,
+    draftLeaf: SchemaLeaf,
+  ): ChangedLeaf[] {
+    const annotations = annotationsDifferingBetween(
+      { schema: headLeaf.schema, tableIdentities: this.head.tableIdentities },
+      { schema: draftLeaf.schema, tableIdentities: this.draft.tableIdentities },
+    );
+
+    if (annotations.length === 0) {
+      return [];
+    }
+
+    return [{ pointer: draftLeaf.pointer, change: 'annotated', annotations }];
   }
 
   private changeOfNewLeaf(
@@ -264,7 +326,7 @@ class LeafComparison {
     return {
       pointer: leaf.pointer,
       change: this.keepsValue(origin, leaf) ? 'moved' : 'changed',
-      from: origin.leaf.pointer,
+      from: origin.node.pointer,
     };
   }
 
@@ -279,7 +341,11 @@ class LeafComparison {
   }
 
   private keepsValue(origin: LeafOrigin, draftLeaf: SchemaLeaf): boolean {
-    return !origin.rewritten && this.haveEqualSchemas(origin.leaf, draftLeaf);
+    return (
+      !origin.rewritten &&
+      !origin.annotated &&
+      this.haveEqualSchemas(origin.node, draftLeaf)
+    );
   }
 
   private isUnchanged(draftLeaf: SchemaLeaf): boolean {
@@ -302,6 +368,13 @@ class LeafComparison {
     );
   }
 
+  private validateAlike(headLeaf: SchemaLeaf, draftLeaf: SchemaLeaf): boolean {
+    return deepEqual(
+      validatingSchema(headLeaf.schema, this.head.tableIdentities),
+      validatingSchema(draftLeaf.schema, this.draft.tableIdentities),
+    );
+  }
+
   private isTouchedByPendingPatch(leaf: SchemaLeaf): boolean {
     return this.pendingPatchPointers.some((pointer) =>
       pointer.isAtOrAbove(leaf.pointer),
@@ -321,7 +394,37 @@ interface MovedLeaf extends TracedLeaf {
 function isMoved(draftLeaf: TracedLeaf): draftLeaf is MovedLeaf {
   const { leaf, origin } = draftLeaf;
 
-  return origin !== undefined && pointerKey(origin.leaf) !== pointerKey(leaf);
+  return origin !== undefined && pointerKey(origin.node) !== pointerKey(leaf);
+}
+
+function annotatedObjectOf(
+  draftObject: SchemaNode,
+  origin: NodeOrigin<SchemaNode> | undefined,
+): AnnotatedObject[] {
+  if (!origin || !isPatchedInPlace(origin, draftObject)) {
+    return [];
+  }
+
+  const annotations = ownAnnotationsDifferingBetween(
+    origin.node.schema,
+    draftObject.schema,
+  );
+
+  if (annotations.length === 0) {
+    return [];
+  }
+
+  return [{ pointer: draftObject.pointer, annotations }];
+}
+
+function isPatchedInPlace(
+  origin: NodeOrigin<SchemaNode>,
+  draftNode: SchemaNode,
+): boolean {
+  return (
+    (origin.annotated || origin.rewritten) &&
+    pointerKey(origin.node) === pointerKey(draftNode)
+  );
 }
 
 function pendingPatchPointers(
@@ -357,6 +460,6 @@ function schemaPathsOf(patch: JsonPatch): string[] {
   return [patch.path];
 }
 
-function pointerKey(leaf: SchemaLeaf): string {
-  return leaf.pointer.toString();
+function pointerKey(node: SchemaNode): string {
+  return node.pointer.toString();
 }

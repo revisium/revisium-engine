@@ -6,6 +6,8 @@ export interface DraftRevisionCommitToTargetCommandReturnType {
   readonly previousHeadRevisionId: string;
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
+  // The next Draft's hasChanges, recomputed from its table versions.
+  readonly draftHasChanges: boolean;
 }
 
 export class DraftRevisionCommitToTargetCommand {

@@ -129,7 +129,7 @@ describe('commitChanges racing other writers', () => {
         previousHeadRevisionId: overtaking.headRevisionId,
         headRevisionId: overtaking.draftRevisionId,
         applied: { selected: 1, required: 0 },
-        remaining: { units: 1 },
+        draftHasChanges: true,
       });
       await expectData(draft, 'head', PRODUCTS, 'p1', {
         title: 'uno',

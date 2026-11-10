@@ -6,11 +6,8 @@ import {
   type RevertedDraft,
 } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
-import {
-  type ApplicablePlan,
-  appliedCountsOf,
-  ChangeApplier,
-} from 'src/features/partial-changes/writing/change-applier';
+import type { CompletePlan } from 'src/features/partial-changes/planning/change-planner';
+import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';
 import { targetWritePlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';
 import { ShareCommands } from 'src/features/share/share.commands';
 
@@ -46,16 +43,18 @@ export class RevertDraftChangesHandler implements ICommandHandler<
     return result;
   }
 
-  private async revertDraft(plan: ApplicablePlan): Promise<RevertedDraft> {
-    await this.draftRevisionTargetApi.revertToTarget(
-      targetWritePlanOf(plan.target),
-    );
+  private async revertDraft(plan: CompletePlan): Promise<RevertedDraft> {
+    const { draftHasChanges } =
+      await this.draftRevisionTargetApi.revertToTarget(
+        targetWritePlanOf(plan.target),
+      );
 
     return {
       status: 'applied',
       headRevisionId: plan.headRevisionId,
       draftRevisionId: plan.draftRevisionId,
-      ...appliedCountsOf(plan),
+      applied: plan.counts,
+      draftHasChanges,
     };
   }
 

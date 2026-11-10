@@ -78,8 +78,8 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       headRevisionId: formerDraftRevisionId,
       draftRevisionId: await draft.revisionId('draft'),
       applied: { selected: 1, required: 0 },
-      remaining: { units: 1, unreadTables: 0 },
-      renumbered: [],
+      draftHasChanges: true,
+      renumberedMigrations: [],
     });
     await expectRows(draft, 'head', CATEGORIES, {
       c1: { title: 'uno' },
@@ -115,7 +115,7 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       headRevisionId,
       draftRevisionId,
       applied: { selected: 1, required: 0 },
-      remaining: { units: 1, unreadTables: 0 },
+      draftHasChanges: true,
     });
     await expectRows(draft, 'draft', CATEGORIES, {
       c1: { title: 'one' },
@@ -171,8 +171,10 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
 
       expect(result).toEqual<ChangesBlocked>({
         status: 'blocked',
+        planned: true,
         blockers: [unledgeredProducts],
         required: [],
+        unmatched: {},
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     },
@@ -229,8 +231,10 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
 
       expect(result).toEqual<ChangesBlocked>({
         status: 'blocked',
+        planned: true,
         blockers: [unledgeredProducts],
         required: [],
+        unmatched: {},
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     },
@@ -251,8 +255,8 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       headRevisionId: formerDraftRevisionId,
       draftRevisionId: await draft.revisionId('draft'),
       applied: { selected: 1, required: 0 },
-      remaining: { units: 0, unreadTables: 0 },
-      renumbered: [],
+      draftHasChanges: true,
+      renumberedMigrations: [],
     });
     await expectRows(draft, 'head', CATEGORIES, {
       c1: { title: 'uno' },
@@ -276,7 +280,7 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       headRevisionId,
       draftRevisionId,
       applied: { selected: 1, required: 0 },
-      remaining: { units: 0, unreadTables: 0 },
+      draftHasChanges: true,
     });
     await expectRows(draft, 'draft', CATEGORIES, {
       c1: { title: 'one' },
@@ -365,8 +369,10 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
 
         expect(result).toEqual<ChangesBlocked>({
           status: 'blocked',
+          planned: true,
           blockers: refused.map(unledgered),
           required: [],
+          unmatched: {},
         });
         expect(await branchContentsOf(kit, draft)).toEqual(contents);
       },

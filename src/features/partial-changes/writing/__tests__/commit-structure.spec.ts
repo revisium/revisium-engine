@@ -969,12 +969,12 @@ function requiredOf({
 
 function renumberedOf(
   result: CommitChangesResult,
-): CommittedDraft['renumbered'] {
+): CommittedDraft['renumberedMigrations'] {
   if (result.status !== 'applied') {
     throw new Error(`The commit was not applied: ${JSON.stringify(result)}`);
   }
 
-  return result.renumbered;
+  return result.renumberedMigrations;
 }
 
 function statusesOf(results: readonly { status: string }[]): string[] {

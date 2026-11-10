@@ -121,7 +121,7 @@ describe('revertChanges', () => {
         headRevisionId,
         draftRevisionId,
         applied: { selected: 1, required: 0 },
-        remaining: { units: 2, unreadTables: 0 },
+        draftHasChanges: true,
       });
       await expectDraftRow(draft, PRODUCTS, 'p1', { title: 'one', price: 10 });
       await expectDraftRow(draft, PRODUCTS, 'p2', { title: 'dos', price: 2 });
@@ -236,7 +236,7 @@ describe('revertChanges', () => {
         headRevisionId,
         draftRevisionId,
         applied: { selected: 1, required: 0 },
-        remaining: { units: 2, unreadTables: 0 },
+        draftHasChanges: true,
       });
       await expectDraftRow(draft, PRODUCTS, 'p1', { title: 'one', price: 10 });
     });
@@ -252,6 +252,7 @@ describe('revertChanges', () => {
 
       expect(result).toEqual<RevertChangesResult>({
         status: 'blocked',
+        planned: true,
         blockers: [expect.objectContaining({ code: 'unmatchedSelector' })],
         required: [],
         unmatched: missingRow,
@@ -388,12 +389,16 @@ describe('revertChanges', () => {
   });
 
   describe('units', () => {
-    it('links the Head version of a table whose last unit it reverts, leaving the Draft without changes', async () => {
+    it('links the Head version of a table whose last unit it reverts, leaving the Draft without changes (AS-89)', async () => {
       const draft = await givenCommittedPrices();
       await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
 
-      await expectApplied(draft.revertChanges({ selection: titleOfP1 }));
+      const result = await draft.revertChanges({ selection: titleOfP1 });
 
+      expect(result).toMatchObject({
+        status: 'applied',
+        draftHasChanges: false,
+      });
       await expectDraftLinksHeadVersion(draft, PRODUCTS);
       expect(await draft.hasChanges()).toBe(false);
     });

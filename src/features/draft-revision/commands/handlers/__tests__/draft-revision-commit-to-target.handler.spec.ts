@@ -350,6 +350,7 @@ describe('DraftRevisionCommitToTargetHandler', () => {
         previousHeadRevisionId: previousHeadId,
         headRevisionId: formerDraftId,
         draftRevisionId: nextDraftId,
+        draftHasChanges: await draft.hasChanges(),
       });
       expect(await revision(previousHeadId)).toMatchObject({
         isHead: false,
@@ -510,28 +511,30 @@ describe('DraftRevisionCommitToTargetHandler', () => {
   });
 
   describe('hasChanges of the next Draft', () => {
-    it('is false when the next Draft links the new Head versions', async () => {
+    it('is false when the next Draft links the new Head versions, and the result says so', async () => {
       const draft = await givenDraftWithEditedPrices();
 
-      await commitTo(draft, {
+      const result = await commitTo(draft, {
         tableId: PRODUCTS,
         outcome: 'other',
         relinkCandidate: true,
       });
 
       expect(await draft.hasChanges()).toBe(false);
+      expect(result.draftHasChanges).toBe(false);
     });
 
-    it('stays true while the next Draft keeps changes', async () => {
+    it('stays true while the next Draft keeps changes, and the result says so', async () => {
       const draft = await givenDraftWithEditedPrices();
 
-      await commitTo(draft, {
+      const result = await commitTo(draft, {
         tableId: PRODUCTS,
         outcome: 'mixed',
         rows: { otherSide: ['p1'] },
       });
 
       expect(await draft.hasChanges()).toBe(true);
+      expect(result.draftHasChanges).toBe(true);
     });
   });
 

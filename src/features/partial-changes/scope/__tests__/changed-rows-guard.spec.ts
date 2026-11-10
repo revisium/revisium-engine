@@ -57,9 +57,7 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
 
     const read = await draft.readScopedCatalogue({ fields: [priceOfP1] });
 
-    expect(read).toEqual(
-      refusedAsTooLarge({ changedRows: 4, unreadTables: 0 }),
-    );
+    expect(read).toEqual(refusedAsTooLarge(4));
     expect(loads).not.toHaveBeenCalled();
   });
 
@@ -72,7 +70,6 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
       kind: 'catalogue',
       changedRows: 1,
       readTableIds: [PRODUCTS],
-      unreadTables: 1,
     });
   });
 
@@ -81,9 +78,7 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
 
     const read = await draft.readScopedCatalogue({ all: true });
 
-    expect(read).toEqual(
-      refusedAsTooLarge({ changedRows: 1 + LOG_IDS.length, unreadTables: 0 }),
-    );
+    expect(read).toEqual(refusedAsTooLarge(1 + LOG_IDS.length));
   });
 
   describe('the reference read of AS-74, which reads every table', () => {
@@ -107,24 +102,15 @@ describe('GuardChangedRows: the limit on changed rows of the affected tables', (
         fields: [priceOfP1],
       });
 
-      expect(reference).toEqual(
-        refusedAsTooLarge({ changedRows: 1 + LOG_IDS.length, unreadTables: 0 }),
-      );
+      expect(reference).toEqual(refusedAsTooLarge(1 + LOG_IDS.length));
     });
   });
 });
 
-function refusedAsTooLarge({
-  changedRows,
-  unreadTables,
-}: {
-  changedRows: number;
-  unreadTables: number;
-}): ScopedCatalogueView {
+function refusedAsTooLarge(changedRows: number): ScopedCatalogueView {
   return {
     kind: 'tooLarge',
     changedRows,
-    unreadTables,
     blocker: {
       code: 'tooLarge',
       message: `The affected tables hold ${changedRows} changed rows; the limit for one operation is ${MAX_CHANGED_ROWS}`,

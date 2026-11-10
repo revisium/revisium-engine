@@ -5,15 +5,12 @@ import {
   type CommitChangesResult,
   CommitDraftChangesCommand,
   type CommittedDraft,
-  type RenumberedMigration,
+  type MigrationRenumbering,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
+import type { CompletePlan } from 'src/features/partial-changes/planning/change-planner';
 import { validateComment } from 'src/features/partial-changes/selection/selection-validator';
-import {
-  type ApplicablePlan,
-  appliedCountsOf,
-  ChangeApplier,
-} from 'src/features/partial-changes/writing/change-applier';
+import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';
 import { commitTargetWritePlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';
 import { ShareCommands } from 'src/features/share/share.commands';
 
@@ -53,21 +50,28 @@ export class CommitDraftChangesHandler implements ICommandHandler<
   }
 
   private async commitDraft(
-    plan: ApplicablePlan,
+    plan: CompletePlan,
     comment: string | undefined,
   ): Promise<CommittedDraft> {
-    const { previousHeadRevisionId, headRevisionId, draftRevisionId } =
-      await this.draftRevisionTargetApi.commitToTarget(
-        commitTargetWritePlanOf(plan.target, comment),
-      );
+    const {
+      previousHeadRevisionId,
+      headRevisionId,
+      draftRevisionId,
+      draftHasChanges,
+    } = await this.draftRevisionTargetApi.commitToTarget(
+      commitTargetWritePlanOf(plan.target, comment),
+    );
 
     return {
       status: 'applied',
       previousHeadRevisionId,
       headRevisionId,
       draftRevisionId,
-      ...appliedCountsOf(plan),
-      renumbered: renumberedMigrationsOf(plan.target.assembled.ledger),
+      applied: plan.counts,
+      draftHasChanges,
+      renumberedMigrations: renumberedMigrationsOf(
+        plan.target.assembled.ledger,
+      ),
     };
   }
 
@@ -89,7 +93,7 @@ export class CommitDraftChangesHandler implements ICommandHandler<
 
 function renumberedMigrationsOf({
   renumbered,
-}: LedgerPlan): RenumberedMigration[] {
+}: LedgerPlan): MigrationRenumbering[] {
   return renumbered.map(({ source, row }) => ({
     from: source.migration.id,
     to: row.id,

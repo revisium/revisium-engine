@@ -123,7 +123,7 @@ describe('listed selectors over random Drafts (AS-61, AS-80)', () => {
 
 function selectionOutcomeOf(preview: PreviewChangesResult) {
   return {
-    selected: preview.counts.selected,
+    selected: preview.counts?.selected,
     unmatched: preview.unmatched,
     notSelectable: preview.blockers.filter(
       ({ code }) => code === 'notSelectable',

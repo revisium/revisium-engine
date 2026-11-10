@@ -124,6 +124,37 @@ describe('Draft row reads over random Drafts', () => {
   );
 
   it.each(RANDOM_DRAFT_SEEDS)(
+    'covers in a preview that selects the table data of a table the rows its table data counts, apart from computed-only rows, all applied (DR-05, AS-88, seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const rows = await readEveryRow(draft);
+      const tables = (await readEveryTable(draft)).filter(
+        (table) => selectableRowsOf(table, rows) > 0,
+      );
+
+      for (const table of tables) {
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection: { tableData: [table.tableId] },
+        });
+        const covered = preview.coverage.find(
+          ({ tableId, side }) => tableId === table.tableId && !side,
+        );
+
+        expect([table.tableId, covered]).toEqual([
+          table.tableId,
+          expect.objectContaining({
+            rows: selectableRowsOf(table, rows),
+            appliedRows: selectableRowsOf(table, rows),
+            partlyAppliedRows: 0,
+          }),
+        ]);
+      }
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it.each(RANDOM_DRAFT_SEEDS)(
     'lists under each row filter exactly the unfiltered items it matches, with their units and links, on every page size (DR-15, DR-16, seed %i)',
     async (seed) => {
       const draft = await givenRandomDraft(kit, seed);
@@ -451,22 +482,37 @@ function rowsWithUnitsOf(
   table: DraftTableItem,
   rows: readonly DraftRowItem[],
 ): number {
+  const computed = rowsOfTable(table, rows).filter(
+    ({ selection }) => selection.state === 'computed',
+  );
+
+  return selectableRowsOf(table, rows) + computed.length;
+}
+
+// The rows with units, each counted by its row selector: what a plan covers (partial-changes-v1 §5.1).
+function selectableRowsOf(
+  table: DraftTableItem,
+  rows: readonly DraftRowItem[],
+): number {
+  const selectors = new Set(
+    rowsOfTable(table, rows).flatMap(({ selection }) =>
+      selection.state === 'selectable' ? [JSON.stringify(selection.row)] : [],
+    ),
+  );
+
+  return selectors.size;
+}
+
+function rowsOfTable(
+  table: DraftTableItem,
+  rows: readonly DraftRowItem[],
+): DraftRowItem[] {
   if (
     table.changeType === ChangeType.Added ||
     table.changeType === ChangeType.Removed
   ) {
-    return 0;
+    return [];
   }
 
-  const ofTable = rows.filter(({ tableId }) => tableId === table.tableId);
-  const selectors = new Set(
-    ofTable.flatMap(({ selection }) =>
-      selection.state === 'selectable' ? [JSON.stringify(selection.row)] : [],
-    ),
-  );
-  const computed = ofTable.filter(
-    ({ selection }) => selection.state === 'computed',
-  );
-
-  return selectors.size + computed.length;
+  return rows.filter(({ tableId }) => tableId === table.tableId);
 }

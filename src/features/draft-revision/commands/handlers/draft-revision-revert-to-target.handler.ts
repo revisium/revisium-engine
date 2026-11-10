@@ -1,6 +1,7 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import {
   DraftRevisionRevertToTargetCommand,
+  DraftRevisionRevertToTargetCommandReturnType,
   MixedTableVersion,
   TableWritePlan,
   versionRefsOf,
@@ -20,7 +21,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 @CommandHandler(DraftRevisionRevertToTargetCommand)
 export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
   DraftRevisionRevertToTargetCommand,
-  string
+  DraftRevisionRevertToTargetCommandReturnType
 > {
   constructor(
     private readonly transactionService: TransactionPrismaService,
@@ -34,18 +35,20 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
     return this.transactionService.getTransaction();
   }
 
-  async execute({ data }: DraftRevisionRevertToTargetCommand): Promise<string> {
+  async execute({
+    data,
+  }: DraftRevisionRevertToTargetCommand): Promise<DraftRevisionRevertToTargetCommandReturnType> {
     const { headRevisionId, draftRevisionId } = data;
     const tables = await this.revertTables(data.tables);
 
     await this.relinkDraftTables(draftRevisionId, tables);
     await this.fileReferences.register(draftRevisionId, tables);
-    await this.internalService.updateHasChanges(
+    const draftHasChanges = await this.internalService.updateHasChanges(
       draftRevisionId,
       headRevisionId,
     );
 
-    return draftRevisionId;
+    return { draftRevisionId, draftHasChanges };
   }
 
   private async revertTables(

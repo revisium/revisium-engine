@@ -121,19 +121,39 @@ function previewResultOf(
   plan: ChangePlan,
   status: PreviewStatus,
 ): PreviewChangesResult {
-  return {
-    status,
+  const base = {
     headRevisionId: plan.headRevisionId,
     draftRevisionId: plan.draftRevisionId,
+    refusedTables: plan.refusedTables,
+    blockers: plan.blockers,
+    estimate: plan.estimate,
+  };
+
+  if (!plan.planned) {
+    return {
+      ...base,
+      status: 'blocked',
+      planned: false,
+      fingerprint: null,
+      counts: null,
+      coverage: [],
+      required: [],
+      deferred: [],
+      sample: [],
+      unmatched: null,
+    };
+  }
+
+  return {
+    ...base,
+    status,
+    planned: true,
     fingerprint: plan.fingerprint,
     counts: plan.counts,
-    unreadTables: plan.unreadTables,
-    refusedTables: plan.refusedTables,
+    coverage: plan.coverage,
     required: plan.required,
-    blockers: plan.blockers,
     deferred: plan.deferred,
     sample: plan.sample,
     unmatched: plan.unmatched,
-    estimate: plan.estimate,
   };
 }

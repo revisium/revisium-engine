@@ -24,21 +24,18 @@ export type ScopedCatalogueView =
   | {
       readonly kind: 'catalogue';
       readonly changedRows: number;
-      readonly unreadTables: number;
       readonly readTableIds: readonly string[];
       readonly units: readonly AddressedUnit[];
     }
   | {
       readonly kind: 'tooLarge';
       readonly changedRows: number;
-      readonly unreadTables: number;
       readonly blocker: CatalogueBlocker;
     };
 
 const readingEveryTable: Pick<ReadScope, 'scopeOf'> = {
   scopeOf: (_selection, compared) => ({
     affectedTables: compared.tables,
-    unreadTables: 0,
   }),
 };
 
@@ -88,13 +85,12 @@ function scopedCatalogueView(
   snapshot: ChangesSnapshot,
   scoped: ScopedCatalogue,
 ): ScopedCatalogueView {
-  const { changedRowCount, unreadTables } = scoped;
+  const { changedRowCount } = scoped;
 
   if (scoped.kind === 'tooLarge') {
     return {
       kind: 'tooLarge',
       changedRows: changedRowCount,
-      unreadTables,
       blocker: scoped.blocker,
     };
   }
@@ -102,7 +98,6 @@ function scopedCatalogueView(
   return {
     kind: 'catalogue',
     changedRows: changedRowCount,
-    unreadTables,
     readTableIds: [...scoped.catalogue.rows.keys()]
       .map((identity) => tableIdOf(snapshot, identity))
       .sort(compareCodePoints),

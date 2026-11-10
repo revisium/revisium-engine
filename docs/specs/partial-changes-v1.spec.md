@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 2.0 |
-| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PRs 6, 7 and 12 are pending |
+| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PRs 7 and 12 are pending |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
@@ -999,7 +999,7 @@ The caller commits the same selection with `"includeRequired": true, "expected":
 **`blocked`: a required unit is excluded.**
 
 ```json
-{ "status": "blocked",
+{ "status": "blocked", "planned": true,
   "blockers": [{ "code": "requiredExcluded", "tableId": "categories", "rowId": "c9",
     "message": "categories/c9 is required but excluded",
     "unit": { "kind": "rowCreate", "tableId": "categories", "rowId": "c9",
@@ -1011,7 +1011,7 @@ The caller commits the same selection with `"includeRequired": true, "expected":
                   "path": "/category", "selector": { "fields": [
                     { "tableId": "products", "rowId": "p1", "path": "/category" }] } } },
                 "because": "products/p1/category references categories/c9, which exists only in the Draft" } }],
-  "required": [] }
+  "required": [], "unmatched": {} }
 ```
 
 **`stale`: a selected field was edited again after the preview.**

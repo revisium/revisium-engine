@@ -1,5 +1,5 @@
 import type {
-  AppliedCounts,
+  AppliedOutcome,
   ApplyChangesInput,
   ApplyResult,
   UnappliedChanges,
@@ -7,7 +7,7 @@ import type {
 
 export type RevertChangesInput = ApplyChangesInput;
 
-export interface RevertedDraft extends ApplyResult, AppliedCounts {
+export interface RevertedDraft extends ApplyResult, AppliedOutcome {
   readonly status: 'applied';
   readonly headRevisionId: string;
   readonly draftRevisionId: string;

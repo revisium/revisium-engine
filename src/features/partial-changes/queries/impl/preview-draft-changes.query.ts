@@ -2,6 +2,7 @@ import type { RefusedTable } from 'src/features/partial-changes/head-schema/head
 import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { PlanCounts } from 'src/features/partial-changes/planning/change-planner';
+import type { TableCoverage } from 'src/features/partial-changes/planning/plan-coverage';
 import type { PreviewStatus } from 'src/features/partial-changes/planning/plan-decision';
 import type {
   PlanBlocker,
@@ -22,21 +23,40 @@ export interface PreviewChangesInput {
   readonly includeRequired?: boolean | null;
 }
 
-export interface PreviewChangesResult {
-  readonly status: PreviewStatus;
+interface PreviewBase {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
+  readonly refusedTables: readonly RefusedTable[];
+  readonly blockers: readonly PlanBlocker[];
+  readonly estimate: PlanEstimate;
+}
+
+export interface PlannedPreview extends PreviewBase {
+  readonly status: PreviewStatus;
+  readonly planned: true;
   readonly fingerprint: string;
   readonly counts: PlanCounts;
-  readonly unreadTables: number;
-  readonly refusedTables: readonly RefusedTable[];
+  readonly coverage: readonly TableCoverage[];
   readonly required: readonly RequiredUnit[];
-  readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly DeferredRow[];
   readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
-  readonly estimate: PlanEstimate;
 }
+
+// A preview a limit stopped returns no value of the plan (SPEC §5.3).
+export interface StoppedPreview extends PreviewBase {
+  readonly status: 'blocked';
+  readonly planned: false;
+  readonly fingerprint: null;
+  readonly counts: null;
+  readonly coverage: readonly [];
+  readonly required: readonly [];
+  readonly deferred: readonly [];
+  readonly sample: readonly [];
+  readonly unmatched: null;
+}
+
+export type PreviewChangesResult = PlannedPreview | StoppedPreview;
 
 export class PreviewDraftChangesQuery {
   constructor(public readonly data: PreviewChangesInput) {}

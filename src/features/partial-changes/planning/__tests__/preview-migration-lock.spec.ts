@@ -76,7 +76,7 @@ describe('previewChanges during an async migration', () => {
           },
         ],
         required: [],
-        counts: { selected: 1, required: 0, remaining: 0 },
+        counts: { selected: 1, required: 0 },
       });
     },
   );
@@ -94,12 +94,7 @@ describe('previewChanges during an async migration', () => {
   });
 
   async function givenTitleEditNextToMigratingCategories(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
-      [CATEGORIES]: { schema: titleSchema, rows: { c1: { title: 'one' } } },
-      [PRODUCTS]: { schema: titleSchema, rows: { p1: { title: 'one' } } },
-    });
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'edited' });
-    await draft.updateTable(CATEGORIES, [addField('color', str())]);
+    const draft = await givenTitleEditsNextToMigratingCategories(kit, ['p1']);
     migratingDrafts.add(draft);
 
     return draft;
@@ -109,10 +104,89 @@ describe('previewChanges during an async migration', () => {
     draft: ChangesScenario,
     tableId: string,
   ): Promise<void> {
-    await kit.module.get(MigrationApiService).abortMigration({
-      revisionId: await draft.revisionId('draft'),
-      tableId,
-    });
+    await abortMigration(kit, draft, tableId);
     migratingDrafts.delete(draft);
   }
 });
+
+describe('previewChanges stopped by a limit during an async migration', () => {
+  let kit: PartialChangesTestKit;
+  let draft: ChangesScenario | undefined;
+
+  beforeAll(async () => {
+    kit = await createPartialChangesTestKit({
+      settings: { PARTIAL_CHANGES_MAX_CHANGED_ROWS: '1' },
+      overrides: [ASYNC_MIGRATIONS_LEFT_ACTIVE],
+    });
+  });
+
+  afterEach(async () => {
+    if (draft) {
+      await abortMigration(kit, draft, CATEGORIES);
+      draft = undefined;
+    }
+
+    await kit.guard.verifyAndForget();
+  });
+
+  afterAll(async () => {
+    await kit.close();
+  });
+
+  it.each(OPERATIONS)(
+    'returns with the tooLarge blocker of a stopped %s the blocker migrationInProgress (AS-87)',
+    async (operation) => {
+      draft = await givenTitleEditsNextToMigratingCategories(kit, ['p1', 'p2']);
+
+      const preview = await draft.previewChanges({
+        operation,
+        selection: titleOfP1,
+      });
+
+      expect(preview).toMatchObject({
+        status: 'blocked',
+        planned: false,
+        fingerprint: null,
+        counts: null,
+        blockers: [
+          { code: 'migrationInProgress', tableId: CATEGORIES },
+          { code: 'tooLarge' },
+        ],
+      });
+    },
+  );
+});
+
+async function givenTitleEditsNextToMigratingCategories(
+  kit: PartialChangesTestKit,
+  productIds: readonly string[],
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: { schema: titleSchema, rows: { c1: { title: 'one' } } },
+    [PRODUCTS]: {
+      schema: titleSchema,
+      rows: Object.fromEntries(
+        productIds.map((rowId) => [rowId, { title: 'one' }]),
+      ),
+    },
+  });
+
+  for (const rowId of productIds) {
+    await draft.updateRow(PRODUCTS, rowId, { title: 'edited' });
+  }
+
+  await draft.updateTable(CATEGORIES, [addField('color', str())]);
+
+  return draft;
+}
+
+async function abortMigration(
+  kit: PartialChangesTestKit,
+  draft: ChangesScenario,
+  tableId: string,
+): Promise<void> {
+  await kit.module.get(MigrationApiService).abortMigration({
+    revisionId: await draft.revisionId('draft'),
+    tableId,
+  });
+}

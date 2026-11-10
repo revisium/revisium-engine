@@ -124,8 +124,8 @@ describe('commitChanges', () => {
         headRevisionId: formerDraftRevisionId,
         draftRevisionId: await draft.revisionId('draft'),
         applied: { selected: 1, required: 0 },
-        remaining: { units: 2, unreadTables: 0 },
-        renumbered: [],
+        draftHasChanges: true,
+        renumberedMigrations: [],
       });
       expect(await draft.revisionId('head')).toBe(formerDraftRevisionId);
       await expectProducts(draft, 'head', {
@@ -267,8 +267,8 @@ describe('commitChanges', () => {
         headRevisionId: formerDraftRevisionId,
         draftRevisionId: await draft.revisionId('draft'),
         applied: { selected: 1, required: 0 },
-        remaining: { units: 2, unreadTables: 0 },
-        renumbered: [],
+        draftHasChanges: true,
+        renumberedMigrations: [],
       });
       expect(await commentOf(formerDraftRevisionId)).toBe('');
     });
@@ -301,6 +301,7 @@ describe('commitChanges', () => {
 
       expect(result).toEqual<CommitChangesResult>({
         status: 'blocked',
+        planned: true,
         blockers: [expect.objectContaining({ code: 'unmatchedSelector' })],
         required: [],
         unmatched: missingRow,
@@ -778,30 +779,32 @@ describe('commitChanges', () => {
   });
 
   describe('tables without remaining units', () => {
-    it('links the Head versions into the new Draft for the tables it read, so the Draft has no changes left', async () => {
+    it('links the Head versions into the new Draft for the tables it read, so the Draft has no changes left (AS-89)', async () => {
       const draft = await givenProductNextToContentEqualCategory();
 
       const result = await draft.commitChanges({ selection: titleOfP1 });
 
       expect(result).toMatchObject({
         status: 'applied',
-        remaining: { units: 0, unreadTables: 0 },
+        draftHasChanges: false,
       });
       await expectDraftLinksHeadVersion(draft, PRODUCTS);
       await expectDraftLinksHeadVersion(draft, CATEGORIES);
       expect(await draft.hasChanges()).toBe(false);
     });
 
-    it('keeps the Draft version of an unread table that holds only content-equal versions', async () => {
-      const draft = await givenEditedPricesNextToContentEqualLogs();
+    it('keeps the Draft version of an unread table that holds only content-equal versions, so the Draft still has changes (AS-89)', async () => {
+      const draft = await givenTitleEditNextToContentEqualLogs();
       const logsVersionId = await draft.tableVersionId('draft', LOGS);
 
       const result = await draft.commitChanges({ selection: titleOfP1 });
 
       expect(result).toMatchObject({
         status: 'applied',
-        remaining: { units: 2, unreadTables: 1 },
+        draftHasChanges: true,
       });
+      expect(result).not.toHaveProperty('remaining');
+      expect(await draft.hasChanges()).toBe(true);
       expect(await draft.tableVersionId('draft', LOGS)).toBe(logsVersionId);
       expect(await draft.tableVersionId('head', LOGS)).not.toBe(logsVersionId);
     });
@@ -879,6 +882,7 @@ describe('commitChanges', () => {
 
         expect(result).toEqual<CommitChangesResult>({
           status: 'blocked',
+          planned: true,
           blockers: [
             expect.objectContaining({
               code: 'danglingInSource',
@@ -887,6 +891,7 @@ describe('commitChanges', () => {
             }),
           ],
           required: [],
+          unmatched: {},
         });
         expect(await branchContentsOf(kit, draft)).toEqual(contents);
       },
@@ -1262,19 +1267,15 @@ describe('commitChanges', () => {
     });
   }
 
-  async function givenEditedPricesNextToContentEqualLogs(): Promise<ChangesScenario> {
+  async function givenTitleEditNextToContentEqualLogs(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: {
         schema: pricedSchema,
-        rows: {
-          p1: { title: 'one', price: 1 },
-          p2: { title: 'two', price: 2 },
-        },
+        rows: { p1: { title: 'one', price: 1 } },
       },
       [LOGS]: { schema: logSchema, rows: { l1: { entry: 'started' } } },
     });
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
-    await draft.updateRow(PRODUCTS, 'p2', { title: 'dos', price: 2 });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
     await draft.updateRow(LOGS, 'l1', { entry: 'restarted' });
     await draft.updateRow(LOGS, 'l1', { entry: 'started' });
 

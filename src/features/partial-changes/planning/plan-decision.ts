@@ -1,4 +1,7 @@
-import type { ChangePlan } from 'src/features/partial-changes/planning/change-planner';
+import type {
+  CompletePlan,
+  StoppedPlan,
+} from 'src/features/partial-changes/planning/change-planner';
 import { hasUnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 
 export const PREVIEW_STATUSES = [
@@ -12,15 +15,17 @@ export type PreviewStatus = (typeof PREVIEW_STATUSES)[number];
 
 export type PlanStatus = PreviewStatus | 'stale';
 
-export type DecidedPlan = Pick<
-  ChangePlan,
-  | 'refusedByLimit'
+type DecidedCompletePlan = Pick<
+  CompletePlan,
+  | 'planned'
   | 'fingerprint'
   | 'appliedUnits'
   | 'required'
   | 'blockers'
   | 'unmatched'
 >;
+
+export type DecidedPlan = DecidedCompletePlan | Pick<StoppedPlan, 'planned'>;
 
 export interface PreviewTerms {
   readonly includeRequired: boolean;
@@ -44,7 +49,7 @@ export function decidePlanStatus(
   plan: DecidedPlan,
   terms: ApplyTerms,
 ): PlanStatus {
-  if (plan.refusedByLimit) {
+  if (!plan.planned) {
     return 'blocked';
   }
 
@@ -67,23 +72,23 @@ export function decidePlanStatus(
   return 'ready';
 }
 
-function isEmpty({ appliedUnits, blockers }: DecidedPlan): boolean {
+function isEmpty({ appliedUnits, blockers }: DecidedCompletePlan): boolean {
   return appliedUnits.length === 0 && blockers.length === 0;
 }
 
 function isStale(
-  { fingerprint }: DecidedPlan,
+  { fingerprint }: DecidedCompletePlan,
   { expected }: ApplyTerms,
 ): boolean {
   return expected !== undefined && expected !== fingerprint;
 }
 
-function isBlocked({ blockers, unmatched }: DecidedPlan): boolean {
+function isBlocked({ blockers, unmatched }: DecidedCompletePlan): boolean {
   return blockers.length > 0 || hasUnmatchedSelectors(unmatched);
 }
 
 function awaitsRequiredAdditions(
-  { required }: DecidedPlan,
+  { required }: DecidedCompletePlan,
   { includeRequired }: ApplyTerms,
 ): boolean {
   return required.length > 0 && !includeRequired;

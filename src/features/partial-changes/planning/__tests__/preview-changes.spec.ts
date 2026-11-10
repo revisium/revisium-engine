@@ -13,6 +13,7 @@ import type {
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
+import type { TableViewsData } from 'src/features/views/types';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
 import {
@@ -31,6 +32,8 @@ const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
 const TAGS = 'tags';
 const LOGS = 'logs';
+const SCRATCH = 'scratch';
+const EMAIL = 'email';
 const ALPHA = 'alpha';
 const BETA = 'beta';
 
@@ -46,6 +49,15 @@ const productSchema = obj({
 const titleSchema = obj({ title: str() });
 const pricedSchema = obj({ title: str(), price: num() });
 const logSchema = obj({ entry: str() });
+const labelSchema = obj({ label: str() });
+const emailSchema = obj({ address: str() });
+const renamedViews: TableViewsData = {
+  version: 1,
+  defaultViewId: 'default',
+  views: [
+    { id: 'default', name: 'Renamed', columns: [{ field: 'data.title' }] },
+  ],
+};
 
 const titleOf = (tableId: string, rowId: string): FieldRef => ({
   tableId,
@@ -126,7 +138,7 @@ describe('previewChanges', () => {
 
         expect(preview).toMatchObject({
           status: 'ready',
-          counts: { selected: 1, required: 0, remaining: 1 },
+          counts: { selected: 1, required: 0 },
           required: [],
           blockers: [],
           sample: [titleOfC1Unit],
@@ -146,7 +158,7 @@ describe('previewChanges', () => {
 
         expect(preview).toMatchObject({
           status: 'required',
-          counts: { selected: 0, required: 1, remaining: 1 },
+          counts: { selected: 0, required: 1 },
           required: [{ unit: creationOfC9, reason: wholeRowOfC9() }],
           blockers: [],
           sample: [creationOfC9],
@@ -187,7 +199,7 @@ describe('previewChanges', () => {
 
         expect(preview).toMatchObject({
           status: 'blocked',
-          counts: { selected: 0, required: 0, remaining: 2 },
+          counts: { selected: 0, required: 0 },
           required: [],
           blockers: [
             {
@@ -235,8 +247,7 @@ describe('previewChanges', () => {
 
         expect(preview).toMatchObject({
           status: 'empty',
-          counts: { selected: 0, required: 0, remaining: 0 },
-          unreadTables: 1,
+          counts: { selected: 0, required: 0 },
           blockers: [],
           unmatched: {},
         });
@@ -265,7 +276,7 @@ describe('previewChanges', () => {
           status: 'empty',
           headRevisionId: await draft.revisionId('head'),
           draftRevisionId: await draft.revisionId('draft'),
-          counts: { selected: 0, required: 0, remaining: 0 },
+          counts: { selected: 0, required: 0 },
           blockers: [],
           unmatched: titleOfC1,
         });
@@ -286,7 +297,7 @@ describe('previewChanges', () => {
 
         expect(preview).toMatchObject({
           status: 'empty',
-          counts: { selected: 0, required: 0, remaining: 1 },
+          counts: { selected: 0, required: 0 },
           blockers: [],
           sample: [],
           unmatched: titleOfP1,
@@ -394,11 +405,20 @@ describe('previewChanges', () => {
 
       expect(preview).toEqual<PreviewChangesResult>({
         status: 'required',
+        planned: true,
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         fingerprint: await draft.fingerprintPlan('commit', categoryOfP1),
-        counts: { selected: 1, required: 1, remaining: 2 },
-        unreadTables: 0,
+        counts: { selected: 1, required: 1 },
+        coverage: [
+          {
+            tableId: CATEGORIES,
+            rows: 2,
+            appliedRows: 1,
+            partlyAppliedRows: 0,
+          },
+          { tableId: PRODUCTS, rows: 1, appliedRows: 0, partlyAppliedRows: 1 },
+        ],
         refusedTables: [],
         required: [
           {
@@ -444,7 +464,7 @@ describe('previewChanges', () => {
 
       expect(preview).toMatchObject({
         status: 'required',
-        counts: { selected: 1, required: 1, remaining: 2 },
+        counts: { selected: 1, required: 1 },
         required: [
           {
             unit: {
@@ -470,7 +490,7 @@ describe('previewChanges', () => {
       });
       const listing = await draft.listChanges();
 
-      expect(preview.counts.selected).toBe(25);
+      expect(preview.counts?.selected).toBe(25);
       expect(preview.sample).toHaveLength(SAMPLE_SIZE);
       expect(preview.sample).toEqual(listing.units.slice(0, SAMPLE_SIZE));
     });
@@ -547,6 +567,173 @@ describe('previewChanges', () => {
         'products/p2',
         'products/p4',
         'products/p6',
+      ]);
+    });
+  });
+
+  describe('coverage', () => {
+    it('counts each row with units once, as applied when all its units are applied and as partly applied when some are (AS-88)', async () => {
+      const draft = await givenTitleAndPriceEditsNextToCreatedProduct();
+
+      const byFields = await draft.previewChanges({
+        operation: 'commit',
+        selection: {
+          fields: [titleOf(PRODUCTS, 'p1'), titleOf(PRODUCTS, 'p2')],
+        },
+      });
+      const byTableData = await draft.previewChanges({
+        operation: 'commit',
+        selection: { tableData: [PRODUCTS] },
+      });
+
+      expect(byFields.coverage).toEqual([
+        { tableId: PRODUCTS, rows: 3, appliedRows: 1, partlyAppliedRows: 1 },
+      ]);
+      expect(byTableData.coverage).toEqual([
+        { tableId: PRODUCTS, rows: 3, appliedRows: 3, partlyAppliedRows: 0 },
+      ]);
+    });
+
+    it('covers no table the plan reads without applying one of its units (AS-88)', async () => {
+      const draft = await givenProductOfCreatedCategory();
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: titleOfC1,
+      });
+
+      expect(preview.coverage).toEqual([
+        { tableId: CATEGORIES, rows: 2, appliedRows: 1, partlyAppliedRows: 0 },
+      ]);
+    });
+
+    it('gives a table structure and views only when it has that unit, true when the unit is applied (AS-88)', async () => {
+      const draft = await givenStructureAndViewsChangesBesideRowEdits();
+
+      const rowsOnly = await draft.previewChanges({
+        operation: 'commit',
+        selection: {
+          fields: [titleOf(CATEGORIES, 'c1'), titleOf(PRODUCTS, 'p1')],
+        },
+      });
+      const tablesOnly = await draft.previewChanges({
+        operation: 'commit',
+        selection: {
+          structures: [{ tableId: PRODUCTS }],
+          views: [CATEGORIES],
+        },
+      });
+
+      expect(rowsOnly.coverage).toEqual([
+        {
+          tableId: CATEGORIES,
+          views: false,
+          rows: 1,
+          appliedRows: 1,
+          partlyAppliedRows: 0,
+        },
+        {
+          tableId: PRODUCTS,
+          structure: false,
+          rows: 1,
+          appliedRows: 1,
+          partlyAppliedRows: 0,
+        },
+      ]);
+      expect(tablesOnly.coverage).toEqual([
+        {
+          tableId: CATEGORIES,
+          views: true,
+          rows: 1,
+          appliedRows: 0,
+          partlyAppliedRows: 0,
+        },
+        {
+          tableId: PRODUCTS,
+          structure: true,
+          rows: 1,
+          appliedRows: 0,
+          partlyAppliedRows: 0,
+        },
+      ]);
+    });
+
+    it("covers the two tables at an id a rename took over by two entries, the side: 'head' one first (AS-88)", async () => {
+      const draft = await givenTableIdTakenOverByARename();
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: {
+          structures: [{ tableId: ALPHA, side: 'head' }, { tableId: ALPHA }],
+        },
+      });
+
+      expect(preview).toMatchObject({ status: 'ready' });
+      expect(preview.coverage).toEqual([
+        {
+          tableId: ALPHA,
+          side: 'head',
+          structure: true,
+          rows: 0,
+          appliedRows: 0,
+          partlyAppliedRows: 0,
+        },
+        {
+          tableId: ALPHA,
+          previousTableId: BETA,
+          structure: true,
+          rows: 0,
+          appliedRows: 0,
+          partlyAppliedRows: 0,
+        },
+      ]);
+    });
+
+    it('counts a deleted row and the rename that took over its id as two rows of the renamed table (AS-88)', async () => {
+      const draft = await givenRowIdTakenOverInARenamedTable();
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: { rows: [{ ...rowOf(BETA, 'b1'), side: 'head' }] },
+      });
+
+      expect(preview.coverage).toEqual([
+        {
+          tableId: BETA,
+          previousTableId: ALPHA,
+          structure: false,
+          rows: 2,
+          appliedRows: 1,
+          partlyAppliedRows: 0,
+        },
+      ]);
+    });
+
+    it('gives a replaced table one entry, and a transient structure or a shared schema none, though they are counted and sampled (AS-88)', async () => {
+      const draft =
+        await givenReplacedTableBesideTransientTableAndSharedSchema();
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: {
+          structures: [{ tableId: CATEGORIES }, { tableId: SCRATCH }],
+          sharedSchemas: [EMAIL],
+        },
+      });
+
+      expect(preview).toMatchObject({
+        status: 'ready',
+        counts: { selected: 3, required: 0 },
+      });
+      expect(preview.sample).toHaveLength(3);
+      expect(preview.coverage).toEqual([
+        {
+          tableId: CATEGORIES,
+          structure: true,
+          rows: 0,
+          appliedRows: 0,
+          partlyAppliedRows: 0,
+        },
       ]);
     });
   });
@@ -695,8 +882,7 @@ describe('previewChanges', () => {
 
         expect(preview).toMatchObject({
           status: 'empty',
-          counts: { selected: 0, required: 0, remaining: 0 },
-          unreadTables: 0,
+          counts: { selected: 0, required: 0 },
           blockers: [],
           sample: [],
           unmatched: {},
@@ -759,7 +945,7 @@ describe('previewChanges', () => {
       },
     );
 
-    it('counts unread tables apart from the remaining units', async () => {
+    it('counts the applied units only, and covers only the tables they apply to, whatever stays in the Draft (AS-88)', async () => {
       const draft = await givenCategoryEditNextToEditedLogs();
 
       const partial = await draft.previewChanges({
@@ -772,13 +958,30 @@ describe('previewChanges', () => {
       });
 
       expect(partial).toMatchObject({
-        unreadTables: 1,
-        counts: { selected: 1, required: 0, remaining: 0 },
+        counts: { selected: 1, required: 0 },
+        coverage: [
+          {
+            tableId: CATEGORIES,
+            rows: 1,
+            appliedRows: 1,
+            partlyAppliedRows: 0,
+          },
+        ],
       });
       expect(whole).toMatchObject({
-        unreadTables: 0,
-        counts: { selected: 3, required: 0, remaining: 0 },
+        counts: { selected: 3, required: 0 },
+        coverage: [
+          {
+            tableId: CATEGORIES,
+            rows: 1,
+            appliedRows: 1,
+            partlyAppliedRows: 0,
+          },
+          { tableId: LOGS, rows: 2, appliedRows: 2, partlyAppliedRows: 0 },
+        ],
       });
+      expect(partial).not.toHaveProperty('unreadTables');
+      expect(partial.counts).not.toHaveProperty('remaining');
     });
 
     it.each(OPERATIONS)(
@@ -1017,6 +1220,51 @@ describe('previewChanges', () => {
       },
     );
   });
+
+  async function givenTitleAndPriceEditsNextToCreatedProduct(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: pricedSchema,
+        rows: {
+          p1: { title: 'one', price: 1 },
+          p2: { title: 'two', price: 2 },
+          p3: { title: 'three', price: 3 },
+        },
+      },
+    });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
+    await draft.updateRow(PRODUCTS, 'p2', { title: 'dos', price: 2 });
+    await draft.createRows(PRODUCTS, { p4: { title: 'four', price: 4 } });
+
+    return draft;
+  }
+
+  async function givenStructureAndViewsChangesBesideRowEdits(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: titleSchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: { schema: titleSchema, rows: { p1: { title: 'one' } } },
+    });
+    await draft.updateRow(CATEGORIES, 'c1', { title: 'uno' });
+    await draft.updateViews(CATEGORIES, renamedViews);
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno' });
+    await draft.updateTable(PRODUCTS, [addField('color', str())]);
+
+    return draft;
+  }
+
+  async function givenReplacedTableBesideTransientTableAndSharedSchema(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: titleSchema, rows: { c1: { title: 'one' } } },
+    });
+    await draft.removeTable(CATEGORIES);
+    await draft.createTable(CATEGORIES, labelSchema);
+    await draft.createRows(CATEGORIES, { c1: { label: 'one' } });
+    await draft.createTable(SCRATCH, labelSchema);
+    await draft.removeTable(SCRATCH);
+    await draft.createSharedSchema(EMAIL, emailSchema);
+
+    return draft;
+  }
 
   async function givenEditedAndCreatedCategories(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {

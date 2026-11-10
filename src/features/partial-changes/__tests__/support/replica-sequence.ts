@@ -7,7 +7,7 @@ import type {
 } from 'src/features/partial-changes/commands/impl/apply-changes';
 import type {
   CommitChangesResult,
-  RenumberedMigration,
+  MigrationRenumbering,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
@@ -54,7 +54,7 @@ export interface StepRecord {
 export interface TakenStep {
   readonly step: StepRecord;
   readonly status: ApplyStatus;
-  readonly renumbered: readonly RenumberedMigration[];
+  readonly renumbered: readonly MigrationRenumbering[];
 }
 
 type ReviewedApplication = Omit<ApplyChangesInput, 'branch'>;
@@ -215,7 +215,7 @@ export class ReplicaSequence {
   private recorded(
     step: Omit<StepRecord, 'number'>,
     status: ApplyStatus,
-    renumbered: readonly RenumberedMigration[] = [],
+    renumbered: readonly MigrationRenumbering[] = [],
   ): TakenStep {
     this.taken += 1;
 
@@ -266,10 +266,10 @@ function isApplicable(kind: RandomStepKind, state: DraftState): boolean {
 
 function renumberedOf(
   result: CommitChangesResult,
-): readonly RenumberedMigration[] {
+): readonly MigrationRenumbering[] {
   if (result.status !== 'applied') {
     return [];
   }
 
-  return result.renumbered;
+  return result.renumberedMigrations;
 }

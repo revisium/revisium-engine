@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import type {
-  AppliedCounts,
   ApplyChangesInput,
+  StoppedChangesBlocked,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
 import type { OperationTrace } from 'src/features/partial-changes/logging/partial-operation-log';
@@ -10,7 +10,8 @@ import type { ChangeOperation } from 'src/features/partial-changes/plan/change-o
 import {
   type ChangePlan,
   ChangePlanner,
-  type PlannedTarget,
+  type CompletePlan,
+  type StoppedPlan,
 } from 'src/features/partial-changes/planning/change-planner';
 import {
   decidePlanStatus,
@@ -29,11 +30,7 @@ import type { ChangesBranch } from 'src/features/partial-changes/snapshot/change
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 
-export interface ApplicablePlan extends ChangePlan {
-  readonly target: PlannedTarget;
-}
-
-export type TargetWrite<Applied> = (plan: ApplicablePlan) => Promise<Applied>;
+export type TargetWrite<Applied> = (plan: CompletePlan) => Promise<Applied>;
 
 interface ApplyRequest {
   readonly operation: ChangeOperation;
@@ -78,6 +75,11 @@ export class ChangeApplier {
 
     const plan = await this.plan(request, deadline);
     trace.planned(plan);
+
+    if (!plan.planned) {
+      return stoppedByLimit(plan);
+    }
+
     const status = decidePlanStatus(plan, request);
 
     if (status !== 'ready') {
@@ -86,7 +88,7 @@ export class ChangeApplier {
 
     await deadline.checkpoint();
 
-    return writeTarget(applicablePlanOf(plan));
+    return writeTarget(plan);
   }
 
   private admitDraftWrite({
@@ -109,18 +111,6 @@ export class ChangeApplier {
   }
 }
 
-export function appliedCountsOf({
-  counts,
-  unreadTables,
-}: ChangePlan): AppliedCounts {
-  const { selected, required, remaining } = counts;
-
-  return {
-    applied: { selected, required },
-    remaining: { units: remaining, unreadTables },
-  };
-}
-
 function applyRequestOf(
   operation: ChangeOperation,
   { branch, selection, includeRequired, expected }: ApplyChangesInput,
@@ -138,18 +128,12 @@ function applyRequestOf(
   };
 }
 
-function applicablePlanOf(plan: ChangePlan): ApplicablePlan {
-  const { target } = plan;
-
-  if (!target) {
-    throw new Error('An applicable plan has no assembled target');
-  }
-
-  return { ...plan, target };
+function stoppedByLimit({ blockers }: StoppedPlan): StoppedChangesBlocked {
+  return { status: 'blocked', planned: false, blockers, required: [] };
 }
 
 function unappliedChangesOf(
-  plan: ChangePlan,
+  plan: CompletePlan,
   status: RefusalStatus,
 ): UnappliedChanges {
   switch (status) {
@@ -158,9 +142,10 @@ function unappliedChangesOf(
     case 'blocked':
       return {
         status,
+        planned: true,
         blockers: plan.blockers,
         required: plan.required,
-        ...unmatchedSelectorsOf(plan),
+        unmatched: plan.unmatched,
       };
     case 'stale':
       return { status };
@@ -174,7 +159,7 @@ function unappliedChangesOf(
   }
 }
 
-function unmatchedSelectorsOf({ unmatched }: ChangePlan): {
+function unmatchedSelectorsOf({ unmatched }: CompletePlan): {
   unmatched?: UnmatchedSelectors;
 } {
   if (!hasUnmatchedSelectors(unmatched)) {

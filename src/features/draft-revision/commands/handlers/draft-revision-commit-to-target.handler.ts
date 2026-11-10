@@ -50,7 +50,7 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
       draftRevisionId,
       writtenHeadTablesOf(tables),
     );
-    await this.internalService.updateHasChanges(
+    const draftHasChanges = await this.internalService.updateHasChanges(
       nextDraftRevisionId,
       draftRevisionId,
     );
@@ -59,6 +59,7 @@ export class DraftRevisionCommitToTargetHandler implements ICommandHandler<
       previousHeadRevisionId: headRevisionId,
       headRevisionId: draftRevisionId,
       draftRevisionId: nextDraftRevisionId,
+      draftHasChanges,
     };
   }
 

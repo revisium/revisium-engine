@@ -77,12 +77,11 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
       expect(read).toMatchObject({
         kind: 'catalogue',
         readTableIds: FOREIGN_KEY_CHAIN,
-        unreadTables: 2,
       });
     },
   );
 
-  it('does not read a changed table that no foreign key connects to the selection, and counts it as unread', async () => {
+  it('does not read a changed table that no foreign key connects to the selection', async () => {
     const draft = await givenEditedChainAndUnrelatedTables();
 
     const read = await draft.readScopedCatalogue({ fields: [entryOfL1] });
@@ -90,7 +89,6 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
     expect(read).toMatchObject({
       kind: 'catalogue',
       readTableIds: [LOGS],
-      unreadTables: 4,
     });
   });
 
@@ -102,7 +100,6 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
 
     expect(read).toMatchObject({
       readTableIds: FOREIGN_KEY_CHAIN,
-      unreadTables: 2,
     });
   });
 
@@ -116,7 +113,6 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
 
     expect(read).toMatchObject({
       readTableIds: CHAIN_AND_LOGS,
-      unreadTables: 1,
     });
   });
 
@@ -126,7 +122,7 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
 
     const read = await draft.readScopedCatalogue({ fields: [titleOfP1] });
 
-    expect(read).toMatchObject({ unreadTables: 2 });
+    expect(read).toMatchObject({ readTableIds: FOREIGN_KEY_CHAIN });
     expect(unitsOfTable(read, LOGS)).toEqual([
       { kind: 'structure', tableId: LOGS },
     ]);
@@ -142,7 +138,6 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
 
     expect(read).toMatchObject({
       readTableIds: CHAIN_AND_LOGS,
-      unreadTables: 1,
     });
   });
 
@@ -155,7 +150,6 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
 
     expect(read).toMatchObject({
       readTableIds: [LETTERS, MEMOS],
-      unreadTables: 1,
     });
   });
 
@@ -169,7 +163,6 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
 
     expect(read).toMatchObject({
       readTableIds: [MEMOS, TAGS],
-      unreadTables: 1,
     });
   });
 
@@ -180,7 +173,7 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
       structures: [{ tableId: LETTERS }],
     });
 
-    expect(read).toMatchObject({ readTableIds: [NOTES], unreadTables: 2 });
+    expect(read).toMatchObject({ readTableIds: [NOTES] });
   });
 
   it.each<{ selection: Selection }>([
@@ -191,7 +184,7 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
 
     const read = await draft.readScopedCatalogue(selection);
 
-    expect(read).toMatchObject({ readTableIds: EVERY_TABLE, unreadTables: 0 });
+    expect(read).toMatchObject({ readTableIds: EVERY_TABLE });
   });
 
   async function givenEditedChainAndUnrelatedTables(): Promise<ChangesScenario> {

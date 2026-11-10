@@ -8,11 +8,11 @@ import {
   type PreviewTerms,
 } from 'src/features/partial-changes/planning/plan-decision';
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
+import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
 
 const FINGERPRINT = 'fingerprint-of-the-plan';
 const OTHER_FINGERPRINT = 'fingerprint-of-an-earlier-preview';
-const REFUSED_FINGERPRINT = '';
 
 const PREVIEW: PreviewTerms = { includeRequired: false };
 const PREVIEW_ACCEPTING_REQUIRED: PreviewTerms = { includeRequired: true };
@@ -26,7 +26,7 @@ const FRESH_EXPECTATION: ApplyTerms = {
 };
 
 interface PlanState {
-  readonly refusedByLimit?: boolean;
+  readonly stoppedByLimit?: boolean;
   readonly applied?: boolean;
   readonly required?: boolean;
   readonly blocked?: boolean;
@@ -43,14 +43,14 @@ interface DecisionCase {
 describe('decidePlanStatus: the status decision of SPEC §5.6 in its order', () => {
   const decisions: DecisionCase[] = [
     {
-      when: 'a limit refused the plan, before every other step, whatever expected is',
-      plan: { refusedByLimit: true, applied: true, required: true },
+      when: 'a limit stopped the plan, before every other step, whatever expected is',
+      plan: { stoppedByLimit: true },
       terms: STALE_EXPECTATION,
       decides: 'blocked',
     },
     {
-      when: 'a limit refused the plan before any unit was applied',
-      plan: { refusedByLimit: true },
+      when: 'a limit stopped the plan of a preview',
+      plan: { stoppedByLimit: true },
       terms: PREVIEW,
       decides: 'blocked',
     },
@@ -149,11 +149,6 @@ const REQUIRED_UNIT: RequiredUnit = {
   },
 };
 
-const LIMIT_BLOCKER: PlanBlocker = {
-  code: 'tooLarge',
-  message: 'The affected tables hold too many changed rows',
-};
-
 const BLOCKER: PlanBlocker = {
   code: 'notSelectable',
   tableId: 'products',
@@ -163,28 +158,21 @@ const BLOCKER: PlanBlocker = {
 };
 
 function decidedPlanOf(state: PlanState): DecidedPlan {
+  if (state.stoppedByLimit) {
+    return { planned: false };
+  }
+
   return {
-    refusedByLimit: state.refusedByLimit === true,
-    fingerprint: fingerprintOf(state),
+    planned: true,
+    fingerprint: FINGERPRINT,
     appliedUnits: itemsWhen(state.applied, APPLIED_UNIT),
     required: itemsWhen(state.required, REQUIRED_UNIT),
-    blockers: [
-      ...itemsWhen(state.refusedByLimit, LIMIT_BLOCKER),
-      ...itemsWhen(state.blocked, BLOCKER),
-    ],
+    blockers: itemsWhen(state.blocked, BLOCKER),
     unmatched: unmatchedOf(state),
   };
 }
 
-function fingerprintOf({ refusedByLimit }: PlanState): string {
-  if (refusedByLimit) {
-    return REFUSED_FINGERPRINT;
-  }
-
-  return FINGERPRINT;
-}
-
-function unmatchedOf({ unmatched }: PlanState): DecidedPlan['unmatched'] {
+function unmatchedOf({ unmatched }: PlanState): UnmatchedSelectors {
   if (!unmatched) {
     return {};
   }

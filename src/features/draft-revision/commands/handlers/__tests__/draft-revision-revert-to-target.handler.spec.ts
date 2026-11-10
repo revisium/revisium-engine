@@ -11,7 +11,7 @@ import { FileUsageIntegrationService } from 'src/features/file-usage/services/fi
 import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import { givenReadonlyDraftVersion } from 'src/__tests__/fixtures/readonly-draft-versions';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import { RevertTarget } from './support/revert-target';
+import { type RevertResult, RevertTarget } from './support/revert-target';
 
 const PRODUCTS = 'products';
 const GOODS = 'goods';
@@ -56,12 +56,12 @@ describe('DraftRevisionRevertToTargetHandler', () => {
       const draft = await givenDraftWithEditedPrices();
       const draftVersionId = await draft.tableVersionId('draft', PRODUCTS);
 
-      const revertedDraftId = await revertTo(draft, {
+      const { draftRevisionId } = await revertTo(draft, {
         tableId: PRODUCTS,
         outcome: 'unchanged',
       });
 
-      expect(revertedDraftId).toBe(await draft.revisionId('draft'));
+      expect(draftRevisionId).toBe(await draft.revisionId('draft'));
       expect(await draft.tableVersionId('draft', PRODUCTS)).toBe(
         draftVersionId,
       );
@@ -274,24 +274,30 @@ describe('DraftRevisionRevertToTargetHandler', () => {
   });
 
   describe('hasChanges', () => {
-    it('is false when the target equals Head', async () => {
+    it('is false when the target equals Head, and the result says so', async () => {
       const draft = await givenDraftWithEditedPrices();
+      const draftRevisionId = await draft.revisionId('draft');
 
-      await revertTo(draft, { tableId: PRODUCTS, outcome: 'other' });
+      const result = await revertTo(draft, {
+        tableId: PRODUCTS,
+        outcome: 'other',
+      });
 
       expect(await draft.hasChanges()).toBe(false);
+      expect(result).toEqual({ draftRevisionId, draftHasChanges: false });
     });
 
-    it('stays true while the Draft keeps changes', async () => {
+    it('stays true while the Draft keeps changes, and the result says so', async () => {
       const draft = await givenDraftWithEditedPrices();
 
-      await revertTo(draft, {
+      const result = await revertTo(draft, {
         tableId: PRODUCTS,
         outcome: 'mixed',
         rows: { otherSide: ['p1'] },
       });
 
       expect(await draft.hasChanges()).toBe(true);
+      expect(result.draftHasChanges).toBe(true);
     });
   });
 
@@ -355,7 +361,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
   function revertTo(
     draft: BranchScenario,
     ...targets: Parameters<RevertTarget['revert']>
-  ): Promise<string> {
+  ): Promise<RevertResult> {
     return new RevertTarget(kit, draft).revert(...targets);
   }
 

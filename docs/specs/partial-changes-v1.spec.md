@@ -544,7 +544,7 @@ Decided in this order; preview skips step 3 and returns `ready` in step 6:
 | `ledgerInconsistent` | A resulting ledger does not replay to its schemas (a mismatch the operation introduces); a published migration is missing or changed in the Draft ledger; a pending migration cannot be attributed to a table (§10.1); or a Draft schema history does not extend its Head history. | Change the selection, or repair the Draft natively. |
 | `unrecordedStructureChange` | The Draft structure is not reproduced by its schema history and migrations (an async migration on a schema row the Draft already owned, until stage 0): its commit is refused, and Head rows cannot be migrated into it. Reverting it is allowed. | Commit other units; revert the structure. |
 | `headSchemaInconsistent` | Head schema check (§6.10): a selector or a required addition involves a table whose Head schema does not match the schema replayed from the Head ledger (left by a completed native async migration, published or not). `tableId` is set. Raised by every partial operation on that table, with no exception (`all: true` with `exclude` names every table). Not raised for exactly `{ all: true }`. | Commit or revert natively or with exactly `{ all: true }`; to make the table eligible again, run the forward-only repair (§12) and publish it with a native or exactly `{ all: true }` commit. Units of other tables are unaffected. |
-| `unledgeredTable` | A selector or a required addition involves an unledgered table (§6.10): its id has no intact ledger lineage, in the Head ledger for a Head table (including a revision without a migration table) or in the Draft ledger for a table created in the Draft. `tableId` is set. Not raised for exactly `{ all: true }`. | Commit or revert natively or with exactly `{ all: true }`; a ledger backfill is a stage-0 design item (§12). |
+| `unledgeredTable` | A selector or a required addition involves an unledgered table (§6.10): its id has no intact ledger lineage, in the Head ledger for a Head table (including a revision without a migration table) or in the Draft ledger for a table created in the Draft. `tableId` is set. Not raised for exactly `{ all: true }`. | Commit or revert natively or with exactly `{ all: true }`; for a branch without a migration table, run `backfillSchemaLedger` ([schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)). |
 | `migrationInProgress` | Preview only: an async migration is active on the branch. | Wait for it. |
 | `unmatchedSelector` | Some selectors match no unit. | Fix the selection. |
 | `tooLarge` | A limit (§11) is exceeded; `tableId` is set for a per-table limit. | Select less. |
@@ -1020,8 +1020,9 @@ Head structure), and §6.9 step 1 applies to commits only.
 
 **Refused tables.** A *partial operation* is anything other than exactly `{ all: true }` without `exclude`.
 
-1. An unledgered table is refused with the code `unledgeredTable`. A ledger backfill for such tables is a stage-0
-   design item (§12).
+1. An unledgered table is refused with the code `unledgeredTable`. A branch without a migration table becomes eligible
+   after [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md); other unledgered tables come from damage and
+   stay refused.
 2. A table that fails (b) in the Head (*damaged*, either shape) is refused with the code `headSchemaInconsistent`, by
    every partial operation and with no exception: data units, row units, its structure unit, commit and revert alike.
    It becomes eligible again only after the forward-only repair (§12) has been published by a native or exactly
@@ -1432,9 +1433,11 @@ All rows have landed (statuses in [plan](../plan.md)); [async-row-migration-v2] 
   structure unit removes it.
 - **Tables whose ledger slot is tainted** (§6.10) cannot be repaired forward: such tables stay refused, and their
   Head-synced replicas need a re-sync.
-- **Ledger backfill for unledgered tables and row remediation** for damaged tables whose Draft rows fail validation
-  (`rowsNeedMigration`) are decided with the scan results, not release gates ([async-row-migration-v2] §7). Until then partial operations
-  refuse those tables (`unledgeredTable`, `headSchemaInconsistent`).
+- **Ledger backfill** for branches without a migration table is specified in
+  [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md); **row remediation** for damaged tables whose Draft
+  rows fail validation (`rowsNeedMigration`) is decided with the scan results ([async-row-migration-v2] §7). Neither is
+  a release gate. Until a branch is backfilled or a remediation exists, partial operations refuse those tables
+  (`unledgeredTable`, `headSchemaInconsistent`).
 - **No change to table rename** in stage 0: re-hashing the referencing rows would copy every row of every
   referencing table; predicate (a) reports such tables as known false positives instead.
 - **Release gate:** the async migration fix shipped; the forward-only repair tool; the scan run on existing
@@ -1833,7 +1836,8 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`; no new settings (§8.4). Decided on 2026-11-01.
 4. **False positives of predicate (a)** — closed: the refusal uses predicate (b) only; predicate (a) is a scan
    diagnostic with its known false-positive sources; table rename is not changed; unledgered tables are refused with
-   `unledgeredTable`, and their ledger backfill is a stage-0 design item (§6.10, §12).
+   `unledgeredTable`, and their ledger backfill is a stage-0 design item (§6.10, §12); specified on 2026-11-10 in
+   [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
 

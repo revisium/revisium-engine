@@ -22,7 +22,8 @@ This specification fixes async table migrations (the "Async migration fix, detec
 swap writes what the synchronous path writes and deletes the record in one Serializable transaction. `applyMigrations`
 drives the migration it started and observes it on a separate timer, holding nothing while it waits; the source id
 travels in a versioned envelope in the existing `patches` column. The repair records the ledger only and leaves tables
-with invalid Draft rows refused; their remediation, like the ledger backfill, waits for the scan results.
+with invalid Draft rows refused; their remediation waits for the scan results. The ledger backfill for branches without
+a migration table is specified in [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 **Landed since the parent SPEC:** #85 copy-on-write by `INSERT … SELECT`; #86 Serializable views writes; #87 imported-id
 check in the change transaction; #88 no 100-referrer limits; #89 lock check inside every Draft writer's transaction;
@@ -53,7 +54,7 @@ start take the fence shared); #93 the ledger replay; #119 and #128 fence part 2 
 | Copy-on-write, recorded `update` row and history; swap re-checks (partial-changes §12) | §3.5, §3.6 |
 | One per revision in the transaction; synchronous validation; file references | §3.3, §3.4 |
 | Orphan cleanup (landed, #90); `applyMigrations` above the threshold (must) | §3.7; §4 |
-| Detection scan; forward-only repair; ledger backfill and row remediation (decided with the scan results) | §5, §6, §7 |
+| Detection scan; forward-only repair; ledger backfill ([schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)) and row remediation (decided with the scan results) | §5, §6, §7 |
 | REQ-001.BR-004 (a Head-synced replica accepts every commit) | Recorded async updates (§3.5), imported updates with source ids (§4), repaired tables (§6). |
 | REQ-001.BR-005 (whole-Draft operations unchanged) | Native commit and revert are unchanged; every other observable change is in §9. |
 
@@ -509,11 +510,9 @@ plans `alreadyRepaired`; after a commit publishes the repair, `notDamaged`.
 
 Neither is a release gate; partial operations keep refusing the affected tables until a decision is implemented.
 
-**Ledger backfill** for `unledgeredTable` findings. Proposal: `backfillSchemaLedger`, per table an `init` migration with
-the Head schema row, positioned, numbered and verified as §6.3–§6.4, published by the next native or `{ all: true }`
-commit. Limits: a replica holding a same-id table created outside the ledger fails on the `init`; a referrer whose
-lineage starts before the backfilled table stays tainted. For `noMigrationTable`, creating a ledger competes with
-exempting such projects, since no Head-synced replica can exist there (§13, question 2).
+**Ledger backfill** for `unledgeredTable` findings with `reason: 'noMigrationTable'`: decided and specified in
+[schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md), which replaces the earlier proposal here. Unledgered
+tables in a branch that has a migration table come only from damage; they stay refused and are not backfilled.
 
 **Row remediation** for `rowsNeedMigration` findings. Candidate: reset the Draft schema row to the replayed schema and
 run a native `updateTable` to the Head schema, which migrates and records at the cost of a full table update. It needs
@@ -738,8 +737,8 @@ still rewrite committed rows during the scan.
 1. **Legacy jobs at upgrade** (§3.2) — decided: async migrations in flight at upgrade are cancelled (`LEGACY_JOB`) and
    must be rerun, because an imported one cannot be recorded under its source id. Completing them under native ids
    would keep interactive changes but break the next sync of any replica that imported one.
-2. **Projects without a migration table** (§7) — open, decided with the scan results: create a ledger for them, or
-   exempt them from `unledgeredTable`.
+2. **Projects without a migration table** (§7) — decided on 2026-11-10: they get a ledger
+   ([schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)), not an exemption from `unledgeredTable`.
 3. **Files possibly lost before the fix** — decided: a host-side storage check is part of reviewing the scan results
    before release (§12, PR 11). The loss is an inference from code, not reproduced: migrated rows had no blob links, so
    blobs referenced only by them could be tombstoned once their Draft-owned source rows were cleaned up, and deleted

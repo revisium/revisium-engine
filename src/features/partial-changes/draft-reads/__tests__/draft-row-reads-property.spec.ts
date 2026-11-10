@@ -2,7 +2,10 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type { DraftRowItem } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import type {
+  DraftRowChangesFilters,
+  DraftRowItem,
+} from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTableItem } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import {
@@ -26,6 +29,7 @@ import { UnitKindCoverage } from '../../__tests__/support/unit-kind-coverage';
 
 const PAGE_SIZES = [1, 2, 7];
 const ALL_ROWS = 5_000;
+const SEARCHED_ROWS = 3;
 
 interface RowChangeView {
   readonly key: string;
@@ -118,8 +122,62 @@ describe('Draft row reads over random Drafts', () => {
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
-  async function readEveryRow(draft: ChangesScenario): Promise<DraftRowItem[]> {
-    return rowItemsOf([await draft.readDraftRowChanges({ first: ALL_ROWS })]);
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'lists under each row filter exactly the unfiltered items it matches, with their units and links, on every page size (DR-15, DR-16, seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const all = await readEveryRow(draft);
+      const tables = await readEveryTable(draft);
+
+      for (const filters of rowFiltersOf(tables, all)) {
+        const filtered = await readEveryRow(draft, filters);
+
+        expect([filters, filtered]).toEqual([
+          filters,
+          all.filter((item) => matchesRowFilters(item, filters, tables)),
+        ]);
+      }
+
+      for (const changeType of Object.values(ChangeType)) {
+        const filters = { changeTypes: [changeType] };
+        const filtered = await readEveryRow(draft, filters);
+
+        for (const first of PAGE_SIZES) {
+          expect(
+            rowItemsOf(await draft.readEveryDraftRowPage({ first, filters })),
+          ).toEqual(filtered);
+        }
+      }
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'counts in the summary the rows that the row filter of each change type lists (DR-06, seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const { rowsSummary } = await draft.readDraftChangesSummary();
+      const countOf = async (changeType: ChangeType) =>
+        (await readEveryRow(draft, { changeTypes: [changeType] })).length;
+
+      expect(rowsSummary).toEqual({
+        total: (await readEveryRow(draft)).length,
+        added: await countOf(ChangeType.Added),
+        removed: await countOf(ChangeType.Removed),
+        renamed: await countOf(ChangeType.Renamed),
+        modified: await countOf(ChangeType.Modified),
+      });
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  async function readEveryRow(
+    draft: ChangesScenario,
+    filters?: DraftRowChangesFilters,
+  ): Promise<DraftRowItem[]> {
+    return rowItemsOf([
+      await draft.readDraftRowChanges({ first: ALL_ROWS, filters }),
+    ]);
   }
 
   async function readEveryTable(
@@ -128,6 +186,75 @@ describe('Draft row reads over random Drafts', () => {
     return tableItemsOf([await draft.readDraftTableChanges({ first: 5_000 })]);
   }
 });
+
+// Every change type, none, every id a table item shows or names as previous, and searches over parts of row ids.
+function rowFiltersOf(
+  tables: readonly DraftTableItem[],
+  rows: readonly DraftRowItem[],
+): DraftRowChangesFilters[] {
+  const tableIds = new Set(
+    tables.flatMap(({ tableId, previousTableId }) =>
+      previousTableId === undefined ? [tableId] : [tableId, previousTableId],
+    ),
+  );
+  const searches = new Set([
+    '_',
+    ...rows
+      .slice(0, SEARCHED_ROWS)
+      .flatMap(({ rowId, previousRowId }) => [
+        rowId.slice(1, 3).toUpperCase(),
+        previousRowId?.slice(-2) ?? rowId,
+      ]),
+  ]);
+
+  return [
+    ...Object.values(ChangeType).map((changeType) => ({
+      changeTypes: [changeType],
+    })),
+    { changeTypes: [] },
+    ...[...tableIds].map((tableId) => ({ tableId })),
+    ...[...searches].map((search) => ({ search })),
+  ];
+}
+
+// The row filters of SPEC §7, over the items of an unfiltered read.
+function matchesRowFilters(
+  { tableId, previousTableId, rowId, previousRowId, changeType }: DraftRowItem,
+  filters: DraftRowChangesFilters,
+  tables: readonly DraftTableItem[],
+): boolean {
+  if (filters.tableId) {
+    const shown = tables.some((table) => table.tableId === filters.tableId);
+    const ofItem = shown ? tableId : previousTableId;
+
+    if (ofItem !== filters.tableId) {
+      return false;
+    }
+  }
+
+  if (filters.changeTypes) {
+    const types = filters.changeTypes;
+    const matches =
+      types.includes(changeType) ||
+      (changeType === ChangeType.RenamedAndModified &&
+        (types.includes(ChangeType.Renamed) ||
+          types.includes(ChangeType.Modified)));
+
+    if (!matches) {
+      return false;
+    }
+  }
+
+  if (filters.search) {
+    const term = filters.search.toLowerCase();
+
+    return [rowId, previousRowId].some((id) =>
+      id?.toLowerCase().includes(term),
+    );
+  }
+
+  return true;
+}
 
 function distinctUnitsOf(units: readonly UnitRef[]): string[] {
   const keys = units.map((unit) =>

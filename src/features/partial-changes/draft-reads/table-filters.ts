@@ -36,7 +36,9 @@ export function matchesTableFilters(
   );
 }
 
-function changeTypesMatching(changeTypes: readonly ChangeType[]): ChangeType[] {
+export function changeTypesMatching(
+  changeTypes: readonly ChangeType[],
+): ChangeType[] {
   if (
     changeTypes.includes(ChangeType.Renamed) ||
     changeTypes.includes(ChangeType.Modified)

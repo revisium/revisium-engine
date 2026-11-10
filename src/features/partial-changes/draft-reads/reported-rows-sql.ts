@@ -1,5 +1,7 @@
 import { join, raw, sql, type Sql } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type { RowFilters } from 'src/features/partial-changes/draft-reads/draft-read-request';
+import { changeTypesMatching } from 'src/features/partial-changes/draft-reads/table-filters';
 import {
   ROW_VERSIONS_PAIRED_BY_IDENTITY,
   unsharedRowVersionsCtes,
@@ -38,9 +40,12 @@ export interface ReportedRowPair {
   readonly yieldsUnit: boolean;
 }
 
+// The pairs of a page with whether a matching row follows them, and the other pairs of their row ids, which a filter
+// leaves out but the page's catalogue needs: a replaced row's two rows, a deleted row and the rename into its id.
 export interface ReportedRowPairsPage {
   readonly pairs: readonly ReportedRowPair[];
   readonly hasMore: boolean;
+  readonly companions: readonly ReportedRowPair[];
 }
 
 // The rows after a row id (or from the first), up to a limit of items, completed with the items of the last row id.
@@ -71,12 +76,16 @@ const PAIR_JSON = raw(`json_build_object(
 // Of two items with one row id, the row that exists only in Head comes first.
 export function reportedRowPairsPageSql(
   rows: TableRows,
+  filters: RowFilters,
   { afterRowId, limit }: RowRange,
 ): Sql {
   return sql`
     WITH ${reportedPairsCtes(rows)},
+    listed AS (
+      SELECT * FROM pairs WHERE ${matching(filters)}
+    ),
     page AS (
-      SELECT * FROM pairs WHERE ${rowsAfter(afterRowId)}
+      SELECT * FROM listed WHERE ${rowsAfter(afterRowId)}
       ORDER BY "rowId" COLLATE "C"
       FETCH FIRST ${limit} ROWS WITH TIES
     )
@@ -86,9 +95,15 @@ export function reportedRowPairsPageSql(
         FROM page p
       ) AS "pairs",
       EXISTS (
-        SELECT 1 FROM pairs
+        SELECT 1 FROM listed
         WHERE "rowId" COLLATE "C" > (SELECT max("rowId" COLLATE "C") FROM page)
-      ) AS "hasMore"
+      ) AS "hasMore",
+      (
+        SELECT coalesce(json_agg(${PAIR_JSON}), '[]')
+        FROM pairs p
+        WHERE p."rowId" IN (SELECT "rowId" FROM page)
+          AND p."identity" NOT IN (SELECT "identity" FROM page)
+      ) AS "companions"
   `;
 }
 
@@ -150,6 +165,7 @@ function comparedPairsCtes(table: ComparedTable): Sql {
     pairs AS (
       SELECT coalesce(h."createdId", d."createdId") AS "identity",
              coalesce(d."id", h."id") AS "rowId",
+             h."id" AS "headRowId",
              h."versionId" AS "headVersionId", d."versionId" AS "draftVersionId",
              ${changeTypeOf(structure)} AS "changeType",
              (${ONE_SIDED} OR ${rowChangePredicate(structure)}) AS "yieldsUnit"
@@ -163,7 +179,7 @@ function oneSidedPairsCte({ side, tableVersionId }: OneSidedRows): Sql {
   return sql`
     pairs AS (
       SELECT r."createdId" AS "identity", r."id" AS "rowId",
-             ${oneSidedVersionColumns(side)},
+             ${oneSidedColumns(side)},
              ${oneSidedChangeType(side)} AS "changeType",
              FALSE AS "yieldsUnit"
       FROM "_RowToTable" link
@@ -173,15 +189,15 @@ function oneSidedPairsCte({ side, tableVersionId }: OneSidedRows): Sql {
   `;
 }
 
-function oneSidedVersionColumns(side: RevisionSide): Sql {
+function oneSidedColumns(side: RevisionSide): Sql {
   if (side === 'head') {
     return raw(
-      `r."versionId" AS "headVersionId", NULL::text AS "draftVersionId"`,
+      `r."id" AS "headRowId", r."versionId" AS "headVersionId", NULL::text AS "draftVersionId"`,
     );
   }
 
   return raw(
-    `NULL::text AS "headVersionId", r."versionId" AS "draftVersionId"`,
+    `NULL::text AS "headRowId", NULL::text AS "headVersionId", r."versionId" AS "draftVersionId"`,
   );
 }
 
@@ -191,6 +207,31 @@ function oneSidedChangeType(side: RevisionSide): Sql {
   }
 
   return sql`${ChangeType.Added}::text`;
+}
+
+function matching({ changeTypes, search }: RowFilters): Sql {
+  return sql`${changeTypeMatches(changeTypes)} AND ${searchMatches(search)}`;
+}
+
+function changeTypeMatches(
+  changeTypes: readonly ChangeType[] | undefined,
+): Sql {
+  if (changeTypes === undefined) {
+    return sql`TRUE`;
+  }
+
+  return sql`"changeType" = ANY(${changeTypesMatching(changeTypes)}::text[])`;
+}
+
+// A plain substring of the Head or the Draft row id, so '_' and '%' are no wildcards; row ids are ASCII.
+function searchMatches(search: string | undefined): Sql {
+  if (search === undefined) {
+    return sql`TRUE`;
+  }
+
+  const term = search.toLowerCase();
+
+  return sql`(strpos(lower("rowId"), ${term}) > 0 OR strpos(lower("headRowId"), ${term}) > 0)`;
 }
 
 function rowsAfter(rowId: string | undefined): Sql {

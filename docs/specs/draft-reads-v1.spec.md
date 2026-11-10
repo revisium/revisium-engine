@@ -4,8 +4,8 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.3 |
-| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages over the unfiltered list, is implemented; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5), is implemented; PR 11 (the row `filters` of §1 and §7, with the DR-14 case of a rename filtered out) is pending. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold |
+| Version | 1.4 |
+| Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads reach the facade with ADR-002 PR 12 |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
@@ -319,9 +319,10 @@ matching tables only.
 A call costs the compared snapshot, which every listing page reads, and one query per table it needs, over the
 anti-join of the table's two link sets (a created or removed table reads the rows of its one version):
 
-- **`rowChanges`** reads the tables in order from the cursor's table (only the filtered tables with `tableId`) and
-  stops when the page is full: the query of a table returns its page pairs and whether a row of the table follows
-  them. It returns no `totalCount`, so it reads no table before the cursor or after the full page, except when the
+- **`rowChanges`** reads the tables in order from the cursor's table (only the filtered tables with `tableId`, and no
+  created or removed table whose one change type `changeTypes` leaves out) and stops when the page is full: the query
+  of a table returns its page pairs, whether a matching row of the table follows them, and the other reported pairs of
+  the page's row ids that the filters leave out, which the page's catalogue loads (§5.1) and the page does not list. It returns no `totalCount`, so it reads no table before the cursor or after the full page, except when the
   page ends with the last reported row of its table: then it reads the next tables until one has a reported row, to
   tell `hasNextPage`. The total of a list comes from the summary (`rowsSummary` per change
   type, `rowsWithUnits`) or from the table item (`rowsSummary`, `tableData.rows`). A `search` filter, and a
@@ -507,6 +508,12 @@ Paging, filters, validation, snapshot:
 - DR-20 `null` for every optional input is treated as absent; an unknown branch is the native not-found error.
 
 ## Changelog
+
+### Version 1.4 (2026-11-10)
+
+- §8: the pair query of a filtered row page also returns the other pairs of the page's row ids, for its catalogue, and
+  the page reads no created or removed table whose change type `changeTypes` leaves out.
+- Status: PR 11 (row filters) implemented; the Draft reads are complete.
 
 ### Version 1.3 (2026-11-10)
 

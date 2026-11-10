@@ -24,10 +24,11 @@ import { RowDiffService } from 'src/features/revision-changes/services/row-diff.
 import type { FieldChange } from 'src/features/revision-changes/types';
 import type { HeadAndDraft } from 'src/features/share/branch-revisions/branch-revision-reader';
 
-// The reported rows of one table on a page, in page order.
+// The reported rows of one table on a page, in page order, and the other rows of their row ids that a filter left out.
 export interface PagedTable {
   readonly table: DraftTable;
   readonly pairs: readonly ReportedRowPair[];
+  readonly companions: readonly ReportedRowPair[];
 }
 
 interface PageRow {
@@ -62,12 +63,18 @@ export class DraftRowItems {
     const rows = page.flatMap((paged) =>
       paged.pairs.map((pair) => pageRowOf(paged, pair, versions)),
     );
+    const companions = page.flatMap((paged) =>
+      paged.companions.map((pair) => pageRowOf(paged, pair, versions)),
+    );
     const fieldChanges = await this.fieldChangesOf(rows, compared.snapshot);
     const entries = rows.map((row, index) => ({
       row,
       entry: entryOf(row, fieldChanges[index] ?? []),
     }));
-    const pageRows = changedRowsOf(rows, compared.headSchema);
+    const pageRows = changedRowsOf(
+      [...rows, ...companions],
+      compared.headSchema,
+    );
     const renames = await this.renamesReader.readOf(
       entries.map(({ entry }) => entry),
       pageRows,
@@ -130,7 +137,8 @@ function entryOf(
   return { table: paged.table.pair, pair, head, draft, fieldChanges };
 }
 
-// The catalogue of a page holds the pairs the listing loads for the page's row ids; it loads none of a refused table.
+// The catalogue of a page holds the pairs the listing loads for the page's row ids, also those a filter left out; it
+// loads none of a refused table.
 function changedRowsOf(
   rows: readonly PageRow[],
   { refusedTablesByIdentity }: HeadSchemaCheck,
@@ -205,7 +213,7 @@ function revisionIdOn(
 
 function versionIdsOf(page: readonly PagedTable[]): string[] {
   return page
-    .flatMap(({ pairs }) => pairs)
+    .flatMap(({ pairs, companions }) => [...pairs, ...companions])
     .flatMap(({ headVersionId, draftVersionId }) => [
       headVersionId,
       draftVersionId,

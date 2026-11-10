@@ -43,9 +43,9 @@ Native writes run in Serializable transactions with these settings.
 |----------|---------|---------|-------------|
 | `TRANSACTION_MAX_WAIT` | `10000` | 1 or more | Milliseconds to wait for a connection to start a transaction. |
 | `TRANSACTION_TIMEOUT` | `15000` | 1 or more | Milliseconds a native transaction may run. Writers wait at most half of it for the branch write fence. |
-| `TRANSACTION_MAX_RETRIES` | `20` | 1 or more | Attempts of a native Serializable transaction on serialization failures. `0` passes the range check but leaves no attempt, so every native write fails; do not use it. |
+| `TRANSACTION_MAX_RETRIES` | `20` | 0 or more | Attempts of a native Serializable write on serialization failures. `0` is accepted but leaves row and table writes no attempt, so they fail; use 1 or more. |
 | `TRANSACTION_BASE_DELAY_MS` | `30` | 0 or more | Milliseconds of the first delay of the exponential backoff between attempts. |
-| `TRANSACTION_MAX_DELAY_MS` | `1500` | 0 or more | Cap of the backoff delay in milliseconds, before a small random jitter is added. |
+| `TRANSACTION_MAX_DELAY_MS` | `1500` | 0 or more | Cap of the backoff delay in milliseconds; a random jitter of up to half the delay is added on top. |
 
 The effective values are logged at startup (`Transaction settings: …`).
 

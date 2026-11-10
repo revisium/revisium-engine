@@ -864,9 +864,9 @@ native `createRevision` and `revertChanges` still work.
 | Serialization failures on every attempt (`PARTIAL_CHANGES_MAX_ATTEMPTS`) | The last serialization error |
 
 `MIGRATION_LOCKED`, `BRANCH_WRITE_FENCED` and `OPERATION_TIMEOUT` are NestJS `HttpException`s with the `code` in
-their response body. Exhausted attempts surface the database's serialization error (a Prisma `P2034` or the
-PostgreSQL `40001` / `40P01`), which a host maps to a retryable response. A failed operation is rolled back and
-persists nothing, so a retry is safe.
+their response body. Exhausted attempts surface the database's serialization error (a Prisma `P2034`, the
+PostgreSQL `40001` / `40P01`, or an error whose message carries the database's serialization or deadlock text), which
+a host maps to a retryable response. A failed operation is rolled back and persists nothing, so a retry is safe.
 
 ### Code lists
 
@@ -895,9 +895,11 @@ list types, and how a typed transport maps the unions:
   [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports).
 - **Endpoint notifications.** After an `applied` commit the engine calls its endpoint hook
   (`notifyEndpoints`) for `headRevisionId` (the former Draft revision, whose content became the new Head) and
-  `draftRevisionId` (the new Draft), and after an `applied` revert for `draftRevisionId`, as native writes do. In this
-  package the hook does nothing, so a host that serves endpoints by revision refreshes those revisions itself, once,
-  after the call returns; a failure there does not undo the operation, which is already committed.
+  `draftRevisionId` (the new Draft), and after an `applied` revert for `draftRevisionId`, through the hook native
+  `revertChanges` uses (native `createRevision` notifies nothing). In this package the hook does nothing, so a host
+  that serves endpoints by revision refreshes those revisions itself, once, after the call returns; a failure there
+  does not undo the operation, which is already committed. A host that provides the hook instead must not refresh
+  again, and an error from its hook surfaces after the operation is committed.
 - **Limits.** Each operation reads only the tables its selection affects (`all: true` reads every table) and refuses
   work above its limits with `tooLarge`. The defaults are conservative; a host raises them through the environment
   once the operation logs show the real costs ([ENV.md](../ENV.md),

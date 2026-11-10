@@ -22,8 +22,9 @@ This specification fixes async table migrations (the "Async migration fix, detec
 swap writes what the synchronous path writes and deletes the record in one Serializable transaction. `applyMigrations`
 drives the migration it started and observes it on a separate timer, holding nothing while it waits; the source id
 travels in a versioned envelope in the existing `patches` column. The repair records the ledger only and leaves tables
-with invalid Draft rows refused; their remediation waits for the scan results. The ledger backfill for branches without
-a migration table is specified in [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
+with invalid Draft rows refused; their remediation is designed only if a host's scan finds such tables. The ledger
+backfill for branches without a migration table is specified in
+[schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 **Landed since the parent SPEC:** #85 copy-on-write by `INSERT … SELECT`; #86 Serializable views writes; #87 imported-id
 check in the change transaction; #88 no 100-referrer limits; #89 lock check inside every Draft writer's transaction;
@@ -508,7 +509,8 @@ plans `alreadyRepaired`; after a commit publishes the repair, `notDamaged`.
 
 ## 7. Ledger backfill and row remediation
 
-Neither is a release gate; partial operations keep refusing the affected tables until a decision is implemented.
+Neither is a release gate; partial operations keep refusing the affected tables until a branch is backfilled or a
+remediation exists.
 
 **Ledger backfill** for `unledgeredTable` findings with `reason: 'noMigrationTable'`: decided and specified in
 [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md), which replaces the earlier proposal here. Unledgered

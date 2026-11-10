@@ -21,6 +21,7 @@ import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
 
 const CATEGORIES = 'categories';
+const KINDS = 'kinds';
 const PRODUCTS = 'products';
 const BRANDS = 'brands';
 const SHELVES = 'shelves';
@@ -653,6 +654,58 @@ describe('DependencyClosure: references and ids of rows', () => {
         ]);
       },
     );
+
+    it.each(REFUSED_PRODUCTS)(
+      'blocks a commit as danglingInSource when the referrer left by $damage references the lost id in the Draft too, under the id the Draft gives the referenced table',
+      async ({ committed }) => {
+        const draft = await committed(kit);
+        await draft.renameTable(CATEGORIES, KINDS);
+        await draft.removeReferencedRows(KINDS, ['c1']);
+
+        const closure = await draft.closeDependencies('commit', {
+          rows: [{ tableId: KINDS, rowId: 'c1' }],
+        });
+
+        expect(closure.required).toEqual([]);
+        expect(closure.blockers).toEqual([
+          {
+            code: 'danglingInSource',
+            tableId: PRODUCTS,
+            rowId: 'p1',
+            message:
+              'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
+            unit: {
+              kind: 'rowDelete',
+              tableId: KINDS,
+              rowId: 'c1',
+              selector: { rows: [{ tableId: KINDS, rowId: 'c1' }] },
+            },
+          },
+        ]);
+      },
+    );
+
+    it('reads an unchanged refused referrer once, sharing the read of the lost ids', async () => {
+      const draft = await committedProductsWithoutInit(kit, {
+        p1: 'c1',
+        p2: 'c2',
+      });
+      await draft.removeReferencedRows(CATEGORIES, ['c1', 'c2']);
+      const referrerReads = jest.spyOn(
+        kit.snapshotReader,
+        'readFirstReferrers',
+      );
+
+      const closure = await draft.closeDependencies('commit', {
+        rows: [category('c1'), category('c2')],
+      });
+
+      expect(closure.blockers).toMatchObject([
+        { code: 'danglingInSource', rowId: 'p1' },
+        { code: 'danglingInSource', rowId: 'p2' },
+      ]);
+      expect(referrerReads).toHaveBeenCalledTimes(1);
+    });
 
     it('reads the Draft references of a refused referrer once for all its lost ids', async () => {
       const draft = await committedProductsWithoutInit(kit, {

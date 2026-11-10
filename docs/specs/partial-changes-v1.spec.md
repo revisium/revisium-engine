@@ -852,7 +852,8 @@ Row checks:
   all its rows are read here. When no unit provides the id, only a change of the refused table could drop the
   reference, and the plan is blocked with its refusal code. When its other side references the id as well (a row
   there holds the id in a foreign key to that table under the other side's own schema), the source itself dangles and
-  the blocker stays `danglingInSource`. The other side is read once per closure for all ids the table loses.
+  the blocker stays `danglingInSource`. The other side is read once per closure for each of its foreign-key leaves
+  toward that table, for all ids the table can lose; an unchanged referrer shares the read of its own side.
 
 **Ledger dependencies.** The structure checks compare the final target only. A pending migration can need, at its own
 step, a table id that only another unit's pending migration provides, while the final schemas are consistent because a

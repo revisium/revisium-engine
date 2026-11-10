@@ -9,7 +9,12 @@ export class BackfillSchemaLedgerCommand {
   constructor(public readonly data: BackfillSchemaLedgerData) {}
 }
 
-export const BACKFILL_STATUSES = ['notNeeded', 'planned', 'refused'] as const;
+export const BACKFILL_STATUSES = [
+  'notNeeded',
+  'planned',
+  'backfilled',
+  'refused',
+] as const;
 
 export type BackfillStatus = (typeof BACKFILL_STATUSES)[number];
 
@@ -47,6 +52,12 @@ export interface BackfillPlanned extends BackfillRevisions {
   readonly entries: readonly BackfillEntry[];
 }
 
+export interface BackfillCommitted extends BackfillRevisions {
+  readonly status: 'backfilled';
+  readonly previousHeadRevisionId: string;
+  readonly entries: readonly BackfillEntry[];
+}
+
 export interface BackfillRefused extends BackfillRevisions {
   readonly status: 'refused';
   readonly refusal: BackfillRefusal;
@@ -55,4 +66,5 @@ export interface BackfillRefused extends BackfillRevisions {
 export type SchemaLedgerBackfill =
   | BackfillNotNeeded
   | BackfillPlanned
+  | BackfillCommitted
   | BackfillRefused;

@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.1 |
+| Version | 1.2 |
 | Status | Accepted |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
@@ -175,10 +175,12 @@ exclusive holder (partial-changes §8.4). The attempt cap and timeout are those 
       revision) links the Head's table versions plus the migration table; step 2 gives the new Draft the Draft's table
       versions, the migration table among them; step 7 recomputes `hasChanges` from the table versions of the new Head
       and the new Draft.
-7. **Verify the stored state**, as the repair does (async-row-migration-v2 §6.4): the new Head and the new Draft link
-   the same migration table version, readonly, holding exactly the planned rows; the stored Head ledger replays to the
-   Head schemas; ids strictly increase; the head-schema check of partial-changes §6.10 refuses no Head user table. A
-   failure rolls back and raises an error (a defect, not an outcome).
+7. **Verify the stored state**, as the repair does (async-row-migration-v2 §6.4), reading the new revisions: the new
+   Head and the new Draft link the same migration table version, readonly; its rows are readonly and are exactly the
+   planned entries, in id order, under strictly increasing ids; replaying them reproduces the schema row of every Head
+   user table (`checkTableSlot` → `reproduces`), which is the predicate the head-schema check of partial-changes §6.10
+   applies to a Head table, so that check refuses none. A failure rolls back and raises an error (a defect, not an
+   outcome) whose message starts with `The backfilled ledger`.
 
 After the transaction commits, endpoints of the new Head and the new Draft are notified, as partial-changes §6.13 step
 8 says. Nothing is notified for a rolled-back attempt, a dry run, `notNeeded` or `refused`. A caller that repeats a
@@ -301,6 +303,10 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 | 4 | `docs/api.md` and `docs/migration.md`. | — |
 
 ## Changelog
+
+### Version 1.2 (2026-11-10)
+
+- §3 step 7 lists what the run reads back and checks, and how a failed check is reported (§9 PR 3).
 
 ### Version 1.1 (2026-11-10)
 

@@ -147,6 +147,20 @@ const REFUSED_DEPENDENCIES: RefusedDependency[] = [
     refusal: refusalOf(PRODUCTS, 'headSchemaInconsistent'),
   },
   {
+    name: 'a rename of a table whose pending update reads a table without a ledger lineage, with the referrer the rename taints',
+    given: givenReviewsOfOrdersRenamedAfterAKeyToUnledgeredProducts,
+    operation: 'commit',
+    selection: { tables: [KINDS, REVIEWS] },
+    refusal: refusalOf(PRODUCTS, 'unledgeredTable'),
+  },
+  {
+    name: 'the removal of a table that a damaged table references until its pending update',
+    given: givenCategoriesRemovedAfterDamagedProductsDroppedTheirKey,
+    operation: 'commit',
+    selection: { tables: [CATEGORIES] },
+    refusal: refusalOf(PRODUCTS, 'headSchemaInconsistent'),
+  },
+  {
     name: 'a created and renamed table that a damaged table referenced before the rename, which the remaining Draft would replay after it',
     given: givenDamagedProductsReferencingBrandsRenamedToKinds,
     operation: 'commit',
@@ -558,6 +572,67 @@ describe('DependencyClosure: pending migrations that need a table id another uni
         expect(await branchContentsOf(kit, draft)).toEqual(contents);
       },
     );
+
+    it.each(REFUSED_DEPENDENCIES)(
+      'reports the code of the refused table from validation alone for a $operation of $name',
+      async ({ given, operation, selection, refusal }) => {
+        const draft = await given(kit);
+
+        const blockers = await draft.validateTarget(operation, selection);
+
+        expect(blockers).toEqual([refusal]);
+      },
+    );
+
+    it.each<{ name: string; given: Given }>([
+      {
+        name: 'a created table whose init references a table without a ledger lineage',
+        given: (kit) => givenReviewsOfProducts(kit, withoutInit(PRODUCTS)),
+      },
+      {
+        name: 'a created table whose init references a table whose Head ledger fails to replay',
+        given: givenReviewsOfProductsOfUnledgeredCategories,
+      },
+      {
+        name: 'a rename that taints a referrer after a pending update read a table without a ledger lineage',
+        given: givenReviewsOfOrdersRenamedAfterAKeyToUnledgeredProducts,
+      },
+    ])(
+      'commits and reverts exactly { all: true } of $name as native does',
+      async ({ given }) => {
+        const committed = await given(kit);
+        const reverted = await given(kit);
+
+        const commit = await committed.commitChanges({
+          selection: { all: true },
+        });
+        const revert = await reverted.revertChanges({
+          selection: { all: true },
+        });
+
+        expect(commit.status).toBe('applied');
+        expect(revert.status).toBe('applied');
+      },
+    );
+
+    it('blocks a commit of pending migrations next to a published migration missing from the Draft ledger as ledgerInconsistent', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [NOTES]: { schema: titleSchema },
+      });
+      await draft.dropFromDraftLedger('init', NOTES);
+      await draft.createTable(TAGS, titleSchema);
+
+      const result = await draft.commitChanges({
+        selection: { tables: [TAGS] },
+      });
+
+      expect(result).toMatchObject({ status: 'blocked' });
+      expect(result.status === 'blocked' && result.blockers).toContainEqual({
+        code: 'ledgerInconsistent',
+        message:
+          'A published migration is missing or changed in the Draft ledger',
+      });
+    });
 
     it('requires a created table and blocks with the refusal when a created table references both it and a table without a ledger lineage', async () => {
       const draft = await givenReviewsOfUnledgeredProductsAndCreatedBrands(kit);
@@ -1031,4 +1106,31 @@ async function givenProductsReferencedCreatedDraftsOnlyInPendingMigrations(
   await draft.createTable(DRAFTS, titleSchema);
   await draft.updateTable(PRODUCTS, [targetIn(DRAFTS)]);
   await draft.updateTable(PRODUCTS, [removeField('target')]);
+}
+
+async function givenReviewsOfOrdersRenamedAfterAKeyToUnledgeredProducts(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await withoutInit(PRODUCTS)(kit, {
+    [PRODUCTS]: { schema: titleSchema },
+    [ORDERS]: { schema: titleSchema },
+    [REVIEWS]: { schema: linkSchemaTo(ORDERS) },
+  });
+  await draft.updateTable(ORDERS, [targetIn(PRODUCTS)]);
+  await draft.renameTable(ORDERS, KINDS);
+
+  return draft;
+}
+
+async function givenCategoriesRemovedAfterDamagedProductsDroppedTheirKey(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await migratedInPlace(PRODUCTS)(kit, {
+    [CATEGORIES]: { schema: titleSchema },
+    [PRODUCTS]: { schema: linkSchemaTo(CATEGORIES) },
+  });
+  await draft.updateTable(PRODUCTS, [removeField('target')]);
+  await draft.removeTable(CATEGORIES);
+
+  return draft;
 }

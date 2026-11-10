@@ -19,6 +19,7 @@ import {
   readTableIdsByStep,
   type SourceInconsistencies,
   sourceInconsistenciesOf,
+  takenTableIdOf,
 } from 'src/features/partial-changes/validation/ledger-consistency';
 import {
   type ResultingRole,
@@ -188,15 +189,23 @@ class DependentSteps {
     private readonly reads: ReadonlyMap<string, readonly string[]>,
   ) {}
 
+  // A step the Draft ledger lacks (an altered published migration) is left to
+  // validation.
   public of(ledger: readonly Migration[]): DependentStep[] {
-    return ledger.flatMap((migration) => [
-      ...this.referencesOf(migration).flatMap((tableId) =>
-        this.referenceDependencyOf(migration, tableId),
-      ),
-      ...takenTableIdsOf(migration).flatMap((tableId) =>
-        this.takenIdDependencyOf(migration, tableId),
-      ),
-    ]);
+    return ledger
+      .filter((migration) => this.draftLedger.includes(migration))
+      .flatMap((migration) => {
+        const taken = takenTableIdOf(migration);
+
+        return [
+          ...this.referencesOf(migration).flatMap((tableId) =>
+            this.referenceDependencyOf(migration, tableId),
+          ),
+          ...(taken === undefined
+            ? []
+            : this.takenIdDependencyOf(migration, taken)),
+        ];
+      });
   }
 
   private referencesOf(migration: Migration): readonly string[] {
@@ -284,18 +293,6 @@ function lineagesByStepOf({ slots }: ReplayedLedger): Map<string, string> {
   }
 
   return lineages;
-}
-
-function takenTableIdsOf(migration: Migration): string[] {
-  switch (migration.changeType) {
-    case 'init':
-      return [migration.tableId];
-    case 'rename':
-      return [migration.nextTableId];
-    case 'update':
-    case 'remove':
-      return [];
-  }
 }
 
 function reasonForStepUnit(step: DependentStep, role: ResultingRole): Reason {

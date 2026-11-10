@@ -60,10 +60,9 @@ export interface SlotInconsistency {
   readonly inconsistency: Inconsistency;
 }
 
-// The lineages of refused and unledgered tables in the source revisions, by
-// opening migration, with their steps, and the ids of unledgered tables that no
-// lineage holds; each with the refusal that leaves it out (none for exactly
-// `{ all: true }`, which refuses no table).
+// Each value is the refusal that leaves the lineage, step or id out: none for
+// exactly `{ all: true }`, which refuses no table but still leaves out
+// unledgered ones.
 interface LeftOutLineages {
   readonly lineages: ReadonlyMap<string, RefusedTable | undefined>;
   readonly steps: ReadonlyMap<string, RefusedTable | undefined>;
@@ -132,7 +131,6 @@ export class SourceInconsistencies {
   private readonly leftOut: LeftOutLineages;
   private readonly draftTimeline: TableIdTimeline;
   private readonly existing: ExistingInconsistencies;
-  private readonly existingInEverySlot: ExistingInconsistencies;
 
   constructor(snapshot: ChangesSnapshot, headSchema: HeadSchemaCheck) {
     const replays = headSchema.sourceReplays;
@@ -142,37 +140,25 @@ export class SourceInconsistencies {
     this.leftOut = leftOutLineagesOf(snapshot, headSchema);
     this.draftTimeline = new TableIdTimeline(draft.ledger);
     this.existing = {
-      head: keysOf(this.leftOutSlotsOf(head).keptInconsistencies()),
-      draft: keysOf(this.leftOutSlotsOf(draft).keptInconsistencies()),
-    };
-    this.existingInEverySlot = {
       head: keysOf(everyInconsistencyOf(head)),
       draft: keysOf(everyInconsistencyOf(draft)),
     };
   }
 
-  // New inconsistencies that validation reports, and the refusals behind new
-  // inconsistencies that it leaves out (§6.6): a lineage of a refused table, or
-  // a step that fails only because of refused tables, fails or differs where
-  // the source role did not.
+  // A new inconsistency of a left-out slot is not reported; the refusal behind
+  // it blocks the plan instead (§6.6).
   public assess(role: ReplayedResultingRole): RoleAssessment {
-    const leftOut = this.leftOutSlotsOf(role);
+    const leftOut = new LeftOutSlots(role, this.leftOut, this.draftTimeline);
+    const isNew = (found: SlotInconsistency) =>
+      !keepsExisting(role, this.existing, found);
 
     return {
-      inconsistencies: leftOut
-        .keptInconsistencies()
-        .filter((found) => !keepsExisting(role, this.existing, found)),
+      inconsistencies: leftOut.keptInconsistencies().filter(isNew),
       refusals: leftOut
         .leftOutInconsistencies()
-        .filter(
-          ({ found }) => !keepsExisting(role, this.existingInEverySlot, found),
-        )
+        .filter(({ found }) => isNew(found))
         .flatMap(({ refusal }) => (refusal ? [refusal] : [])),
     };
-  }
-
-  private leftOutSlotsOf(role: ReplayedRole): LeftOutSlots {
-    return new LeftOutSlots(role, this.leftOut, this.draftTimeline);
   }
 }
 
@@ -184,8 +170,6 @@ function replayedSourceRoleOf(
   return { ...sourceRoleOf(snapshot, side), replayed: replays[side] };
 }
 
-// Unledgered tables are left out with their broken lineages, refused ledgered
-// tables (§6.10) with the lineages that hold them in the source revisions.
 function leftOutLineagesOf(
   snapshot: ChangesSnapshot,
   { sourceReplays: replays, refusedTablesByIdentity }: HeadSchemaCheck,
@@ -263,10 +247,9 @@ function everyInconsistencyOf(role: ReplayedRole): SlotInconsistency[] {
   );
 }
 
-// The slots of a role that validation leaves out: those that follow a step of a
-// left-out lineage, and those whose failing step failed only because of
-// left-out tables, judged by what the role and the source Draft hold at that
-// step. Each keeps the refusal that leaves it out.
+// A slot is left out when it follows a step of a left-out lineage, or when its
+// failing step failed only because of left-out tables. Causes are judged at that
+// step, so an id a left-out lineage held at another time does not count.
 class LeftOutSlots {
   private readonly slots = new Map<ReplayedSlot, RefusedTable | undefined>();
   private readonly schemas: ReadonlyMap<string, JsonSchema>;
@@ -323,7 +306,7 @@ class LeftOutSlots {
       return;
     }
 
-    const causes = this.causesOf(step);
+    const causes = this.causesOf(step, slot);
 
     if (causes.length > 0 && causes.every(({ leftOut }) => leftOut)) {
       this.slots.set(
@@ -333,25 +316,18 @@ class LeftOutSlots {
     }
   }
 
-  // The reads that the step could not resolve, and the id it takes when another
-  // table holds it at that step.
-  private causesOf(step: Migration): Cause[] {
-    const reads = (this.readsByStep.get(step.id) ?? []).flatMap((tableId) =>
-      this.readCauseOf(step, tableId),
-    );
-    const taken = takenTableIdOf(step);
-
-    if (taken === undefined) {
-      return reads;
-    }
-
-    const holder = this.timeline.lastChangeBefore(step, taken)?.lineage;
-
-    return holder === undefined
-      ? reads
-      : [...reads, this.lineageCauseOf(holder)];
+  private causesOf(step: Migration, slot: ReplayedSlot): Cause[] {
+    return [
+      ...(this.readsByStep.get(step.id) ?? []).flatMap((tableId) =>
+        this.readCauseOf(step, tableId),
+      ),
+      ...this.takenIdCauseOf(step),
+      ...this.renamedCauseOf(step, slot),
+    ];
   }
 
+  // A read fails the step when the role holds no table under its id there, or
+  // the table it holds failed earlier; a remove fails on any referrer.
   private readCauseOf(step: Migration, tableId: string): Cause[] {
     const lineage = this.timeline.lastChangeBefore(step, tableId)?.lineage;
 
@@ -361,15 +337,49 @@ class LeftOutSlots {
 
     const read = this.slotsByLineage.get(lineage);
 
-    if (!read || !this.failedBefore(read, step)) {
+    if (
+      step.changeType !== 'remove' &&
+      (!read || !this.failedBefore(read, step))
+    ) {
       return [];
     }
 
     return [this.lineageCauseOf(lineage)];
   }
 
-  // A read of an id the role does not hold at that step: what the source Draft
-  // meant by it.
+  private takenIdCauseOf(step: Migration): Cause[] {
+    const taken = takenTableIdOf(step);
+    const holder =
+      taken === undefined
+        ? undefined
+        : this.timeline.lastChangeBefore(step, taken)?.lineage;
+
+    return holder === undefined ? [] : [this.lineageCauseOf(holder)];
+  }
+
+  // A rename of a tainted table taints its referrers at that step.
+  private renamedCauseOf(step: Migration, slot: ReplayedSlot): Cause[] {
+    if (step.changeType !== 'rename') {
+      return [];
+    }
+
+    const renamed = this.timeline.lastChangeBefore(step, step.tableId)?.lineage;
+    const renamedSlot = renamed && this.slotsByLineage.get(renamed);
+
+    if (
+      !renamed ||
+      !renamedSlot ||
+      renamedSlot === slot ||
+      !this.failedBefore(renamedSlot, step)
+    ) {
+      return [];
+    }
+
+    return [this.lineageCauseOf(renamed)];
+  }
+
+  // The role holds no table under the id at that step: what the source Draft
+  // held it with decides, or, when it held none, an unledgered table's id.
   private meantCauseOf(step: Migration, tableId: string): Cause {
     const meant = this.draftTimeline.includes(step)
       ? this.draftTimeline.lastChangeBefore(step, tableId)?.lineage
@@ -423,7 +433,7 @@ function causeIn(
   return { leftOut: leftOut.has(key), refusal: leftOut.get(key) };
 }
 
-function takenTableIdOf(migration: Migration): string | undefined {
+export function takenTableIdOf(migration: Migration): string | undefined {
   switch (migration.changeType) {
     case 'init':
       return migration.tableId;

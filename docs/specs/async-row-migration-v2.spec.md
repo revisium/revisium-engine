@@ -27,7 +27,7 @@ with invalid Draft rows refused; their remediation, like the ledger backfill, wa
 **Landed since the parent SPEC:** #85 copy-on-write by `INSERT … SELECT`; #86 Serializable views writes; #87 imported-id
 check in the change transaction; #88 no 100-referrer limits; #89 lock check inside every Draft writer's transaction;
 #90 cleanup spares active shadows; #91 commit locks Draft-owned rows only; #92 fence part 1 (Draft writers and the async
-start take the fence shared). Pending: fence part 2; the ledger replay (#93).
+start take the fence shared); #93 the ledger replay; #119 and #128 fence part 2 (exclusive escalation).
 
 ## 1. Terms
 

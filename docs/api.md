@@ -388,8 +388,10 @@ Count of foreign key references for a row.
 
 ## Revisions
 
-Partial commit and revert of selected Draft changes are accepted but not
-implemented yet; see [ADR-001](adr/ADR-001-partial-commit-and-revert.md).
+Partial commit and revert of selected Draft changes are implemented but not
+public yet: `EngineApiService` does not expose them until the facade and the
+release gate land; see [ADR-001](adr/ADR-001-partial-commit-and-revert.md) and
+[plan](plan.md).
 
 ### createRevision
 

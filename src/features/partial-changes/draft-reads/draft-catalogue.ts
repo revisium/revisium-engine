@@ -8,6 +8,7 @@ import {
   buildChangeCatalogue,
   type ChangeCatalogue,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
+import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import { carriesViewsChange } from 'src/features/partial-changes/catalogue/views-units';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { AddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
@@ -106,6 +107,17 @@ export class DraftCatalogue {
 
   public unitsOfRow(row: AddressedRow): CatalogueUnit[] {
     return this.catalogue.lookup.unitsOfRow(row);
+  }
+
+  public unitOfRowOn(
+    row: AddressedRow,
+    kind: UnitKind,
+  ): CatalogueUnit | undefined {
+    return this.unitsOfRow(row).find(({ unit }) => unit.kind === kind);
+  }
+
+  public tableOf(identity: string): TablePair {
+    return this.catalogue.tables.pairOf(identity);
   }
 
   public changedRowOf(

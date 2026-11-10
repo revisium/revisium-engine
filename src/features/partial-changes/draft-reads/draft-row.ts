@@ -10,6 +10,11 @@ import { differingColumnsOf } from 'src/features/partial-changes/catalogue/row-d
 import type { RowColumn } from 'src/features/partial-changes/catalogue/unit';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
+import type { RowRename } from 'src/features/partial-changes/draft-reads/id-exchanges';
+import type {
+  PageRenames,
+  RenamedRow,
+} from 'src/features/partial-changes/draft-reads/page-renames';
 import { tableIdsOf } from 'src/features/partial-changes/draft-reads/table-ids';
 import { pointerOfNativeFieldPath } from 'src/features/partial-changes/draft-reads/native-field-path';
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
@@ -25,11 +30,17 @@ import type {
   DraftFieldChange,
   DraftFieldChangeType,
   DraftRowItem,
+  FollowedUnit,
+  IdExchange,
+  IdTakeover,
   RowSelection,
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import { isCreatedOrRemoved } from 'src/features/partial-changes/selection/created-or-removed-tables';
 import type { SelectorMatch } from 'src/features/partial-changes/selection/selector-match';
-import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
+import {
+  type UnitRef,
+  unitRefOf,
+} from 'src/features/partial-changes/selection/unit-refs';
 import {
   publicTableIdOf,
   type TablePair,
@@ -57,8 +68,9 @@ const COMPUTED = { state: 'computed' } as const;
 export function draftRowItemOf(
   entry: DraftRowEntry,
   catalogue: DraftCatalogue,
+  renames: PageRenames,
 ): DraftRowItem {
-  return new DraftRow(entry, catalogue).item();
+  return new DraftRow(entry, catalogue, renames).item();
 }
 
 class DraftRow {
@@ -67,6 +79,7 @@ class DraftRow {
   constructor(
     private readonly entry: DraftRowEntry,
     private readonly catalogue: DraftCatalogue,
+    private readonly renames: PageRenames,
   ) {
     this.row = addressedRowOf(entry);
   }
@@ -78,13 +91,15 @@ class DraftRow {
       return this.refusedItem(refusal);
     }
 
-    return {
-      ...this.ids(),
-      changeType: this.entry.pair.changeType,
-      fields: this.fields((pointer) => this.fieldSelectionAt(pointer)),
-      columns: this.columns((column) => this.columnSelectionOf(column)),
-      selection: this.selection(),
-    };
+    return this.withIdExchange(
+      this.withIdTakeover({
+        ...this.ids(),
+        changeType: this.entry.pair.changeType,
+        fields: this.fields((pointer) => this.fieldSelectionAt(pointer)),
+        columns: this.columns((column) => this.columnSelectionOf(column)),
+        selection: this.selection(),
+      }),
+    );
   }
 
   private refusedItem({ code }: RefusedTable): DraftRowItem {
@@ -97,6 +112,104 @@ class DraftRow {
       columns: this.columns(() => refused),
       selection: withoutOwnUnits(refused),
     };
+  }
+
+  private withIdTakeover(item: DraftRowItem): DraftRowItem {
+    const idTakeover = this.idTakeover();
+
+    if (!idTakeover) {
+      return item;
+    }
+
+    return { ...item, idTakeover };
+  }
+
+  private withIdExchange(item: DraftRowItem): DraftRowItem {
+    const idExchange = this.idExchange();
+
+    if (!idExchange) {
+      return item;
+    }
+
+    return { ...item, idExchange };
+  }
+
+  // A rename into the id of a deleted row: the two items share the row id, so both find the deletion and the rename.
+  private idTakeover(): IdTakeover | undefined {
+    const { table } = this.entry;
+    const { rowId } = this.row;
+    const deletion = this.catalogue.unitOfRowOn(
+      { table, rowId, side: 'head' },
+      'rowDelete',
+    );
+    const rename = this.catalogue.unitOfRowOn(
+      { table, rowId, side: 'draft' },
+      'rowRename',
+    );
+
+    if (!deletion || !rename) {
+      return undefined;
+    }
+
+    return { deletion: unitRefOf(deletion), rename: unitRefOf(rename) };
+  }
+
+  private idExchange(): IdExchange | undefined {
+    const chain = this.renames.chainOf(
+      this.entry.table.identity,
+      this.entry.pair.identity,
+    );
+
+    if (!chain) {
+      return undefined;
+    }
+
+    return {
+      renames: chain.renames.map((rename) => this.exchangedRenameOf(rename)),
+      termination: chain.termination,
+    };
+  }
+
+  private exchangedRenameOf({ draftRowId }: RowRename): UnitRef {
+    const rename = this.renameUnitOf({
+      tableIdentity: this.entry.table.identity,
+      rowId: draftRowId,
+    });
+
+    if (!rename) {
+      throw new Error(
+        `${this.address()} exchanges ids with ${draftRowId}, which has no rename unit`,
+      );
+    }
+
+    return rename;
+  }
+
+  private followedRenameAt(pointer: JsonPointer): FollowedUnit | undefined {
+    const renamed = this.renames.followedAt({
+      tableIdentity: this.entry.table.identity,
+      rowIdentity: this.entry.pair.identity,
+      pointer: pointer.toString(),
+    });
+    const rename = renamed && this.renameUnitOf(renamed);
+
+    if (!rename) {
+      return undefined;
+    }
+
+    return { unit: rename, reason: 'referenceRename' };
+  }
+
+  private renameUnitOf({
+    tableIdentity,
+    rowId,
+  }: RenamedRow): UnitRef | undefined {
+    const rename = this.catalogue.unitOfRowOn(
+      { table: this.catalogue.tableOf(tableIdentity), rowId, side: 'draft' },
+      'rowRename',
+    );
+
+    return rename && unitRefOf(rename);
   }
 
   private ids(): ItemIds {
@@ -147,14 +260,20 @@ class DraftRow {
     return this.entry.fieldChanges.map(
       ({ fieldPath, changeType, oldValue, newValue }) => {
         const pointer = pointerOfNativeFieldPath(fieldPath);
-
-        return {
+        const change: DraftFieldChange = {
           path: pointer.toString(),
           changeType: draftFieldChangeTypeOf(changeType),
           oldValue: oldValue ?? null,
           newValue: newValue ?? null,
           selection: selectionAt(pointer),
         };
+        const follows = this.followedRenameAt(pointer);
+
+        if (!follows) {
+          return change;
+        }
+
+        return { ...change, follows };
       },
     );
   }

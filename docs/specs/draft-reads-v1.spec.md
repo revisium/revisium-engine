@@ -4,8 +4,8 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.2 |
-| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages over the unfiltered list, is implemented; PR 10 (§5.3–§5.5: `idTakeover`, `idExchange`, `follows`) and PR 11 (the row `filters` of §1 and §7) are pending. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold |
+| Version | 1.3 |
+| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages over the unfiltered list, is implemented; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5), is implemented; PR 11 (the row `filters` of §1 and §7, with the DR-14 case of a rename filtered out) is pending. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
@@ -239,7 +239,8 @@ A commit of the item's rename requires the other renames of its list (`idOccupie
 deletion, and with `truncated` more than the list shows. A rename into a free id or into the id of a deleted row has no
 `idExchange`. The page follows each chain through the pairs it loaded, then, for the Head ids the walk reached and did
 not load, through one bounded recursive query per table by row id and identity (never the table's link sets), and
-adds the renamed rows to the page's catalogue, so a rename on another page is listed with its unit.
+adds the renamed rows to the page's catalogue, so a rename on another page is listed with its unit. One query then
+reads the versions of every renamed row the page looked up, for §5.4 and §5.5 together.
 
 ### 5.5 References rewritten by a rename
 
@@ -500,12 +501,18 @@ Paging, filters, validation, snapshot:
 - DR-17 Table filters select the same items from `tableChanges` and the summary lists and leave the summary counts and
   `…Count` fields unchanged; `totalCount` and `hasNextPage` count matching tables only.
 - DR-18 Snapshot: a Draft edit committed between a page's phases changes nothing the page returns (barrier tests for
-  pairs, versions, takeovers, exchanges and follows).
+  pairs, versions, exchanges and follows; a takeover reads nothing of its own, it comes from the page's pairs).
 - DR-19 A row page reads only the tables from the cursor's table until it is full: with 100 changed tables and a page
   that fills in the first, the call runs one pair query.
 - DR-20 `null` for every optional input is treated as absent; an unknown branch is the native not-found error.
 
 ## Changelog
+
+### Version 1.3 (2026-11-10)
+
+- §5.4: one query reads the versions of the renamed rows a page looked up for its id exchanges and followed references.
+- DR-18: a takeover needs no barrier test of its own.
+- Status: PR 10 (§5.3–§5.5) implemented.
 
 ### Version 1.2 (2026-11-10)
 

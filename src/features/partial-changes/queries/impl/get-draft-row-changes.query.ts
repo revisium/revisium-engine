@@ -5,7 +5,9 @@ import type {
   DraftPageInfo,
   DraftReadState,
   FieldSelection,
+  FollowReason,
   GoesWithSelection,
+  IdExchangeTermination,
   RefusedSelection,
 } from 'src/features/partial-changes/queries/impl/draft-reads';
 import type { SelectionItems } from 'src/features/partial-changes/selection/selection';
@@ -42,12 +44,31 @@ export type DraftFieldChangeType = Exclude<
   RowChangeDetailType.FieldMoved
 >;
 
+// The rename whose cascade rewrote a reference.
+export interface FollowedUnit {
+  readonly unit: UnitRef;
+  readonly reason: FollowReason;
+}
+
 export interface DraftFieldChange {
   readonly path: string;
   readonly changeType: DraftFieldChangeType;
   readonly oldValue: unknown;
   readonly newValue: unknown;
   readonly selection: FieldSelection;
+  readonly follows?: FollowedUnit;
+}
+
+// A rename into the id of a deleted row: both items carry the deletion and the rename.
+export interface IdTakeover {
+  readonly deletion: UnitRef;
+  readonly rename: UnitRef;
+}
+
+// The renames of a chain, the item's own first, each taking the Head id of the next.
+export interface IdExchange {
+  readonly renames: readonly UnitRef[];
+  readonly termination: IdExchangeTermination;
 }
 
 export interface DraftColumnChange {
@@ -66,6 +87,8 @@ export interface DraftRowItem {
   readonly fields: readonly DraftFieldChange[];
   readonly columns: readonly DraftColumnChange[];
   readonly selection: RowSelection;
+  readonly idTakeover?: IdTakeover;
+  readonly idExchange?: IdExchange;
 }
 
 export interface DraftRowPage extends DraftReadState {

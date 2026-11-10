@@ -1735,14 +1735,15 @@ Where the defaults come from, scaled linearly from the measurements above:
 
 | Setting | Was | Worst case at the default |
 | --- | --- | --- |
-| `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 100,000 | Preview ~4–6 s (3.9 s cold at 10k × 10k, 8.4–9.6 s at 100k); commit or revert without per-row work up to ~18 s (43.9 s for 50k rows); planning memory ~90 MB (~4.4 KB per changed row). |
+| `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 100,000 | Preview ~2–8 s (~2 s from 8.4–9.6 s at 100k, ~8 s from 3.9 s cold at 10k × 10k; up to ~16 s at the spread); commit or revert without per-row work up to ~18 s (43.9 s for 50k rows); planning memory ~90 MB (~4.4 KB per changed row). |
 | `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 10,000 | Up to ~12 s: 2.0–3.9 ms per merged row with a formula (99.7–142.5 s for 50,000; 19.6 s for 5,000), 5.3–5.8 ms with formulas and files (158–172 s for 30,000; 17.1–17.5 s for 3,000), measured before set-based file registration landed in #94. |
-| `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | ~6–8 s per mixed table: ~61 s per 1M copied links on the sandbox, 3.8 s per 50k links on the 2026-11-07 scale-PoC host. The limit is per table, so several large mixed tables add up; only the timeout bounds their total. |
-| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | unchanged | One operation at every limit with one mixed table stays under ~40 s, about twice that at the measured spread; each further large mixed table adds ~6–8 s. The timeout stays at 3 minutes because the scan, the repair and the backfill run under the same runner (async-row-migration-v2 §5, §6; schema-ledger-backfill-v1 §3). |
+| `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | ~6 s per mixed table: ~61 s per 1M copied links on the sandbox. The limit is per table, so several large mixed tables add up; only the timeout bounds their total. |
+| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | unchanged | One attempt at every limit with one mixed table stays under ~40 s, about twice that at the measured spread; each further large mixed table adds ~6 s; a retried commit or revert runs up to `PARTIAL_CHANGES_MAX_ATTEMPTS` attempts, each with its own timeout. The timeout stays at 3 minutes because the scan, the repair and the backfill run under the same runner (async-row-migration-v2 §5, §6; schema-ledger-backfill-v1 §3). |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | unchanged | Two shared attempts and one under the exclusive fence (§8.4). |
 
 The engine reads every setting from its environment once, at startup. A value that is not a whole decimal integer
-(such as `1e5`, `100_000` or `2000abc`), or is below 1, keeps the default and logs a warning; the effective values are
+(such as `1e5`, `100_000` or `2000abc`), is below 1, or is above the largest safe integer keeps the default and logs a
+warning (the timeout is also bounded by what a Node timer accepts, about 24.8 days); the effective values are
 logged once (`Partial changes limits: …`, `Partial operation settings: …`), each that differs from its default with the
 variable it came from.
 
@@ -2224,7 +2225,7 @@ versions unchanged" (§14) holds in every scenario.
   cost assertion on locked rows).
 - **Benchmarks** fail the run on any check and verify every Head and Draft row in SQL: data, `hash`, `schemaHash`,
   formula consistency, `readonly` of rows and tables, no dangling foreign keys, file links and project bytes; at least
-  3 runs per cell on production-like hardware; the estimate is compared with the links and rows written. A scoped
+  3 runs per cell; the estimate is compared with the links and rows written. A scoped
   benchmark adds a changed unrelated table and checks that its versions stay untouched.
 - **Gaps to close in implementation:** JSON Pointer escapes (`~0`, `~1`); applied reverts of swaps and reused ids;
   Head-id fallback after a concurrent rename; races with
@@ -2232,9 +2233,9 @@ versions unchanged" (§14) holds in every scenario.
   a `RowPublishedAt` inside an array and several `RowPublishedAt` fields in one schema (§3.1); scoped reading with
   large foreign-key-connected tables; keyset paging inside a table (§5.2); the Head schema check and repair (§6.10,
   AS-47); exact selectors on required and blocking units (§5.1); post-commit notification (§6.13); the deadline and
-  attempt loop (§8.1); the row-digest cost (§9.1). The PoC tested none of these; it did not build keyset paging,
+  attempt loop (§8.1). The PoC tested none of these; it did not build keyset paging,
   the Head schema check, exact selectors on required and blocking units, post-commit notification, the deadline or
-  the attempt loop, and it did not measure the row-digest cost.
+  the attempt loop, and it did not measure the structure-digest cost.
 
 **PoC evidence** (PoC v2, sandbox of 2 CPU and 4 GB; summary in
 [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md), code on
@@ -2374,9 +2375,10 @@ engine value and keep one spelling per code (§5.10); the transport contract nam
 
 Limits and logs (§9.1, §11, §11.1, §12): the changed-rows, per-row-work and mixed-table-link limits default to 20,000,
 2,000 and 100,000 instead of 100,000, 10,000 and 250,000, with the worst case each keeps; the timeout and the attempt
-cap stay; a setting must be a whole decimal integer; the effective settings are logged at startup; every listing
-page, preview, commit and revert logs one entry (§11.1); the row digest is measured; the release gate takes these
-instead of a re-measurement on production-like hardware.
+cap stay; a setting must be a whole decimal integer within bounds (the reader is shared with the native
+`TRANSACTION_*` settings, which become as strict: `15000ms` or `+15000` now keep the default with a warning); the
+effective settings are logged at startup; every listing page, preview, commit and revert logs one entry (§11.1); the
+structure digest is measured; the release gate takes these instead of a re-measurement on production-like hardware.
 
 Scenarios: AS-10, AS-17, AS-19, AS-45, AS-64 reworded; AS-60c, AS-76 and §13.8 (AS-80 – AS-92) added.
 

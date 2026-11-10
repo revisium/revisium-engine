@@ -231,7 +231,7 @@ commit a dangling foreign key; A splits structure per [REQ-001.BR-007] and refus
   conservative configurable limits keep one operation within 20,000 changed rows and a ~3-minute timeout, and each
   operation is logged with its cost (SPEC §11). Larger operations are refused.
 - **Structure freshness is table-wide:** a structure commit of a table that others keep editing keeps returning
-  `stale`, and its row digest costs O(table rows) per plan (3.3–3.5 s per million rows, SPEC §11).
+  `stale`, and its structure digest costs O(table rows) per plan (3.3–3.5 s per million rows, SPEC §11).
 - **The write fence touches every native writer:** each takes the shared lock and waits up to the operation timeout
   while a commit holds it exclusively. Its evidence is one benchmark prototype.
 - Results do not count the units that stay in the Draft, because an operation reads only its affected tables; the

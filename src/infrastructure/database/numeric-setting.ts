@@ -5,6 +5,7 @@ export interface NumericSetting {
   envKey: string;
   defaultValue: number;
   minValue: number;
+  maxValue?: number;
 }
 
 export interface ReadSetting {
@@ -45,6 +46,15 @@ export function readNumericSetting(
   }
 
   const parsed = Number.parseInt(value, 10);
+
+  const maxValue = setting.maxValue ?? Number.MAX_SAFE_INTEGER;
+
+  if (parsed > maxValue) {
+    logger.warn(
+      `Invalid ${setting.envKey}: ${value.trim()} is above maximum ${maxValue}, using default ${setting.defaultValue}`,
+    );
+    return setting.defaultValue;
+  }
 
   if (parsed < setting.minValue) {
     logger.warn(

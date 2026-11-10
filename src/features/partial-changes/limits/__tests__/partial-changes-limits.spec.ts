@@ -54,7 +54,7 @@ describe('PartialChangesLimits', () => {
     },
   );
 
-  it('logs the effective limits at startup and names the configured ones', () => {
+  it('logs the effective limits at startup and names the variables of the non-default ones', () => {
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     const limits = new PartialChangesLimits(
       new ConfigService({ PARTIAL_CHANGES_MAX_PER_ROW_WORK: '50' }),

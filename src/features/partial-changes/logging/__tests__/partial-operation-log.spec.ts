@@ -13,6 +13,7 @@ import type { FieldRef } from 'src/features/partial-changes/selection/selection'
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { commitWhileNativeWriteLands } from '../../__tests__/support/commit-races';
+import { HeldPartialRevert } from '../../__tests__/support/revert-races';
 
 const NOTES = 'notes';
 const MAX_CHANGED_ROWS = 3;
@@ -365,6 +366,33 @@ describe('PartialOperationLog', () => {
       expect(attempts).toBe(2);
       expect(entries.finished()).toMatchObject([
         { operation: 'commit', outcome: 'applied', attempts, escalations: 0 },
+      ]);
+    });
+
+    it('log the escalation of a revert that lost two attempts to native writes', async () => {
+      const draft = await givenEditedNotes(['n1', 'n2']);
+      const entries = loggedEntries();
+      const revert = new HeldPartialRevert(kit, draft, {
+        selection: { fields: [titleOf('n1')] },
+      });
+
+      await revert.losesAttemptTo(() =>
+        draft.updateRow(NOTES, 'n1', { title: 'newer' }),
+      );
+      await revert.losesAttemptTo(() =>
+        draft.updateRow(NOTES, 'n1', { title: 'newest' }),
+      );
+
+      await expect(revert.outcome()).resolves.toMatchObject({
+        status: 'applied',
+      });
+      expect(entries.finished()).toMatchObject([
+        {
+          operation: 'revert',
+          outcome: 'applied',
+          attempts: 3,
+          escalations: 1,
+        },
       ]);
     });
 

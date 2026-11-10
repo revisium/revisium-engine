@@ -565,7 +565,7 @@ describe('OperationTransactionRunner', () => {
       expect(write.attempts).toBe(CONFIGURED_MAX_ATTEMPTS);
     });
 
-    it('logs its settings at startup and names the configured ones', () => {
+    it('logs its settings at startup and names the variables of the non-default ones', () => {
       const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
 
       try {

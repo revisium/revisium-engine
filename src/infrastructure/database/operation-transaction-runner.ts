@@ -32,19 +32,23 @@ const MAX_ATTEMPTS: NumericSetting = {
   minValue: 1,
 };
 
-const OPERATION_TIMEOUT_MS: NumericSetting = {
-  envKey: 'PARTIAL_CHANGES_OPERATION_TIMEOUT_MS',
-  defaultValue: 180_000,
-  minValue: 1,
-};
-
 // The callback settles by the deadline and Prisma rolls back on its awaited path. Prisma's own timer rolls back from
 // a detached callback, which fails unhandled on a session the database has ended, so it stays a grace beyond.
 const PRISMA_TIMEOUT_GRACE_MS = 30_000;
 
+// Node fires a timer at once when its delay is above this.
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+const OPERATION_TIMEOUT_MS: NumericSetting = {
+  envKey: 'PARTIAL_CHANGES_OPERATION_TIMEOUT_MS',
+  defaultValue: 180_000,
+  minValue: 1,
+  maxValue: MAX_TIMER_DELAY_MS - PRISMA_TIMEOUT_GRACE_MS,
+};
+
 type AttemptOptions = Omit<TransactionOptions, 'retry'>;
 
-// Hears each attempt as it starts, so a caller can report how many ran and how many held the exclusive fence.
+// Hears each attempt as it starts, so a caller can report how many ran and how many were escalated.
 export interface AttemptObserver {
   attempted(escalated: boolean): void;
 }

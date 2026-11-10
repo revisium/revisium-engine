@@ -1,21 +1,28 @@
-import type { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
+import { deepEqual } from '@revisium/schema-toolkit/lib';
+import type {
+  JsonPatch,
+  JsonPatchReplace,
+  JsonSchema,
+} from '@revisium/schema-toolkit/types';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+import { validatingLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
   type DataTarget,
   dataTargetOfSchemaPath,
-  type SchemaLeaf,
+  type SchemaNode,
 } from 'src/features/partial-changes/structure/schema-leaves';
 import type {
   NativeSchemaRules,
   NativeSchemaStore,
 } from 'src/features/share/ledger-replay/native-schema-rules';
 
-export interface LeafOrigin {
-  readonly leaf: SchemaLeaf;
+export interface NodeOrigin<TNode extends SchemaNode> {
+  readonly node: TNode;
   readonly rewritten: boolean;
+  readonly annotated: boolean;
 }
 
-interface TracedValue extends LeafOrigin {
+interface TracedValue<TNode extends SchemaNode> extends NodeOrigin<TNode> {
   readonly pointer: JsonPointer;
 }
 
@@ -28,7 +35,10 @@ interface Carry {
 export type PatchEffect =
   | Carry
   | { readonly kind: 'rewrite'; readonly at: JsonPointer }
+  | { readonly kind: 'annotate'; readonly at: JsonPointer }
   | { readonly kind: 'end'; readonly at: JsonPointer };
+
+const WITHOUT_TABLE_IDENTITIES: ReadonlyMap<string, string> = new Map();
 
 export function replayPendingPatches(
   headSchema: JsonSchema,
@@ -50,27 +60,21 @@ export function pointersTouchedBy(effect: PatchEffect): JsonPointer[] {
   return [effect.at];
 }
 
-export class LeafOrigins {
-  private readonly originsByPointer: ReadonlyMap<string, LeafOrigin>;
+export class NodeOrigins<TNode extends SchemaNode> {
+  private readonly originsByPointer: ReadonlyMap<string, NodeOrigin<TNode>>;
 
-  constructor(
-    headLeaves: readonly SchemaLeaf[],
-    effects: readonly PatchEffect[],
-  ) {
+  constructor(headNodes: readonly TNode[], effects: readonly PatchEffect[]) {
     const values = effects.reduce(
       (traced, effect) => traced.flatMap((value) => valueAfter(value, effect)),
-      headLeaves.map(valueAtItsLeaf),
+      headNodes.map(valueAtItsNode),
     );
 
     this.originsByPointer = new Map(
-      values.map(({ pointer, leaf, rewritten }) => [
-        pointer.toString(),
-        { leaf, rewritten },
-      ]),
+      values.map(({ pointer, ...origin }) => [pointer.toString(), origin]),
     );
   }
 
-  public at(pointer: JsonPointer): LeafOrigin | undefined {
+  public at(pointer: JsonPointer): NodeOrigin<TNode> | undefined {
     return this.originsByPointer.get(pointer.toString());
   }
 }
@@ -99,20 +103,62 @@ function effectsOfBatch(
   const effects: PatchEffect[] = [];
 
   for (const patch of batch) {
-    effects.push(...effectsOf(patch, store));
-    store.applyPatch(patch);
+    effects.push(...effectsOfApplying(patch, store));
   }
 
   return effects;
 }
 
-function effectsOf(patch: JsonPatch, store: NativeSchemaStore): PatchEffect[] {
+function effectsOfApplying(
+  patch: JsonPatch,
+  store: NativeSchemaStore,
+): PatchEffect[] {
+  if (patch.op === 'replace') {
+    return [effectOfReplacing(patch, store)];
+  }
+
+  const effects = effectsOfAddRemoveOrMove(patch, store);
+  store.applyPatch(patch);
+
+  return effects;
+}
+
+function effectOfReplacing(
+  patch: JsonPatchReplace,
+  store: NativeSchemaStore,
+): PatchEffect {
+  const { pointer, isNode } = dataTargetOfSchemaPath(store, patch.path);
+  const replaced = store.schemaAt(pointer.segments);
+
+  store.applyPatch(patch);
+
+  if (isNode && differOnlyInAnnotations(replaced, patch.value)) {
+    return { kind: 'annotate', at: pointer };
+  }
+
+  return { kind: 'rewrite', at: pointer };
+}
+
+function differOnlyInAnnotations(
+  replaced: JsonSchema | undefined,
+  replacement: JsonSchema,
+): boolean {
+  if (!replaced || deepEqual(replaced, replacement)) {
+    return false;
+  }
+
+  return deepEqual(
+    validatingLeafSchema(replaced, WITHOUT_TABLE_IDENTITIES),
+    validatingLeafSchema(replacement, WITHOUT_TABLE_IDENTITIES),
+  );
+}
+
+function effectsOfAddRemoveOrMove(
+  patch: Exclude<JsonPatch, JsonPatchReplace>,
+  store: NativeSchemaStore,
+): PatchEffect[] {
   const targetOf = (schemaPath: string) =>
     dataTargetOfSchemaPath(store, schemaPath);
-
-  if (patch.op === 'replace') {
-    return [{ kind: 'rewrite', at: targetOf(patch.path).pointer }];
-  }
 
   if (patch.op === 'move') {
     return effectsOfMove(targetOf(patch.from), targetOf(patch.path));
@@ -137,11 +183,16 @@ function effectOfAddOrRemoveAt({ pointer, isNode }: DataTarget): PatchEffect {
   return { kind: 'end', at: pointer };
 }
 
-function valueAtItsLeaf(leaf: SchemaLeaf): TracedValue {
-  return { leaf, pointer: leaf.pointer, rewritten: false };
+function valueAtItsNode<TNode extends SchemaNode>(
+  node: TNode,
+): TracedValue<TNode> {
+  return { node, pointer: node.pointer, rewritten: false, annotated: false };
 }
 
-function valueAfter(value: TracedValue, effect: PatchEffect): TracedValue[] {
+function valueAfter<TNode extends SchemaNode>(
+  value: TracedValue<TNode>,
+  effect: PatchEffect,
+): TracedValue<TNode>[] {
   if (effect.kind === 'carry') {
     return carriedValue(value, effect);
   }
@@ -154,10 +205,17 @@ function valueAfter(value: TracedValue, effect: PatchEffect): TracedValue[] {
     return [{ ...value, rewritten: true }];
   }
 
+  if (effect.kind === 'annotate') {
+    return [{ ...value, annotated: true }];
+  }
+
   return [];
 }
 
-function carriedValue(value: TracedValue, { from, to }: Carry): TracedValue[] {
+function carriedValue<TNode extends SchemaNode>(
+  value: TracedValue<TNode>,
+  { from, to }: Carry,
+): TracedValue<TNode>[] {
   if (from.isAtOrAbove(value.pointer)) {
     return [{ ...value, pointer: value.pointer.relocated(from, to) }];
   }

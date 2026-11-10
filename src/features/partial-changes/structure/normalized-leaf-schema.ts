@@ -1,5 +1,17 @@
+import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import { CustomSchemeKeywords } from 'src/features/share/schema/consts';
+
+export const ANNOTATION_KEYWORDS = [
+  'contentMediaType',
+  'default',
+  'deprecated',
+  'description',
+  'readOnly',
+  'title',
+] as const;
+
+export type AnnotationKeyword = (typeof ANNOTATION_KEYWORDS)[number];
 
 export type NormalizedLeafSchema = Readonly<Record<string, unknown>>;
 
@@ -7,11 +19,14 @@ type ReferencedTable =
   | { readonly identity: string }
   | { readonly unknownTableId: string };
 
-const ANNOTATIONS: ReadonlySet<string> = new Set([
+const KEYWORDS_IGNORED_BY_LEAF_COMPARISON: ReadonlySet<string> = new Set([
   'title',
   'description',
   'deprecated',
 ]);
+const NON_VALIDATING_KEYWORDS: ReadonlySet<string> = new Set(
+  ANNOTATION_KEYWORDS,
+);
 const ITEMS = 'items';
 const PROPERTIES = 'properties';
 
@@ -19,47 +34,91 @@ export function normalizedLeafSchema(
   schema: JsonSchema,
   tableIdentities: ReadonlyMap<string, string>,
 ): NormalizedLeafSchema {
-  const normalized: Record<string, unknown> = {};
+  return new LeafSchemaNormalisation(
+    KEYWORDS_IGNORED_BY_LEAF_COMPARISON,
+    tableIdentities,
+  ).of(schema);
+}
 
-  for (const [keyword, value] of Object.entries(schema)) {
-    if (!ANNOTATIONS.has(keyword)) {
-      normalized[keyword] = normalizedKeyword(keyword, value, tableIdentities);
+export function validatingLeafSchema(
+  schema: JsonSchema,
+  tableIdentities: ReadonlyMap<string, string>,
+): NormalizedLeafSchema {
+  return new LeafSchemaNormalisation(
+    NON_VALIDATING_KEYWORDS,
+    tableIdentities,
+  ).of(schema);
+}
+
+export function ownAnnotationsDifferingBetween(
+  head: JsonSchema,
+  draft: JsonSchema,
+): AnnotationKeyword[] {
+  return ANNOTATION_KEYWORDS.filter(
+    (annotation) =>
+      !deepEqual(
+        annotationOf(head, annotation),
+        annotationOf(draft, annotation),
+      ),
+  );
+}
+
+export function leafSchemaWithAnnotation(
+  schema: JsonSchema,
+  annotation: AnnotationKeyword,
+  tableIdentities: ReadonlyMap<string, string>,
+): NormalizedLeafSchema {
+  return new LeafSchemaNormalisation(
+    new Set(ANNOTATION_KEYWORDS.filter((keyword) => keyword !== annotation)),
+    tableIdentities,
+  ).of(schema);
+}
+
+class LeafSchemaNormalisation {
+  constructor(
+    private readonly ignoredKeywords: ReadonlySet<string>,
+    private readonly tableIdentities: ReadonlyMap<string, string>,
+  ) {}
+
+  public of(schema: JsonSchema): NormalizedLeafSchema {
+    const normalized: Record<string, unknown> = {};
+
+    for (const [keyword, value] of Object.entries(schema)) {
+      if (!this.ignoredKeywords.has(keyword)) {
+        normalized[keyword] = this.normalizedKeyword(keyword, value);
+      }
+    }
+
+    return normalized;
+  }
+
+  private normalizedKeyword(keyword: string, value: unknown): unknown {
+    switch (keyword) {
+      case CustomSchemeKeywords.ForeignKey:
+        return referencedTable(value as string, this.tableIdentities);
+      case ITEMS:
+        return this.of(value as JsonSchema);
+      case PROPERTIES:
+        return this.normalizedProperties(value as Record<string, JsonSchema>);
+      default:
+        return value;
     }
   }
 
-  return normalized;
-}
-
-function normalizedKeyword(
-  keyword: string,
-  value: unknown,
-  tableIdentities: ReadonlyMap<string, string>,
-): unknown {
-  switch (keyword) {
-    case CustomSchemeKeywords.ForeignKey:
-      return referencedTable(value as string, tableIdentities);
-    case ITEMS:
-      return normalizedLeafSchema(value as JsonSchema, tableIdentities);
-    case PROPERTIES:
-      return normalizedProperties(
-        value as Record<string, JsonSchema>,
-        tableIdentities,
-      );
-    default:
-      return value;
+  private normalizedProperties(
+    properties: Record<string, JsonSchema>,
+  ): Record<string, NormalizedLeafSchema> {
+    return Object.fromEntries(
+      Object.entries(properties).map(([name, child]) => [name, this.of(child)]),
+    );
   }
 }
 
-function normalizedProperties(
-  properties: Record<string, JsonSchema>,
-  tableIdentities: ReadonlyMap<string, string>,
-): Record<string, NormalizedLeafSchema> {
-  return Object.fromEntries(
-    Object.entries(properties).map(([name, child]) => [
-      name,
-      normalizedLeafSchema(child, tableIdentities),
-    ]),
-  );
+function annotationOf(
+  schema: JsonSchema,
+  annotation: AnnotationKeyword,
+): unknown {
+  return (schema as Readonly<Record<string, unknown>>)[annotation];
 }
 
 function referencedTable(

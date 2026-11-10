@@ -483,12 +483,12 @@ described as follows:
 - It comes from a Head leaf at another pointer: `moved` when its leaf schema equals that leaf's (§3.3, condition 2)
   and no patch rewrote or annotated its value, otherwise `changed`; `from` is the Head pointer. That Head pointer is
   not reported as `removed`.
-- It comes from the Head leaf at its own pointer: not reported when its leaf schema is equal and no patch rewrote or
-  annotated its value (an unchanged leaf, or a move reverted inside the Draft); `annotated` when no patch rewrote its
-  value and its leaf schema differs from that leaf's only in annotations (a changed default, description or title);
-  not reported either when no patch rewrote its value and its leaf schema equals that leaf's in every keyword, although
-  a patch annotated it (an enclosing object whose annotations changed, or an annotation that a patch sets and the
-  stored schema does not keep); otherwise `changed`.
+- It comes from the Head leaf at its own pointer: not reported when its leaf schema is equal (§3.3, condition 2) and no
+  patch rewrote or annotated its value (an unchanged leaf, or a move reverted inside the Draft); `annotated` when no
+  patch rewrote its value and its leaf schema differs from that leaf's only in annotations (a changed default,
+  description or title); not reported either when no patch rewrote its value and its leaf schema equals that leaf's in
+  every keyword, although a patch annotated it (an enclosing object whose annotations changed, or an annotation that a
+  patch sets and the stored schema does not keep); otherwise `changed`.
 - It comes from no Head leaf: `added` when Head has no leaf at its pointer or that Head leaf's value moved to another
   Draft leaf (a field added where a moved field was), otherwise `changed` (a field removed and added again).
 

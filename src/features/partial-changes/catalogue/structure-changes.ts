@@ -8,8 +8,10 @@ import type {
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
+  type AnnotatedObject,
   type ChangedLeaf,
   changedLeavesOfReplacedTable,
+  type TableStructure,
 } from 'src/features/partial-changes/structure/table-structure';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
@@ -37,7 +39,7 @@ function tableChangeOf(
   if (changedTable) {
     return {
       table: 'changed',
-      fields: changedFieldsOf(tables.structureOf(changedTable).changedLeaves),
+      fields: changedFieldsOfStructure(tables.structureOf(changedTable)),
     };
   }
 
@@ -77,18 +79,48 @@ function wholeTableChangeOf(pairs: readonly TablePair[]): WholeTableChange {
   return 'removed';
 }
 
-function changedFieldsOf(leaves: readonly ChangedLeaf[]): ChangedField[] {
-  return leaves
-    .map(changedFieldOf)
-    .sort((left, right) => compareCodePoints(left.path, right.path));
+function changedFieldsOfStructure({
+  changedLeaves,
+  annotatedObjects,
+}: TableStructure): ChangedField[] {
+  return inPathOrder([
+    ...changedLeaves.map(changedFieldOf),
+    ...annotatedObjects.map(annotatedFieldOf),
+  ]);
 }
 
-function changedFieldOf({ pointer, change, from }: ChangedLeaf): ChangedField {
-  if (!from) {
-    return { path: pointer.toString(), change };
+function changedFieldsOf(leaves: readonly ChangedLeaf[]): ChangedField[] {
+  return inPathOrder(leaves.map(changedFieldOf));
+}
+
+function inPathOrder(fields: ChangedField[]): ChangedField[] {
+  return fields.sort((left, right) => compareCodePoints(left.path, right.path));
+}
+
+function annotatedFieldOf({
+  pointer,
+  annotations,
+}: AnnotatedObject): ChangedField {
+  return { path: pointer.toString(), change: 'annotated', annotations };
+}
+
+function changedFieldOf({
+  pointer,
+  change,
+  from,
+  annotations,
+}: ChangedLeaf): ChangedField {
+  const path = pointer.toString();
+
+  if (from) {
+    return { path, change, from: from.toString() };
   }
 
-  return { path: pointer.toString(), change, from: from.toString() };
+  if (annotations) {
+    return { path, change, annotations };
+  }
+
+  return { path, change };
 }
 
 function isOnBothSides({ head, draft }: TablePair): boolean {

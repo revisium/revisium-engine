@@ -714,7 +714,7 @@ necessary:
 
 | Role | Applying the cause | The unit to add |
 | --- | --- | --- |
-| `referrer` | brings into the target, or keeps there, a reference: a row value (its field or existence unit, or the structure that brings the table's rows), a schema, or a pending migration that references a table id | brings what the reference needs (a row, a table, the provider of a table id), or the structure that owns the referring value |
+| `referrer` | brings into the target, or keeps there, a reference: a row value (its field or existence unit, or the structure that brings the table's rows), a schema, or a pending migration that references a table id | brings what the reference needs (a row, a table, the provider of a table id), or the structure that owns the referring value, or (`referrerStillReferences`) the referrer's own unit that takes the reference out |
 | `remover` | takes out of the target what a reference still needs: a row or its id (a deletion, a reverted creation, a rename), a table (its removal, reverted creation or rename), or the table id that a pending migration references at its step (by removing it, renaming it away or placing another table at it) | brings it back, takes the reference out, or moves the structure that owns the referring value with it |
 | `taker` | moves a row or table into an id, or applies a pending migration that takes a table id, that the row, table or migration of the unit to add holds | moves its own row or table out of the id, or vacates the id at that step |
 | `occupant` | keeps a table id held at the step where a pending migration of the unit to add takes it (it restores or keeps the table that holds it) | takes its migration out of that resulting ledger |

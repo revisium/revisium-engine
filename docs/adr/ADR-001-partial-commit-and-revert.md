@@ -228,9 +228,10 @@ commit a dangling foreign key; A splits structure per [REQ-001.BR-007] and refus
 - **Per-row work** (formulas, file registration) dominates large merges until stage 0 compiles formulas and
   registers files set-based; one limit bounds it.
 - **Memory and time:** planning holds the changed rows of the affected tables, and an affected table is read whole;
-  limits keep one operation within ~100k changed rows and a ~3-minute timeout. Larger operations are refused.
+  conservative configurable limits keep one operation within 20,000 changed rows and a ~3-minute timeout, and each
+  operation is logged with its cost (SPEC §11). Larger operations are refused.
 - **Structure freshness is table-wide:** a structure commit of a table that others keep editing keeps returning
-  `stale`, and its row digest costs O(table rows) per plan (unmeasured; measured before release).
+  `stale`, and its row digest costs O(table rows) per plan (3.3–3.5 s per million rows, SPEC §11).
 - **The write fence touches every native writer:** each takes the shared lock and waits up to the operation timeout
   while a commit holds it exclusively. Its evidence is one benchmark prototype.
 - Results do not count the units that stay in the Draft, because an operation reads only its affected tables; the
@@ -266,7 +267,8 @@ commit a dangling foreign key; A splits structure per [REQ-001.BR-007] and refus
 
 Stages 1–3 may be developed in parallel with stage 0. **One release gate:** no partial operation is released before
 every stage-0 must item is done, its "Done when" holds, and the Head schema check is in the released operations.
-Limits are re-measured again after each "should" item lands.
+Limits ship as conservative defaults that hosts raise through configuration as the operation logs show real costs
+(SPEC §11).
 
 ## Related ADRs
 

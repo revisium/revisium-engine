@@ -3,13 +3,18 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { ChangesBlocked } from 'src/features/partial-changes/commands/impl/apply-changes';
+import type { RefusalCode } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import {
   addField,
   moveField,
   removeField,
 } from 'src/__tests__/fixtures/ledger-steps';
+import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
+import type { TableFixture } from 'src/__tests__/fixtures/branch-scenario';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
 import {
   migrationIdOf,
@@ -27,6 +32,9 @@ const CATEGORIES = 'categories';
 const KINDS = 'kinds';
 const PRODUCTS = 'products';
 const TAGS = 'tags';
+const REVIEWS = 'reviews';
+const ORDERS = 'orders';
+const BRANDS = 'brands';
 
 const titleSchema = obj({ title: str() });
 const linkSchemaTo = (tableId: string) =>
@@ -47,6 +55,25 @@ const renamedStructureOf = (tableId: string, previousTableId: string) => ({
 });
 
 type Given = (kit: PartialChangesTestKit) => Promise<ChangesScenario>;
+type Tables = Readonly<Record<string, TableFixture>>;
+type Committing = (
+  kit: PartialChangesTestKit,
+  tables: Tables,
+) => Promise<ChangesScenario>;
+
+const committedIntact: Committing = (kit, tables) =>
+  ChangesScenario.committed(kit, tables);
+
+const REFUSAL_REASONS: Readonly<Record<RefusalCode, string>> = {
+  headSchemaInconsistent: 'its Head schema does not match its Head ledger',
+  unledgeredTable: 'it has no intact ledger lineage',
+};
+
+const refusalOf = (tableId: string, code: RefusalCode): Blocker => ({
+  code,
+  tableId,
+  message: `${tableId} is refused: ${REFUSAL_REASONS[code]}`,
+});
 
 interface LedgerDependency {
   readonly name: string;
@@ -54,6 +81,57 @@ interface LedgerDependency {
   readonly operation: ChangeOperation;
   readonly selection: Selection;
 }
+
+interface RefusedDependency extends LedgerDependency {
+  readonly refusal: Blocker;
+}
+
+const REFUSED_DEPENDENCIES: RefusedDependency[] = [
+  {
+    name: 'a created table whose init references a table without a ledger lineage',
+    given: (kit) => givenReviewsOfProducts(kit, withoutInit(PRODUCTS)),
+    operation: 'commit',
+    selection: { tables: [REVIEWS] },
+    refusal: refusalOf(PRODUCTS, 'unledgeredTable'),
+  },
+  {
+    name: 'an update that gives a table a key to a table without a ledger lineage',
+    given: givenOrdersGivenAKeyToUnledgeredProducts,
+    operation: 'commit',
+    selection: { tables: [ORDERS] },
+    refusal: refusalOf(PRODUCTS, 'unledgeredTable'),
+  },
+  {
+    name: 'a created table whose init references a table whose Head ledger fails to replay',
+    given: givenReviewsOfProductsOfUnledgeredCategories,
+    operation: 'commit',
+    selection: { tables: [REVIEWS] },
+    refusal: refusalOf(PRODUCTS, 'headSchemaInconsistent'),
+  },
+  {
+    name: 'a table created while a damaged table had another id',
+    given: (kit) =>
+      givenLinksCreatedWhileNotesWasRenamed(kit, migratedInPlace(NOTES)),
+    operation: 'commit',
+    selection: { tables: [LINKS] },
+    refusal: refusalOf(NOTES, 'headSchemaInconsistent'),
+  },
+  {
+    name: 'a table created while a table without a ledger lineage had another id',
+    given: (kit) =>
+      givenLinksCreatedWhileNotesWasRenamed(kit, withoutInit(NOTES)),
+    operation: 'commit',
+    selection: { tables: [LINKS] },
+    refusal: refusalOf(NOTES, 'unledgeredTable'),
+  },
+  {
+    name: 'a created table that only pending migrations of a damaged table referenced',
+    given: givenDamagedProductsThatReferencedBrandsOnlyInPendingMigrations,
+    operation: 'revert',
+    selection: { tables: [BRANDS] },
+    refusal: refusalOf(PRODUCTS, 'headSchemaInconsistent'),
+  },
+];
 
 const REVERTS: LedgerDependency[] = [
   {
@@ -426,6 +504,56 @@ describe('DependencyClosure: pending migrations that need a table id another uni
     });
   });
 
+  describe('a step that needs a refused table', () => {
+    it.each(REFUSED_DEPENDENCIES)(
+      'blocks a $operation of $name with the code of the refused table',
+      async ({ given, operation, selection, refusal }) => {
+        const draft = await given(kit);
+
+        const closure = await draft.closeDependencies(operation, selection);
+
+        expect(closure.required).toEqual([]);
+        expect(closure.blockers).toEqual([refusal]);
+      },
+    );
+
+    it.each(REFUSED_DEPENDENCIES)(
+      'refuses to $operation $name with only that code and writes nothing',
+      async ({ given, operation, selection, refusal }) => {
+        const draft = await given(kit);
+        const contents = await branchContentsOf(kit, draft);
+
+        const result =
+          operation === 'commit'
+            ? await draft.commitChanges({ selection })
+            : await draft.revertChanges({ selection });
+
+        expect(result).toEqual<ChangesBlocked>({
+          status: 'blocked',
+          blockers: [refusal],
+          required: [],
+        });
+        expect(await branchContentsOf(kit, draft)).toEqual(contents);
+      },
+    );
+
+    it('commits a created table that references a damaged table whose Head ledger still replays', async () => {
+      const draft = await givenReviewsOfProducts(
+        kit,
+        migratedInPlace(PRODUCTS),
+      );
+      const selection = { tables: [REVIEWS] };
+
+      const closure = await draft.closeDependencies('commit', selection);
+      const result = await draft.commitChanges({ selection });
+
+      expect(closure.required).toEqual([]);
+      expect(closure.blockers).toEqual([]);
+      expect(result.status).toBe('applied');
+      expect(await draft.hasTable('head', REVIEWS)).toBe(true);
+    });
+  });
+
   it.each([...REVERTS, ...COMMITS])(
     'closes a $operation of $name with nothing required once the selectors of its required units are added (AS-67)',
     async ({ given, operation, selection }) => {
@@ -512,8 +640,9 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
 async function givenLinksCreatedWhileNotesWasRenamed(
   kit: PartialChangesTestKit,
+  committed: Committing = committedIntact,
 ): Promise<ChangesScenario> {
-  const draft = await ChangesScenario.committed(kit, {
+  const draft = await committed(kit, {
     [NOTES]: { schema: titleSchema, rows: { n1: { title: 'n1' } } },
   });
   await draft.renameTable(NOTES, MEMOS);
@@ -615,4 +744,84 @@ async function givenProductsFailingToReplayBeforeReferencingNotes(
   });
 
   return draft;
+}
+
+async function givenReviewsOfProducts(
+  kit: PartialChangesTestKit,
+  committed: Committing,
+): Promise<ChangesScenario> {
+  const draft = await committed(kit, {
+    [PRODUCTS]: { schema: titleSchema, rows: { p1: { title: 'p1' } } },
+  });
+  await draft.createTable(REVIEWS, linkSchemaTo(PRODUCTS));
+
+  return draft;
+}
+
+async function givenOrdersGivenAKeyToUnledgeredProducts(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await withoutInit(PRODUCTS)(kit, {
+    [PRODUCTS]: { schema: titleSchema, rows: { p1: { title: 'p1' } } },
+    [ORDERS]: { schema: titleSchema },
+  });
+  await draft.updateTable(ORDERS, [targetIn(PRODUCTS)]);
+
+  return draft;
+}
+
+async function givenReviewsOfProductsOfUnledgeredCategories(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await withoutInit(CATEGORIES)(kit, {
+    [CATEGORIES]: { schema: titleSchema },
+    [PRODUCTS]: { schema: linkSchemaTo(CATEGORIES) },
+  });
+  await draft.createTable(REVIEWS, linkSchemaTo(PRODUCTS));
+
+  expect((await replayedSchemasOf(draft, 'head'))[PRODUCTS]).toEqual({
+    unreplayable: expect.any(String),
+  });
+
+  return draft;
+}
+
+async function givenDamagedProductsThatReferencedBrandsOnlyInPendingMigrations(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await migratedInPlace(PRODUCTS)(kit, {
+    [PRODUCTS]: { schema: titleSchema },
+  });
+  await draft.createTable(BRANDS, titleSchema);
+  await draft.updateTable(PRODUCTS, [targetIn(BRANDS)]);
+  await draft.updateTable(PRODUCTS, [removeField('target')]);
+
+  return draft;
+}
+
+function migratedInPlace(refusedTableId: string): Committing {
+  return async (kit, tables) => {
+    const draft = await ChangesScenario.committed(kit, tables);
+    await completeAsyncMigrationInPlace(kit, draft, refusedTableId, [
+      addField('color', str()),
+    ]);
+
+    return draft;
+  };
+}
+
+function withoutInit(refusedTableId: string): Committing {
+  return async (kit, tables) => {
+    const draft = await ChangesScenario.committed(kit, {});
+
+    for (const [tableId, { schema, rows }] of Object.entries(tables)) {
+      await draft.createTable(tableId, schema);
+      await draft.createRows(tableId, rows ?? {});
+    }
+
+    await draft.dropFromDraftLedger('init', refusedTableId);
+    await draft.commit();
+
+    return draft;
+  };
 }

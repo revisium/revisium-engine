@@ -7,10 +7,14 @@ import { publicIdsOf } from 'src/features/partial-changes/catalogue/public-id-gr
 import {
   type HeadSchemaCheck,
   isUnledgered,
+  type RefusedTable,
 } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
 import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
-import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type {
+  ChangesSnapshot,
+  TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
 import {
   type LedgerRole,
@@ -18,6 +22,7 @@ import {
   resultingRolesOf,
   sourceRoleOf,
 } from 'src/features/partial-changes/validation/ledger-roles';
+import { TableIdTimeline } from 'src/features/partial-changes/validation/table-id-timeline';
 import { schemaRowOf } from 'src/features/share/ledger/migration-ledger';
 import type {
   ReplayedLedger,
@@ -28,7 +33,10 @@ import {
   checkSlot,
   lineageIdOf,
 } from 'src/features/share/ledger-replay/slot-check';
-import { ledgeredTableIdOf } from 'src/features/share/ledger-replay/table-slots';
+import {
+  ledgeredTableIdOf,
+  type TableSlot,
+} from 'src/features/share/ledger-replay/table-slots';
 
 type Inconsistency =
   | {
@@ -49,9 +57,11 @@ export interface SlotInconsistency {
   readonly inconsistency: Inconsistency;
 }
 
-interface UnledgeredLineages {
-  readonly tableIds: ReadonlySet<string>;
-  readonly steps: ReadonlySet<string>;
+// Refused and unledgered tables, with the refusal that leaves each of their table
+// ids and steps out (none for exactly `{ all: true }`, which refuses no table).
+interface LeftOutLineages {
+  readonly tableIds: ReadonlyMap<string, RefusedTable | undefined>;
+  readonly steps: ReadonlyMap<string, RefusedTable | undefined>;
 }
 
 interface ReplayedRole extends LedgerRole {
@@ -91,32 +101,66 @@ export function sourceInconsistenciesOf({
   snapshot,
   headSchema,
 }: ValidationSource): SourceInconsistencies {
-  return new SourceInconsistencies(snapshot, headSchema.sourceReplays);
+  return new SourceInconsistencies(snapshot, headSchema);
 }
 
 export class SourceInconsistencies {
-  private readonly unledgered: UnledgeredLineages;
+  private readonly leftOut: LeftOutLineages;
   private readonly existing: ExistingInconsistencies;
+  private readonly existingInEverySlot: ExistingInconsistencies;
 
-  constructor(snapshot: ChangesSnapshot, replays: SourceReplays) {
+  constructor(snapshot: ChangesSnapshot, headSchema: HeadSchemaCheck) {
+    const replays = headSchema.sourceReplays;
     const head = replayedSourceRoleOf(snapshot, replays, 'head');
     const draft = replayedSourceRoleOf(snapshot, replays, 'draft');
 
-    this.unledgered = unledgeredLineagesOf(snapshot, replays);
+    this.leftOut = leftOutLineagesOf(snapshot, headSchema);
     this.existing = {
-      head: keysOf(inconsistenciesOf(head, this.unledgered)),
-      draft: keysOf(inconsistenciesOf(draft, this.unledgered)),
+      head: keysOf(inconsistenciesOf(head, this.leftOut)),
+      draft: keysOf(inconsistenciesOf(draft, this.leftOut)),
+    };
+    this.existingInEverySlot = {
+      head: keysOf(inconsistenciesOf(head, NOTHING_LEFT_OUT)),
+      draft: keysOf(inconsistenciesOf(draft, NOTHING_LEFT_OUT)),
     };
   }
 
   public newInconsistenciesOf(
     role: ReplayedResultingRole,
   ): SlotInconsistency[] {
-    return inconsistenciesOf(role, this.unledgered).filter(
+    return inconsistenciesOf(role, this.leftOut).filter(
       (found) => !keepsExisting(role, this.existing, found),
     );
   }
+
+  // The refusals behind new inconsistencies that the comparison leaves out: a
+  // step of a refused table, or a step that reads only refused tables, fails or
+  // differs where the source role did not (§6.6). Exactly `{ all: true }` has
+  // none.
+  public refusalsOf(role: ReplayedResultingRole): RefusedTable[] {
+    const schemas = schemasByTableId(role.schemaRows);
+    const leftOut = new LeftOutSlots(role, this.leftOut);
+
+    return role.replayed.slots.flatMap((slot) => {
+      const refusal = leftOut.refusalOf(slot);
+
+      if (!refusal) {
+        return [];
+      }
+
+      return slotInconsistenciesOf(slot, schemas)
+        .filter(
+          (found) => !keepsExisting(role, this.existingInEverySlot, found),
+        )
+        .map(() => refusal);
+    });
+  }
 }
+
+const NOTHING_LEFT_OUT: LeftOutLineages = {
+  tableIds: new Map(),
+  steps: new Map(),
+};
 
 function replayedSourceRoleOf(
   snapshot: ChangesSnapshot,
@@ -126,36 +170,97 @@ function replayedSourceRoleOf(
   return { ...sourceRoleOf(snapshot, side), replayed: replays[side] };
 }
 
-function unledgeredLineagesOf(
+// Unledgered tables are left out with their broken lineages; refused ledgered
+// tables (§6.10) with the lineages that hold them in the source revisions,
+// including the ids those lineages held in between.
+function leftOutLineagesOf(
   snapshot: ChangesSnapshot,
-  replays: SourceReplays,
-): UnledgeredLineages {
-  const tableIds = new Set(
-    snapshot.tables
-      .filter((pair) => isUnledgered(pair, replays))
-      .flatMap(publicIdsOf),
+  { sourceReplays: replays, refusedTablesByIdentity }: HeadSchemaCheck,
+): LeftOutLineages {
+  const lineages = new LeftOutLineageSet();
+  const unledgered = snapshot.tables.filter((pair) =>
+    isUnledgered(pair, replays),
   );
-  const lineages = [replays.head, replays.draft]
-    .flatMap(({ slots }) => slots)
-    .filter(
-      ({ brokenBy, tableIds: slotTableIds }) =>
-        brokenBy !== undefined && slotTableIds.some((id) => tableIds.has(id)),
-    );
 
-  return {
-    tableIds,
-    steps: new Set(
-      lineages.flatMap(({ migrations }) => migrations.map(({ id }) => id)),
-    ),
-  };
+  for (const pair of unledgered) {
+    lineages.leaveOutTableIds(
+      publicIdsOf(pair),
+      refusedTablesByIdentity.get(pair.identity),
+    );
+  }
+
+  for (const slot of lineages.brokenSlotsOf(replays)) {
+    lineages.leaveOutSlot(slot, lineages.refusalOfAny(slot.tableIds));
+  }
+
+  for (const pair of snapshot.tables) {
+    const refusal = refusedTablesByIdentity.get(pair.identity);
+
+    if (refusal && !unledgered.includes(pair)) {
+      for (const slot of sourceSlotsOf(pair, replays)) {
+        lineages.leaveOutSlot(slot, refusal);
+      }
+    }
+  }
+
+  return lineages;
+}
+
+class LeftOutLineageSet implements LeftOutLineages {
+  public readonly tableIds = new Map<string, RefusedTable | undefined>();
+  public readonly steps = new Map<string, RefusedTable | undefined>();
+
+  public leaveOutTableIds(
+    tableIds: readonly string[],
+    refusal: RefusedTable | undefined,
+  ): void {
+    for (const tableId of tableIds) {
+      setIfAbsent(this.tableIds, tableId, refusal);
+    }
+  }
+
+  public leaveOutSlot(
+    { tableIds, migrations }: TableSlot,
+    refusal: RefusedTable | undefined,
+  ): void {
+    this.leaveOutTableIds(tableIds, refusal);
+
+    for (const { id } of migrations) {
+      setIfAbsent(this.steps, id, refusal);
+    }
+  }
+
+  public brokenSlotsOf(replays: SourceReplays): ReplayedSlot[] {
+    return [replays.head, replays.draft]
+      .flatMap(({ slots }) => slots)
+      .filter(
+        ({ brokenBy, tableIds }) =>
+          brokenBy !== undefined &&
+          tableIds.some((tableId) => this.tableIds.has(tableId)),
+      );
+  }
+
+  public refusalOfAny(tableIds: readonly string[]): RefusedTable | undefined {
+    return refusalOfAny(this.tableIds, tableIds);
+  }
+}
+
+function sourceSlotsOf(
+  { head, draft }: TablePair,
+  replays: SourceReplays,
+): ReplayedSlot[] {
+  return [
+    head && replays.head.currentSlots.get(head.id),
+    draft && replays.draft.currentSlots.get(draft.id),
+  ].filter((slot): slot is ReplayedSlot => slot !== undefined);
 }
 
 function inconsistenciesOf(
   role: ReplayedRole,
-  unledgered: UnledgeredLineages,
+  lineages: LeftOutLineages,
 ): SlotInconsistency[] {
   const schemas = schemasByTableId(role.schemaRows);
-  const leftOut = new LeftOutSlots(role, unledgered);
+  const leftOut = new LeftOutSlots(role, lineages);
 
   return role.replayed.slots
     .filter((slot) => !leftOut.has(slot))
@@ -163,18 +268,20 @@ function inconsistenciesOf(
 }
 
 class LeftOutSlots {
-  private readonly slots = new Set<ReplayedSlot>();
-  private readonly tableIds: Set<string>;
+  private readonly slots = new Map<ReplayedSlot, RefusedTable | undefined>();
+  private readonly tableIds: Map<string, RefusedTable | undefined>;
 
   constructor(
     private readonly role: ReplayedRole,
-    unledgered: UnledgeredLineages,
+    lineages: LeftOutLineages,
   ) {
-    this.tableIds = new Set(unledgered.tableIds);
+    this.tableIds = new Map(lineages.tableIds);
 
     for (const slot of role.replayed.slots) {
-      if (followsAnyStep(slot, unledgered.steps)) {
-        this.add(slot);
+      const step = firstFollowedStep(slot, lineages.steps);
+
+      if (step !== undefined) {
+        this.add(slot, lineages.steps.get(step));
       }
     }
 
@@ -185,21 +292,39 @@ class LeftOutSlots {
     return this.slots.has(slot);
   }
 
+  public refusalOf(slot: ReplayedSlot): RefusedTable | undefined {
+    return this.slots.get(slot);
+  }
+
   private addFailuresOfReadingOnlyLeftOutTables(): void {
     const failed = failedSlotsInLedgerOrder(this.role);
+
+    if (failed.length === 0) {
+      return;
+    }
+
     const failedTableIds = tableIdsOf(failed);
-    const heldTableIds = tableIdsOf(this.role.replayed.slots);
+    const steps = new Map(this.role.ledger.map((step) => [step.id, step]));
+    const timeline = new TableIdTimeline(this.role.ledger);
     const readsByStep = readTableIdsByStep(this.role.replayed);
-    const isUnreplayable = (tableId: string) =>
-      failedTableIds.has(tableId) || !heldTableIds.has(tableId);
 
     for (const slot of failed) {
-      const unreplayableReads = (
-        readsByStep.get(failingStepOf(slot)) ?? []
-      ).filter(isUnreplayable);
+      const step = steps.get(failingStepOf(slot));
+
+      if (!step) {
+        continue;
+      }
+
+      // A read fails the step when, at that step, its table failed or the
+      // ledger holds no table under its id.
+      const unreplayableReads = (readsByStep.get(step.id) ?? []).filter(
+        (tableId) =>
+          failedTableIds.has(tableId) ||
+          timeline.lastChangeBefore(step, tableId)?.lineage === undefined,
+      );
 
       if (this.areAllLeftOut(unreplayableReads)) {
-        this.add(slot);
+        this.add(slot, refusalOfAny(this.tableIds, unreplayableReads));
       }
     }
   }
@@ -211,12 +336,27 @@ class LeftOutSlots {
     );
   }
 
-  private add(slot: ReplayedSlot): void {
-    this.slots.add(slot);
+  private add(slot: ReplayedSlot, refusal: RefusedTable | undefined): void {
+    this.slots.set(slot, refusal);
 
     for (const tableId of slot.tableIds) {
-      this.tableIds.add(tableId);
+      setIfAbsent(this.tableIds, tableId, refusal);
     }
+  }
+}
+
+function refusalOfAny(
+  refusals: ReadonlyMap<string, RefusedTable | undefined>,
+  tableIds: readonly string[],
+): RefusedTable | undefined {
+  return tableIds
+    .map((tableId) => refusals.get(tableId))
+    .find((refusal) => refusal !== undefined);
+}
+
+function setIfAbsent<V>(map: Map<string, V>, key: string, value: V): void {
+  if (!map.has(key)) {
+    map.set(key, value);
   }
 }
 
@@ -308,13 +448,12 @@ function problemOf(
   }
 }
 
-function followsAnyStep(
+function firstFollowedStep(
   { migrations, failure }: ReplayedSlot,
-  steps: ReadonlySet<string>,
-): boolean {
-  return (
-    migrations.some(({ id }) => steps.has(id)) ||
-    (failure !== undefined && steps.has(failure.migrationId))
+  steps: ReadonlyMap<string, RefusedTable | undefined>,
+): string | undefined {
+  return [...migrations.map(({ id }) => id), failure?.migrationId].find(
+    (id) => id !== undefined && steps.has(id),
   );
 }
 

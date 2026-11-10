@@ -10,9 +10,10 @@ import type {
 import {
   type CheckSource,
   type Finding,
+  refusedBy,
   requiring,
 } from 'src/features/partial-changes/closure/findings';
-import { TableIdTimeline } from 'src/features/partial-changes/closure/table-id-timeline';
+import { TableIdTimeline } from 'src/features/partial-changes/validation/table-id-timeline';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
 import {
   readTableIdsByStep,
@@ -80,12 +81,21 @@ class LedgerDependencyChecking implements TargetChecking {
     }
 
     return Promise.resolve(
-      resultingRolesOf(this.source, choice, target.ledger).flatMap((role) =>
-        this.reportedDependentStepsOf(role).flatMap((step) =>
+      resultingRolesOf(this.source, choice, target.ledger).flatMap((role) => [
+        ...this.refusalsOf(role),
+        ...this.reportedDependentStepsOf(role).flatMap((step) =>
           this.requirementsOf(step, role, rules),
         ),
-      ),
+      ]),
     );
+  }
+
+  private refusalsOf(role: ResultingRole): Finding[] {
+    const { replayed } = this.resultingLedgerOf(role.ledger);
+
+    return this.inconsistenciesOfSource()
+      .refusalsOf({ ...role, replayed })
+      .map(refusedBy);
   }
 
   private movesPendingMigrations(rules: OutcomeRules): boolean {

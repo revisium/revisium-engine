@@ -69,9 +69,10 @@ contract is in [partial-changes-v1](../specs/partial-changes-v1.spec.md) v2.0 (�
    with its values, its JSON Pointer and its selection. Paths are JSON Pointers at every boundary.
 3. **One typed selection language.** Every selection field is a list of one shape: `structures` (was `tables`, objects
    only), `tableData`, `views`, `sharedSchemas`, `rows`, `rowRenames` (was `renames`), `rowColumns`, `fields`, plus
-   `all` and `exclude`. Every selector a result returns, `unmatched` included, uses the same vocabulary. Code values
-   are the engine's code lists; a transport maps each list to one spelling and passes no engine-typed value as an
-   untyped scalar.
+   `all` and `exclude`. Every selector a result returns, `unmatched` included, uses the same vocabulary. A unit has
+   exactly the fields of its kind; a shared schema unit carries `sharedSchemaId`, not a `tableId` holding that id.
+   Code values are the engine's code lists; a transport maps each list to one spelling and passes no engine-typed
+   value as an untyped scalar.
 4. **Reasons name their participants.** A required reason has a `site` whose kind fixes its meaning (a selector, a
    row value, a table schema, a pending migration, a row id or a table id), the entity the site `references` for
    reference codes, and a `cause` (the applied unit whose application needs the unit, and its role), replacing the
@@ -80,30 +81,33 @@ contract is in [partial-changes-v1](../specs/partial-changes-v1.spec.md) v2.0 (�
    counts or `unmatched` instead of empty values. `remaining` and `unreadTables` are removed; an applied result says
    whether the Draft still has changes (`draftHasChanges`, the native `hasChanges` the writer recomputes). A preview
    returns per-table coverage of the plan (structure, views, rows wholly and partly applied).
-6. **Deferred fields carry the value the commit writes**, and **a replaced table is flagged** on its items and counted
-   in the summary.
+6. **Deferred fields carry the value the commit writes** (and omitted paths are objects, so a reason can be added
+   later), and **a replaced table is flagged** on its items and counted in the summary.
 7. **Exported names do not clash.** Partial-change classifications get `Structure…` names, generic nouns a `Plan…`
    prefix, selection-state variants a `…Selection` suffix; native diff payload names are not reused.
 8. **Views follow the structure.** A table whose structure changed has no `views` unit: its views document, independent
    edits included, belongs to its structure unit. A `views` unit exists only for a table without a structure unit,
-   where both sides have the same structure. This removes the views re-migration between sides, the
-   views-against-structure closure check, the reason `viewsDoNotFitStructure` and the role `counterpart`.
+   where both sides have the same structure. A structure unit says whether it carries a views change
+   (`structureChange.views`). This removes the views re-migration between sides, the views-against-structure closure
+   check, the reason `viewsDoNotFitStructure` and the role `counterpart`.
 9. **`rowColumns` stays a public unit kind and selector.** The unit is needed: every Draft difference belongs to a
-   unit ([REQ-001.BR-003]), `schemaHash` must stay compared because async migrations use it, and every unit needs an
-   exact selector, which programs and agents use and a `requiredExcluded` blocker names ([REQ-001.BR-001]). It is
-   documented as the technical columns of a row, which `rows` and `tableData` include.
+   unit ([REQ-001.BR-003]); `meta`, `publishedAt` and `schemaHash` are row content that reads expose (the row API
+   returns them, and the `RowPublishedAt` and `RowSchemaHash` system fields put them in row data) and the ledger scan
+   reads `schemaHash`, so they stay compared (SPEC §3.1);
+   and every unit needs an exact selector, which programs and agents use and a `requiredExcluded` blocker names
+   ([REQ-001.BR-001]). It is documented as the technical columns of a row, which `rows` and `tableData` include.
 10. **`stale` says what changed.** The fingerprint carries separate digests of the revisions, the applied unit set and
-    their content, so a `stale` result lists what differs (`operation`, `revisions`, `units`, `content`) with the
-    current revision ids and `unmatched`.
+    their content behind a version prefix, so a `stale` result lists what differs (`version`, `operation`,
+    `revisions`, `units`, `content`) with the current revision ids and `unmatched`.
 11. **Totals once.** A Draft row page has no `totalCount`; totals come from the summary (per change type, and the rows
     with units) and from the table items (per table). A row page reads only the tables it lists.
 
 ### Boundaries
 
 In scope: the engine contract of the seven `changes` operations and the transport rules of SPEC §5.10. Out of scope,
-for a later minor version (additive): one discriminated unit type with kind-specific fields, structured blocker
-details, item and unit keys, a Draft read token, a pageable resolved plan, a light table-options query, and
-`omitted` reasons. Not acted on: freshness that covers only the applied units (documented) and native versus Draft
+for a later minor version (additive): structured blocker details, item and unit keys, a Draft read token, a pageable
+resolved plan, a light table-options query, and `omitted` reasons. The discriminated unit and object `omitted` paths
+come now, because they would break later. Not acted on: freshness that covers only the applied units (documented) and native versus Draft
 `changeTypes` filter semantics (native).
 
 ## Specification
@@ -133,7 +137,7 @@ changes.rowChanges({ branch, first: 50, filters: { tableId: 'products' } })
 | --- | --- |
 | `partial-changes` | Gains the Draft reads (compared snapshot, per-table pair queries, item builders, filters, cursors). Selection parsing, reasons, plan results and the fingerprint change shape; the views fit check and the views re-migration are removed. |
 | `revision-changes` | Unchanged. Its field-diff and migration and views mappers are reused by the Draft reads as building blocks. |
-| `draft-revision` | Unchanged; `hasChanges` it recomputes is returned in the applied result. |
+| `draft-revision` | The commit and revert writers also return the Draft's `hasChanges` they recompute, for `draftHasChanges`. |
 | Engine facade | `changes` namespace with `list`, `preview`, `commit`, `revert`, `tableChanges`, `rowChanges`, `summary` (draft PR #145 rebased). |
 
 ## Alternatives Considered
@@ -157,7 +161,8 @@ changes.rowChanges({ branch, first: 50, filters: { tableId: 'products' } })
   Rejected.
 - **Fold `rowColumns` into `rows`**: a `rowColumns` unit would have no exact selector, so it could not be excluded or
   named by a blocker, and the listing's exact-selector invariant would break. **Stop comparing `schemaHash` under an
-  unchanged structure**: async migrations mark migrated rows by it, and a relink could restore a stale hash. Both
+  unchanged structure**: reads expose it, so a Draft difference would have no unit, and a relink (SPEC §6.7) could
+  replace the Draft's row version by the Head's and change what reads return without any unit applied. Both
   rejected.
 - **`stale` with the whole new plan**: doubles the payload of an outcome that the client follows with a preview
   anyway. **An unstructured fingerprint**: cannot say what changed. Rejected.
@@ -176,8 +181,9 @@ changes.rowChanges({ branch, first: 50, filters: { tableId: 'products' } })
 
 - The core and admin PoC branches adapt to every item before the stand re-walk.
 - A view edit can no longer be committed or reverted while the schema change of the same table stays in the Draft.
-- A Draft row list shows no total under a `search` filter; other filters take their totals from the summary or the
-  table item.
+- A Draft row list shows no total under a `search` filter or a `changeTypes` filter with several types (a
+  `RENAMED_AND_MODIFIED` row counts in two types); other filters take their totals from the summary or the table
+  item.
 - `defaulted` values repeat per deferred row.
 
 ### Neutral
@@ -210,15 +216,15 @@ Small TDD PRs on engine master, in this order; each changes the SPEC section it 
 
 | PR | Content | Acceptance |
 | --- | --- | --- |
-| 1 | Selection vocabulary: `structures` with object refs, `rowRenames`; returned selectors and `unmatched` as `SelectionItems`; renamed code lists and types. | AS-80, AS-81 |
-| 2 | Views follow the structure: views unit only without a structure unit; `views` selector of a table with a structure unit requires it; views fit check, re-migration, `viewsDoNotFitStructure` and `counterpart` removed; `invalidViews` from target validation. | AS-82, AS-83 |
+| 1 | Selection vocabulary: `structures` with object refs, `rowRenames`; returned selectors and `unmatched` as `SelectionItems`; units discriminated by kind with `sharedSchemaId`; renamed code lists and types. | AS-80 |
+| 2 | Views follow the structure: views unit only without a structure unit; `structureChange.views`; `views` selector of a table with a structure unit requires it; views fit check, re-migration, `viewsDoNotFitStructure` and `counterpart` removed; `invalidViews` from target validation. | AS-82, AS-83 |
 | 3 | Structure descriptions from the PoC: `annotated` fields and objects with `annotations`. | AS-60c |
 | 4 | Reasons: `site`, `references`, `cause`. | AS-84, AS-85 |
-| 5 | Deferred rows: `defaulted` with values, `omitted`. | AS-86 |
-| 6 | Plan results: `planned`, `counts` without `remaining`, `coverage`, `draftHasChanges`, `renumberedMigrations`. | AS-87 – AS-89 |
-| 7 | Fingerprint with digests; `stale` with `changed`, ids and `unmatched`; malformed `expected` refused. | AS-90, AS-91 |
+| 5 | Deferred rows: `defaulted` with values, `omitted` as objects. | AS-86 |
+| 6 | Plan results: `planned` (preview and `blocked`), `counts` without `remaining`, `coverage`, `draftHasChanges` (the writers return `hasChanges`), `renumberedMigrations`. | AS-87 – AS-89 |
+| 7 | Fingerprint in parts with a version prefix; `stale` with `changed`, ids and `unmatched`; malformed `expected` refused. | AS-90, AS-91 |
 | 8–11 | Draft reads in four PRs: table items and summary; row items with fields and columns; id takeovers, exchanges and followed renames; filters and keyset paging. | DR-01 – DR-20 |
-| 12 | Facade #145 rebased: the `changes` namespace and package exports; e2e. | AS-92 |
+| 12 | Facade #145 rebased: the `changes` namespace and package exports; e2e. | AS-81, AS-92 |
 | 13 | `docs/api.md`. | — |
 
 Core (GraphQL on the PoC branch, then upstream) and the admin adapt after PR 12, then an Astra review and a short

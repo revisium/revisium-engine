@@ -145,7 +145,7 @@ file-usage and migration keep their responsibilities. Callers reach the operatio
 | `file-usage` | File references of new row versions, registered after the relink; project accounting; orphan blobs. |
 | `views` | Migration of a views document through schema history; views validation. |
 | `share` | Schema store and validator, foreign-key extraction, table-version diff for `hasChanges`, endpoint notification hook. |
-| `revision-changes` | Native browsing (`revisionChanges`, `tableChanges`, `rowChanges`) stays for display; it is not the source of selectors. |
+| `revision-changes` | Native browsing (`revisionChanges`, `tableChanges`, `rowChanges`) stays for history and compare; it is not the source of selectors. The Draft reads, which show the Draft with selectors, belong to `partial-changes` (ADR-002). |
 | `infrastructure/database` | Transaction runner (Serializable with the operation's own attempt loop, read-only planning), branch write fence (stage 0), orphan cleanup. |
 
 ```mermaid
@@ -233,7 +233,8 @@ commit a dangling foreign key; A splits structure per [REQ-001.BR-007] and refus
   `stale`, and its row digest costs O(table rows) per plan (unmeasured; measured before release).
 - **The write fence touches every native writer:** each takes the shared lock and waits up to the operation timeout
   while a commit holds it exclusively. Its evidence is one benchmark prototype.
-- Results count remaining units only in the tables read; a full count pages `listChanges`, which has no total.
+- Results do not count the units that stay in the Draft, because an operation reads only its affected tables; the
+  Draft reads count them (ADR-002), and an applied result says whether the Draft still has changes.
 - Remaining pending migrations can change ids; consumers of Draft exports break.
 - Version ids of Draft tables that keep no units can change after an operation; Head versions never change.
   Content-equal versions in unread tables keep `hasChanges = true`.

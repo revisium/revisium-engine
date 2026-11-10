@@ -157,7 +157,7 @@ structure).
 | `rowColumns` | A row on both sides differs in a column no field or structure unit owns (§3.1): `publishedAt` when the Draft schema has no published-at field, `meta`, or `schemaHash` under an unchanged structure. | `tableId`, `rowId` (Draft id, else Head id), `columns` (the differing columns it owns) | Those columns of the row, as one unit: the technical columns of the row, which `rows` and `tableData` include. |
 | `structure` | The table is created, removed or renamed; its schema row differs in data or history; or pending migrations are attributed to it. | `tableId` (Draft id, else Head id), `previousTableId` (Head id when renamed) | See §3.5. |
 | `views` | The table has no structure unit and its Draft views document differs from its Head document. | `tableId` (Draft id) | The whole views document of the table. |
-| `sharedSchema` | A row of the shared schemas table differs. | `tableId` carries the shared schema id | That shared schema. |
+| `sharedSchema` | A row of the shared schemas table differs. | `sharedSchemaId` (v2.0; before, `tableId` carried it) | That shared schema. |
 
 ### 3.5 Structure unit
 
@@ -231,8 +231,9 @@ one shape, so a transport can type it (§5.10).
 | `fields` | `{ tableId: string; rowId: string; path: string }[]` | The field units at or below each JSON Pointer. |
 | `exclude` | the item fields above, without `all` and `exclude` | Units removed from the selection. |
 
-`structures` was `tables`, which also took a bare table id; `rowRenames` was `renames` (v2.0). A table's structure,
-views and row changes are three independent selections: `structures` does not select the table's rows.
+`structures` was `tables`, which also took a bare table id; `rowRenames` was `renames` (v2.0). `structures` does not
+select the table's rows, and `tableData` does not select its structure; a table with a structure unit has no views
+unit, so its views are selected with its structure (§3.6).
 
 ### 4.2 Id resolution
 
@@ -248,7 +249,7 @@ views and row changes are three independent selections: `structures` does not se
 | Selector targets | Result |
 | --- | --- |
 | A row or field of a created or removed table, or `tableData` of such a table | Requires the structure unit (`structureBoundData`). |
-| `views` of a table that has a structure unit | Requires the structure unit (`structureBoundData`), which holds the views document (§3.6). |
+| `views` of a table that has a structure unit | When its Draft views document differs from its Head document (stored under the Head id in Head and the Draft id in Draft): requires the structure unit (`structureBoundData`), which holds the document (§3.6); otherwise unmatched. |
 | A field of a created, deleted or replaced row | Requires the row's existence unit (`wholeRowUnit`). |
 | A pointer to an object | Selects the field units inside it. |
 | A pointer inside an array or file value | Requires the field unit of the whole value (`atomicValue`). |
@@ -259,16 +260,15 @@ views and row changes are three independent selections: `structures` does not se
 
 `exclude` items resolve like included items. Excluded are the units they select and the units their normalisation
 would require: an excluded pointer inside an array excludes the array's unit; an excluded field of a created row
-excludes the creation. The closure never adds an excluded unit; if one is needed, the result has the blocker
-`requiredExcluded`.
+excludes the creation; an excluded `views` of a table with a structure unit excludes the structure unit. The closure
+never adds an excluded unit; if one is needed, the result has the blocker `requiredExcluded`.
 
 ### 4.5 Unmatched selectors
 
 A selector, included or excluded, that matches no unit is returned in `unmatched` (`UnmatchedSelectors`: the item
 fields, with `exclude` nested, as typed as the input). If nothing matched at all the status is `empty`; if some
 selectors matched and others did not, the status is `blocked` with `unmatchedSelector`. A plan that a limit stopped
-before it resolved the selection has no `unmatched` (`null` in a preview, absent in an apply result, §5.3): it is not
-known whether its selectors match.
+has no `unmatched` (`null` in a preview, absent in an apply result, §5.3).
 
 ## 5. Operations
 
@@ -289,17 +289,20 @@ selector.
 **ChangesBranch** `{ projectId: string; branchName: string }`, required in every operation; the operations act on its Head
 and Draft.
 
-**Unit** (public form):
+**Unit** (public form), discriminated by `kind` (§3.4); each kind has exactly its fields, all required unless marked:
 
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `kind` | `UnitKind` (§3.4) | yes | Unit kind. |
-| `tableId` | string | yes | Draft table id, else Head table id; the shared schema id for `sharedSchema`. |
-| `previousTableId` | string | no | Head id of a renamed table (`structure`). |
-| `rowId` | string | for row units | Draft row id, else Head row id. |
-| `previousRowId` | string | no | Head id of a renamed row (`rowRename`). |
-| `path` | string | for `field` | JSON Pointer of the leaf. |
-| `columns` | `('publishedAt' \| 'meta' \| 'schemaHash')[]` | for `rowColumns` | The differing columns the unit owns. |
+| `kind` | Fields |
+| --- | --- |
+| `field` | `tableId`, `rowId`, `path` (JSON Pointer of the leaf) |
+| `rowCreate`, `rowDelete`, `rowReplace` | `tableId`, `rowId` |
+| `rowRename` | `tableId`, `rowId` (Draft id), `previousRowId` (Head id) |
+| `rowColumns` | `tableId`, `rowId`, `columns` (the differing columns the unit owns) |
+| `structure` | `tableId`, `previousTableId?` (Head id of a renamed table) |
+| `views` | `tableId` |
+| `sharedSchema` | `sharedSchemaId` |
+
+`tableId` is the Draft table id, else the Head table id; `rowId` the Draft row id, else the Head row id. A shared schema
+unit has no `tableId`: before v2.0 its `tableId` carried the shared schema id.
 
 **UnitRef** = Unit plus `side?: 'head'` and `selector: SelectionItems`, with the same meaning as in ListedUnit
 (§5.2): a selector that resolves to exactly this unit, so a caller can add it, or exclude it, by public ids alone (also
@@ -323,15 +326,21 @@ cause?: ReasonCause }` (§5.7):
   | `site.kind` | Fields | The place |
   | --- | --- | --- |
   | `selector` | `tableId`, `rowId?`, `path?` | A selected value that is no unit of its own: the selector's table, row and pointer. |
-  | `row` | `tableId`, `rowId`, `path?` | A row that references another row: the referring field (`path`), or the row as a whole when a structure brings all its references. |
+  | `row` | `tableId`, `rowId`, `path` | A row that references another row, at the referring field (for a reference inside an array, the array's pointer). |
   | `schema` | `tableId` | A table schema whose foreign keys reference another table. |
-  | `migration` | `tableId`, `migrationId` | A pending migration of a table that references another table at its step. |
+  | `migration` | `tableId`, `migrationId` | A pending migration that references another table at its step. |
   | `rowId` | `tableId`, `rowId` | A row id that two rows would hold in the target. |
   | `tableId` | `tableId`, `migrationId?` | A table id that two tables would hold in the target, or at the step of a pending migration (`migrationId`). |
 
-  Table and row ids are public ids as units carry them (Draft id, else Head id); `path` is a JSON Pointer.
+  At `selector`, `row`, `schema` and `rowId` sites, and at a `tableId` site without `migrationId`, ids are public ids
+  as units carry them (Draft id, else Head id); `path` is a JSON Pointer. At a `migration` site, and at a `tableId`
+  site with `migrationId`, ids are those of the ledger at that step, which can be ids no table holds now (a table
+  created and removed in the Draft): at a `migration` site `tableId` is the migration's own table id; at a `tableId`
+  site it is the id the migration takes (the table id of an `init`, the new id of a `rename`). The units involved,
+  the required unit and `cause.unit`, carry the public ids.
 - `references` is what a `row`, `schema` or `migration` site references: `{ kind: 'row'; tableId; rowId }` (the
-  referenced table as units address it, the row id the reference holds) or `{ kind: 'table'; tableId }`.
+  referenced table as units address it, the row id the reference holds) or `{ kind: 'table'; tableId }` (at a
+  `migration` site, the table id the step references, in the ledger's ids).
 - `cause` is `{ unit: DescribedUnitRef; role: CauseRole }`: the applied unit (selected, or added before as required)
   whose application needs the unit to add, and how it stands to it (§5.7). It is absent at a `selector` site, which
   needs the unit by itself, and when no applied unit is the cause, for example a step whose provider is a published
@@ -344,12 +353,12 @@ message: string; unit?: DescribedUnitRef; reason?: RequiredReason }`, deduplicat
 the `reason` that required it), the applied unit whose target would dangle for `danglingInSource`, the unit of an
 invalid row for `invalidRow`.
 
-**DeferredRow** `{ unit: DescribedUnitRef; defaulted: DeferredValue[]; omitted: string[]; structure: DescribedUnitRef
-}`: a created or replaced row committed without its table's structure. Its deferred paths are the changed input fields
+**DeferredRow** `{ unit: DescribedUnitRef; defaulted: DeferredValue[]; omitted: DeferredPath[]; structure:
+DescribedUnitRef }`: a created or replaced row committed without its table's structure. Its deferred paths are the changed input fields
 of the row's table (§3.3), Draft and Head pointers. The Head schema the commit writes the row against decides what
 happens to each: `defaulted` are the paths where it has an input field, `{ path; value }` with the value the commit
 writes there, taken from the assembled row (the Head default, a type default after a native schema update); `omitted`
-are the others, where it has no field or computes the value, and the Draft value is left out. Each path is in exactly
+(`{ path }`, objects so that a reason can be added without a breaking change) are the others, where it has no field or computes the value, and the Draft value is left out. Each path is in exactly
 one of the two lists, which keep the order of the changed fields. A moved field appears in both: its Draft pointer is
 omitted, its Head pointer defaulted. `structure` is the unit that would carry the Draft values; the Draft keeps them.
 
@@ -371,11 +380,13 @@ count the units that stay in the Draft: an operation reads only its affected tab
 partial. A client reads what stays from the Draft reads ([draft-reads-v1](draft-reads-v1.spec.md) §6); an applied
 result says whether the Draft still has changes (§5.4).
 
-**TableCoverage** `{ tableId: string; structure?: boolean; views?: boolean; rows: integer; appliedRows: integer;
-partlyAppliedRows: integer }`: how much of one table a plan applies, counting selected and required units alike, for
-every table with an applied unit, in table order:
+**TableCoverage** `{ tableId: string; previousTableId?: string; side?: 'head'; structure?: boolean; views?: boolean;
+rows: integer; appliedRows: integer; partlyAppliedRows: integer }`: how much of one user table a plan applies,
+counting selected and required units alike, for every user table with an applied unit, in table order. Transient
+structure units and shared schemas have no entry; they are counted in `counts` and named in `sample`.
 
-- `tableId` addresses the table as its units do;
+- `tableId`, `previousTableId` and `side` address the table as its units do: `side: 'head'` for a removed table whose
+  id a rename took over, so the two tables at one id have two entries;
 - `structure` and `views` are present when the table has that unit, `true` when it is applied;
 - `rows` is the number of rows with row or field units, each row counted by its row selector as
   `tableData.rows` of the Draft reads counts it ([draft-reads-v1](draft-reads-v1.spec.md) §4), except that a row
@@ -417,9 +428,12 @@ Output:
 | `structureChange` | StructureChange, structure units only | What the structure unit consists of (below). |
 | `selector` | SelectionItems | Resolves to exactly this unit with no required units, blockers or unmatched items: `fields` for a field, `rows` for row lifecycle units, `rowRenames` for a rename, `rowColumns` for row columns, `structures` for a structure, `views`, `sharedSchemas`. |
 
-**StructureChange** `{ table: StructureTableChange; fields: ChangedField[] }` describes a structure unit. The listing and the
-plan compute it from the table schemas and the structure analysis that every listing page and every plan already read
-and run for every table on both sides (§6.2 step 3), and read nothing more for it.
+**StructureChange** `{ table: StructureTableChange; fields: ChangedField[]; views: boolean }` describes a structure
+unit. The listing and the plan compute it from the table schemas, the views rows and the structure analysis that every
+listing page and every plan already read and run for every table on both sides (§6.2 step 3), and read nothing more
+for it. `views` is `true` when the unit carries a views change (§3.6): the Draft views document, stored under the
+table's Draft id, differs from the Head document, stored under its Head id; a side without the table or without a
+views row counts as no views. So a caller sees that applying the structure also applies a views edit.
 
 | `table` | The structure unit holds |
 | --- | --- |
@@ -568,14 +582,17 @@ Output:
 | `coverage` | TableCoverage[] | §5.1; empty when not `planned`. |
 | `refusedTables` | `{ tableId: string; code: 'headSchemaInconsistent' \| 'unledgeredTable' }[]` | Every refused table of the branch (§6.10); empty for exactly `{ all: true }`. Their units are not computed or counted. |
 | `required` | RequiredUnit[] | Every required addition with its reason; empty when not `planned`. |
-| `blockers` | PlanBlocker[] | Every blocker, including `migrationInProgress`; when not `planned`, the `tooLarge` blockers. |
+| `blockers` | PlanBlocker[] | Every blocker, including `migrationInProgress`; when not `planned`, the `tooLarge` blockers and `migrationInProgress` when an async migration is active. |
 | `deferred` | DeferredRow[] | Commit only; empty when not `planned`. |
 | `sample` | DescribedUnitRef[] | The first `min(20, counts.selected + counts.required)` applied units in listing order (display only; `listChanges` is the complete list); empty when not `planned`. |
 | `unmatched` | UnmatchedSelectors, or `null` when not `planned` | §4.5; an empty object when every selector matched. |
 | `estimate` | PlanEstimate | §5.1, §6.5; limits in §11. When not `planned`, what was measured up to the stop. |
 
-A plan stopped by a limit returns no value it did not compute: before v2.0 it returned `fingerprint: ''`, zero counts
-and `unmatched: {}`, which read as "every selector matched".
+A plan stopped by a limit returns no value of the plan, whichever limit stopped it: the changed-row guard stops it
+before the selection is resolved, a closure estimate after (§6.5), and in both cases `fingerprint`, `counts` and
+`unmatched` are `null` and the lists are empty, because what the closure found before the stop is not the plan.
+Before v2.0 such a preview returned `fingerprint: ''`, zero counts and `unmatched: {}`, which read as "every selector
+matched".
 
 ### 5.4 `commitChanges`
 
@@ -595,7 +612,7 @@ Output by status:
 | --- | --- |
 | `applied` | `previousHeadRevisionId`; `headRevisionId` (the former Draft revision, now Head); `draftRevisionId` (new Draft); `applied: PlanCounts` (the units applied); `draftHasChanges` (the new Draft's `hasChanges`, which the writer recomputes from the table versions, §6.13 step 7: `false` when the commit took every difference, `true` while a unit, a refused table or a content-equal version of an unread table remains, §3.8); `renumberedMigrations: { from: string; to: string }[]` (the pending migrations the commit renumbered, §6.8; empty when none). |
 | `required` | `required`. |
-| `blocked` | `blockers`, `required`, `unmatched` (absent when a limit stopped the plan before it resolved the selection). |
+| `blocked` | `planned` (as in a preview), `blockers`, `required`, `unmatched`; when a limit stopped the plan (`planned: false`), `required` is empty and `unmatched` absent, as in §5.3. |
 | `stale` | `changed`, `headRevisionId`, `draftRevisionId` (current), `unmatched` (§9.2). |
 | `empty` | `headRevisionId`, `draftRevisionId` (current), `unmatched` (when some selectors did not match). |
 
@@ -662,7 +679,11 @@ Each code arises at fixed kinds of site (§5.1), with `references` set for refer
 - `idOccupied`: the applied unit that moves the other row or table into the id: its rename or existence unit, or its
   structure unit.
 - A pending migration's step (§6.6): the applied structure unit of the step when the provider is required, and the
-  applied provider (the unit whose migration last placed or vacated the id) when the step's unit is required.
+  applied provider (the unit whose migration last placed or vacated the id) when the step's unit is required. For
+  `idOccupied` at a step, the cause is the applied unit that holds the id at that step in the resulting ledger: for example, the
+  Draft creates table `x`, renames it to `y`, and creates another table `x`; committing the second table alone
+  requires the first one's unit (its `init` of `x` cannot replay after the published `init` of the second), and the
+  cause is the committed table, which holds `x` at that step (`occupant`).
 
 **The role of the cause** (`CauseRole`) says what applying `cause.unit` does to the target that makes the unit to add
 necessary:
@@ -728,10 +749,12 @@ added (§6.9).
 - **Typed transports.** A transport gives every engine value its own type: selections and returned selectors
   (`Selection` as input, `SelectionItems` as output), `unmatched`, `estimate`, `renumberedMigrations`, reasons, sites,
   coverage and the Draft read items. Untyped JSON is used only for values that are arbitrary by nature: row data and
-  field or column values, schemas and patch values, `meta`. Engine unions (results by `status`, a preview by
-  `planned`, `site` by `kind`, the selection states of the Draft reads) map to unions or interfaces whose variant
-  fields are required where the engine type has them; GraphQL clients that send a returned selector back drop
-  `__typename` first.
+  field or column values, schemas and patch values, `meta`. An engine union (units by `kind`, results by `status`, a
+  preview by `planned`, `site` by `kind`, the selection states of the Draft reads) maps either to a union or interface
+  whose variant fields are required where the engine type has them, or to one type with the discriminator and
+  optional variant fields, documented as present exactly when the engine type has them (GraphQL rejects one field
+  name with different nullability across the members of a union, so a union needs distinct names). GraphQL clients
+  that send a returned selector back drop `__typename` first.
 - **One spelling per transport.** Every code union of the operations (§5.11) has one runtime list in the engine, next
   to its type, and the type is derived from the list. A transport builds its enums from these lists instead of
   copying the values, by one naming rule, so a code the engine adds reaches it without a hand-kept mirror and each
@@ -752,7 +775,7 @@ added (§6.9).
 | `BLOCKER_CODES` | `BlockerCode` (§5.8) |
 | `REFUSAL_CODES` | `RefusedTable.code` (§6.10) |
 | `PREVIEW_STATUSES` | `PreviewChangesResult.status` (§5.6) |
-| `APPLY_STATUSES` | `ApplyChangesResult.status` (§5.6) |
+| `APPLY_STATUSES` | `CommitChangesResult.status`, `RevertChangesResult.status` (§5.6) |
 | `STALE_CHANGES` | `ChangesStale.changed` (§9.2) |
 
 **Transport contract (delivery stage 4).** Names are proposals; they avoid the native `revertChanges`.
@@ -763,11 +786,18 @@ added (§6.9).
 | `changes.preview` | query `previewDraftChanges` | `preview_draft_changes` | same as `changes.list` | none |
 | `changes.commit` | mutation `commitDraftChanges` | `commit_draft_changes` | `create-revision` (create, Revision) | `revision.commit_changes` (new) |
 | `changes.revert` | mutation `revertDraftChanges` | `revert_draft_changes` | `revert-revision` (revert, Revision) | `revision.revert_changes` (new) |
+| `changes.tableChanges` | query `draftTableChanges` | `list_draft_table_changes` | same as `changes.list` | none |
+| `changes.rowChanges` | query `draftRowChanges` | `list_draft_row_changes` | same as `changes.list` | none |
+| `changes.summary` | query `draftChangesSummary` | `get_draft_changes_summary` | same as `changes.list` | none |
 
 - The engine has no permission or audit layer; the host application enforces the permissions and writes the audit
-  records, as it does for native `createRevision` and `revertChanges`.
-- REST exposes the same four operations under the branch's Draft (`…/draft/changes`, `…/draft/changes/preview`,
-  `…/draft/changes/commit`, `…/draft/changes/revert`), following the existing REST prefix conventions.
+  records, as it does for native `createRevision` and `revertChanges`. The reads and the preview show uncommitted
+  Draft content and the preview is the most expensive read; a host may require an authenticated caller with a
+  Draft-level permission for them and limit concurrent previews per branch (recommended by the architecture review of
+  2026-11-10; decided with the host).
+- REST exposes the seven operations under the branch's Draft (`…/draft/changes`, `…/draft/changes/preview`,
+  `…/draft/changes/commit`, `…/draft/changes/revert`, `…/draft/changes/tables`, `…/draft/changes/rows`,
+  `…/draft/changes/summary`), following the existing REST prefix conventions.
 - Audit records are written for `applied` results only, with the operation's outcome as metadata: `all: true` or
   partial, `includeRequired`, the applied counts, `draftHasChanges`, `renumberedMigrations`, previous and new Head ids
   (commit) or the Draft id (revert). The selection itself is not stored, only its counts.
@@ -810,17 +840,21 @@ type UnmatchedSelectors = SelectionItems & { exclude?: SelectionItems };
 type UnitKind = 'field' | 'rowCreate' | 'rowDelete' | 'rowReplace' | 'rowRename' | 'rowColumns'
   | 'structure' | 'views' | 'sharedSchema';
 type RowColumn = 'publishedAt' | 'meta' | 'schemaHash';
-type Unit = {
-  kind: UnitKind; tableId: string; previousTableId?: string; rowId?: string; previousRowId?: string;
-  path?: string; columns?: RowColumn[];
-};
+type Unit =
+  | { kind: 'field'; tableId: string; rowId: string; path: string }
+  | { kind: 'rowCreate' | 'rowDelete' | 'rowReplace'; tableId: string; rowId: string }
+  | { kind: 'rowRename'; tableId: string; rowId: string; previousRowId: string }
+  | { kind: 'rowColumns'; tableId: string; rowId: string; columns: RowColumn[] }
+  | { kind: 'structure'; tableId: string; previousTableId?: string }
+  | { kind: 'views'; tableId: string }
+  | { kind: 'sharedSchema'; sharedSchemaId: string };
 type UnitRef = Unit & { side?: SelectorSide; selector: SelectionItems };  // resolves to exactly this unit
 type StructureTableChange = 'created' | 'removed' | 'replaced' | 'transient' | 'changed';
 type StructureFieldChange = 'added' | 'removed' | 'changed' | 'moved' | 'annotated';
 type AnnotationKeyword = 'contentMediaType' | 'default' | 'deprecated' | 'description' | 'readOnly' | 'title';
 type ChangedField = { path: string; change: StructureFieldChange; from?: string;
   annotations?: AnnotationKeyword[] };                                 // annotated entries only
-type StructureChange = { table: StructureTableChange; fields: ChangedField[] };
+type StructureChange = { table: StructureTableChange; fields: ChangedField[]; views: boolean };
 type DescribedUnitRef = UnitRef & { structureChange?: StructureChange }; // structure units only
 type ListedUnit = DescribedUnitRef & { structure?: UnitRef };
 
@@ -840,13 +874,14 @@ type RequiredUnit = { unit: DescribedUnitRef; reason: RequiredReason };
 type PlanBlocker = { code: BlockerCode; tableId?: string; rowId?: string; path?: string; message: string;
   unit?: DescribedUnitRef; reason?: RequiredReason };
 type DeferredValue = { path: string; value: unknown };
-type DeferredRow = { unit: DescribedUnitRef; defaulted: DeferredValue[]; omitted: string[];
+type DeferredPath = { path: string };
+type DeferredRow = { unit: DescribedUnitRef; defaulted: DeferredValue[]; omitted: DeferredPath[];
   structure: DescribedUnitRef };
 type PlanEstimate = { changedRows: number; mergedRows: number; perRowWorkRows: number;
   mixedTables: Array<{ tableId: string; linksCopied: number; linksAdded: number }> };
 type PlanCounts = { selected: number; required: number };
-type TableCoverage = { tableId: string; structure?: boolean; views?: boolean; rows: number; appliedRows: number;
-  partlyAppliedRows: number };
+type TableCoverage = { tableId: string; previousTableId?: string; side?: SelectorSide; structure?: boolean;
+  views?: boolean; rows: number; appliedRows: number; partlyAppliedRows: number };
 type RefusedTable = { tableId: string; code: RefusalCode };
 type RefusalCode = 'headSchemaInconsistent' | 'unledgeredTable';
 
@@ -871,10 +906,10 @@ type CommitChangesInput = { branch: ChangesBranch; selection: SelectionInput; in
   expected?: string | null; comment?: string | null };
 type RevertChangesInput = Omit<CommitChangesInput, 'comment'>;
 type MigrationRenumbering = { from: string; to: string };
-type StaleChange = 'operation' | 'revisions' | 'units' | 'content';
+type StaleChange = 'version' | 'operation' | 'revisions' | 'units' | 'content';
 type ChangesRequireAdditions = { status: 'required'; required: RequiredUnit[] };
-type ChangesBlocked = { status: 'blocked'; blockers: PlanBlocker[]; required: RequiredUnit[];
-  unmatched?: UnmatchedSelectors };
+type ChangesBlocked = { status: 'blocked'; planned: boolean; blockers: PlanBlocker[]; required: RequiredUnit[];
+  unmatched?: UnmatchedSelectors };   // planned: false → required empty, unmatched absent
 type ChangesStale = { status: 'stale'; changed: StaleChange[]; headRevisionId: string; draftRevisionId: string;
   unmatched: UnmatchedSelectors };
 type NothingToApply = { status: 'empty'; headRevisionId: string; draftRevisionId: string;
@@ -1050,8 +1085,8 @@ add required units, so one estimate before the closure is not enough):
    and, per mixed table, the links it will copy (one link count per mixed table, kept for the operation).
 3. Above a limit (§11) → refuse with `tooLarge` before that assembly: nothing is merged and no formula is evaluated.
 
-The result is the `estimate` (§5.1), an upper bound. A refused plan has the fingerprint `''` and is `blocked`
-before the `expected` comparison, never `stale` (§5.6). No limit is rechecked after the closure: the last estimate
+The result is the `estimate` (§5.1), an upper bound. A refused plan has no fingerprint (`planned: false`, §5.3) and
+is `blocked` before the `expected` comparison, never `stale` (§5.6). No limit is rechecked after the closure: the last estimate
 covers the final applied set.
 
 ### 6.6 CloseDependencies
@@ -1522,9 +1557,12 @@ An unsigned, opaque string with four parts, so that a `stale` result can say whi
 | units | SHA-256 over the internal keys of the applied units (selected and required), in unit order. |
 | content | SHA-256 over the content of every applied unit, in unit order (below). |
 
-The engine encodes the parts with a version prefix (`pcf2.`) and compares them part by part; clients treat the
-fingerprint as opaque and compare it only for equality. An `expected` the engine cannot decode is malformed (§5.9). The
-content part covers, for every applied unit, in unit order:
+Encoding: `pcf2.` followed by the base64url (no padding) of the UTF-8 JSON array `[operation, headRevisionId,
+draftRevisionId, units, content]`, the two digests as lowercase hex. `pcf2` names the version of the fingerprint
+rules; the engine compares the parts one by one. Clients treat the fingerprint as opaque and compare it only for
+equality. An `expected` that does not decode as `pcf<n>.` and a five-element array of strings is malformed (§5.9); a
+well-formed fingerprint of another version `n` (one issued by an engine with other fingerprint rules) is `stale` with
+`changed: ['version']`. The content part covers, for every applied unit, in unit order:
 
   - row units: per covered row, the Head and Draft row versions as `versionId`, `updatedAt` and the compared columns
     (`id`, `hash`, `schemaHash`, `publishedAt`, `meta`); for a `rowColumns` unit, the columns it owns (§3.4); for a
@@ -1577,18 +1615,19 @@ the preview does not fix them.
   resolves `a` through Head and reverts the rename.
 - A plan refused by a limit returns `blocked` (`tooLarge`), never `stale`, also when the Draft grew past the limit
   after the preview.
-- **What a `stale` result says.** `changed` lists, in this order, every part of `expected` that differs from the
+- **What a `stale` result says.** `changed` lists, in this order, the parts of `expected` that differ from the
   current plan's fingerprint (§9.1):
 
   | `changed` | Meaning for the caller |
   | --- | --- |
+  | `version` | `expected` was issued under other fingerprint rules (another engine version); no other part is compared. |
   | `operation` | `expected` is the fingerprint of the other operation (a commit preview passed to a revert, or the reverse). |
-  | `revisions` | The Head or the Draft revision is not the one previewed: a commit (native or partial) happened since, or `expected` is of another branch. |
-  | `units` | The selection now resolves to other units: a selected unit appeared or disappeared, or the required additions changed. |
-  | `content` | The same units, but the content of at least one of them changed: a selected row, schema, views or migration row was edited, or a row of a selected structure's table (the structure digest). |
+  | `revisions` | The Head or the Draft revision is not the one previewed: a commit happened since (a partial commit of other units; a whole-Draft commit leaves nothing of the selection, so its repeat is `empty`), or `expected` is of another branch. |
+  | `units` | The selection now resolves to other units: a selected unit appeared or disappeared, or the required additions changed. The content is then not compared. |
+  | `content` | The same units, and the content of at least one of them changed: a selected row, schema, views or migration row was edited, or a row of a selected structure's table (the structure digest). |
 
-  With `revisions` the other parts are compared as well; content digests of different revisions can still be equal,
-  for example after a native whole-Draft commit of other tables. The result also carries the current
+  `revisions` is compared independently of `units` and `content`: after a partial commit of other tables, the selected
+  units and their content can be unchanged, and `changed` is `['revisions']`. The result also carries the current
   `headRevisionId` and `draftRevisionId` and the current `unmatched`, so a caller drops the selectors that no longer
   match before it previews again. It carries no new fingerprint: the caller previews again to review the new plan.
 
@@ -1608,7 +1647,7 @@ migration could be neither published nor reverted.
 - Published migrations keep their ids and row versions.
 - A commit publishes the pending migrations of the applied structure units with their Draft ids.
 - Renumbering (§6.8) applies only to migrations that stay in the Draft, only when one of them would precede a
-  published id; the commit result lists every change in `renumbered`.
+  published id; the commit result lists every change in `renumberedMigrations`.
 - A revert drops the pending migrations of reverted structure units from the Draft ledger.
 - Every resulting ledger replays to its schemas (§6.9).
 - A table rename rewrites referrer schemas natively without migration rows; the replayed `rename` rewrites them on a
@@ -1619,7 +1658,7 @@ migration could be neither published nor reverted.
 | Consumer | Guarantee |
 | --- | --- |
 | Replica synced from Head exports (`getMigrations` of Head → `applyMigrations` into its Draft → commit) | Accepts every partial commit and every later commit; its replayed schemas equal the source Head schemas (REQ-001.BR-004). `applyMigrations` applies one migration per transaction, so the guarantee is incremental, not all-or-nothing: the replica's ledger is always a prefix of the source Head ledger, each migration applies atomically, and a resumed sync continues from the next id (with the stage-0 in-transaction id check). Depends on the stage-0 must items (§12), including the async-migration fix and copy-on-write by `INSERT … SELECT`. An imported `update` above the async threshold keeps its source id: the swap records it, and `applyMigrations` reports `applied` only then ([async-row-migration-v2] §4). Async migrations in flight at upgrade carry no source id and are cancelled (`LEGACY_JOB`), so an import that started one is rerun. Not covered: an exactly `{ all: true }` commit of an unrepaired damaged table (§6.10) publishes a Head no replica can reproduce, exactly as native commit does; unledgered tables (§6.10) were never received by a replica through migrations, and partial operations refuse them. |
-| Replica synced from Draft exports | Unsupported: a renumbered migration is offered again under a new id and fails (for example "field already exists"). `renumbered` lets such a consumer detect it. |
+| Replica synced from Draft exports | Unsupported: a renumbered migration is offered again under a new id and fails (for example "field already exists"). `renumberedMigrations` lets such a consumer detect it. |
 | Replicas of large tables | Native limits apply independently of partial commits: memory of synchronous table updates (backlog, §12). |
 
 ## 11. Limits and configuration
@@ -1810,7 +1849,7 @@ versions unchanged" (§14) holds in every scenario.
 ### 13.4 REQ-001.BR-004 — structure, ledger, replicas, async
 
 - AS-40 Structure of `orders` (migration 2) committed before `products` (migration 1) → Head keeps migration 2's id;
-  migration 1 is renumbered after it and reported in `renumbered`; a Head-synced replica accepts this commit and the
+  migration 1 is renumbered after it and reported in `renumberedMigrations`; a Head-synced replica accepts this commit and the
   later one; replayed schemas equal the source; no renumbering when not needed.
 - AS-41 Property sequences (fixed seeds, 20 steps: native edits, native and partial commits and reverts) start with a
   partial commit that renumbers; every step's status is asserted; after every step every pending Draft migration id
@@ -1975,50 +2014,58 @@ versions unchanged" (§14) holds in every scenario.
 - AS-80 Selection vocabulary: `structures` with `{ tableId, side? }` objects and `rowRenames` select as `tables` and
   `renames` did; a bare string in `structures`, and the fields `tables` or `renames`, are validation errors; every
   selector a result returns (listed units, required, deferred, sample, blockers, causes) is `SelectionItems` with no
-  `all` or `exclude`, and adding it to `exclude` excludes exactly that unit.
+  `all` or `exclude`, and adding it to `exclude` excludes exactly that unit. Units have exactly the fields of their
+  kind; a shared schema unit has `sharedSchemaId` and no `tableId`.
 - AS-81 Code lists and exports: every code union of §5.11 and draft-reads-v1 §9 equals its runtime list
   (`SELECTOR_SIDES`, `STRUCTURE_TABLE_CHANGES`, `STRUCTURE_FIELD_CHANGES`, `REASON_SITE_KINDS`, `STALE_CHANGES`, …); the
   package exports the names of §5.10 and no partial-changes type named `TableChange`, `FieldChange`, `Blocker`,
   `Counts`, `Estimate`, `Deferred` or `Reason`.
-- AS-82 Views follow the structure: a table with a schema change and a views edit lists one structure unit and no
-  views unit; committing the structure publishes the Draft views, reverting it restores the Head views, and the other
-  units of the table stay; `views: [table]` requires the structure (`structureBoundData`, site `selector`); a table
-  without a structure change lists its views edit as a views unit that commits and reverts alone.
+- AS-82 Views follow the structure: a table with a schema change and a views edit lists one structure unit, with
+  `structureChange.views: true`, and no views unit; committing the structure publishes the Draft views, reverting it
+  restores the Head views, and the other units of the table stay; `views: [table]` requires the structure
+  (`structureBoundData`, site `selector`); `exclude: { views: [table] }` excludes the structure; `views: [table]` of a
+  table whose structure changed and whose views did not is unmatched; a table without a structure change lists its
+  views edit as a views unit that commits and reverts alone.
 - AS-83 No views combination is checked or migrated: over random Drafts with views edits and schema changes, every
   commit and revert writes the views document of the structure side (or of the views unit's side), and a views
   document invalid for its own structure (SQL fixture) gives `invalidViews`.
 - AS-84 Reason sites: each code arises at the site kinds of §5.7 with the listed fields: `referencedRowMissing` at a
-  `row` site with `references` of kind `row` (the referenced table as units address it, the id the reference holds),
-  also for a reference that a structure brings wholesale (no `path`); a schema reference at a `schema` site with
-  `references` of kind `table`; a ledger step at a `migration` site with its `migrationId`; a row id collision at a
-  `rowId` site; a table id collision at a `tableId` site, with `migrationId` at a migration's step; the selection codes
-  at a `selector` site with no `cause`.
+  `row` site with the referring field as `path` and `references` of kind `row` (the referenced table as units address
+  it, the id the reference holds), also for a reference that a structure brings wholesale and for an unchanged
+  referrer of a lost id; a schema reference at a `schema` site with `references` of kind `table`; a ledger step at a
+  `migration` site with its `migrationId` and the ledger's ids, also for a table created and removed in the Draft; a
+  row id collision at a `rowId` site; a table id collision at a `tableId` site, with `migrationId` at a migration's
+  step; the selection codes at a `selector` site with no `cause`.
 - AS-85 Causes: every closure reason caused by an applied unit carries `cause` with that unit (a DescribedUnitRef with
-  its exact selector) and the role of §5.7; a step whose provider is a published migration has no `cause`; the
-  `reason` of a `requiredExcluded` blocker carries the same `cause`.
+  its exact selector) and the role of §5.7, including the `occupant` at a ledger step (the example of §5.7: a table
+  created at `x` and renamed to `y`, another created at `x`, the second committed alone); a step whose provider is a
+  published migration has no `cause`; the `reason` of a `requiredExcluded` blocker carries the same `cause`.
 - AS-86 Deferred values: a created row committed without its table's structure lists in `defaulted` each Head input
   field with the value the commit writes, equal to the value in the written row (a declared default, and a type default
-  after a native schema update); fields the Head schema lacks or computes are in `omitted`; a moved field is in both.
-- AS-87 A preview stopped by `maxChangedRows` returns `planned: false`, `fingerprint`, `counts` and `unmatched` as
-  `null`, empty `required`, `deferred`, `sample` and `coverage`, the `tooLarge` blocker and an estimate with
-  `changedRows`; stopped by a mixed-table or per-row-work limit in the closure, also `planned: false`; an apply stopped
-  by a limit is `blocked` without `unmatched`. A planned preview never has a `null` field.
+  after a native schema update); fields the Head schema lacks or computes are in `omitted` as `{ path }`; a moved field
+  is in both.
+- AS-87 Stopped plans: a preview stopped by `maxChangedRows`, and one stopped by a mixed-table or per-row-work limit in
+  the closure, return `planned: false`, `fingerprint`, `counts` and `unmatched` as `null`, empty `required`,
+  `deferred`, `sample` and `coverage`, the `tooLarge` blockers (with `migrationInProgress` while an async migration
+  is active) and the estimate measured up to the stop; a commit or revert stopped by a limit is `blocked` with
+  `planned: false`, empty `required` and no `unmatched`. A planned result never has a `null` field.
 - AS-88 Counts and coverage: `counts` has `selected` and `required` only, and `sample` holds the first
-  `min(20, selected + required)` applied units; `coverage` lists every table with an applied unit: `structure` and
-  `views` present exactly when the table has that unit, `rows` equal to the table's `tableData.rows` in the Draft reads
-  when no row's only difference is computed, `appliedRows = rows` when `tableData: [table]` is selected, a table with
-  one of two row units of a row selected counts that row in `partlyAppliedRows`, and required additions count as
-  applied.
+  `min(20, selected + required)` applied units; `coverage` lists every user table with an applied unit: `structure`
+  and `views` present exactly when the table has that unit, `rows` equal to the table's `tableData.rows` in the Draft
+  reads when no row's only difference is computed, `appliedRows = rows` when `tableData: [table]` is selected, a row
+  with one of its two units selected counted in `partlyAppliedRows`, required additions counted as applied, and two
+  entries (one with `side: 'head'`) when a rename took over the id of a removed table; no entry for transient
+  structure units or shared schemas.
 - AS-89 Applied results: `draftHasChanges` is `false` after a commit or revert that leaves no difference and `true`
   while another unit or a content-equal version of an unread table remains, equal to the Draft's stored `hasChanges`;
   `renumberedMigrations` lists the renumbered ids; no result has `remaining` or `unreadTables`.
-- AS-90 Stale causes: a native commit of another table after the preview → `changed: ['revisions']` (and no other part
-  when the applied units and their content are unchanged); a new required addition after the preview → includes
-  `units`; a selected row edited after the preview → `['content']`; the fingerprint of the other operation → includes
-  `operation`; every `stale` carries the current ids and `unmatched`, which names a kept selector that no longer
-  matches.
+- AS-90 Stale causes: a partial commit of another table after the preview → `changed: ['revisions']`; a new required
+  addition after the preview → `['units']`; a selected row edited after the preview → `['content']`; the fingerprint
+  of the other operation → includes `operation`; a well-formed fingerprint of another version → `['version']`; every
+  `stale` carries the current ids and `unmatched`, which names a kept selector that no longer matches.
 - AS-91 Fingerprints: equal plans give equal fingerprints across calls and engine instances; an `expected` that the
-  engine cannot decode (another format, truncated, foreign) → validation error before any transaction.
+  engine cannot decode (truncated, not base64url, a payload that is not a five-element array) → validation error
+  before any transaction.
 - AS-92 Facade: `changes.list`, `preview`, `commit`, `revert`, `tableChanges`, `rowChanges` and `summary` on the
   engine facade behave as these specifications say, through the package exports (e2e).
 
@@ -2076,7 +2123,7 @@ versions unchanged" (§14) holds in every scenario.
   3 runs per cell on production-like hardware; the estimate is compared with the links and rows written. A scoped
   benchmark adds a changed unrelated table and checks that its versions stay untouched.
 - **Gaps to close in implementation:** JSON Pointer escapes (`~0`, `~1`); applied reverts of swaps and reused ids;
-  Head-id fallback after a concurrent rename; views that do not fit after migration (the fallback branch); races with
+  Head-id fallback after a concurrent rename; races with
   files; closures through several referrer tables; AS-31's "referenced by an unchanged row → `danglingInSource`";
   a `RowPublishedAt` inside an array and several `RowPublishedAt` fields in one schema (§3.1); scoped reading with
   large foreign-key-connected tables; keyset paging inside a table (§5.2); the Head schema check and repair (§6.10,
@@ -2138,9 +2185,9 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 - Versioning engine v2 storage ([ADR-0046]); the contract of this specification applies unchanged.
 - A count of what stays in the Draft in operation results (the Draft reads give it, [draft-reads-v1] §6) and a
   content-equality pass over unread tables (only `all: true` normalises them).
-- For a later minor version, additive ([ADR-002] Boundaries): one discriminated unit type with kind-specific fields
-  (a `sharedSchemaId` instead of `tableId`), structured blocker details, item and unit keys, a Draft read token, a
-  pageable resolved plan, a light table-options query, reasons for `omitted` deferred paths.
+- For a later minor version, additive ([ADR-002] Boundaries): structured blocker details, item and unit keys, a Draft
+  read token, a pageable resolved plan, a light table-options query, reasons for `omitted` deferred paths (a field of
+  their objects).
 - Rewriting committed history damaged by the async-migration defect (it would need its own ADR; not planned), and the
   design of the async-migration fix itself (its own stage-0 design, §12).
 - When data-level foreign keys ([ADR-0025]) or time-travel foreign keys
@@ -2183,12 +2230,16 @@ Unit model and algorithm:
   through the pending history, the reason `viewsDoNotFitStructure` and the role `counterpart` are removed;
   `invalidViews` comes from target validation (§6.9 step 5).
 - §5.2: structure descriptions report `annotated` fields with their `annotations` (`ANNOTATION_KEYWORDS`), and an
-  object whose own annotations changed as an `annotated` entry at its pointer (PoC 1.4–1.6).
+  object whose own annotations changed as an `annotated` entry at its pointer (PoC 1.4–1.6); `StructureChange.views`
+  says that the unit carries a views change.
 
 Selection (§4.1, §4.2, §4.5, §5.1):
 
 - `tables` → `structures`, objects only (`{ tableId, side? }`); `renames` → `rowRenames`. Every returned selector is
-  `SelectionItems`; `unmatched` is `UnmatchedSelectors`.
+  `SelectionItems`; `unmatched` is `UnmatchedSelectors`. `views` of a table with a structure unit requires it, or is
+  unmatched when the table's views did not change, and excluding it excludes the structure.
+- `Unit` is discriminated by `kind`, with exactly the fields of its kind; a shared schema unit has `sharedSchemaId`
+  instead of a `tableId` carrying that id.
 
 Results (§5.1, §5.3–§5.7, §5.11, §5.12):
 
@@ -2196,23 +2247,25 @@ Results (§5.1, §5.3–§5.7, §5.11, §5.12):
   `schema`, `migration`, `rowId`, `tableId`) that fixes its meaning; `references` names the referenced row or table;
   `cause { unit, role }` replaces the PoC's `by` / `byRole` (PoC 1.5–1.6); roles `referrer`, `remover`, `taker`,
   `occupant`.
-- `Deferred` → `DeferredRow` with `defaulted: { path, value }[]` and `omitted` (PoC 1.5–1.6 split `paths`; v2.0 adds
-  the values).
+- `Deferred` → `DeferredRow` with `defaulted: { path, value }[]` and `omitted: { path }[]` (PoC 1.5–1.6 split
+  `paths`; v2.0 adds the values and makes the omitted paths objects).
 - Preview: `planned`; when a limit stopped the plan, `fingerprint`, `counts` and `unmatched` are `null` instead of
   `''`, zeros and `{}`. `counts` drops `remaining`; `unreadTables` is removed; `coverage` (`TableCoverage[]`) is new;
   `sample` holds the first `min(20, selected + required)` applied units.
 - Commit and revert: `remaining` is removed and `draftHasChanges` added; `renumbered` → `renumberedMigrations`;
-  `stale` carries `changed`, the current ids and `unmatched` (§9.2).
+  `blocked` carries `planned`; `stale` carries `changed`, the current ids and `unmatched` (§9.2).
 
-Fingerprint (§9.1, §9.2, §5.9): four parts (operation, revisions, units, content) with a version prefix, so `stale`
-says which changed; an `expected` the engine cannot decode is a validation error.
+Fingerprint (§9.1, §9.2, §5.9): four parts (operation, revisions, units, content) behind a version prefix, so
+`stale` says which changed (`version` for a fingerprint of other rules); an `expected` the engine cannot decode is a
+validation error.
 
 Names (§5.10, §5.11): `Branch` → `ChangesBranch`, `Side` → `SelectorSide` (`HEAD_QUALIFIERS` → `SELECTOR_SIDES`),
 `TableChange` → `StructureTableChange` (`TABLE_CHANGES` → `STRUCTURE_TABLE_CHANGES`), `FieldChange` →
 `StructureFieldChange` (`FIELD_CHANGES` → `STRUCTURE_FIELD_CHANGES`), `Blocker` → `PlanBlocker`, `Counts` →
 `PlanCounts`, `Estimate` → `PlanEstimate`; new lists `REASON_SITE_KINDS`, `STALE_CHANGES`. Transports type every
-engine value and keep one spelling per code (§5.10). The facade's `changes` namespace also exposes the Draft reads
-([draft-reads-v1](draft-reads-v1.spec.md); the PoC's Draft diff, 1.7).
+engine value and keep one spelling per code (§5.10); the transport contract names the three reads. The facade's
+`changes` namespace also exposes the Draft reads ([draft-reads-v1](draft-reads-v1.spec.md); the PoC's Draft diff,
+1.7).
 
 Scenarios: AS-10, AS-17, AS-19, AS-45, AS-64 reworded; AS-60c and §13.8 (AS-80 – AS-92) added.
 

@@ -159,16 +159,25 @@ gives.
 
 ### 5.2 Field and column changes
 
-`fields` lists the native field changes of the row, in native order, each as one entry (`DraftFieldChange`):
+`fields` lists the native field changes of the row (the native value diff of its Head and Draft data, after the
+formula values of the page's rows are computed), in native order, each as one entry (`DraftFieldChange`):
 
 | Field | Meaning |
 | --- | --- |
-| `path` | JSON Pointer of the field: the Draft field, or the Head field of a removed one. |
-| `previousPath` | JSON Pointer of the Head field that a moved field came from. |
-| `changeType` | `FIELD_ADDED`, `FIELD_REMOVED`, `FIELD_MODIFIED` or `FIELD_MOVED` (native `RowChangeDetailType`). |
-| `oldValue`, `newValue` | The Head and Draft values; `oldValue` is absent for `FIELD_ADDED`, `newValue` for `FIELD_REMOVED`; JSON `null` is a value. |
+| `path` | JSON Pointer of the changed value: a field, an array element (`/tags/1`), or the root `''`. |
+| `changeType` | `FIELD_ADDED`, `FIELD_REMOVED` or `FIELD_MODIFIED`: the values of the native `RowChangeDetailType` that the value diff produces. |
+| `oldValue`, `newValue` | The Head and the Draft value. A side without the value has `null`: `oldValue` of `FIELD_ADDED`, `newValue` of `FIELD_REMOVED`, and the missing side of the root entry of a created or removed row. The change type, or the row's, tells a missing value from a JSON `null`. |
 | `selection` | The result of the field selector at `path` (partial-changes-v1 §4.3), resolved by the selection normalisation itself (below). |
 | `follows` | The rename whose cascade rewrote this reference (§5.5). |
+
+- A created or removed row has one entry at the root pointer `''`, `FIELD_MODIFIED`, holding the whole row value on
+  its side. Its selection is that of any field of the row: `goesWith` the row's existence unit (`rowExistence`), or
+  the structure for a created, removed or replaced table (`tableExistence`).
+- The value diff does not follow schema moves: a field that a pending `move` patch carried reads as `FIELD_REMOVED` at
+  its Head pointer and `FIELD_ADDED` at its Draft pointer, and both go with the structure (`structureBound`), whose
+  `structureChange` reports the move (partial-changes-v1 §5.2).
+- An array element reads at its own pointer, and its selection is the unit of the whole array (§3.2 of
+  partial-changes-v1: arrays are atomic).
 
 | Selector result | `selection` |
 | --- | --- |
@@ -237,7 +246,7 @@ rename. Array elements are compared by position. A rename in a refused table has
 | `headRevisionId`, `draftRevisionId`, `refusedTables` | As every read. |
 | `tablesSummary` | The listed tables by change type (§4): `total`, `added`, `modified`, `removed`, `renamed`, plus `replaced`, the number of replaced ids (each counted once; its two items are also counted in `added` and `removed`). |
 | `rowsSummary` | The reported rows of every listed table by change type, as `rowsSummary` of the table items. |
-| `tableDataRows` | The rows with units over all tables: the sum of the table items' `tableData.rows`. A client tells a user's own row edits from rows that only travel with a structure change by it. |
+| `rowsWithUnits` | The rows with units over all tables: the sum of the table items' `tableData.rows`. A client tells a user's own row edits from rows that only travel with a structure change by it. |
 | `sharedSchemas` | Every shared schema unit: `{ sharedSchemaId, change: 'added' \| 'removed' \| 'modified', changeType, unit }`, `changeType` `ADDED`, `REMOVED` or `MODIFIED`. |
 | `transientTables` | Every structure unit of tables created and removed inside the Draft: `{ tableId, changeType: 'ADDED', structure }`. |
 | `viewsOnlyTables` | Every views unit of a table whose user table version is unchanged, which no table item shows: `{ tableId, changeType: 'MODIFIED', views }`. |
@@ -292,7 +301,9 @@ anti-join of the table's two link sets (a created or removed table reads the row
 - **`rowChanges`** reads the tables in order from the cursor's table (only the filtered tables with `tableId`) and
   stops when the page is full: the query of a table returns its page pairs. It returns no `totalCount`, so it reads no
   table before the cursor or after the full page. The total of a list comes from the summary (`rowsSummary` per change
-  type, `tableDataRows`) or from the table item (`rowsSummary`, `tableData.rows`); a `search` filter has no total.
+  type, `rowsWithUnits`) or from the table item (`rowsSummary`, `tableData.rows`). A `search` filter, and a
+  `changeTypes` filter with several types, have no total: a `RENAMED_AND_MODIFIED` row counts in two types, so the
+  per-type counts do not add up.
 - **`tableChanges`** reads the row counts of the tables on its page (one query each) and of a renamed table off the
   page only when a `changeTypes` filter needs its change type (§4).
 - **`summary`** reads the row counts of every listed table: the counts per change type and the number of rows with
@@ -353,14 +364,14 @@ type DraftRowItem = {
   idExchange?: IdExchange;
 };
 type DraftFieldChange = {
-  path: string;                     // JSON Pointer
-  previousPath?: string;            // JSON Pointer of the Head field of a moved field
-  changeType: RowChangeDetailType;  // 'FIELD_ADDED' | 'FIELD_REMOVED' | 'FIELD_MODIFIED' | 'FIELD_MOVED'
-  oldValue?: unknown;               // absent for FIELD_ADDED
-  newValue?: unknown;               // absent for FIELD_REMOVED
+  path: string;                     // JSON Pointer; '' for the whole value of a created or removed row
+  changeType: DraftFieldChangeType;
+  oldValue: unknown;                // null when Head has no value
+  newValue: unknown;                // null when the Draft has no value
   selection: FieldSelection;
   follows?: FollowedUnit;
 };
+type DraftFieldChangeType = 'FIELD_ADDED' | 'FIELD_REMOVED' | 'FIELD_MODIFIED';  // native RowChangeDetailType values
 type DraftColumnChange = { column: RowColumn; oldValue: unknown; newValue: unknown; selection: FieldSelection };
 
 type RowSelection = { units: UnitRef[] } & (   // the row's own units: empty unless selectable
@@ -383,7 +394,7 @@ type IdExchangeTermination = 'cycle' | 'freeId' | 'deletedOccupant' | 'truncated
 type DraftChangesSummary = DraftReadState & {
   tablesSummary: RevisionChangeSummary & { replaced: number };
   rowsSummary: RevisionChangeSummary;
-  tableDataRows: number;
+  rowsWithUnits: number;
   sharedSchemas: ChangedSharedSchema[]; sharedSchemasCount: number;
   transientTables: TransientTable[]; transientTablesCount: number;
   viewsOnlyTables: ViewsOnlyTable[]; viewsOnlyTablesCount: number;
@@ -396,8 +407,9 @@ type ViewsOnlyTable = { tableId: string; changeType: ChangeType; views: UnitRef 
 ```
 
 `ChangesBranch`, `SelectionItems`, `UnitRef`, `DescribedUnitRef`, `RowColumn`, `RefusedTable` and `RefusalCode` are
-those of partial-changes-v1 §5.11. `ChangeType`, `RowChangeDetailType`, `RevisionChangeSummary`,
-`SchemaMigrationDetail` and `ViewsChangeDetail` are the native diff types, exported under these names. Every code
+those of partial-changes-v1 §5.11. `ChangeType`, `RevisionChangeSummary`, `SchemaMigrationDetail` and
+`ViewsChangeDetail` are the native diff types, exported under these names; `DraftFieldChangeType` holds the values of
+the native `RowChangeDetailType` that the row value diff produces. Every code
 union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `GOES_WITH_REASONS`, `FOLLOW_REASONS`,
 `ID_EXCHANGE_TERMINATIONS`, `SHARED_SCHEMA_CHANGES`.
@@ -420,7 +432,7 @@ Reachability and oracles (properties over random Drafts):
   most and the rest forming transient tables; `viewsChanges` compare the views under the Head id in Head with those
   under the Draft id in Draft.
 - DR-05 `tableData.rows` of every table equals the distinct `selection.row` of its `selectable` items over an
-  unfiltered row read; the summary's `tableDataRows` equals their sum.
+  unfiltered row read; the summary's `rowsWithUnits` equals their sum.
 - DR-06 The summary equals the native summary in its counts and change types; each count of `tablesSummary` equals
   the `totalCount` of the table filter of its type, and of `rowsSummary` the number of rows the row filter of its
   type lists.
@@ -437,10 +449,11 @@ Items:
   without a structure change and with a views edit has `views`; a views-only table appears only in the summary.
 - DR-11 A `contentEqual` table and a `computed` row; a refused table's items, rows and fields are `refused` with its
   code; rows of a created, removed or replaced table go with the structure (`tableExistence`).
-- DR-12 Field changes: a moved field has `path` and `previousPath` as JSON Pointers and `FIELD_MOVED`; an added field
-  has no `oldValue`, a removed one no `newValue`, a field set to `null` has `newValue: null`; a field inside an array
-  selects the array's unit; a formula field is `computed`; a field of a created row goes with the row
-  (`rowExistence`); a value of a changed field goes with the structure (`structureBound`).
+- DR-12 Field changes: paths are JSON Pointers (a nested field `/dims/width`, an array element `/tags/1`, which
+  selects the array's unit); an added field has `oldValue: null`, a removed one `newValue: null`, and a field set to
+  `null` is `FIELD_MODIFIED` with `newValue: null`; a created row has one root entry `''` that goes with the row
+  (`rowExistence`); a field moved by a pending `move` reads as removed and added, both `structureBound`; a formula
+  field is `computed`; a value of a changed field goes with the structure (`structureBound`).
 - DR-13 Columns: a `meta` and a `schemaHash` difference under an unchanged structure select the `rowColumns` unit; a
   `publishedAt` difference with a published-at field selects that field unit; under a changed structure the
   `schemaHash` goes with the structure, and a row that differs only there is not reported.
@@ -470,10 +483,10 @@ Paging, filters, validation, snapshot:
 
 - Accepted from the PoC document `draft-diff.poc.md` (branch `poc/draft-diff`), with the changes of [ADR-002]: Draft
   items without the nested native payload (`change`), one id vocabulary (`previousTableId` / `previousRowId` instead
-  of `fromTableId` / `fromRowId`), merged field changes with JSON Pointers (`path`, `previousPath`) instead of a native
+  of `fromTableId` / `fromRowId`), merged field changes with values and a JSON Pointer `path` instead of a native dot
   `path` beside a `pointer`, `columns` (was `columnChanges`), `replaced` and `tablesSummary.replaced`,
   `tableData: { selector, rows }` (was `tableData` and `tableDataRows`), selectors as `SelectionItems`, the summary
-  without `revisionId`, `parentRevisionId` and `totalChanges`, with `tableDataRows` and `sharedSchemaId`; no
+  without `revisionId`, `parentRevisionId` and `totalChanges`, with `rowsWithUnits` and `sharedSchemaId`; no
   `totalCount` on row pages; views units only for tables without a structure unit.
 
 [ADR-002]: ../adr/ADR-002-draft-reads-and-public-changes-api.md

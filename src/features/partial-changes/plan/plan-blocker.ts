@@ -1,6 +1,6 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { LedgerInconsistency } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
-import type { Unit } from 'src/features/partial-changes/catalogue/unit';
+import type { UnitAddress } from 'src/features/partial-changes/catalogue/unit';
 import {
   REFUSAL_CODES,
   type RefusalCode,
@@ -28,7 +28,7 @@ export const BLOCKER_CODES = [
 
 export type BlockerCode = (typeof BLOCKER_CODES)[number];
 
-export interface PlanBlocker {
+export interface CatalogueBlocker {
   readonly code: BlockerCode;
   readonly tableId?: string;
   readonly rowId?: string;
@@ -43,7 +43,10 @@ const REFUSAL_REASONS: Readonly<Record<RefusalCode, string>> = {
   unledgeredTable: 'it has no intact ledger lineage',
 };
 
-export function refusalBlocker({ tableId, code }: RefusedTable): PlanBlocker {
+export function refusalBlocker({
+  tableId,
+  code,
+}: RefusedTable): CatalogueBlocker {
   return {
     code,
     tableId,
@@ -54,7 +57,7 @@ export function refusalBlocker({ tableId, code }: RefusedTable): PlanBlocker {
 export function requiredExcluded(
   { key, unit }: CatalogueUnit,
   reason: Reason,
-): PlanBlocker {
+): CatalogueBlocker {
   const { tableId, rowId, path } = unit;
 
   return {
@@ -68,7 +71,7 @@ export function requiredExcluded(
   };
 }
 
-export function unrecordedStructureChangeOf(pair: TablePair): PlanBlocker {
+export function unrecordedStructureChangeOf(pair: TablePair): CatalogueBlocker {
   const tableId = publicIdOrIdentityOf(pair);
 
   return {
@@ -80,7 +83,7 @@ export function unrecordedStructureChangeOf(pair: TablePair): PlanBlocker {
 
 export function ledgerInconsistentBlockerOf(
   inconsistency: LedgerInconsistency,
-): PlanBlocker {
+): CatalogueBlocker {
   return {
     code: 'ledgerInconsistent',
     tableId: inconsistency.tableId,
@@ -89,9 +92,9 @@ export function ledgerInconsistentBlockerOf(
 }
 
 export function distinctBlockers(
-  blockers: readonly PlanBlocker[],
-): PlanBlocker[] {
-  const distinct = new Map<string, PlanBlocker>();
+  blockers: readonly CatalogueBlocker[],
+): CatalogueBlocker[] {
+  const distinct = new Map<string, CatalogueBlocker>();
 
   for (const blocker of blockers) {
     const { code, tableId, rowId, path } = blocker;
@@ -105,7 +108,7 @@ export function distinctBlockers(
   return [...distinct.values()];
 }
 
-function addressOf({ tableId, rowId, path }: Unit): string {
+function addressOf({ tableId, rowId, path }: UnitAddress): string {
   if (rowId === undefined) {
     return tableId;
   }

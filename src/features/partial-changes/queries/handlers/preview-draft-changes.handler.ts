@@ -10,7 +10,7 @@ import {
   decidePlanStatus,
   type PreviewStatus,
 } from 'src/features/partial-changes/planning/plan-decision';
-import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
+import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import {
   type PreviewChangesInput,
   type PreviewChangesResult,
@@ -74,7 +74,7 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
 
   private async readMigrationLock({
     draftRevisionId,
-  }: ChangesSnapshot): Promise<Blocker[]> {
+  }: ChangesSnapshot): Promise<PlanBlocker[]> {
     const lock = await this.migrationLock.findRevisionLock(draftRevisionId);
 
     if (!lock) {
@@ -99,7 +99,7 @@ function previewRequestOf({
   };
 }
 
-function migrationInProgress({ tableId }: MigrationLockedDetails): Blocker {
+function migrationInProgress({ tableId }: MigrationLockedDetails): PlanBlocker {
   return {
     code: 'migrationInProgress',
     tableId,

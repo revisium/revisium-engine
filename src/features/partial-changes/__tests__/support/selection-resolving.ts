@@ -2,13 +2,13 @@ import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-cha
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { ClosureSource } from 'src/features/partial-changes/closure/dependency-closure';
-import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
 import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
   SelectionResolution,
-  UnmatchedSelection,
+  UnmatchedSelectors,
 } from 'src/features/partial-changes/selection/selection-resolution';
 import { resolveSelection } from 'src/features/partial-changes/selection/selection-resolver';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -22,7 +22,7 @@ export interface RequiredUnitView {
   readonly reason: Reason;
 }
 
-export type BlockerView = Omit<PlanBlocker, 'unitKey'> & {
+export type BlockerView = Omit<CatalogueBlocker, 'unitKey'> & {
   readonly unit?: AddressedUnit;
 };
 
@@ -31,7 +31,7 @@ export interface ResolutionView {
   readonly excluded: AddressedUnit[];
   readonly required: RequiredUnitView[];
   readonly blockers: BlockerView[];
-  readonly unmatched: UnmatchedSelection;
+  readonly unmatched: UnmatchedSelectors;
 }
 
 export interface ResolvedSelection {
@@ -137,7 +137,7 @@ function reasonOf(
 
 export function blockerView(
   catalogue: ChangeCatalogue,
-  { unitKey, ...blocker }: PlanBlocker,
+  { unitKey, ...blocker }: CatalogueBlocker,
 ): BlockerView {
   if (unitKey === undefined) {
     return blocker;

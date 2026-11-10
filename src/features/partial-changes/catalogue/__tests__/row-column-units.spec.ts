@@ -9,7 +9,7 @@ import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import {
   ROW_COLUMNS,
   type RowColumn,
-  type Unit,
+  type UnitAddress,
 } from 'src/features/partial-changes/catalogue/unit';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
@@ -234,6 +234,6 @@ describe('ChangeCatalogue: owners of publishedAt, meta and schemaHash', () => {
   }
 });
 
-function columnsOf(units: readonly Unit[]): RowColumn[] {
+function columnsOf(units: readonly UnitAddress[]): RowColumn[] {
   return units.flatMap(({ columns }) => columns ?? []);
 }

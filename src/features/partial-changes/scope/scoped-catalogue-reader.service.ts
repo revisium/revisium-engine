@@ -6,7 +6,7 @@ import {
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { changedRowsTooLarge } from 'src/features/partial-changes/limits/too-large-blockers';
-import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
   ReadScope,
   type TableScope,
@@ -27,7 +27,7 @@ export type ScopedCatalogue =
     })
   | (ScopeCounts & {
       readonly kind: 'tooLarge';
-      readonly blocker: PlanBlocker;
+      readonly blocker: CatalogueBlocker;
     });
 
 @Injectable()

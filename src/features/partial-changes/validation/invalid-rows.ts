@@ -13,7 +13,7 @@ import {
   type AppliedUnits,
   sideNamesOf,
 } from 'src/features/partial-changes/plan/change-operation';
-import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
   type RowPair,
   type TableVersion,
@@ -39,8 +39,8 @@ export class InvalidRows {
     this.targetName = sideNamesOf(choice.operation).target;
   }
 
-  public async of(target: AssembledTarget): Promise<PlanBlocker[]> {
-    const blockers: PlanBlocker[] = [];
+  public async of(target: AssembledTarget): Promise<CatalogueBlocker[]> {
+    const blockers: CatalogueBlocker[] = [];
 
     for (const plan of target.tables) {
       blockers.push(...(await this.invalidRowsOf(plan)));
@@ -49,7 +49,7 @@ export class InvalidRows {
     return blockers;
   }
 
-  private async invalidRowsOf(plan: TablePlan): Promise<PlanBlocker[]> {
+  private async invalidRowsOf(plan: TablePlan): Promise<CatalogueBlocker[]> {
     const mergedRows = plan.rows.flatMap(mergedRowOf);
 
     if (mergedRows.length === 0) {
@@ -58,7 +58,7 @@ export class InvalidRows {
 
     const version = this.targetVersionOf(plan);
     const schemaHash = this.dataValidator.getSchemaHash(version.schema);
-    const blockers: PlanBlocker[] = [];
+    const blockers: CatalogueBlocker[] = [];
 
     for (const row of mergedRows) {
       const { result, errors } = await this.dataValidator.validate(
@@ -80,7 +80,7 @@ export class InvalidRows {
     { id: tableId }: TableVersion,
     { pair, merged }: MergedTargetRow,
     errors: readonly ErrorObject[],
-  ): PlanBlocker {
+  ): CatalogueBlocker {
     return {
       code: 'invalidRow',
       tableId,

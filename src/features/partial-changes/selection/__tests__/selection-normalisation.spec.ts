@@ -406,7 +406,7 @@ describe('SelectionResolver: normalisation', () => {
       await draft.updateTable(PRODUCTS, [patch]);
 
       const resolution = await draft.resolveSelection({
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
         exclude: { fields: [{ tableId: PRODUCTS, rowId: 'p1', path }] },
       });
 

@@ -9,7 +9,7 @@ import {
   isUnledgered,
 } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
-import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
 import {
@@ -73,7 +73,7 @@ export class LedgerConsistency {
     source: ValidationSource,
     choice: AppliedUnits,
     ledger: LedgerPlan,
-  ): PlanBlocker[] {
+  ): CatalogueBlocker[] {
     const sourceInconsistencies = sourceInconsistenciesOf(source);
 
     return resultingRolesOf(source, choice, ledger).flatMap((role) =>
@@ -285,7 +285,7 @@ function keyOf({ lineage, inconsistency }: SlotInconsistency): string {
 function ledgerInconsistentOf(
   { name }: ResultingRole,
   { tableId, inconsistency }: SlotInconsistency,
-): PlanBlocker {
+): CatalogueBlocker {
   return {
     code: 'ledgerInconsistent',
     tableId,

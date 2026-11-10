@@ -57,7 +57,7 @@ describe('TargetAssembler: reverting structure units', () => {
       const draft = await givenProductsWithAddedField();
 
       const target = await draft.assembleTarget('revert', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(target.tableOf(PRODUCTS)).toEqual({
@@ -87,7 +87,7 @@ describe('TargetAssembler: reverting structure units', () => {
       const draft = await givenProductsWithRenamedField();
 
       const target = await draft.assembleTarget('revert', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(target.tableOf(PRODUCTS)).toMatchObject({
@@ -138,7 +138,7 @@ describe('TargetAssembler: reverting structure units', () => {
         const draft = await given();
 
         const target = await draft.assembleTarget('revert', {
-          tables: [tableId],
+          structures: [{ tableId }],
         });
 
         expect(target.tableOf(tableId)).toEqual({
@@ -155,7 +155,7 @@ describe('TargetAssembler: reverting structure units', () => {
       const draft = await givenSwappedTables();
 
       const target = await draft.assembleTarget('revert', {
-        tables: [ALPHA, BETA],
+        structures: [{ tableId: ALPHA }, { tableId: BETA }],
       });
 
       for (const tableId of [ALPHA, BETA]) {
@@ -170,7 +170,7 @@ describe('TargetAssembler: reverting structure units', () => {
       const draft = await givenTransientTable();
 
       const target = await draft.assembleTarget('revert', {
-        tables: [DRAFTS],
+        structures: [{ tableId: DRAFTS }],
       });
 
       expect(target.tableIds).toEqual([]);
@@ -180,7 +180,7 @@ describe('TargetAssembler: reverting structure units', () => {
       const draft = await givenProductsWithAddedField();
 
       const target = await draft.assembleTarget('revert', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(target.tableIds).toEqual([PRODUCTS]);
@@ -249,7 +249,7 @@ describe('TargetAssembler: reverting structure units', () => {
         const draft = await given();
 
         const target = await draft.assembleTarget('revert', {
-          tables: tableIds,
+          structures: tableIds.map((tableId) => ({ tableId })),
         });
 
         expect(target.systemTableOf(SystemTables.Migration)).toMatchObject({
@@ -268,7 +268,7 @@ describe('TargetAssembler: reverting structure units', () => {
       const draft = await givenProductsWithAddedField();
 
       const target = await draft.assembleTarget('revert', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(target.systemTableOf(SystemTables.Migration)?.rows).toEqual([
@@ -319,7 +319,7 @@ describe('TargetAssembler: reverting structure units', () => {
         const draft = await given();
 
         const target = await draft.assembleTarget('revert', {
-          tables: tableIds,
+          structures: tableIds.map((tableId) => ({ tableId })),
         });
 
         expect(target.systemTableOf(SystemTables.Schema)).toMatchObject({
@@ -338,7 +338,7 @@ describe('TargetAssembler: reverting structure units', () => {
       const draft = await givenUnrecordedDraftStructure();
 
       const target = await draft.assembleTarget('revert', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(target.blockers).toEqual([]);

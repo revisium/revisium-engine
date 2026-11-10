@@ -4,6 +4,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import {
+  addressedUnitOfListed,
   type ChangedRowsRead,
   type PageWithReads,
   unitsOfPages,
@@ -286,12 +287,14 @@ function product(category: string, title = 'one') {
   return { title, category, categoryCopy: '' };
 }
 
-function describeUnit({ kind, rowId, path }: ListedUnit): string {
-  return [rowId, kind, path].filter(Boolean).join(' ');
+function describeUnit(unit: ListedUnit): string {
+  const { rowId, path } = addressedUnitOfListed(unit);
+
+  return [rowId, unit.kind, path].filter(Boolean).join(' ');
 }
 
 function rowIdsListed(pages: readonly PageWithReads[]): string[] {
   return unitsOfPages(pages.map(({ page }) => page)).map(
-    ({ rowId }) => rowId ?? '',
+    (unit) => addressedUnitOfListed(unit).rowId ?? '',
   );
 }

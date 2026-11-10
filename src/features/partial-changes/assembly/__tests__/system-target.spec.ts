@@ -81,7 +81,7 @@ describe('SystemTargetAssembler: system rows of the target', () => {
       await draft.updateViews(PRODUCTS, tableViews('Renamed', ['code']));
 
       const target = await draft.assembleTarget('commit', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(target.systemTableOf(SystemTables.Views)).toMatchObject({
@@ -101,7 +101,7 @@ describe('SystemTargetAssembler: system rows of the target', () => {
       await draft.updateViews(GOODS, tableViews('Renamed', ['code']));
 
       const target = await draft.assembleTarget('revert', {
-        tables: [GOODS],
+        structures: [{ tableId: GOODS }],
       });
 
       expect(target.systemTableOf(SystemTables.Views)).toMatchObject({

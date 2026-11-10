@@ -20,7 +20,7 @@ import type { AssemblySource } from 'src/features/partial-changes/assembly/targe
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { estimateTooLarge } from 'src/features/partial-changes/limits/too-large-blockers';
 import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
-import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import {
   type TableVersion,
@@ -35,7 +35,7 @@ export interface MixedTableEstimate {
   readonly linksAdded: number;
 }
 
-export interface Estimate {
+export interface PlanEstimate {
   readonly changedRows: number;
   readonly mergedRows: number;
   readonly perRowWorkRows: number;
@@ -47,11 +47,11 @@ export interface EstimationSource extends AssemblySource {
 }
 
 export type GuardedEstimate =
-  | { readonly kind: 'withinLimits'; readonly estimate: Estimate }
+  | { readonly kind: 'withinLimits'; readonly estimate: PlanEstimate }
   | {
       readonly kind: 'tooLarge';
-      readonly estimate: Estimate;
-      readonly blockers: readonly PlanBlocker[];
+      readonly estimate: PlanEstimate;
+      readonly blockers: readonly CatalogueBlocker[];
     };
 
 interface PlannedTable {
@@ -110,7 +110,7 @@ export class OperationEstimation {
     return { kind: 'tooLarge', estimate, blockers };
   }
 
-  private async estimate(choice: AppliedUnits): Promise<Estimate> {
+  private async estimate(choice: AppliedUnits): Promise<PlanEstimate> {
     const rules = new OutcomeRules(choice);
     const mixed = this.tables
       .map((table) => plannedTableOf(table, rules))

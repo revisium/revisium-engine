@@ -1,6 +1,6 @@
 import {
   distinctBlockers,
-  type PlanBlocker,
+  type CatalogueBlocker,
   refusalBlocker,
   requiredExcluded,
 } from 'src/features/partial-changes/plan/plan-blocker';
@@ -12,13 +12,13 @@ import {
 import type {
   SelectionResolution,
   SelectionSource,
-  UnmatchedSelection,
+  UnmatchedSelectors,
 } from 'src/features/partial-changes/selection/selection-resolution';
 import { SelectionTargets } from 'src/features/partial-changes/selection/selection-targets';
 import type { ItemsResolution } from 'src/features/partial-changes/selection/selector-match';
 import { SelectorMatcher } from 'src/features/partial-changes/selection/selector-matcher';
 
-const UNMATCHED_SELECTOR: PlanBlocker = {
+const UNMATCHED_SELECTOR: CatalogueBlocker = {
   code: 'unmatchedSelector',
   message: 'Some selectors match no unit; see unmatched',
 };
@@ -95,7 +95,7 @@ class SelectionResolver {
     );
   }
 
-  private refusalsOfEveryTable(): PlanBlocker[] {
+  private refusalsOfEveryTable(): CatalogueBlocker[] {
     if (!this.selection.all || isWholeDraftSelection(this.selection)) {
       return [];
     }
@@ -103,7 +103,7 @@ class SelectionResolver {
     return this.source.catalogue.refusedTables.map(refusalBlocker);
   }
 
-  private excludedRequiredUnits(): PlanBlocker[] {
+  private excludedRequiredUnits(): CatalogueBlocker[] {
     return [...this.included.required]
       .filter(([key]) => this.excluded.has(key))
       .map(([key, reason]) =>
@@ -111,7 +111,7 @@ class SelectionResolver {
       );
   }
 
-  private unmatchedSelectors(appliedUnits: number): PlanBlocker[] {
+  private unmatchedSelectors(appliedUnits: number): CatalogueBlocker[] {
     if (!this.anySelectorUnmatched() || appliedUnits === 0) {
       return [];
     }
@@ -123,7 +123,7 @@ class SelectionResolver {
     return this.included.hasUnmatched || this.exclusions.hasUnmatched;
   }
 
-  private unmatched(): UnmatchedSelection {
+  private unmatched(): UnmatchedSelectors {
     const included = this.included.unmatchedItems();
 
     if (!this.exclusions.hasUnmatched) {

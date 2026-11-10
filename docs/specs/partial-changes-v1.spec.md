@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 2.0 |
-| Status | Accepted; the API revision of v2.0 is pending ([ADR-002] delivery, PRs 1–7 and 12) |
+| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PRs 2–7 and 12 are pending |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
@@ -19,8 +19,8 @@ summarises the evidence. The reads that show the Draft with how each change is s
 [draft-reads-v1](draft-reads-v1.spec.md).
 
 Version 2.0 is the public API revision of [ADR-002]: it changes the selection vocabulary, the reasons, the plan
-results, the views unit and the fingerprint, and names the exported types. Until its delivery PRs land, the code on
-master follows version 1.3; the changelog lists every difference.
+results, the views unit and the fingerprint, and names the exported types. Until all of its delivery PRs land, the
+code on master follows version 1.3 except what the landed PRs implement (Status); the changelog lists every difference.
 
 **Engine background** ([ADR-0003]). A revision links table versions and
 a table version links row versions (both many-to-many); tables and rows carry `versionId`, `createdId` and `id`.

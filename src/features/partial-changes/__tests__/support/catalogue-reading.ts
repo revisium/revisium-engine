@@ -11,8 +11,8 @@ import {
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { LedgerInconsistency } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
 import type {
-  HeadQualifier,
-  Unit,
+  SelectorSide,
+  UnitAddress,
 } from 'src/features/partial-changes/catalogue/unit';
 import type {
   HeadSchemaCheck,
@@ -32,7 +32,7 @@ import {
   readInPlanningTransaction,
 } from './snapshot-reading';
 
-export type AddressedUnit = Unit & { readonly side?: HeadQualifier };
+export type AddressedUnit = UnitAddress & { readonly side?: SelectorSide };
 
 export interface CatalogueView {
   readonly catalogue: ChangeCatalogue;

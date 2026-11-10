@@ -5,7 +5,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
+import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type {
   FieldRef,
@@ -78,7 +78,7 @@ const titleOfC1Unit: UnitRef = {
   selector: titleOfC1,
 };
 
-const headSchemaInconsistentCategories: Blocker = {
+const headSchemaInconsistentCategories: PlanBlocker = {
   code: 'headSchemaInconsistent',
   tableId: CATEGORIES,
   message:
@@ -306,7 +306,7 @@ describe('previewChanges', () => {
               kind: 'structure',
               tableId: ALPHA,
               side: 'head',
-              selector: { tables: [{ tableId: ALPHA, side: 'head' }] },
+              selector: { structures: [{ tableId: ALPHA, side: 'head' }] },
             },
             reason: { code: 'structureBoundData', tableId: ALPHA, rowId: 'a1' },
           },
@@ -315,7 +315,7 @@ describe('previewChanges', () => {
               kind: 'structure',
               tableId: ALPHA,
               previousTableId: BETA,
-              selector: { tables: [ALPHA] },
+              selector: { structures: [{ tableId: ALPHA }] },
             },
             reason: { code: 'idOccupied', tableId: ALPHA },
           },
@@ -496,7 +496,7 @@ describe('previewChanges', () => {
             structure: {
               kind: 'structure',
               tableId: PRODUCTS,
-              selector: { tables: [PRODUCTS] },
+              selector: { structures: [{ tableId: PRODUCTS }] },
             },
           },
         ],
@@ -508,7 +508,7 @@ describe('previewChanges', () => {
   describe('structure units', () => {
     it('plans a commit of a structure unit as ready, as it plans its revert', async () => {
       const draft = await givenProductsWithNewField();
-      const selection = { tables: [PRODUCTS] };
+      const selection = { structures: [{ tableId: PRODUCTS }] };
 
       const commit = await draft.previewChanges({
         operation: 'commit',
@@ -666,7 +666,7 @@ describe('previewChanges', () => {
       const replays = await sourceReplaysDuring(kit, sourceLedgers, () =>
         draft.previewChanges({
           operation: 'revert',
-          selection: { tables: [PRODUCTS] },
+          selection: { structures: [{ tableId: PRODUCTS }] },
         }),
       );
 
@@ -764,7 +764,7 @@ describe('previewChanges', () => {
     it.each<{
       damage: string;
       given: () => Promise<ChangesScenario>;
-      refusal: Blocker;
+      refusal: PlanBlocker;
     }>([
       {
         damage: 'an async migration completed in place and not yet published',
@@ -801,7 +801,7 @@ describe('previewChanges', () => {
 
       const preview = await draft.previewChanges({
         operation: 'revert',
-        selection: { tables: [PRODUCTS] },
+        selection: { structures: [{ tableId: PRODUCTS }] },
       });
 
       expect(preview).toMatchObject({
@@ -1231,7 +1231,7 @@ describe('previewChanges', () => {
 interface DanglingDraft {
   readonly holding: string;
   readonly given: () => Promise<ChangesScenario>;
-  readonly blocker: Blocker;
+  readonly blocker: PlanBlocker;
 }
 
 function wholeRowOfC9() {
@@ -1245,5 +1245,9 @@ function wholeRowOfC9() {
 }
 
 function structureOf(tableId: string): UnitRef {
-  return { kind: 'structure', tableId, selector: { tables: [tableId] } };
+  return {
+    kind: 'structure',
+    tableId,
+    selector: { structures: [{ tableId }] },
+  };
 }

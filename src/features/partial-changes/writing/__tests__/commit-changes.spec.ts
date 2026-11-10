@@ -25,6 +25,7 @@ import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
+import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
 import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
@@ -500,7 +501,7 @@ describe('commitChanges', () => {
 
       await expectApplied(
         draft.commitChanges({
-          selection: { renames: [rowOf(PRODUCTS, 'p9')] },
+          selection: { rowRenames: [rowOf(PRODUCTS, 'p9')] },
         }),
       );
 
@@ -907,7 +908,7 @@ describe('commitChanges', () => {
   describe('a required unit of a table the plan did not read', () => {
     it('refuses to plan with an internal error, and writes nothing', async () => {
       const draft = await givenRenamedCategoriesOfEditedProducts();
-      const selection: Selection = { tables: [GROUPS] };
+      const selection: Selection = { structures: [{ tableId: GROUPS }] };
       const preview = await draft.previewChanges({
         operation: 'commit',
         selection,
@@ -1013,7 +1014,9 @@ describe('commitChanges', () => {
   }
 
   function unitsOf({ units }: ListChangesResult) {
-    return units.map(({ kind, rowId, path }) => ({ kind, rowId, path }));
+    return units
+      .map(addressedUnitOfListed)
+      .map(({ kind, rowId, path }) => ({ kind, rowId, path }));
   }
 
   async function viewsOf(

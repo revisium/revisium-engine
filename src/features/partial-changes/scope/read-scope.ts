@@ -5,10 +5,9 @@ import {
   type ConnectedTable,
   TableConnections,
 } from 'src/features/partial-changes/scope/table-connections';
-import {
-  type Selection,
-  type SelectionItems,
-  tableRefOf,
+import type {
+  Selection,
+  SelectionItems,
 } from 'src/features/partial-changes/selection/selection';
 import {
   type ComparedTable,
@@ -124,13 +123,13 @@ function tableIdsNamedBy(selection: Selection): string[] {
 function tableIdsNamedIn(items: SelectionItems): string[] {
   const rowSelectors = [
     ...(items.rows ?? []),
-    ...(items.renames ?? []),
+    ...(items.rowRenames ?? []),
     ...(items.rowColumns ?? []),
     ...(items.fields ?? []),
   ];
 
   return [
-    ...(items.tables ?? []).map((selector) => tableRefOf(selector).tableId),
+    ...(items.structures ?? []).map(({ tableId }) => tableId),
     ...(items.tableData ?? []),
     ...(items.views ?? []),
     ...rowSelectors.map(({ tableId }) => tableId),

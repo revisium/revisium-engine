@@ -18,7 +18,7 @@ import {
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import {
   hasUnmatchedSelectors,
-  type UnmatchedSelection,
+  type UnmatchedSelectors,
 } from 'src/features/partial-changes/selection/selection-resolution';
 import {
   validateRequiredAdditionsAcceptance,
@@ -169,7 +169,7 @@ function unappliedChangesOf(
 }
 
 function unmatchedSelectorsOf({ unmatched }: ChangePlan): {
-  unmatched?: UnmatchedSelection;
+  unmatched?: UnmatchedSelectors;
 } {
   if (!hasUnmatchedSelectors(unmatched)) {
     return {};

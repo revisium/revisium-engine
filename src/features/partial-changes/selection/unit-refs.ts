@@ -3,20 +3,21 @@ import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catal
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { structureChangeOf } from 'src/features/partial-changes/catalogue/structure-changes';
 import type {
-  HeadQualifier,
+  SelectorSide,
   Unit,
+  UnitAddress,
 } from 'src/features/partial-changes/catalogue/unit';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
 import type { StructureChange } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type {
   RowRef,
-  Selection,
+  SelectionItems,
   TableRef,
 } from 'src/features/partial-changes/selection/selection';
 
 export type UnitRef = Unit & {
-  readonly side?: HeadQualifier;
-  readonly selector: Selection;
+  readonly side?: SelectorSide;
+  readonly selector: SelectionItems;
 };
 
 export type DescribedUnitRef = UnitRef & {
@@ -28,7 +29,8 @@ export interface RequiredUnit {
   readonly reason: Reason;
 }
 
-export function unitRefOf({ unit, side }: CatalogueUnit): UnitRef {
+export function unitRefOf({ unit: address, side }: CatalogueUnit): UnitRef {
+  const unit = unitOf(address);
   const selector = selectorOf(unit, side);
 
   if (side === undefined) {
@@ -66,38 +68,96 @@ export function requiredUnitsOf(
   });
 }
 
-function selectorOf(unit: Unit, side: HeadQualifier | undefined): Selection {
+function unitOf(address: UnitAddress): Unit {
+  const { kind, tableId } = address;
+
+  switch (kind) {
+    case 'field':
+      return {
+        kind,
+        tableId,
+        rowId: requiredPartOf(address, 'rowId'),
+        path: requiredPartOf(address, 'path'),
+      };
+    case 'rowCreate':
+    case 'rowDelete':
+    case 'rowReplace':
+      return { kind, tableId, rowId: requiredPartOf(address, 'rowId') };
+    case 'rowRename':
+      return {
+        kind,
+        tableId,
+        rowId: requiredPartOf(address, 'rowId'),
+        previousRowId: requiredPartOf(address, 'previousRowId'),
+      };
+    case 'rowColumns':
+      return {
+        kind,
+        tableId,
+        rowId: requiredPartOf(address, 'rowId'),
+        columns: requiredPartOf(address, 'columns'),
+      };
+    case 'structure':
+      return structureUnitOf(address);
+    case 'views':
+      return { kind, tableId };
+    case 'sharedSchema':
+      return { kind, sharedSchemaId: tableId };
+  }
+}
+
+function structureUnitOf({ tableId, previousTableId }: UnitAddress): Unit {
+  if (previousTableId === undefined) {
+    return { kind: 'structure', tableId };
+  }
+
+  return { kind: 'structure', tableId, previousTableId };
+}
+
+function selectorOf(
+  unit: Unit,
+  side: SelectorSide | undefined,
+): SelectionItems {
   switch (unit.kind) {
     case 'field':
       return {
-        fields: [
-          {
-            tableId: unit.tableId,
-            rowId: rowIdOf(unit),
-            path: requiredPartOf(unit, 'path'),
-          },
-        ],
+        fields: [{ tableId: unit.tableId, rowId: unit.rowId, path: unit.path }],
       };
     case 'rowCreate':
     case 'rowDelete':
     case 'rowReplace':
       return { rows: [rowRefOf(unit, side)] };
     case 'rowRename':
-      return { renames: [rowRefOf(unit, side)] };
+      return { rowRenames: [rowRefOf(unit, side)] };
     case 'rowColumns':
       return { rowColumns: [rowRefOf(unit, side)] };
     case 'structure':
-      return { tables: [tableRefOf(unit, side)] };
+      return { structures: [tableRefOf(unit, side)] };
     case 'views':
       return { views: [unit.tableId] };
     case 'sharedSchema':
-      return { sharedSchemas: [unit.tableId] };
+      return { sharedSchemas: [unit.sharedSchemaId] };
   }
 }
 
-function rowRefOf(unit: Unit, side: HeadQualifier | undefined): RowRef {
-  const ref = { tableId: unit.tableId, rowId: rowIdOf(unit) };
+function rowRefOf(
+  { tableId, rowId }: { readonly tableId: string; readonly rowId: string },
+  side: SelectorSide | undefined,
+): RowRef {
+  return sidedRefOf({ tableId, rowId }, side);
+}
 
+function tableRefOf(
+  { tableId }: { readonly tableId: string },
+  side: SelectorSide | undefined,
+): TableRef {
+  return sidedRefOf({ tableId }, side);
+}
+
+function sidedRefOf<Ref extends object>(
+  ref: Ref,
+  side: SelectorSide | undefined,
+): Ref & { readonly side?: SelectorSide } {
   if (side === undefined) {
     return ref;
   }
@@ -105,27 +165,16 @@ function rowRefOf(unit: Unit, side: HeadQualifier | undefined): RowRef {
   return { ...ref, side };
 }
 
-function tableRefOf(
-  { tableId }: Unit,
-  side: HeadQualifier | undefined,
-): TableRef {
-  if (side === undefined) {
-    return tableId;
-  }
-
-  return { tableId, side };
-}
-
-function rowIdOf(unit: Unit): string {
-  return requiredPartOf(unit, 'rowId');
-}
-
-function requiredPartOf(unit: Unit, part: 'rowId' | 'path'): string {
-  const value = unit[part];
+function requiredPartOf<
+  Part extends 'rowId' | 'path' | 'previousRowId' | 'columns',
+>(address: UnitAddress, part: Part): NonNullable<UnitAddress[Part]> {
+  const value = address[part];
 
   if (value === undefined) {
-    throw new Error(`A ${unit.kind} unit of ${unit.tableId} has no ${part}`);
+    throw new Error(
+      `A ${address.kind} unit of ${address.tableId} has no ${part}`,
+    );
   }
 
-  return value;
+  return value as NonNullable<UnitAddress[Part]>;
 }

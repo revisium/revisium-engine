@@ -92,7 +92,7 @@ const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
 const structureOf = (tableId: string) => ({
   kind: 'structure',
   tableId,
-  selector: { tables: [tableId] },
+  selector: { structures: [{ tableId }] },
 });
 
 describe('commitChanges of structure units', () => {
@@ -127,7 +127,9 @@ describe('commitChanges of structure units', () => {
       });
 
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [PRODUCTS] } }),
+        draft.commitChanges({
+          selection: { structures: [{ tableId: PRODUCTS }] },
+        }),
       );
 
       expect(await schemaOf(draft, 'head', PRODUCTS)).toEqual(
@@ -152,7 +154,9 @@ describe('commitChanges of structure units', () => {
       });
 
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [PRODUCTS] } }),
+        draft.commitChanges({
+          selection: { structures: [{ tableId: PRODUCTS }] },
+        }),
       );
 
       await expectRows(draft, 'head', PRODUCTS, {
@@ -216,7 +220,7 @@ describe('commitChanges of structure units', () => {
         p3: { title: 'three', price: 3, color: 'green' },
       });
       const selection: Selection = {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
         rows: [rowOf(PRODUCTS, 'p3')],
       };
 
@@ -285,7 +289,9 @@ describe('commitChanges of structure units', () => {
       const draftCover = await coverOf(draft, 'draft', 'm1');
 
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [MEDIA] } }),
+        draft.commitChanges({
+          selection: { structures: [{ tableId: MEDIA }] },
+        }),
       );
 
       await expectRow(draft, 'head', MEDIA, 'm1', {
@@ -314,7 +320,9 @@ describe('commitChanges of structure units', () => {
       await draft.removeRow(ORDERS, 'o2');
 
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [ORDERS] } }),
+        draft.commitChanges({
+          selection: { structures: [{ tableId: ORDERS }] },
+        }),
       );
 
       await expectRows(draft, 'head', ORDERS, {
@@ -410,7 +418,7 @@ describe('commitChanges of structure units', () => {
       });
 
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [TAGS] } }),
+        draft.commitChanges({ selection: { structures: [{ tableId: TAGS }] } }),
       );
 
       await expectRows(draft, 'head', TAGS, {
@@ -457,7 +465,7 @@ describe('commitChanges of structure units', () => {
         unitsOf((await draft.listChanges({ tableId: TAGS })).units),
       ).toEqual([{ kind: 'structure' }]);
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [TAGS] } }),
+        draft.commitChanges({ selection: { structures: [{ tableId: TAGS }] } }),
       );
 
       expect(await schemaOf(draft, 'head', TAGS)).toEqual(brandSchema);
@@ -472,7 +480,9 @@ describe('commitChanges of structure units', () => {
       await draft.removeTable(DRAFTS);
 
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [DRAFTS] } }),
+        draft.commitChanges({
+          selection: { structures: [{ tableId: DRAFTS }] },
+        }),
       );
 
       expect(await describedLedgerOf(draft, 'head')).toEqual([
@@ -500,7 +510,7 @@ describe('commitChanges of structure units', () => {
         const draft = await givenCommittedCatalogue();
         const replica = await givenHeadSyncedReplicaOf(draft);
         await draft.renameTable(CATEGORIES, GROUPS);
-        const selection: Selection = { tables: [committed] };
+        const selection: Selection = { structures: [{ tableId: committed }] };
 
         const preview = await draft.previewChanges({
           operation: 'commit',
@@ -534,7 +544,7 @@ describe('commitChanges of structure units', () => {
       ]);
 
       const result = await draft.commitChanges({
-        selection: { tables: [PRODUCTS] },
+        selection: { structures: [{ tableId: PRODUCTS }] },
       });
 
       expect(result).toMatchObject({
@@ -559,7 +569,9 @@ describe('commitChanges of structure units', () => {
         { kind: 'structure' },
       ]);
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [PRODUCTS] } }),
+        draft.commitChanges({
+          selection: { structures: [{ tableId: PRODUCTS }] },
+        }),
       );
 
       expect(migratedViews).toEqual(productViews('All', ['title', 'cost']));
@@ -606,7 +618,9 @@ describe('commitChanges of structure units', () => {
       await draft.updateViews(PRODUCTS, productViews('Renamed', ['cost']));
 
       await expectApplied(
-        draft.commitChanges({ selection: { tables: [PRODUCTS] } }),
+        draft.commitChanges({
+          selection: { structures: [{ tableId: PRODUCTS }] },
+        }),
       );
 
       expect(await viewsOf(draft, 'head')).toEqual(
@@ -627,7 +641,7 @@ describe('commitChanges of structure units', () => {
         await pendingMigrationIds(draft);
 
       const result = await draft.commitChanges({
-        selection: { tables: [ORDERS] },
+        selection: { structures: [{ tableId: ORDERS }] },
       });
 
       const [renumbered] = renumberedOf(result);
@@ -642,7 +656,7 @@ describe('commitChanges of structure units', () => {
       await replica.expectSchemasOf(draft);
 
       const next = await draft.commitChanges({
-        selection: { tables: [PRODUCTS] },
+        selection: { structures: [{ tableId: PRODUCTS }] },
       });
 
       expect(renumberedOf(next)).toEqual([]);
@@ -658,7 +672,7 @@ describe('commitChanges of structure units', () => {
         await pendingMigrationIds(draft);
 
       const result = await draft.commitChanges({
-        selection: { tables: [ORDERS] },
+        selection: { structures: [{ tableId: ORDERS }] },
       });
 
       const renumbered = renumberedOf(result);
@@ -682,7 +696,7 @@ describe('commitChanges of structure units', () => {
       const source = await migrationRowOf(draft, productsMigration);
 
       const result = await draft.commitChanges({
-        selection: { tables: [ORDERS] },
+        selection: { structures: [{ tableId: ORDERS }] },
       });
 
       const [renumbered] = renumberedOf(result);
@@ -706,7 +720,7 @@ describe('commitChanges of structure units', () => {
       const [, ordersMigration] = await pendingMigrationIds(draft);
 
       const result = await draft.commitChanges({
-        selection: { tables: [PRODUCTS] },
+        selection: { structures: [{ tableId: PRODUCTS }] },
       });
 
       expect(renumberedOf(result)).toEqual([]);
@@ -720,7 +734,9 @@ describe('commitChanges of structure units', () => {
       expect(statusesOf(await replica.syncWith(draft))).not.toContain('failed');
 
       const [renumbered] = renumberedOf(
-        await draft.commitChanges({ selection: { tables: [ORDERS] } }),
+        await draft.commitChanges({
+          selection: { structures: [{ tableId: ORDERS }] },
+        }),
       );
 
       expect(await replica.syncWith(draft)).toEqual([

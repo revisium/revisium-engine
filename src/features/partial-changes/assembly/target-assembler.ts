@@ -39,7 +39,7 @@ import type {
   ChangeOperation,
 } from 'src/features/partial-changes/plan/change-operation';
 import {
-  type PlanBlocker,
+  type CatalogueBlocker,
   unrecordedStructureChangeOf,
 } from 'src/features/partial-changes/plan/plan-blocker';
 import {
@@ -92,13 +92,13 @@ export interface AssembledTarget {
   readonly systemTables: readonly SystemTablePlan[];
   readonly views: readonly TargetViews[];
   readonly ledger: LedgerPlan;
-  readonly blockers: readonly PlanBlocker[];
+  readonly blockers: readonly CatalogueBlocker[];
   readonly deferred: readonly DeferredValues[];
 }
 
 interface AssembledTable {
   readonly plan: TablePlan;
-  readonly blockers: readonly PlanBlocker[];
+  readonly blockers: readonly CatalogueBlocker[];
   readonly deferred: readonly DeferredValues[];
 }
 
@@ -318,7 +318,7 @@ class ReadTableAssembly {
     return this.decided.filter(({ outcome }) => outcome.kind === 'move');
   }
 
-  private unrecordedStructureBlockers(): PlanBlocker[] {
+  private unrecordedStructureBlockers(): CatalogueBlocker[] {
     if (!this.takesUnrecordedDraftStructure()) {
       return [];
     }

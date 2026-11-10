@@ -1,11 +1,11 @@
-import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
-import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 
 export function changedRowsTooLarge(
   changedRowCount: number,
   maxChangedRows: number,
-): PlanBlocker {
+): CatalogueBlocker {
   return {
     code: 'tooLarge',
     message: `The affected tables hold ${changedRowCount} changed rows; the limit for one operation is ${maxChangedRows}`,
@@ -13,13 +13,13 @@ export function changedRowsTooLarge(
 }
 
 export function estimateTooLarge(
-  { perRowWorkRows, mixedTables }: Estimate,
+  { perRowWorkRows, mixedTables }: PlanEstimate,
   { maxPerRowWork, maxMixedTableLinks }: PartialChangesLimits,
-): PlanBlocker[] {
+): CatalogueBlocker[] {
   const blockers = mixedTables
     .filter(({ linksCopied }) => linksCopied > maxMixedTableLinks)
     .map(
-      ({ tableId, linksCopied }): PlanBlocker => ({
+      ({ tableId, linksCopied }): CatalogueBlocker => ({
         code: 'tooLarge',
         tableId,
         message: `Assembling ${tableId} copies up to ${linksCopied} row links; the limit for one table is ${maxMixedTableLinks}`,

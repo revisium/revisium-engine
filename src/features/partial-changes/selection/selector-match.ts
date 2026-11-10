@@ -1,7 +1,7 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import {
-  type PlanBlocker,
+  type CatalogueBlocker,
   refusalBlocker,
 } from 'src/features/partial-changes/plan/plan-blocker';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
@@ -19,7 +19,7 @@ export interface RequiredAddition {
 export interface SelectorMatch {
   readonly selected: readonly string[];
   readonly required: readonly RequiredAddition[];
-  readonly blockers: readonly PlanBlocker[];
+  readonly blockers: readonly CatalogueBlocker[];
 }
 
 export const NO_MATCH: SelectorMatch = {
@@ -47,7 +47,9 @@ export function requiringUnit(
   return { ...NO_MATCH, required: [{ key: unit.key, reason }] };
 }
 
-export function blockedBy(blockers: readonly PlanBlocker[]): SelectorMatch {
+export function blockedBy(
+  blockers: readonly CatalogueBlocker[],
+): SelectorMatch {
   return { ...NO_MATCH, blockers };
 }
 
@@ -75,7 +77,7 @@ export function combined(
 export class ItemsResolution {
   public readonly selected = new Set<string>();
   public readonly required = new Map<string, Reason>();
-  public readonly blockers: PlanBlocker[] = [];
+  public readonly blockers: CatalogueBlocker[] = [];
 
   private readonly unmatched = new Map<ItemKind, unknown[]>();
 

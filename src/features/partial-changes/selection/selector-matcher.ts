@@ -8,11 +8,10 @@ import {
   requireStructureOfCreatedOrRemoved,
 } from 'src/features/partial-changes/selection/created-or-removed-tables';
 import { FieldNormalisation } from 'src/features/partial-changes/selection/field-normalisation';
-import {
-  type RowRef,
-  type SelectionItems,
-  type TableRef,
-  tableRefOf,
+import type {
+  RowRef,
+  SelectionItems,
+  TableRef,
 } from 'src/features/partial-changes/selection/selection';
 import type { SelectionTargets } from 'src/features/partial-changes/selection/selection-targets';
 import {
@@ -34,7 +33,7 @@ export class SelectorMatcher {
   public matchItems(items: SelectionItems): ItemsResolution {
     const resolution = new ItemsResolution();
 
-    resolution.addEach('tables', items.tables, (selector) =>
+    resolution.addEach('structures', items.structures, (selector) =>
       this.matchStructure(selector),
     );
     resolution.addEach('tableData', items.tableData, (tableId) =>
@@ -51,7 +50,7 @@ export class SelectorMatcher {
     resolution.addEach('rows', items.rows, (selector) =>
       this.atRow(selector, (row) => this.matchRow(row, selector)),
     );
-    resolution.addEach('renames', items.renames, (selector) =>
+    resolution.addEach('rowRenames', items.rowRenames, (selector) =>
       this.atRow(selector, (row) => this.matchRowUnit(row, 'rowRename')),
     );
     resolution.addEach('rowColumns', items.rowColumns, (selector) =>
@@ -99,8 +98,7 @@ export class SelectorMatcher {
     return refusing(this.targets.refusalsOfTable(table)) ?? match(table);
   }
 
-  private matchStructure(selector: TableRef): SelectorMatch {
-    const { tableId, side } = tableRefOf(selector);
+  private matchStructure({ tableId, side }: TableRef): SelectorMatch {
     const table = this.targets.tableNamed(tableId, side);
 
     if (table) {

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { HEAD_QUALIFIERS } from 'src/features/partial-changes/catalogue/unit';
+import { SELECTOR_SIDES } from 'src/features/partial-changes/catalogue/unit';
 import {
   CHANGE_OPERATIONS,
   type ChangeOperation,
@@ -30,7 +30,7 @@ type ObjectRecord = Readonly<Record<string, unknown>>;
 
 const OPERATIONS: ReadonlySet<unknown> = new Set(CHANGE_OPERATIONS);
 
-const SIDES: ReadonlySet<unknown> = new Set(HEAD_QUALIFIERS);
+const SIDES: ReadonlySet<unknown> = new Set(SELECTOR_SIDES);
 
 export function validateSelection(input: unknown): Selection {
   return checkSelection(input, 'selection') as Selection;
@@ -100,7 +100,7 @@ const checkBoolean: Check = (value, at) => {
 
 const checkSide: Check = (value, at) => {
   if (!SIDES.has(value)) {
-    throw invalid(`${at} must be ${oneOf(HEAD_QUALIFIERS)}`);
+    throw invalid(`${at} must be ${oneOf(SELECTOR_SIDES)}`);
   }
 
   return value;
@@ -114,18 +114,10 @@ const checkJsonPointer: Check = (value, at) => {
   return value;
 };
 
-const checkTableObject = objectOf({
+const checkTableRef = objectOf({
   tableId: required(checkNonEmptyString),
   side: optional(checkSide),
 });
-
-const checkTableRef: Check = (value, at) => {
-  if (typeof value === 'string') {
-    return checkNonEmptyString(value, at);
-  }
-
-  return checkTableObject(value, at);
-};
 
 const checkRowRef = objectOf({
   tableId: required(checkNonEmptyString),
@@ -140,12 +132,12 @@ const checkFieldRef = objectOf({
 });
 
 const ITEM_FIELDS = {
-  tables: optional(arrayOf(checkTableRef)),
+  structures: optional(arrayOf(checkTableRef)),
   tableData: optional(arrayOf(checkNonEmptyString)),
   views: optional(arrayOf(checkNonEmptyString)),
   sharedSchemas: optional(arrayOf(checkNonEmptyString)),
   rows: optional(arrayOf(checkRowRef)),
-  renames: optional(arrayOf(checkRowRef)),
+  rowRenames: optional(arrayOf(checkRowRef)),
   rowColumns: optional(arrayOf(checkRowRef)),
   fields: optional(arrayOf(checkFieldRef)),
 };

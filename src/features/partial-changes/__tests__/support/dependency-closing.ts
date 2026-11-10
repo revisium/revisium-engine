@@ -5,12 +5,12 @@ import type {
   ClosureSource,
   DependencyClosureResult,
 } from 'src/features/partial-changes/closure/dependency-closure';
-import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type {
   AppliedUnits,
   ChangeOperation,
 } from 'src/features/partial-changes/plan/change-operation';
-import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
 import {
   isWholeDraftSelection,
@@ -29,7 +29,7 @@ import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadl
 import { readSelectionSource, unitKeyed } from './selection-resolving';
 import { readInPlanningTransaction } from './snapshot-reading';
 
-export type ClosureBlockerView = Omit<PlanBlocker, 'unitKey'> & {
+export type ClosureBlockerView = Omit<CatalogueBlocker, 'unitKey'> & {
   readonly unit?: UnitRef;
 };
 
@@ -42,7 +42,7 @@ export interface ClosureView {
   readonly kind: DependencyClosureResult['kind'];
   readonly required: readonly ClosureRequiredView[];
   readonly blockers: readonly ClosureBlockerView[];
-  readonly estimate: Estimate;
+  readonly estimate: PlanEstimate;
 }
 
 export interface ClosedPlan {
@@ -146,7 +146,7 @@ function closureRequiredView({
 
 function closureBlockerView(
   catalogue: ChangeCatalogue,
-  { unitKey, ...blocker }: PlanBlocker,
+  { unitKey, ...blocker }: CatalogueBlocker,
 ): ClosureBlockerView {
   if (unitKey === undefined) {
     return blocker;

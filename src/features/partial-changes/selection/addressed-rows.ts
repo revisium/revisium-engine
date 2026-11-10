@@ -3,7 +3,7 @@ import {
   PublicIdIndex,
   resolveSide,
 } from 'src/features/partial-changes/catalogue/public-id-index';
-import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
+import type { SelectorSide } from 'src/features/partial-changes/catalogue/unit';
 import type {
   Selection,
   SelectionItems,
@@ -23,7 +23,7 @@ export type ExistingRowIdsReader = Pick<
 interface AddressedRowId {
   readonly tableId: string;
   readonly rowId: string;
-  readonly side?: HeadQualifier;
+  readonly side?: SelectorSide;
 }
 
 export class AddressedRows {
@@ -34,7 +34,7 @@ export class AddressedRows {
   public sideOf(
     table: TablePair,
     rowId: string,
-    side?: HeadQualifier,
+    side?: SelectorSide,
   ): RevisionSide | undefined {
     return resolveSide(side, (revisionSide) =>
       this.exists(table[revisionSide], rowId),
@@ -89,7 +89,7 @@ function rowIdsByTableVersion(
 export function tablesOfRow(
   tables: PublicIdIndex<TablePair>,
   tableId: string,
-  side: HeadQualifier | undefined,
+  side: SelectorSide | undefined,
 ): TablePair[] {
   if (side === 'head') {
     return distinctTables([
@@ -125,7 +125,7 @@ function addressedRowIdsOf(selection: Selection): AddressedRowId[] {
   return [selection, selection.exclude ?? {}].flatMap(
     (items: SelectionItems) => [
       ...(items.rows ?? []),
-      ...(items.renames ?? []),
+      ...(items.rowRenames ?? []),
       ...(items.rowColumns ?? []),
       ...(items.fields ?? []),
     ],

@@ -7,7 +7,7 @@ import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catal
 import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
 import {
   distinctBlockers,
-  type PlanBlocker,
+  type CatalogueBlocker,
   unrecordedStructureChangeOf,
 } from 'src/features/partial-changes/plan/plan-blocker';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -28,12 +28,12 @@ export interface AppliedTarget {
   readonly assembled: AssembledTarget;
 }
 
-const PUBLISHED_MIGRATION_ALTERED: PlanBlocker = {
+const PUBLISHED_MIGRATION_ALTERED: CatalogueBlocker = {
   code: 'ledgerInconsistent',
   message: 'A published migration is missing or changed in the Draft ledger',
 };
 
-const MIGRATION_MISFILED: PlanBlocker = {
+const MIGRATION_MISFILED: CatalogueBlocker = {
   code: 'ledgerInconsistent',
   message: 'A migration row is not stored under its own, distinct migration id',
 };
@@ -54,7 +54,7 @@ export class TargetValidator {
   public async validate(
     source: ValidationSource,
     { choice, assembled }: AppliedTarget,
-  ): Promise<PlanBlocker[]> {
+  ): Promise<CatalogueBlocker[]> {
     const unrecorded = unrecordedStructureChangesOf(source, choice);
     const ledger = this.ledgerConsistency.blockersOf(
       source,
@@ -80,7 +80,7 @@ export class TargetValidator {
 function unrecordedStructureChangesOf(
   { snapshot, tables, catalogue }: AssemblySource,
   { operation, applied }: AppliedUnits,
-): PlanBlocker[] {
+): CatalogueBlocker[] {
   if (operation !== 'commit') {
     return [];
   }
@@ -106,7 +106,9 @@ function isApplied(
   return unit !== undefined && applied.has(unit.key);
 }
 
-function misfiledMigrationsOf({ systemRows }: ChangesSnapshot): PlanBlocker[] {
+function misfiledMigrationsOf({
+  systemRows,
+}: ChangesSnapshot): CatalogueBlocker[] {
   const { head, draft } = systemRows.migrations;
 
   if (
@@ -121,7 +123,7 @@ function misfiledMigrationsOf({ systemRows }: ChangesSnapshot): PlanBlocker[] {
 
 function alteredPublishedMigrationsOf({
   systemRows,
-}: ChangesSnapshot): PlanBlocker[] {
+}: ChangesSnapshot): CatalogueBlocker[] {
   const { head, draft } = systemRows.migrations;
 
   if (hasIntactPublishedPrefix(head, draft)) {
@@ -132,9 +134,9 @@ function alteredPublishedMigrationsOf({
 }
 
 function unexplainedBy(
-  unrecorded: readonly PlanBlocker[],
-  ledger: readonly PlanBlocker[],
-): PlanBlocker[] {
+  unrecorded: readonly CatalogueBlocker[],
+  ledger: readonly CatalogueBlocker[],
+): CatalogueBlocker[] {
   const tableIds = new Set(unrecorded.map(({ tableId }) => tableId));
 
   return ledger.filter(({ tableId }) => !tableIds.has(tableId));

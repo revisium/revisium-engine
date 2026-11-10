@@ -140,7 +140,7 @@ describe('SelectionResolver: exclusions and unmatched selectors', () => {
         edit: (draft) =>
           draft.updateTable(PRODUCTS, [addField('color', str())]),
         selection: {
-          tables: [PRODUCTS],
+          structures: [{ tableId: PRODUCTS }],
           exclude: {
             fields: [{ tableId: PRODUCTS, rowId: 'p404', path: '/color' }],
           },
@@ -202,7 +202,7 @@ describe('SelectionResolver: exclusions and unmatched selectors', () => {
       await draft.updateRow(PRODUCTS, 'p1', product('edited'));
 
       const resolution = await draft.resolveSelection({
-        tables: ['missing'],
+        structures: [{ tableId: 'missing' }],
         rows: [{ tableId: PRODUCTS, rowId: 'p404' }],
         exclude: {
           fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/price' }],
@@ -215,7 +215,7 @@ describe('SelectionResolver: exclusions and unmatched selectors', () => {
         required: [],
         blockers: [],
         unmatched: {
-          tables: ['missing'],
+          structures: [{ tableId: 'missing' }],
           rows: [{ tableId: PRODUCTS, rowId: 'p404' }],
           exclude: {
             fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/price' }],

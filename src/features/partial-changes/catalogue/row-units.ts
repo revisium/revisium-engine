@@ -8,9 +8,9 @@ import {
   differingLeavesOf,
 } from 'src/features/partial-changes/catalogue/row-differences';
 import type {
-  HeadQualifier,
+  SelectorSide,
   RowColumn,
-  Unit,
+  UnitAddress,
 } from 'src/features/partial-changes/catalogue/unit';
 import {
   fieldUnitKey,
@@ -47,7 +47,7 @@ interface RowOnBothSides {
   readonly draft: Row;
 }
 
-type RowUnitFields = Omit<Unit, 'kind' | 'tableId'>;
+type RowUnitFields = Omit<UnitAddress, 'kind' | 'tableId'>;
 
 const NO_SYSTEM_ROWS: readonly Row[] = [];
 
@@ -130,7 +130,7 @@ class RowUnitsBuilder {
     });
   }
 
-  private sideOfDeletedRow(rowId: string): HeadQualifier | undefined {
+  private sideOfDeletedRow(rowId: string): SelectorSide | undefined {
     if (this.idsTakenByRenames.has(rowId)) {
       return 'head';
     }
@@ -237,7 +237,7 @@ class RowUnitsBuilder {
     kind: RowUnitKind,
     rowIdentities: readonly string[],
     fields: RowUnitFields,
-    side?: HeadQualifier,
+    side?: SelectorSide,
   ): string {
     return this.addUnit(
       rowUnitKey(kind, this.table.identity, rowIdentities),
@@ -250,8 +250,8 @@ class RowUnitsBuilder {
   private addUnit(
     key: string,
     rowIdentities: readonly string[],
-    unit: Unit,
-    side?: HeadQualifier,
+    unit: UnitAddress,
+    side?: SelectorSide,
   ): string {
     if (!this.units.has(key)) {
       this.units.set(key, {

@@ -4,7 +4,7 @@ import type {
   UnitRef,
 } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { FieldChange } from 'src/features/partial-changes/structure/table-structure';
+import type { StructureFieldChange } from 'src/features/partial-changes/structure/table-structure';
 
 export interface ListChangesInput {
   readonly branch: ChangesBranch;
@@ -13,7 +13,7 @@ export interface ListChangesInput {
   readonly pageSize?: number | null;
 }
 
-export const TABLE_CHANGES = [
+export const STRUCTURE_TABLE_CHANGES = [
   'created',
   'removed',
   'replaced',
@@ -21,16 +21,16 @@ export const TABLE_CHANGES = [
   'changed',
 ] as const;
 
-export type TableChange = (typeof TABLE_CHANGES)[number];
+export type StructureTableChange = (typeof STRUCTURE_TABLE_CHANGES)[number];
 
 export interface ChangedField {
   readonly path: string;
-  readonly change: FieldChange;
+  readonly change: StructureFieldChange;
   readonly from?: string;
 }
 
 export interface StructureChange {
-  readonly table: TableChange;
+  readonly table: StructureTableChange;
   readonly fields: readonly ChangedField[];
 }
 

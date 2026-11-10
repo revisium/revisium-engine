@@ -10,17 +10,17 @@ import {
   type DependencyClosureResult,
 } from 'src/features/partial-changes/closure/dependency-closure';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
-import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import {
   distinctBlockers,
   ledgerInconsistentBlockerOf,
-  type PlanBlocker,
+  type CatalogueBlocker,
 } from 'src/features/partial-changes/plan/plan-blocker';
 import { assertEveryAppliedTableRead } from 'src/features/partial-changes/planning/applied-tables-read';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
 import {
-  type Blocker,
+  type PlanBlocker,
   blockerRefOf,
   type Deferred,
   deferredRefOf,
@@ -35,7 +35,7 @@ import {
   isWholeDraftSelection,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
-import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
+import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
   DescribedUnitRef,
   RequiredUnit,
@@ -63,7 +63,7 @@ export interface PlanRequest {
   readonly compared: ComparedSnapshot;
 }
 
-export interface Counts {
+export interface PlanCounts {
   readonly selected: number;
   readonly required: number;
   readonly remaining: number;
@@ -79,15 +79,15 @@ export interface ChangePlan {
   readonly refusedByLimit: boolean;
   readonly fingerprint: string;
   readonly appliedUnits: readonly CatalogueUnit[];
-  readonly counts: Counts;
+  readonly counts: PlanCounts;
   readonly unreadTables: number;
   readonly refusedTables: readonly RefusedTable[];
   readonly required: readonly RequiredUnit[];
-  readonly blockers: readonly Blocker[];
+  readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly Deferred[];
   readonly sample: readonly DescribedUnitRef[];
-  readonly unmatched: UnmatchedSelection;
-  readonly estimate: Estimate;
+  readonly unmatched: UnmatchedSelectors;
+  readonly estimate: PlanEstimate;
   readonly target?: PlannedTarget;
 }
 
@@ -97,7 +97,7 @@ type CatalogueRefused = Extract<ScopedCatalogue, { kind: 'tooLarge' }>;
 
 interface ValidatedClosure {
   readonly fingerprint: string;
-  readonly blockers: readonly PlanBlocker[];
+  readonly blockers: readonly CatalogueBlocker[];
   readonly target?: PlannedTarget;
 }
 
@@ -270,7 +270,7 @@ function planOf({
 function countsOf(
   { selected, required }: DependencyClosureResult,
   remaining: number,
-): Counts {
+): PlanCounts {
   return { selected: selected.size, required: required.length, remaining };
 }
 

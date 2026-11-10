@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-10-31)
+Accepted (2026-10-31). Amended by [ADR-002](ADR-002-draft-reads-and-public-changes-api.md) (2026-11-10): views of a
+table whose structure changed belong to its structure unit, the Draft reads belong to `partial-changes`, and results
+no longer count remaining units; the public API names below follow it.
 
 This ADR replaces [ADR-0021] of the Revisium architecture repository (granular revert, Proposed, never implemented).
 
@@ -118,11 +120,12 @@ previewChanges({ branch, operation: 'commit',
                  selection: { fields: [{ tableId: 'products', rowId: 'p1', path: '/price' }] } })
   → { status: 'ready', fingerprint, required: [], ... }
 commitChanges({ branch, selection, expected: fingerprint, comment: 'prices' })
-  → { status: 'applied', previousHeadRevisionId, headRevisionId, draftRevisionId, renumbered: [] }
+  → { status: 'applied', previousHeadRevisionId, headRevisionId, draftRevisionId, draftHasChanges,
+      renumberedMigrations: [] }
 ```
 
 [REQ-001.BR-007] example: the Draft adds `color` to `products` while editors change prices. `fields` with `/price`
-commits the prices now; `tables: ['products']` commits `color` with its values later. Selecting a `color` value alone
+commits the prices now; `structures: [{ tableId: 'products' }]` commits `color` with its values later. Selecting a `color` value alone
 returns `required` with the structure of `products`, its selector and the reason.
 
 ## Modules and Interactions

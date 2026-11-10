@@ -844,7 +844,8 @@ diff payloads, and no type of this API reuses those names), the plan's blocker, 
 variants of the Draft reads end in `Selection` (`GoesWithSelection`, `FieldUnitSelection`, …). Each code list is
 exported with the union type derived from it, also where §5.11 spells the union inline (`PreviewStatus`,
 `ApplyStatus`, `ReasonSiteKind`, and `TableSelectionState`, `RowSelectionState` and `FieldSelectionState` of the
-Draft reads).
+Draft reads). As for the other engine features, the package also exports `PartialChangesModule` and
+`PartialChangesApiService`.
 
 ### 5.11 TypeScript types
 

@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.5 |
+| Version | 1.6 |
 | Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -37,7 +37,7 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 - `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of the other read (a table cursor passed
   to `rowChanges` or the reverse), a filter of a wrong type, or a `search` holding the NUL character (no id holds it)
   → validation error before the snapshot.
-- An unknown project or branch → the native not-found error.
+- An unknown project or branch → the native lookup error, a `BadRequestException` (partial-changes-v1 §5.9).
 - `changeTypes` takes the native `ChangeType` values (`ADDED`, `REMOVED`, `MODIFIED`, `RENAMED`,
   `RENAMED_AND_MODIFIED`).
 
@@ -509,9 +509,14 @@ Paging, filters, validation, snapshot:
   pairs, versions, exchanges and follows; a takeover reads nothing of its own, it comes from the page's pairs).
 - DR-19 A row page reads only the tables from the cursor's table until it is full: with 100 changed tables and a page
   that fills in the first, the call runs one pair query.
-- DR-20 `null` for every optional input is treated as absent; an unknown branch is the native not-found error.
+- DR-20 `null` for every optional input is treated as absent; an unknown branch is the native lookup error
+  (`BadRequestException`, `A branch with this name does not exist in the project`).
 
 ## Changelog
+
+### Version 1.6 (2026-11-10)
+
+- §1, DR-20: an unknown project or branch is the native lookup error, a `BadRequestException`, not a not-found error.
 
 ### Version 1.5 (2026-11-10)
 

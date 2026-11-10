@@ -893,13 +893,18 @@ list types, and how a typed transport maps the unions:
   native `createRevision` and `revertChanges`, and writes audit records for `applied` results only. The proposed
   names of the GraphQL, REST and MCP operations:
   [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports).
-- **Endpoint notifications.** After an `applied` commit the engine calls its endpoint hook
-  (`notifyEndpoints`) for `headRevisionId` (the former Draft revision, whose content became the new Head) and
-  `draftRevisionId` (the new Draft), and after an `applied` revert for `draftRevisionId`, through the hook native
-  `revertChanges` uses (native `createRevision` notifies nothing). In this package the hook does nothing, so a host
-  that serves endpoints by revision refreshes those revisions itself, once, after the call returns; a failure there
-  does not undo the operation, which is already committed. A host that provides the hook instead must not refresh
-  again, and an error from its hook surfaces after the operation is committed.
+- **Endpoints.** The engine tells a host nothing: its internal endpoint hook does nothing in this package, and a
+  host cannot replace it (`EngineModuleOptions` has no option for it). A host that serves endpoints by revision does
+  the work itself after the call returns, as after the native operations:
+  - after an `applied` commit, the same follow-up as after native `createRevision`, because a commit moves the Head
+    and the Draft to other revisions: `headRevisionId` is the former Draft revision, now the Head, and
+    `draftRevisionId` is a new Draft. Move the endpoints bound to `headRevisionId` to `draftRevisionId` and those
+    bound to `previousHeadRevisionId` to `headRevisionId`, drop what you cache for those revisions, then refresh the
+    moved endpoints;
+  - after an `applied` revert, refresh the endpoints bound to `draftRevisionId` (the Draft keeps its id), as after
+    native `revertChanges`.
+
+  A failure there does not undo the operation, which is already committed.
 - **Limits.** Each operation reads only the tables its selection affects (`all: true` reads every table) and refuses
   work above its limits with `tooLarge`. The defaults are conservative; a host raises them through the environment
   once the operation logs show the real costs ([ENV.md](../ENV.md),
@@ -1285,7 +1290,8 @@ engine.repairSchemaLedger({
 }>
 ```
 
-Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. Outcomes:
+Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. A repair that writes
+changes the Draft, so the host refreshes the Draft's endpoints after it, as after a native Draft write. Outcomes:
 `REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. See
 [How is the schema ledger repaired?](migration.md#how-is-the-schema-ledger-repaired)
 
@@ -1332,9 +1338,11 @@ whose only change is a migration table with an `init` for every Head user table,
 foreign-key cycles. The new Draft keeps the Draft's changes and links the same migration table. Partial commit and
 revert stop refusing the branch's tables, and native writers record schema changes from then on. `dryRun: true`
 returns `planned` and writes nothing; its ids are provisional. A branch whose Head has a migration table gets
-`notNeeded`, so a repeated call is safe. Codes: `BACKFILL_STATUSES`, `BACKFILL_REFUSAL_CODES`. Errors: a validation
-error for wrong input types (before any transaction), unknown project or branch, `MIGRATION_LOCKED` (423) while an
-async migration is active (a dry run too), `BRANCH_WRITE_FENCED` (423, a run only), `OPERATION_TIMEOUT` (408).
+`notNeeded`, so a repeated call is safe. `backfilled` is a commit: the host moves and refreshes endpoints as after an
+applied `changes.commit` ([Host integration](#host-integration)). Codes: `BACKFILL_STATUSES`,
+`BACKFILL_REFUSAL_CODES`. Errors: a validation error for wrong input types (before any transaction), unknown project
+or branch, `MIGRATION_LOCKED` (423) while an async migration is active (a dry run too), `BRANCH_WRITE_FENCED` (423, a
+run only), `OPERATION_TIMEOUT` (408).
 See [How is a missing schema ledger backfilled?](migration.md#how-is-a-missing-schema-ledger-backfilled)
 
 ---

@@ -760,7 +760,7 @@ added (§6.9).
 | `expected` that is malformed: no `pcf<n>.` prefix with a base64url body, or a `pcf2.` body that is not exactly the engine's encoding of five strings (§9.1) | Validation error before any transaction. |
 | A malformed selection: an unknown field (also the pre-v2.0 `tables` and `renames`), a wrong type (`null` in an optional field is absent, §5), an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
 | Invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
-| Unknown project or branch | Not-found error (native). |
+| Unknown project or branch | The native lookup error: a `BadRequestException` (400) with the message `A branch with this name does not exist in the project`, the same class as a validation error. |
 | Commit or revert while an async migration is active on the branch | `MigrationLocked` error (native lock). |
 | Operation or statement timeout, attempts exhausted, any write failure | Error; the transaction is rolled back; nothing is persisted, including file references and ledger rows. A retry is safe (§9). |
 
@@ -833,8 +833,15 @@ added (§6.9).
   `draft` by revision. Native `createRevision` notifies nothing, because no revision id changes content; native
   `revertChanges` notifies for the Draft after its transaction. A partial commit changes what revision X contains
   (from Draft content to the assembled Head) and creates a new Draft, so after the transaction it notifies for X and
-  for the new Draft (§6.13); a partial revert notifies for the Draft after the transaction (§6.14). Both use the
-  engine's `notifyEndpoints` hook, which is a no-op in the engine package and implemented by the host.
+  for the new Draft (§6.13); a partial revert notifies for the Draft after the transaction (§6.14). Both call the
+  engine's internal `notifyEndpoints` hook, as the native writers do. The hook is a no-op in the engine package and a
+  host cannot replace it: `EngineModuleOptions` has no option for it and the package does not export it. A host
+  therefore does the endpoint work itself after the call returns, as revisium-core does after
+  native `createRevision`: after an applied commit it moves the endpoints bound to the former Draft
+  (`headRevisionId`) to the new Draft (`draftRevisionId`) and those bound to `previousHeadRevisionId` to
+  `headRevisionId`, drops what it caches for those revisions, and refreshes the moved endpoints; after an applied
+  revert it refreshes the endpoints bound to `draftRevisionId`, as after native `revertChanges`. A failure there does
+  not undo the operation, which is already committed.
 
 **Exported names.** The package exports the types of §5.11 and of draft-reads-v1 §9 under these names. Names that
 would clash with native diff payloads or read as generic nouns are qualified: the structure classifications are
@@ -2394,6 +2401,10 @@ cap stay; a setting must be a whole decimal integer within bounds (the reader is
 `TRANSACTION_*` settings, which become as strict: `15000ms` or `+15000` now keep the default with a warning); the
 effective settings are logged at startup; every listing page, preview, commit and revert logs one entry (§11.1); the
 structure digest is measured; the release gate takes these instead of a re-measurement on production-like hardware.
+
+Host duties (§5.9, §5.10): an unknown project or branch is the native `BadRequestException`, not a not-found error;
+the endpoint hook cannot be provided by a host, so the host moves and refreshes endpoints itself after an applied
+commit or revert.
 
 Release gate (§12): the scan run on existing deployments is no longer part of it (dropped on 2026-11-08, since no
 production table has reached the async-migration threshold), and a row remediation is designed only if a host's scan

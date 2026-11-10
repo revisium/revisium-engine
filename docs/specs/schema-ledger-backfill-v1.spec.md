@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.2 |
+| Version | 1.3 |
 | Status | Accepted |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
@@ -183,7 +183,8 @@ exclusive holder (partial-changes §8.4). The attempt cap and timeout are those 
    outcome) whose message starts with `The backfilled ledger`.
 
 After the transaction commits, endpoints of the new Head and the new Draft are notified, as partial-changes §6.13 step
-8 says. Nothing is notified for a rolled-back attempt, a dry run, `notNeeded` or `refused`. A caller that repeats a
+8 says, through the engine's internal no-op hook. A `backfilled` result is a commit for the host: it moves and
+refreshes endpoints as after an applied partial commit (partial-changes §5.10). Nothing is notified for a rolled-back attempt, a dry run, `notNeeded` or `refused`. A caller that repeats a
 call whose response was lost gets `notNeeded`.
 
 A Head without user tables gets an empty migration table: `backfilled` with `entries: []`. The scan does not report such
@@ -306,6 +307,11 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 | 4 | `docs/api.md` and `docs/migration.md`. | — |
 
 ## Changelog
+
+### Version 1.3 (2026-11-10)
+
+- §3 (after step 7): the endpoint hook is the engine's internal no-op; after `backfilled` the host moves and refreshes
+  endpoints as after an applied partial commit.
 
 ### Version 1.2 (2026-11-10)
 

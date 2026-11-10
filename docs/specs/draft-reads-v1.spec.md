@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 1.1 |
-| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PRs 9–11, the row reads, are pending. Until ADR-002 PR 2 (views follow the structure) lands, a table item can carry `views` beside `structure` and `structureChange.views` is absent, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold from PR 2 on |
+| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PRs 9–11, the row reads, are pending. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |

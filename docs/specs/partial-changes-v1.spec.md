@@ -1615,7 +1615,7 @@ before v2.0 issued. The content part covers, for every applied unit, in unit ord
 digest makes structure freshness table-wide: any edit of that table's Draft rows, including a `publishedAt` or `meta`
 edit that leaves `hash` unchanged, makes a selected structure unit `stale`. Consequences: a structure commit of a table
 that others keep editing keeps returning `stale` (S3, S4), and the digest costs one pass over every row of that
-table version per plan, O(table rows); this cost was not measured and must be measured before release (§11). The
+table version per plan, O(table rows): 3.3–3.5 s per million rows (§11). The
 fingerprint covers applied units only, so it does not depend on which tables were read (AS-74).
 
 The fingerprint covers the selected content and the structures that an existence unit moves a row between. Ownership
@@ -1700,10 +1700,11 @@ migration could be neither published nor reverted.
 
 ## 11. Limits and configuration
 
-All defaults are **provisional**. Re-measuring them (at least 3 runs per cell on production-like hardware) is part
-of the release gate (§12); they are re-measured again after each stage-0 "should" item lands. The PoC sandbox
-(2 CPU, 4 GB) measured at 100k changed rows (cases as named in the
-[research summary](../research/partial-changes-poc-v2.md)):
+The defaults are **conservative**: each keeps the cost it bounds at about 20 s or less on the PoC sandbox (runs there
+varied up to ±2×), far above today's production sizes, where no table holds 1,000 rows. No measurement on
+production-like hardware gates the release. A host raises a limit through its environment once the operation logs
+(§11.1) show what operations really cost. The PoC sandbox (2 CPU, 4 GB) measured at 100k changed rows (cases as named
+in the [research summary](../research/partial-changes-poc-v2.md)):
 
 | Measure | Value | Cases |
 | --- | --- | --- |
@@ -1716,20 +1717,61 @@ of the release gate (§12); they are re-measured again after each stage-0 "shoul
 
 Scoped reading: a one-field commit next to a changed unrelated table of 200,000 rows took 58 ms in the transaction
 (median of 3; 51 ms without that table), while the same commit reading every table was refused with `tooLarge`. The
-structure-digest cost (§9.1) was not measured and is measured before release.
+structure digest (§9.1) costs one pass over the table version: its query took 0.37–0.40 s for 100,000 rows and
+3.3–3.5 s for 1,000,000 rows (3 runs each; PostgreSQL 17 in Docker on a 12-core development host, warm cache, the
+query alone on a synthetic table version; 2026-11-10). No limit bounds it; the operation timeout does.
 
 | Setting | Default | Counts | Effect |
 | --- | --- | --- | --- |
-| `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 100,000 | Changed rows of the affected tables (§6.2); an affected table counts in full | Above → `tooLarge` before the catalogue. |
-| `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 10,000 | Merged or converted rows in mixed tables whose target schema has formula or File fields | Above → `tooLarge` before the closure assembly that would exceed it (§6.5). |
-| `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | Links copied into one new table version (an in-place revert copies none) | Above for any table → `tooLarge` with `tableId`, before that assembly (§6.5). |
+| `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 20,000 | Changed rows of the affected tables (§6.2); an affected table counts in full | Above → `tooLarge` before the catalogue. |
+| `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 2,000 | Merged or converted rows in mixed tables whose target schema has formula or File fields | Above → `tooLarge` before the closure assembly that would exceed it (§6.5). |
+| `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 100,000 | Links copied into one new table version (an in-place revert copies none) | Above for any table → `tooLarge` with `tableId`, before that assembly (§6.5). |
 | `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | 180,000 | Lifetime of one preview, one listing page, or one commit or revert attempt | Expired → error, rollback; the callback settles at the deadline and COMMIT never starts after it; a statement is cut at the deadline by `transaction_timeout` on PostgreSQL 17, and within the budget left at the last checkpoint on older servers (§8.1). |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | 3 | Serializable attempts of the operation's own loop (§8.1) | Exhausted → error. |
 | `listChanges` `pageSize` | 500 (max 5,000) | Units per page, and changed row ids read per page (§5.2) | — |
 | Draft reads `first` | none (1 to 5,000) | Table or row items per page of `changes.tableChanges` and `changes.rowChanges` ([draft-reads-v1](draft-reads-v1.spec.md) §1), the maximum of `pageSize` | Outside → validation error, before the snapshot. |
 
-`all: true` reads every table, so a Draft above `maxChangedRows` can be committed whole only natively. When stage 0
-brings compiled formulas and set-based file registration, the per-row-work limit is re-measured.
+Where the defaults come from, scaled linearly from the measurements above:
+
+| Setting | Was | Worst case at the default |
+| --- | --- | --- |
+| `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 100,000 | Preview ~2–8 s (~2 s from 8.4–9.6 s at 100k, ~8 s from 3.9 s cold at 10k × 10k; up to ~16 s at the spread); commit or revert without per-row work up to ~18 s (43.9 s for 50k rows); planning memory ~90 MB (~4.4 KB per changed row). |
+| `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 10,000 | Up to ~12 s: 2.0–3.9 ms per merged row with a formula (99.7–142.5 s for 50,000; 19.6 s for 5,000), 5.3–5.8 ms with formulas and files (158–172 s for 30,000; 17.1–17.5 s for 3,000), measured before set-based file registration landed in #94. |
+| `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | ~6 s per mixed table: ~61 s per 1M copied links on the sandbox. The limit is per table, so several large mixed tables add up; only the timeout bounds their total. |
+| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | unchanged | One attempt at every limit with one mixed table stays under ~40 s, about twice that at the measured spread; each further large mixed table adds ~6 s; a retried commit or revert runs up to `PARTIAL_CHANGES_MAX_ATTEMPTS` attempts, each with its own timeout. The timeout stays at 3 minutes because the scan, the repair and the backfill run under the same runner (async-row-migration-v2 §5, §6; schema-ledger-backfill-v1 §3). |
+| `PARTIAL_CHANGES_MAX_ATTEMPTS` | unchanged | Two shared attempts and one under the exclusive fence (§8.4). |
+
+The engine reads every setting from its environment once, at startup. A value that is not a whole decimal integer
+(such as `1e5`, `100_000` or `2000abc`), is below 1, or is above the largest safe integer keeps the default and logs a
+warning (the timeout is also bounded by what a Node timer accepts, about 24.8 days); the effective values are logged
+once (`Partial changes limits: …`, `Partial operation settings: …`), each that differs from its default with the
+variable it came from.
+
+`all: true` reads every table, so a Draft above `maxChangedRows` can be committed whole only natively.
+
+### 11.1 Operation logs
+
+Each listing page, preview, commit and revert logs one structured entry when it ends (`PartialOperationLog`, through
+the engine's NestJS logger): `log` when it returns, `warn` when it throws. The entry has `message`
+`Partial changes operation finished` and these fields:
+
+| Field | Value |
+| --- | --- |
+| `operation` | `list`, `preview`, `commit` or `revert`. |
+| `projectId`, `branchName` | From the input, when they are strings. |
+| `headRevisionId`, `draftRevisionId` | The revisions the plan of the last attempt (or the listing page) read; absent when the last attempt failed before planning. |
+| `durationMs` | From the start of the operation to its result, endpoint notification excluded. |
+| `outcome` | The result's `status` (`ready`, `applied`, `blocked`, `required`, `stale`, `empty`), `listed` for a listing page, or `error`. |
+| `attempts`, `escalations` | Attempts started, and how many of them were escalated to the exclusive fence (§8.1, §8.4), counted even when one ends waiting for the fence; `0` when the input, a commit comment included, was refused before any. |
+| `tooLarge` | Preview, commit and revert: whether a limit stopped the plan. |
+| `estimate` | Only when `tooLarge`: `changedRows`, `mergedRows`, `perRowWorkRows`, the number of `mixedTables` and the largest `linksCopied` (`maxLinksCopied`). |
+| `refusedTables`, `refusedTableIds` | The number of refused tables (§6.10) and the first five of their ids. |
+| `error`, `errorCode` | Only on `warn`: the error's name and its code (an engine code such as `OPERATION_TIMEOUT`, or a database code such as `P2034`). |
+
+An entry never holds row data, values, selectors or an error message, since a message can quote them. The
+endpoint notification after a commit or revert is outside the entry: a failing notification is the caller's error,
+not the operation's outcome. Logging is best effort: a logger that throws changes neither the result nor the error the
+caller gets.
 
 ## 12. Native prerequisites (stage 0)
 
@@ -1787,8 +1829,8 @@ All rows have landed (statuses in [plan](../plan.md)); [async-row-migration-v2] 
   deployments with its results reviewed (damaged tables and history, tainted ledger slots, unledgered tables, the
   predicate (a) diagnostics with their known false positives, and the host-side check for files possibly lost before
   the fix, [async-row-migration-v2] §13); the Head schema check
-  (`headSchemaInconsistent`, `unledgeredTable`) in partial operations; limits re-measured on production-like hardware
-  (§11), including the row-digest cost (§9.1).
+  (`headSchemaInconsistent`, `unledgeredTable`) in partial operations; conservative configurable limits with the
+  operation logs (§11, §11.1) instead of a re-measurement on production-like hardware.
 
 **Other items.**
 
@@ -2054,6 +2096,16 @@ versions unchanged" (§14) holds in every scenario.
   preview, listing, commit and revert run under the operation timeout, so a preview whose planning outlasts the
   default transaction timeout still returns; a Draft that grows past a limit after preview → `blocked` (`tooLarge`),
   not `stale`.
+- AS-76 Defaults and logs: the limits default to 20,000, 2,000 and 100,000, the timeout to 180,000 ms and the attempt
+  cap to 3; an invalid configured value (`many`, `0`, `-1`, `1e5`, `100_000`, `2000abc`, `2.5`) keeps its default with
+  a warning; the effective values are logged at startup, each non-default one with its variable. A listing page, a
+  preview, a commit and a revert each log one entry with the fields of §11.1 (exactly, for an applied commit and
+  revert, a ready preview and a listing page); a commit that a native write made retry logs both attempts; a preview
+  the changed-rows limit stopped logs `tooLarge` and the estimate; a branch without a migration table logs its refused
+  tables; an attempt observer hears every attempt and the escalated ones; a failure logs `error` with its name and
+  code at `warn` and is rethrown, without the plan of an earlier attempt; refused input (a selection, a comment, a
+  listing page size) logs `attempts: 0`; a throwing logger changes nothing for the caller; no entry holds a row value
+  or an error message.
 
 ### 13.8 API revision v2.0 (REQ-001.BR-001)
 
@@ -2173,7 +2225,7 @@ versions unchanged" (§14) holds in every scenario.
   cost assertion on locked rows).
 - **Benchmarks** fail the run on any check and verify every Head and Draft row in SQL: data, `hash`, `schemaHash`,
   formula consistency, `readonly` of rows and tables, no dangling foreign keys, file links and project bytes; at least
-  3 runs per cell on production-like hardware; the estimate is compared with the links and rows written. A scoped
+  3 runs per cell; the estimate is compared with the links and rows written. A scoped
   benchmark adds a changed unrelated table and checks that its versions stay untouched.
 - **Gaps to close in implementation:** JSON Pointer escapes (`~0`, `~1`); applied reverts of swaps and reused ids;
   Head-id fallback after a concurrent rename; races with
@@ -2181,9 +2233,9 @@ versions unchanged" (§14) holds in every scenario.
   a `RowPublishedAt` inside an array and several `RowPublishedAt` fields in one schema (§3.1); scoped reading with
   large foreign-key-connected tables; keyset paging inside a table (§5.2); the Head schema check and repair (§6.10,
   AS-47); exact selectors on required and blocking units (§5.1); post-commit notification (§6.13); the deadline and
-  attempt loop (§8.1); the row-digest cost (§9.1). The PoC tested none of these; it did not build keyset paging,
+  attempt loop (§8.1). The PoC tested none of these; it did not build keyset paging,
   the Head schema check, exact selectors on required and blocking units, post-commit notification, the deadline or
-  the attempt loop, and it did not measure the row-digest cost.
+  the attempt loop, and it did not measure the structure-digest cost.
 
 **PoC evidence** (PoC v2, sandbox of 2 CPU and 4 GB; summary in
 [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md), code on
@@ -2321,7 +2373,14 @@ engine value and keep one spelling per code (§5.10); the transport contract nam
 `changes` namespace also exposes the Draft reads ([draft-reads-v1](draft-reads-v1.spec.md); the PoC's Draft diff,
 1.7).
 
-Scenarios: AS-10, AS-17, AS-19, AS-45, AS-64 reworded; AS-60c and §13.8 (AS-80 – AS-92) added.
+Limits and logs (§9.1, §11, §11.1, §12): the changed-rows, per-row-work and mixed-table-link limits default to 20,000,
+2,000 and 100,000 instead of 100,000, 10,000 and 250,000, with the worst case each keeps; the timeout and the attempt
+cap stay; a setting must be a whole decimal integer within bounds (the reader is shared with the native
+`TRANSACTION_*` settings, which become as strict: `15000ms` or `+15000` now keep the default with a warning); the
+effective settings are logged at startup; every listing page, preview, commit and revert logs one entry (§11.1); the
+structure digest is measured; the release gate takes these instead of a re-measurement on production-like hardware.
+
+Scenarios: AS-10, AS-17, AS-19, AS-45, AS-64 reworded; AS-60c, AS-76 and §13.8 (AS-80 – AS-92) added.
 
 ### Version 1.3 (2026-11-03)
 

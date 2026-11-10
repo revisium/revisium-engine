@@ -23,6 +23,7 @@ import { PARTIAL_CHANGES_COMMAND_HANDLERS } from 'src/features/partial-changes/c
 import { OperationEstimator } from 'src/features/partial-changes/limits/operation-estimator';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { UnitListing } from 'src/features/partial-changes/listing/unit-listing';
+import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
 import { PartialChangesApiService } from 'src/features/partial-changes/partial-changes-api.service';
 import { ChangePlanner } from 'src/features/partial-changes/planning/change-planner';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
@@ -69,6 +70,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     TargetValidator,
     PlanFingerprint,
     ChangePlanner,
+    PartialOperationLog,
     ChangeApplier,
     UnitListing,
     ReportedRowCountsReader,

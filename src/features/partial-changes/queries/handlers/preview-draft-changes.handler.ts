@@ -1,6 +1,10 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import type { MigrationLockedDetails } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import {
+  type OperationTrace,
+  PartialOperationLog,
+} from 'src/features/partial-changes/logging/partial-operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import {
   type ChangePlan,
@@ -45,21 +49,26 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly migrationLock: MigrationLockService,
     private readonly planner: ChangePlanner,
+    private readonly operationLog: PartialOperationLog,
   ) {}
 
   public execute({
     data,
   }: PreviewDraftChangesQuery): Promise<PreviewChangesResult> {
-    const request = previewRequestOf(data);
+    return this.operationLog.track('preview', data.branch, (trace) => {
+      const request = previewRequestOf(data);
 
-    return this.transactionRunner.runPlanning((deadline) =>
-      this.preview(request, deadline),
-    );
+      return this.transactionRunner.runPlanning(
+        (deadline) => this.preview(request, deadline, trace),
+        trace,
+      );
+    });
   }
 
   private async preview(
     request: PreviewRequest,
     deadline: DeadlineHandle,
+    trace: OperationTrace,
   ): Promise<PreviewChangesResult> {
     const compared = await this.planner.readComparedSnapshot(request);
     const migrationBlockers = await this.readMigrationLock(compared.snapshot);
@@ -68,6 +77,7 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
       ...plan,
       blockers: [...migrationBlockers, ...plan.blockers],
     };
+    trace.planned(preview);
 
     return previewResultOf(preview, decidePlanStatus(preview, request));
   }

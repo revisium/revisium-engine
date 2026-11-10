@@ -48,7 +48,7 @@ Each item is delivered by its own pull requests, in this order.
 | `createRevision` locking without scanning readonly rows | Should | Done (#91) |
 | Formulas compiled once per schema | Should | Not started |
 | Set-based file registration | Should | Done (#94) |
-| Limits re-measured on production-like hardware | Gate | Not started |
+| Conservative configurable limits and operation logs, instead of a re-measurement on production-like hardware ([SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration)) | Gate | Done (#183) |
 | Scan run on existing deployments, results reviewed | Gate | Not started |
 
 Acceptance scenarios for every stage: [SPEC §13](specs/partial-changes-v1.spec.md#13-acceptance-scenarios).
@@ -60,7 +60,7 @@ fingerprint, and tests for AS-36, AS-38, AS-39, AS-41 and AS-54.
 Status: not reached. No partial operation is released before the gate holds:
 [ADR-001, Delivery stages](adr/ADR-001-partial-commit-and-revert.md#delivery-stages),
 [SPEC §12](specs/partial-changes-v1.spec.md#12-native-prerequisites-stage-0) (release gate) and
-[SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration) (limits re-measured).
+[SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration) (limits and operation logs).
 
 ### Open questions
 

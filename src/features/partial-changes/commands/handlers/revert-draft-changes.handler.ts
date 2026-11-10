@@ -5,6 +5,7 @@ import {
   RevertDraftChangesCommand,
   type RevertedDraft,
 } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
+import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
 import {
   type ApplicablePlan,
   appliedCountsOf,
@@ -22,13 +23,22 @@ export class RevertDraftChangesHandler implements ICommandHandler<
     private readonly changeApplier: ChangeApplier,
     private readonly draftRevisionTargetApi: DraftRevisionTargetApiService,
     private readonly shareCommands: ShareCommands,
+    private readonly operationLog: PartialOperationLog,
   ) {}
 
   public async execute({
     data,
   }: RevertDraftChangesCommand): Promise<RevertChangesResult> {
-    const result = await this.changeApplier.apply('revert', data, (plan) =>
-      this.revertDraft(plan),
+    const result = await this.operationLog.track(
+      'revert',
+      data.branch,
+      (trace) =>
+        this.changeApplier.apply(
+          'revert',
+          data,
+          (plan) => this.revertDraft(plan),
+          trace,
+        ),
     );
 
     await this.notifyWhenReverted(result);

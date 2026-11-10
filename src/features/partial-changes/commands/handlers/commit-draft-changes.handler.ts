@@ -7,6 +7,7 @@ import {
   type CommittedDraft,
   type RenumberedMigration,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
+import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
 import { validateComment } from 'src/features/partial-changes/selection/selection-validator';
 import {
   type ApplicablePlan,
@@ -25,14 +26,25 @@ export class CommitDraftChangesHandler implements ICommandHandler<
     private readonly changeApplier: ChangeApplier,
     private readonly draftRevisionTargetApi: DraftRevisionTargetApiService,
     private readonly shareCommands: ShareCommands,
+    private readonly operationLog: PartialOperationLog,
   ) {}
 
   public async execute({
     data,
   }: CommitDraftChangesCommand): Promise<CommitChangesResult> {
-    const comment = validateComment(data.comment);
-    const result = await this.changeApplier.apply('commit', data, (plan) =>
-      this.commitDraft(plan, comment),
+    const result = await this.operationLog.track(
+      'commit',
+      data.branch,
+      (trace) => {
+        const comment = validateComment(data.comment);
+
+        return this.changeApplier.apply(
+          'commit',
+          data,
+          (plan) => this.commitDraft(plan, comment),
+          trace,
+        );
+      },
     );
 
     await this.notifyWhenCommitted(result);

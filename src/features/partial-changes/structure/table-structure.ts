@@ -68,6 +68,7 @@ export interface TableStructure {
   readonly pendingHistory: PendingSchemaHistory;
   readonly recorded: boolean;
   readonly differs: boolean;
+  readonly differsBeyondTableId: boolean;
   readonly unchangedLeaves: readonly SchemaLeaf[];
   readonly changedPointers: readonly JsonPointer[];
   readonly changedLeaves: readonly ChangedLeaf[];
@@ -96,13 +97,19 @@ export function analyzeTableStructure(
     pendingPatchPointers(pendingBatches, pendingEffects),
   );
   const changedPointers = leaves.changedPointers();
+  const differsBeyondTableId = structureDiffersBeyondTableId(
+    input,
+    pendingHistory,
+    changedPointers,
+  );
 
   return {
     pendingHistory,
     recorded: headBaselinesOf(input).some((baseline) =>
       isStructureRecorded(baseline, pendingHistory, input.draft.schema, rules),
     ),
-    differs: structureDiffers(input, pendingHistory, changedPointers),
+    differs: structureDiffers(input, differsBeyondTableId),
+    differsBeyondTableId,
     unchangedLeaves: leaves.unchanged,
     changedPointers,
     changedLeaves: leaves.changedLeaves(pendingEffects ?? WITHOUT_PROVENANCE),
@@ -132,12 +139,22 @@ function headBaselinesOf({
 
 function structureDiffers(
   input: TableStructureInput,
-  pendingHistory: PendingSchemaHistory,
-  changedPointers: readonly JsonPointer[],
+  differsBeyondTableId: boolean,
 ): boolean {
   return (
     input.head.tableId !== input.draft.tableId ||
     input.pendingMigrations.length > 0 ||
+    differsBeyondTableId
+  );
+}
+
+function structureDiffersBeyondTableId(
+  input: TableStructureInput,
+  pendingHistory: PendingSchemaHistory,
+  changedPointers: readonly JsonPointer[],
+): boolean {
+  return (
+    input.pendingMigrations.some(({ changeType }) => changeType !== 'rename') ||
     historyDiffersFromHead(pendingHistory) ||
     !schemasEqual(input.head.schema, input.draft.schema) ||
     changedPointers.length > 0

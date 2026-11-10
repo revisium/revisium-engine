@@ -73,3 +73,49 @@ describe('TableStructure: whether the structure differs', () => {
     expect(analyzeStructure(scenario).differs).toBe(true);
   });
 });
+
+describe('TableStructure: whether the structure differs beyond the table id', () => {
+  it.each<{ name: string; scenario: StructureScenario }>([
+    {
+      name: 'the Draft only renamed the table',
+      scenario: { head: products, draft: products, draftTableId: 'goods' },
+    },
+    {
+      name: 'only pending renames are attributed to the table',
+      scenario: {
+        head: products,
+        draft: products,
+        draftTableId: 'goods',
+        pending: [rename('products', 'goods')],
+      },
+    },
+  ])('finds nothing beyond the table id when $name', ({ scenario }) => {
+    expect(analyzeStructure(scenario).differsBeyondTableId).toBe(false);
+  });
+
+  it.each<{ name: string; scenario: StructureScenario }>([
+    {
+      name: 'a pending update restored the Head schema of a renamed table',
+      scenario: {
+        head: products,
+        draft: products,
+        draftTableId: 'goods',
+        pending: [
+          rename('products', 'goods'),
+          pendingUpdate(addField('price', num())),
+          pendingUpdate(removeField('price')),
+        ],
+      },
+    },
+    {
+      name: 'the schemas of a renamed table differ only in a title',
+      scenario: {
+        head: obj({ code: str({ title: 'Code' }) }),
+        draft: obj({ code: str({ title: 'SKU' }) }),
+        draftTableId: 'goods',
+      },
+    },
+  ])('finds a difference beyond the table id when $name', ({ scenario }) => {
+    expect(analyzeStructure(scenario).differsBeyondTableId).toBe(true);
+  });
+});

@@ -13,21 +13,17 @@ export interface ChangedRowPairIds {
   readonly draftVersionId: string | null;
 }
 
+export const ROW_VERSIONS_PAIRED_BY_IDENTITY = raw(
+  `h FULL OUTER JOIN d ON h."createdId" = d."createdId"`,
+);
+
 export function changedRowPairsSql(table: ComparedTable): Sql {
   return sql`
-    WITH ${headAndDraftOnly(table)},
-    h AS (
-      SELECT r.* FROM "Row" r
-      WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM head_only))
-    ),
-    d AS (
-      SELECT r.* FROM "Row" r
-      WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM draft_only))
-    )
+    WITH ${unsharedRowVersionsCtes(table)}
     SELECT coalesce(h."createdId", d."createdId") AS "identity",
            h."versionId" AS "headVersionId",
            d."versionId" AS "draftVersionId"
-    FROM h FULL OUTER JOIN d ON h."createdId" = d."createdId"
+    FROM ${ROW_VERSIONS_PAIRED_BY_IDENTITY}
     WHERE h."createdId" IS NULL
        OR d."createdId" IS NULL
        OR (${rowChangePredicate(table.structure)})
@@ -70,6 +66,15 @@ export function changedRowPairsFromSql(
   `;
 }
 
+// The row versions that one side of the table links and the other does not, as h (Head) and d (Draft).
+export function unsharedRowVersionsCtes(table: ComparedTable): Sql {
+  return sql`
+    ${headAndDraftOnly(table)},
+    h AS (${rowVersionsIn(raw('head_only'))}),
+    d AS (${rowVersionsIn(raw('draft_only'))})
+  `;
+}
+
 export function changedRowCountSql(table: ComparedTable): Sql {
   return sql`
     SELECT count(*)::int AS "count" FROM (${changedRowPairsSql(table)}) pairs
@@ -89,6 +94,13 @@ function headAndDraftOnly({
 function rowKeysOf(versions: Sql): Sql {
   return sql`
     SELECT r."versionId", r."createdId", r."id" FROM "Row" r
+    WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM ${versions}))
+  `;
+}
+
+function rowVersionsIn(versions: Sql): Sql {
+  return sql`
+    SELECT r.* FROM "Row" r
     WHERE r."versionId" = ANY(ARRAY(SELECT "versionId" FROM ${versions}))
   `;
 }

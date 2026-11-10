@@ -41,6 +41,10 @@ const mappers = [TableChangeMapper, RowChangeMapper];
     ...mappers,
     RevisionChangesApiService,
   ],
-  exports: [RevisionChangesApiService],
+  exports: [
+    RevisionChangesApiService,
+    SchemaImpactService,
+    ViewsComparisonService,
+  ],
 })
 export class RevisionChangesModule {}

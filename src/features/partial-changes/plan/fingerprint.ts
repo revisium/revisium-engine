@@ -56,7 +56,7 @@ export function readExpected(
     return 'otherRules';
   }
 
-  return fingerprintOf(body);
+  return fingerprintOf(expected, body);
 }
 
 export function staleChangesOf(
@@ -89,15 +89,11 @@ export function staleChangesOf(
   return changed;
 }
 
-function fingerprintOf(body: string): Fingerprint | undefined {
-  const bytes = Buffer.from(body, 'base64url');
-
-  // Node skips a trailing character and stray bits; only the canonical form is base64url.
-  if (bytes.toString('base64url') !== body) {
-    return undefined;
-  }
-
-  const payload = parsedOf(bytes.toString());
+function fingerprintOf(
+  expected: string,
+  body: string,
+): Fingerprint | undefined {
+  const payload = parsedOf(Buffer.from(body, 'base64url').toString());
 
   if (
     !Array.isArray(payload) ||
@@ -109,8 +105,17 @@ function fingerprintOf(body: string): Fingerprint | undefined {
 
   const [operation, headRevisionId, draftRevisionId, units, content] =
     payload as [string, string, string, string, string];
+  const fingerprint = {
+    operation,
+    headRevisionId,
+    draftRevisionId,
+    units,
+    content,
+  };
 
-  return { operation, headRevisionId, draftRevisionId, units, content };
+  // Only the engine's own encoding reads: the base64url decoder skips a stray last character and stray bits, the UTF-8
+  // decoder replaces invalid bytes, and JSON allows spacing and escapes.
+  return encodeFingerprint(fingerprint) === expected ? fingerprint : undefined;
 }
 
 function parsedOf(text: string): unknown {

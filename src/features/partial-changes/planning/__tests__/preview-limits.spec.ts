@@ -4,6 +4,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
@@ -45,6 +46,21 @@ const PER_ROW_WORK_TOO_LARGE =
 const PRODUCT_LINKS_TOO_LARGE =
   'Assembling products copies up to 4 row links; the limit for one table is 3';
 const missingOrder = { rows: [{ tableId: ORDERS, rowId: 'missing' }] };
+// A limit decides before freshness (SPEC §5.6 step 1), whatever expected is.
+const EXPECTATIONS = [
+  { label: 'without expected', expected: undefined },
+  { label: 'with a fingerprint of other rules', expected: 'pcf3.AA' },
+  {
+    label: 'with a fingerprint of another state',
+    expected: encodeFingerprint({
+      operation: 'commit',
+      headRevisionId: 'previewed head',
+      draftRevisionId: 'previewed draft',
+      units: 'a'.repeat(64),
+      content: 'b'.repeat(64),
+    }),
+  },
+];
 const priceOf = (rowId: string): FieldRef => ({
   tableId: ORDERS,
   rowId,
@@ -232,38 +248,46 @@ describe('previewChanges refused by a limit', () => {
     });
   });
 
-  it('blocks a commit stopped by a limit with planned: false, no required additions and no unmatched selectors (AS-87)', async () => {
-    const draft = await givenTwoEditedOrders();
+  it.each(EXPECTATIONS)(
+    'blocks a commit stopped by a limit with planned: false, no required additions and no unmatched selectors, never stale, $label (AS-87)',
+    async ({ expected }) => {
+      const draft = await givenTwoEditedOrders();
 
-    const result = await draft.commitChanges({
-      selection: { fields: [priceOf('o1'), priceOf('o2')], ...missingOrder },
-    });
+      const result = await draft.commitChanges({
+        selection: { fields: [priceOf('o1'), priceOf('o2')], ...missingOrder },
+        expected,
+      });
 
-    expect(result).toEqual<CommitChangesResult>({
-      status: 'blocked',
-      planned: false,
-      blockers: [{ code: 'tooLarge', message: PER_ROW_WORK_TOO_LARGE }],
-      required: [],
-    });
-  });
+      expect(result).toEqual<CommitChangesResult>({
+        status: 'blocked',
+        planned: false,
+        blockers: [{ code: 'tooLarge', message: PER_ROW_WORK_TOO_LARGE }],
+        required: [],
+      });
+    },
+  );
 
-  it('blocks a revert stopped by a limit with planned: false, no required additions and no unmatched selectors (AS-87)', async () => {
-    const draft = await givenEditedProducts();
+  it.each(EXPECTATIONS)(
+    'blocks a revert stopped by a limit with planned: false, no required additions and no unmatched selectors, never stale, $label (AS-87)',
+    async ({ expected }) => {
+      const draft = await givenEditedProducts();
 
-    const result = await draft.revertChanges({
-      selection: {
-        fields: [titleOfP1],
-        rows: [{ tableId: PRODUCTS, rowId: 'missing' }],
-      },
-    });
+      const result = await draft.revertChanges({
+        selection: {
+          fields: [titleOfP1],
+          rows: [{ tableId: PRODUCTS, rowId: 'missing' }],
+        },
+        expected,
+      });
 
-    expect(result).toEqual<RevertChangesResult>({
-      status: 'blocked',
-      planned: false,
-      blockers: [{ code: 'tooLarge', message: CHANGED_ROWS_TOO_LARGE }],
-      required: [],
-    });
-  });
+      expect(result).toEqual<RevertChangesResult>({
+        status: 'blocked',
+        planned: false,
+        blockers: [{ code: 'tooLarge', message: CHANGED_ROWS_TOO_LARGE }],
+        required: [],
+      });
+    },
+  );
 
   async function givenEditedProducts(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {

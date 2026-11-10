@@ -81,6 +81,22 @@ describe('fingerprint (SPEC §9.1)', () => {
       expected: `pcf2.${withStrayBits(PARTIAL_QUANTUM)}`,
     },
     {
+      malformed: 'a payload with JSON spacing',
+      expected: `pcf2.${base64url('["commit", "h", "d", "u", "c"]')}`,
+    },
+    {
+      malformed: 'a payload with a JSON escape',
+      expected: `pcf2.${base64url('["\\u0063ommit","h","d","u","c"]')}`,
+    },
+    {
+      malformed: 'a payload that is not UTF-8',
+      expected: `pcf2.${Buffer.concat([
+        Buffer.from('["commit","h","d","u","'),
+        Buffer.from([0xff]),
+        Buffer.from('"]'),
+      ]).toString('base64url')}`,
+    },
+    {
       malformed: 'a payload that is not JSON',
       expected: `pcf2.${base64url('[')}`,
     },

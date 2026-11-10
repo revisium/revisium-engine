@@ -7,6 +7,24 @@ export interface NumericSetting {
   minValue: number;
 }
 
+export interface ReadSetting {
+  readonly name: string;
+  readonly value: number;
+  readonly setting: NumericSetting;
+  readonly unit?: string;
+}
+
+// For the startup log: every value, and the variable it came from when it is not the default.
+export function describeSettings(settings: readonly ReadSetting[]): string {
+  return settings
+    .map(({ name, value, setting, unit = '' }) =>
+      value === setting.defaultValue
+        ? `${name}=${value}${unit}`
+        : `${name}=${value}${unit} (from ${setting.envKey})`,
+    )
+    .join(', ');
+}
+
 export function readNumericSetting(
   configService: ConfigService,
   setting: NumericSetting,

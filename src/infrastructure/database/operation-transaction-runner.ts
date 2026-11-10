@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 import { TransactionPrismaClient } from 'src/features/share/types';
@@ -7,6 +7,7 @@ import {
   ProjectBranch,
 } from 'src/infrastructure/database/branch-fence-escalation';
 import {
+  describeSettings,
   NumericSetting,
   readNumericSetting,
 } from 'src/infrastructure/database/numeric-setting';
@@ -43,6 +44,13 @@ const PRISMA_TIMEOUT_GRACE_MS = 30_000;
 
 type AttemptOptions = Omit<TransactionOptions, 'retry'>;
 
+// Hears each attempt as it starts, so a caller can report how many ran and how many held the exclusive fence.
+export interface AttemptObserver {
+  attempted(escalated: boolean): void;
+}
+
+const UNOBSERVED: AttemptObserver = { attempted: () => undefined };
+
 type Operation<T> = (deadline: DeadlineHandle) => Promise<T>;
 
 interface AttemptStart {
@@ -51,7 +59,7 @@ interface AttemptStart {
 }
 
 @Injectable()
-export class OperationTransactionRunner {
+export class OperationTransactionRunner implements OnModuleInit {
   private readonly logger = new Logger(OperationTransactionRunner.name);
 
   private readonly maxAttempts: number;
@@ -77,22 +85,49 @@ export class OperationTransactionRunner {
     );
   }
 
+  onModuleInit() {
+    const settings = describeSettings([
+      { name: 'maxAttempts', value: this.maxAttempts, setting: MAX_ATTEMPTS },
+      {
+        name: 'operationTimeout',
+        value: this.operationTimeoutMs,
+        setting: OPERATION_TIMEOUT_MS,
+        unit: 'ms',
+      },
+    ]);
+
+    this.logger.log(`Partial operation settings: ${settings}`);
+  }
+
   public runWrite<T>(
     branch: ProjectBranch,
     planAndWrite: Operation<T>,
+    observer: AttemptObserver = UNOBSERVED,
   ): Promise<T> {
     return retryOnSerializationFailure(this.writeRetryLimits(), {
-      run: () =>
-        this.runAttempt(
+      run: () => {
+        observer.attempted(false);
+
+        return this.runAttempt(
           TransactionIsolationLevel.Serializable,
           planAndWrite,
           this.unfencedStart(),
-        ),
-      runEscalated: () => this.runEscalatedAttempt(branch, planAndWrite),
+        );
+      },
+      runEscalated: () => {
+        observer.attempted(true);
+
+        return this.runEscalatedAttempt(branch, planAndWrite);
+      },
     });
   }
 
-  public runPlanning<T>(plan: Operation<T>): Promise<T> {
+  public runPlanning<T>(
+    plan: Operation<T>,
+    observer: AttemptObserver = UNOBSERVED,
+  ): Promise<T> {
+    observer.attempted(false);
+
     return this.runAttempt(
       TransactionIsolationLevel.RepeatableRead,
       (deadline) => this.planReadOnly(plan, deadline),

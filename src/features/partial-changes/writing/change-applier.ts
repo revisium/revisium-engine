@@ -5,6 +5,10 @@ import type {
   ApplyChangesInput,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
+import {
+  type OperationTrace,
+  PartialOperationLog,
+} from 'src/features/partial-changes/logging/partial-operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import {
   type ChangePlan,
@@ -50,28 +54,35 @@ export class ChangeApplier {
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly draftWriteAdmission: DraftWriteAdmissionService,
     private readonly planner: ChangePlanner,
+    private readonly operationLog: PartialOperationLog,
   ) {}
 
-  public apply<Applied>(
+  public apply<Applied extends object>(
     operation: ChangeOperation,
     input: ApplyChangesInput,
     writeTarget: TargetWrite<Applied>,
   ): Promise<Applied | UnappliedChanges> {
-    const request = applyRequestOf(operation, input);
+    return this.operationLog.track(operation, input.branch, (trace) => {
+      const request = applyRequestOf(operation, input);
 
-    return this.transactionRunner.runWrite(request.branch, (deadline) =>
-      this.planAndWrite(request, writeTarget, deadline),
-    );
+      return this.transactionRunner.runWrite(
+        request.branch,
+        (deadline) => this.planAndWrite(request, writeTarget, deadline, trace),
+        trace,
+      );
+    });
   }
 
   private async planAndWrite<Applied>(
     request: ApplyRequest,
     writeTarget: TargetWrite<Applied>,
     deadline: DeadlineHandle,
+    trace: OperationTrace,
   ): Promise<Applied | UnappliedChanges> {
     await this.admitDraftWrite(request.branch);
 
     const plan = await this.plan(request, deadline);
+    trace.planned(plan);
     const status = decidePlanStatus(plan, request);
 
     if (status !== 'ready') {

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { nanoid } from 'nanoid';
 import { performance } from 'node:perf_hooks';
 import {
@@ -22,7 +23,10 @@ import {
   OperationDeadline,
 } from 'src/infrastructure/database/operation-deadline';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
-import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
+import {
+  type AttemptObserver,
+  OperationTransactionRunner,
+} from 'src/infrastructure/database/operation-transaction-runner';
 import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
 
 const NATIVE_TRANSACTION_TIMEOUT_MS = 200;
@@ -116,6 +120,34 @@ describe('OperationTransactionRunner', () => {
         [],
       );
     });
+
+    it('tell an attempt observer of every attempt and whether it ran escalated', async () => {
+      const counter = await givenCounter(kit);
+      const observed = observingAttempts();
+
+      await runner.runWrite(
+        branch,
+        conflictingOnFirstAttempts(kit, counter, 2),
+        observed,
+      );
+
+      expect(observed.escalated).toEqual([false, false, true]);
+    });
+
+    it('tell an attempt observer of an attempt that fails', async () => {
+      const counter = await givenCounter(kit);
+      const observed = observingAttempts();
+
+      await expect(
+        runner.runWrite(
+          branch,
+          () => incrementAfterConcurrentIncrement(kit, counter),
+          observed,
+        ),
+      ).rejects.toMatchObject({ code: 'P2034' });
+
+      expect(observed.escalated).toEqual([false, false, true]);
+    });
   });
 
   describe('failures that are not timeouts', () => {
@@ -156,6 +188,14 @@ describe('OperationTransactionRunner', () => {
           runStatementFor(kit, 2 * NATIVE_TRANSACTION_TIMEOUT_MS),
         ),
       ).resolves.toBeUndefined();
+    });
+
+    it('tells an attempt observer of its one attempt', async () => {
+      const observed = observingAttempts();
+
+      await runner.runPlanning(() => Promise.resolve(), observed);
+
+      expect(observed.escalated).toEqual([false]);
     });
 
     it('refuses a write', async () => {
@@ -525,6 +565,20 @@ describe('OperationTransactionRunner', () => {
       expect(write.attempts).toBe(CONFIGURED_MAX_ATTEMPTS);
     });
 
+    it('logs its settings at startup and names the configured ones', () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+
+      try {
+        configuredRunner.onModuleInit();
+
+        expect(log).toHaveBeenCalledWith(
+          `Partial operation settings: maxAttempts=${CONFIGURED_MAX_ATTEMPTS} (from PARTIAL_CHANGES_MAX_ATTEMPTS), operationTimeout=180000ms`,
+        );
+      } finally {
+        log.mockRestore();
+      }
+    });
+
     let configuredKit: DatabaseServiceTestKit;
     let configuredRunner: OperationTransactionRunner;
 
@@ -668,6 +722,17 @@ function countAttempts(attempt: () => Promise<void>) {
   };
 
   return counted;
+}
+
+function observingAttempts(): AttemptObserver & { escalated: boolean[] } {
+  const escalated: boolean[] = [];
+
+  return {
+    escalated,
+    attempted(isEscalated: boolean) {
+      escalated.push(isEscalated);
+    },
+  };
 }
 
 function conflictingOnFirstAttempts(

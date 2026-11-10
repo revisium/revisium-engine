@@ -78,7 +78,7 @@ they come from the clock (§3 step 3), so a later run writes the same entries un
 | Refusal `code` | When | What the caller does |
 | --- | --- | --- |
 | `draftStructureChanged` | The Draft creates, removes or renames a user table; a user table's Draft schema row differs from Head in `data` or in its history (`meta`); or the Draft links a migration table that the Head does not. Those changes were made without a ledger, so no pending entry could explain them. `tableIds`: the tables concerned (Draft id, else Head id, as partial-changes blockers name them), or `revisium_migration_table`. | Commit or revert the changes natively, then run again. |
-| `schemaNotReproducible` | The planned ledger cannot reproduce every Head schema (§3 steps 3–4): a foreign key names a table that does not exist, a Head user table has no schema row, a Head schema fails the current rules (meta-schema, field names, formulas), or no table of a foreign-key cycle survives the split. `tableIds`: the failing tables. | Fix the schemas natively and commit, then run again. For a cycle: a native `updateTable` of one of the named tables stores its whole schema in the form the replay produces (`SchemaTable.getSchema`, `draft/commands/handlers/update-table.handler.ts:94-128`). |
+| `schemaNotReproducible` | The planned ledger cannot reproduce every Head schema (§3 steps 3–4): a foreign key names a table that does not exist, a Head user table has no schema row, a Head table id or schema fails the current rules (table id, meta-schema, `$ref`, field names, formulas), or no table of a foreign-key cycle survives the split. `tableIds`: the failing tables; for a cycle, its tables. | Fix the schemas natively and commit, then run again. For a cycle: a native `updateTable` of one table of each named cycle stores its whole schema in the form the replay produces (`SchemaTable.getSchema`, `draft/commands/handlers/update-table.handler.ts:94-128`). That form also resets every `default` of the table to `''`, `0` or `false`, so the operator checks the defaults first; another remedy is to remove one foreign key of the cycle. |
 
 Errors as the partial operations:
 
@@ -108,23 +108,27 @@ exclusive holder (partial-changes §8.4). The attempt cap and timeout are those 
    each of these as a structure change; a schema changed and changed back still has a longer history. Row changes,
    views and shared schemas are allowed and kept.
 3. **Plan the entries** for the Head user tables:
-   - A Head user table without a schema row → `refused` with `schemaNotReproducible`.
+   - *Validate first.* A Head user table without a schema row, or whose id or Head schema fails the checks the replay
+     makes on an `init` (table id rules; `NativeSchemaRules.ensureValidSchema`: meta-schema and formulas; field names),
+     → `refused` with `schemaNotReproducible`. The toolkit calls below throw on such schemas (an unknown `$ref`, a
+     `required` name without a property); any error they raise for a table also refuses it this way.
    - *References* of a table: the foreign-key targets of its Head schema as the replay reads them
-     (`NativeSchemaRules.foreignKeysOf`: nested objects and array `items` included), minus the table itself. A target
-     that is not a Head user table does not hold the order back; step 4 refuses it.
-   - *Order.* Repeat until every table is emitted:
-     1. If some table has every reference emitted, emit the one with the smallest id (code-point order) as an `init`
-        with its Head schema row `data` as `schema`.
-     2. Otherwise the remaining tables wait on each other through cycles. Among them, take the smallest id whose Head
-        schema survives the split below, and emit its `init` with `foreignKey` removed from every subschema that
-        references a table not emitted yet. If no remaining table survives → `refused` with `schemaNotReproducible`
-        and the remaining tables.
+     (`NativeSchemaRules.foreignKeysOf`: nested objects and array `items` included), minus the table itself and minus
+     targets that are not Head user tables. A missing target stays in the schema, and step 4 refuses the table.
+   - *Order.* Repeat until every table is emitted; *remaining* means not emitted yet:
+     1. If some remaining table has every reference emitted, emit the one with the smallest id (code-point order) as an
+        `init` with its Head schema row `data` as `schema`.
+     2. Otherwise every remaining table waits on a remaining table, so some lie on a cycle: they reach themselves
+        through references to remaining tables. Among those cycle members, take the smallest id whose Head schema
+        survives the split below, and emit its `init` with `foreignKey` removed from every subschema that references a
+        remaining table. If no cycle member survives → `refused` with `schemaNotReproducible` and the cycle members.
    - *Split.* The `update` for a table emitted by rule 2 holds one `replace` patch per stripped subschema, at its JSON
      Pointer (for example `/properties/tags/items`), with the Head subschema as `value`, patches in code-point order of
      the pointers. A table survives the split when `NativeSchemaRules.patchedSchema(initSchema, patches)` equals its
-     Head schema (`schemasEqual`). That call rebuilds the whole schema (`SchemaTable.getSchema`): it sorts `required`
-     and drops `readOnly: false`, `deprecated: false` and `description: ""`, which `createTable` stores as given. So a
-     schema that was created through the API and never updated natively may not survive.
+     Head schema (`schemasEqual`). That call rebuilds the whole schema (`SchemaTable.getSchema`): it sorts `required`,
+     drops `readOnly: false`, `deprecated: false` and `description: ""`, and resets every `default` to `''`, `0` or
+     `false`, while `createTable` stores the schema as given. So a schema with a non-empty default, or one created
+     through the API and never updated natively, may not survive.
    - All `update` entries follow every `init`, in table-id order.
    - Shapes as native writers produce them (`share/schema/table-migrations-schema.ts`):
      `init` = `{ changeType: 'init', id, tableId, hash, schema }` with `hash = objectHash(schema)`;
@@ -144,6 +148,7 @@ exclusive holder (partial-changes §8.4). The attempt cap and timeout are those 
    | `a → b`, `b → c`, `c → a` | `init a` (without `b`), `init c`, `init b`, `update a` |
    | `a → b`, `b → a`, `b → c`, `c → b` | `init a` (without `b`), `init b` (without `c`), `init c`, `update a`, `update b` |
    | `a → b`, `b → a`, `a → z` | `init z`, `init a` (without `b`, with `z`), `init b`, `update a` |
+   | `a → c`, `c → d`, `d → c` | `init c` (without `d`), `init a`, `init d`, `update c` |
    | `a → b`, `b → a`, `a` does not survive the split | `init b` (without `a`), `init a`, `update b` |
 
 4. **Verify** by the ledger replay (`share/ledger-replay`): replaying the planned entries from an empty state must give
@@ -245,13 +250,14 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 - BF-06 The Draft creates, removes or renames a table, changes a schema, changes a schema and changes it back, or links
   a migration table → `refused` with `draftStructureChanged` and the tables; nothing is written.
 - BF-07 A Head schema whose foreign key names a missing table, a Head user table without a schema row, or a Head
-  schema the current rules reject (an invalid field name or formula) → `refused` with `schemaNotReproducible` and the
-  table; nothing is written.
+  schema the current rules reject (an invalid field name or formula, a `required` name without a property, an unknown
+  `$ref`) → `refused` with `schemaNotReproducible` and the table, never an uncaught error; nothing is written.
 - BF-08 An active async migration on the branch → `MigrationLockedException`, for a run and for a dry run; nothing is
   written.
-- BF-09 A Draft row writer racing the backfill: both succeed, the row change is in the new Draft and not in the new
-  Head, and the Head ledger is as in BF-01. A `createTable` racing the backfill: either the backfill is `refused`
-  (`draftStructureChanged`), or it is `backfilled` and the new Draft's ledger records the table's `init`.
+- BF-09 A Draft writer racing the backfill, with the result of one order. Writer first: a row change is carried into
+  the new Draft and not into the new Head, and the Head ledger is as in BF-01; a `createTable` makes the backfill
+  `refused` (`draftStructureChanged`). Backfill first: the writer fails as it does after a native commit, because its
+  revision is no longer the Draft.
 - BF-10 A failure injected after the writes → nothing persists and no endpoint is notified.
 - BF-11 A fresh Head-synced replica (`src/__tests__/fixtures/ledger-replicas.ts`) after the backfill reproduces the Head
   schemas and stored ledger, including a split cycle.
@@ -262,11 +268,12 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
   `backfilled`; a branch created from the new Head → `notNeeded`.
 - BF-14 Wrong input types and a `null` `dryRun` / `comment` are handled as §2 says, before any transaction; without
   `comment` the commit's comment is `Backfill the schema ledger`.
-- BF-15 The cycles of the examples in §3 step 3 (three tables, two overlapping cycles, a cycle member with an ordinary
-  reference) give the listed entries, and the replay reproduces every Head schema.
-- BF-16 In a cycle `a ↔ b` where `a`'s Head schema has `required` out of order, `b` is split instead; when neither
-  survives the split → `refused` with `schemaNotReproducible` naming both; after a native `updateTable` of `a` and a
-  native commit, a run → `backfilled`.
+- BF-15 The examples in §3 step 3 (three tables, two overlapping cycles, a cycle member with an ordinary reference, a
+  table that references a cycle without being on it) give the listed entries, and the replay reproduces every Head
+  schema.
+- BF-16 In a cycle `a ↔ b` where `a`'s Head schema has `required` out of order or a non-empty `default`, `b` is split
+  instead; when neither survives the split → `refused` with `schemaNotReproducible` naming both, and a table that only
+  references the cycle is not named; after a native `updateTable` of `a` and a native commit, a run → `backfilled`.
 - BF-17 A Head without user tables → `backfilled` with `entries: []`; a later native `createTable` records its `init`.
 - BF-18 A Head row whose `schemaHash` differs from its table's schema hash: after the backfill the scan reports
   `rowSchemaHashMismatch` with `unknownHash` for the table (role `head`), and a partial commit of a change in that table

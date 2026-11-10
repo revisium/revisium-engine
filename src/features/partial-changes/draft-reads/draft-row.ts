@@ -10,10 +10,11 @@ import { differingColumnsOf } from 'src/features/partial-changes/catalogue/row-d
 import type { RowColumn } from 'src/features/partial-changes/catalogue/unit';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
+import type { RowRename } from 'src/features/partial-changes/draft-reads/id-exchanges';
 import type {
+  PageRenames,
   RenamedRow,
-  RowRenames,
-} from 'src/features/partial-changes/draft-reads/row-renames';
+} from 'src/features/partial-changes/draft-reads/page-renames';
 import { tableIdsOf } from 'src/features/partial-changes/draft-reads/table-ids';
 import { pointerOfNativeFieldPath } from 'src/features/partial-changes/draft-reads/native-field-path';
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
@@ -67,7 +68,7 @@ const COMPUTED = { state: 'computed' } as const;
 export function draftRowItemOf(
   entry: DraftRowEntry,
   catalogue: DraftCatalogue,
-  renames: RowRenames,
+  renames: PageRenames,
 ): DraftRowItem {
   return new DraftRow(entry, catalogue, renames).item();
 }
@@ -78,7 +79,7 @@ class DraftRow {
   constructor(
     private readonly entry: DraftRowEntry,
     private readonly catalogue: DraftCatalogue,
-    private readonly renames: RowRenames,
+    private readonly renames: PageRenames,
   ) {
     this.row = addressedRowOf(entry);
   }
@@ -90,13 +91,15 @@ class DraftRow {
       return this.refusedItem(refusal);
     }
 
-    return this.withIdLinks({
-      ...this.ids(),
-      changeType: this.entry.pair.changeType,
-      fields: this.fields((pointer) => this.fieldSelectionAt(pointer)),
-      columns: this.columns((column) => this.columnSelectionOf(column)),
-      selection: this.selection(),
-    });
+    return this.withIdExchange(
+      this.withIdTakeover({
+        ...this.ids(),
+        changeType: this.entry.pair.changeType,
+        fields: this.fields((pointer) => this.fieldSelectionAt(pointer)),
+        columns: this.columns((column) => this.columnSelectionOf(column)),
+        selection: this.selection(),
+      }),
+    );
   }
 
   private refusedItem({ code }: RefusedTable): DraftRowItem {
@@ -111,12 +114,24 @@ class DraftRow {
     };
   }
 
-  private withIdLinks(item: DraftRowItem): DraftRowItem {
+  private withIdTakeover(item: DraftRowItem): DraftRowItem {
     const idTakeover = this.idTakeover();
-    const idExchange = this.idExchange();
-    const linked = idTakeover ? { ...item, idTakeover } : item;
 
-    return idExchange ? { ...linked, idExchange } : linked;
+    if (!idTakeover) {
+      return item;
+    }
+
+    return { ...item, idTakeover };
+  }
+
+  private withIdExchange(item: DraftRowItem): DraftRowItem {
+    const idExchange = this.idExchange();
+
+    if (!idExchange) {
+      return item;
+    }
+
+    return { ...item, idExchange };
   }
 
   // A rename into the id of a deleted row: the two items share the row id, so both find the deletion and the rename.
@@ -150,19 +165,24 @@ class DraftRow {
     }
 
     return {
-      renames: chain.renames.map((renamed) => {
-        const rename = this.renameUnitOf(renamed);
-
-        if (!rename) {
-          throw new Error(
-            `${this.address()} exchanges ids with ${renamed.rowId}, which has no rename unit`,
-          );
-        }
-
-        return rename;
-      }),
+      renames: chain.renames.map((rename) => this.exchangedRenameOf(rename)),
       termination: chain.termination,
     };
+  }
+
+  private exchangedRenameOf({ draftRowId }: RowRename): UnitRef {
+    const rename = this.renameUnitOf({
+      tableIdentity: this.entry.table.identity,
+      rowId: draftRowId,
+    });
+
+    if (!rename) {
+      throw new Error(
+        `${this.address()} exchanges ids with ${draftRowId}, which has no rename unit`,
+      );
+    }
+
+    return rename;
   }
 
   private followedRenameAt(pointer: JsonPointer): FollowedUnit | undefined {
@@ -249,7 +269,11 @@ class DraftRow {
         };
         const follows = this.followedRenameAt(pointer);
 
-        return follows ? { ...change, follows } : change;
+        if (!follows) {
+          return change;
+        }
+
+        return { ...change, follows };
       },
     );
   }

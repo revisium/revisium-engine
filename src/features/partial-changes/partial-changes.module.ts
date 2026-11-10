@@ -13,7 +13,7 @@ import { DraftTablePages } from 'src/features/partial-changes/draft-reads/draft-
 import { DraftTablesReader } from 'src/features/partial-changes/draft-reads/draft-tables';
 import { ReportedRowCountsReader } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 import { ReportedRowPairsReader } from 'src/features/partial-changes/draft-reads/reported-row-pairs-reader';
-import { RowRenamesReader } from 'src/features/partial-changes/draft-reads/row-renames';
+import { PageRenamesReader } from 'src/features/partial-changes/draft-reads/page-renames';
 import type { TargetCheck } from 'src/features/partial-changes/closure/check-context';
 import {
   TARGET_CHECKS,
@@ -76,7 +76,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     DraftTableItems,
     DraftTablePages,
     ReportedRowPairsReader,
-    RowRenamesReader,
+    PageRenamesReader,
     DraftRowItems,
     DraftRowPages,
     DraftChangesSummaryReader,

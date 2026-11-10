@@ -1,9 +1,11 @@
 import { sql, type Sql } from 'src/engine-prisma-types';
 import type { ComparedTable } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
-// A row of a compared table with its versions, looked up by row id and identity.
-export interface RenamedRowVersions {
+// A renamed row of a compared table: the Head id it left, the Draft id it took and its two versions.
+export interface RenamedRowIds {
   readonly identity: string;
+  readonly headRowId: string;
+  readonly draftRowId: string;
   readonly headVersionId: string;
   readonly draftVersionId: string;
 }
@@ -24,8 +26,8 @@ export function renamedRowsSql(
 ): Sql {
   return sql`
     SELECT d."createdId" AS "identity",
-           h."versionId" AS "headVersionId",
-           d."versionId" AS "draftVersionId"
+           h."id" AS "headRowId", d."id" AS "draftRowId",
+           h."versionId" AS "headVersionId", d."versionId" AS "draftVersionId"
     FROM "Row" d
     JOIN "_RowToTable" dl ON dl."A" = d."versionId" AND dl."B" = ${draftVersionId}
     JOIN "Row" h ON h."createdId" = d."createdId" AND h."id" <> d."id"

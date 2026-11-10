@@ -8,7 +8,7 @@ import {
   draftRowItemOf,
 } from 'src/features/partial-changes/draft-reads/draft-row';
 import type { DraftTable } from 'src/features/partial-changes/draft-reads/draft-tables';
-import { RowRenamesReader } from 'src/features/partial-changes/draft-reads/row-renames';
+import { PageRenamesReader } from 'src/features/partial-changes/draft-reads/page-renames';
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
 import type { HeadSchemaCheck } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { DraftEdge } from 'src/features/partial-changes/queries/impl/draft-reads';
@@ -45,7 +45,7 @@ export class DraftRowItems {
     private readonly snapshotReader: ChangesSnapshotReader,
     private readonly rowDiff: RowDiffService,
     private readonly plugins: PluginService,
-    private readonly renamesReader: RowRenamesReader,
+    private readonly renamesReader: PageRenamesReader,
   ) {}
 
   public async edgesOf(

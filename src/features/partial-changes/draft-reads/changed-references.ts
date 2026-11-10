@@ -134,12 +134,18 @@ export class ChangedReferences {
     );
 
     return new Map(
-      references.map((reference) => [
-        JsonPointer.parse(reference.legacyPath).toString(),
-        reference,
-      ]),
+      references.map((reference) => [pointerOf(reference), reference]),
     );
   }
+}
+
+// The references name the root of a table whose schema is one string `/`, where a JSON Pointer has ''.
+function pointerOf({ legacyPath }: ForeignKeyReference): string {
+  if (legacyPath === '/') {
+    return JsonPointer.root.toString();
+  }
+
+  return JsonPointer.parse(legacyPath).toString();
 }
 
 export function referenceSiteKeyOf({

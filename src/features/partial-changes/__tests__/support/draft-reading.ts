@@ -285,6 +285,21 @@ export async function draftReadQueriesDuring<T>(
   }
 }
 
+// The raw statements a read runs, with their values.
+export async function rawQueriesDuring<T>(
+  kit: PartialChangesTestKit,
+  read: () => Promise<T>,
+): Promise<{ result: T; queries: readonly Sql[] }> {
+  const queries: Sql[] = [];
+  const spies = recordingRawQueries(kit.transactionService, queries);
+
+  try {
+    return { result: await read(), queries };
+  } finally {
+    spies.forEach((spy) => spy.mockRestore());
+  }
+}
+
 function unitsOfRowSelection(selection: RowSelection): UnitRef[] {
   if (selection.state === 'goesWith') {
     return [selection.unit];

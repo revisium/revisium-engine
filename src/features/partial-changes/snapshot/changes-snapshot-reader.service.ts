@@ -239,11 +239,11 @@ export class ChangesSnapshotReader {
     }));
   }
 
-  private async readRowVersions(
-    versionIds: string[],
+  public async readRowVersions(
+    versionIds: readonly string[],
   ): Promise<ReadonlyMap<string, Row>> {
     const rows = await this.transaction.$queryRaw<Row[]>(sql`
-      SELECT * FROM "Row" WHERE "versionId" = ANY(${versionIds}::text[])
+      SELECT * FROM "Row" WHERE "versionId" = ANY(${[...versionIds]}::text[])
     `);
 
     return new Map(rows.map((row) => [row.versionId, row]));

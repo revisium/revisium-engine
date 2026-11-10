@@ -7,7 +7,7 @@ import type {
   DraftTables,
 } from 'src/features/partial-changes/draft-reads/draft-tables';
 import type { ReportedRowCounts } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
-import type { TableCatalogue } from 'src/features/partial-changes/draft-reads/table-catalogue';
+import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
 import type { DraftEdge } from 'src/features/partial-changes/queries/impl/draft-reads';
 import type {
   DraftTableItem,
@@ -86,7 +86,7 @@ export class DraftTableItems {
 
   private viewsChangesOf(
     { pair }: DraftTable,
-    catalogue: TableCatalogue,
+    catalogue: DraftCatalogue,
   ): ViewsChangeDetail {
     const views = catalogue.viewsRowsOf(pair);
 
@@ -100,7 +100,7 @@ export class DraftTableItems {
 export function tableSelectionOf(
   table: DraftTable,
   counts: ReportedRowCounts,
-  catalogue: TableCatalogue,
+  catalogue: DraftCatalogue,
 ): TableSelection {
   const refusal = catalogue.refusalOf(table.pair);
 
@@ -136,7 +136,7 @@ export function tableSelectionOf(
 export function tableDataRowsOf(
   table: DraftTable,
   counts: ReportedRowCounts,
-  catalogue: TableCatalogue,
+  catalogue: DraftCatalogue,
 ): number {
   if (catalogue.refusalOf(table.pair)) {
     return 0;
@@ -157,7 +157,7 @@ function tableDataOf(
   return { selector: { tableData: [pair.draft.id] }, rows: rowsWithUnits };
 }
 
-function tableIdsOf(
+export function tableIdsOf(
   pair: TablePair,
 ): Pick<DraftTableItem, 'tableId' | 'previousTableId'> {
   const tableId = publicTableIdOf(pair);

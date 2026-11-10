@@ -11,6 +11,7 @@ import type {
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { DraftChangesSummary } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
+import type { DraftRowPage } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTablePage } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
@@ -18,6 +19,7 @@ import type { Selection } from 'src/features/partial-changes/selection/selection
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type {
   RevisionChanges,
+  RowChange,
   TableChange,
 } from 'src/features/revision-changes/types';
 import {
@@ -38,6 +40,8 @@ import { previewChanges, type PreviewOptions } from './change-preview';
 import { revertChanges, type RevertOptions } from './change-reverting';
 import { type ClosureView, readClosedDependencies } from './dependency-closing';
 import {
+  type DraftRowOptions,
+  type DraftRowPaging,
   type DraftSummaryOptions,
   type DraftTableOptions,
   type DraftTablePaging,
@@ -45,8 +49,11 @@ import {
   type NativeComparison,
   type NativeTableFilters,
   readDraftChangesSummary,
+  readDraftRowChanges,
   readDraftTableChanges,
+  readEveryDraftRowPage,
   readEveryDraftTablePage,
+  readNativeRowChanges,
   readNativeSummary,
   readNativeTableChanges,
   type TableLinkSets,
@@ -182,6 +189,16 @@ export class ChangesScenario extends BranchScenario {
     return readEveryDraftTablePage(this.kit, this.branch, paging);
   }
 
+  public readDraftRowChanges(options: DraftRowOptions): Promise<DraftRowPage> {
+    return readDraftRowChanges(this.kit, this.branch, options);
+  }
+
+  public readEveryDraftRowPage(
+    paging: DraftRowPaging,
+  ): Promise<DraftRowPage[]> {
+    return readEveryDraftRowPage(this.kit, this.branch, paging);
+  }
+
   public readDraftChangesSummary(
     options: DraftSummaryOptions = {},
   ): Promise<DraftChangesSummary> {
@@ -196,6 +213,10 @@ export class ChangesScenario extends BranchScenario {
       await this.nativeComparison(),
       filters,
     );
+  }
+
+  public async readNativeRowChanges(): Promise<RowChange[]> {
+    return readNativeRowChanges(this.kit, await this.nativeComparison());
   }
 
   public async readNativeSummary(): Promise<RevisionChanges> {

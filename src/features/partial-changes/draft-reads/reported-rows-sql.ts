@@ -29,6 +29,26 @@ export interface OneSidedRows {
 
 export type TableRows = ComparedRows | OneSidedRows;
 
+export interface ReportedRowPair {
+  readonly identity: string;
+  readonly rowId: string;
+  readonly headVersionId: string | null;
+  readonly draftVersionId: string | null;
+  readonly changeType: ChangeType;
+  readonly yieldsUnit: boolean;
+}
+
+export interface ReportedRowPairsPage {
+  readonly pairs: readonly ReportedRowPair[];
+  readonly hasMore: boolean;
+}
+
+// The rows after a row id (or from the first), up to a limit of items, completed with the items of the last row id.
+export interface RowRange {
+  readonly afterRowId?: string;
+  readonly limit: number;
+}
+
 const ONE_SIDED = raw(`(h."versionId" IS NULL OR d."versionId" IS NULL)`);
 
 const IDS_DIFFER = raw(`h."id" <> d."id"`);
@@ -36,6 +56,41 @@ const IDS_DIFFER = raw(`h."id" <> d."id"`);
 const PAIR_ON_ONE_SIDE = raw(
   `("headVersionId" IS NULL OR "draftVersionId" IS NULL)`,
 );
+
+const HEAD_ONLY_PAIR_FIRST = raw(`p."draftVersionId" IS NOT NULL`);
+
+const PAIR_JSON = raw(`json_build_object(
+  'identity', p."identity",
+  'rowId', p."rowId",
+  'headVersionId', p."headVersionId",
+  'draftVersionId', p."draftVersionId",
+  'changeType', p."changeType",
+  'yieldsUnit', p."yieldsUnit"
+)`);
+
+// Of two items with one row id, the row that exists only in Head comes first.
+export function reportedRowPairsPageSql(
+  rows: TableRows,
+  { afterRowId, limit }: RowRange,
+): Sql {
+  return sql`
+    WITH ${reportedPairsCtes(rows)},
+    page AS (
+      SELECT * FROM pairs WHERE ${rowsAfter(afterRowId)}
+      ORDER BY "rowId" COLLATE "C"
+      FETCH FIRST ${limit} ROWS WITH TIES
+    )
+    SELECT
+      (
+        SELECT coalesce(json_agg(${PAIR_JSON} ORDER BY p."rowId" COLLATE "C", ${HEAD_ONLY_PAIR_FIRST}), '[]')
+        FROM page p
+      ) AS "pairs",
+      EXISTS (
+        SELECT 1 FROM pairs
+        WHERE "rowId" COLLATE "C" > (SELECT max("rowId" COLLATE "C") FROM page)
+      ) AS "hasMore"
+  `;
+}
 
 export function reportedRowCountsSql(rows: TableRows): Sql {
   if (rows.kind === 'oneSided') {
@@ -79,13 +134,22 @@ function rowsWithUnitsCount(): Sql {
   )::int`;
 }
 
+function reportedPairsCtes(rows: TableRows): Sql {
+  if (rows.kind === 'compared') {
+    return comparedPairsCtes(rows.table);
+  }
+
+  return oneSidedPairsCte(rows);
+}
+
 function comparedPairsCtes(table: ComparedTable): Sql {
   const { structure } = table;
 
   return sql`
     ${unsharedRowVersionsCtes(table)},
     pairs AS (
-      SELECT coalesce(d."id", h."id") AS "rowId",
+      SELECT coalesce(h."createdId", d."createdId") AS "identity",
+             coalesce(d."id", h."id") AS "rowId",
              h."versionId" AS "headVersionId", d."versionId" AS "draftVersionId",
              ${changeTypeOf(structure)} AS "changeType",
              (${ONE_SIDED} OR ${rowChangePredicate(structure)}) AS "yieldsUnit"
@@ -93,6 +157,48 @@ function comparedPairsCtes(table: ComparedTable): Sql {
       WHERE ${ONE_SIDED} OR ${anyDiffers(reportedColumnsOf(structure))}
     )
   `;
+}
+
+function oneSidedPairsCte({ side, tableVersionId }: OneSidedRows): Sql {
+  return sql`
+    pairs AS (
+      SELECT r."createdId" AS "identity", r."id" AS "rowId",
+             ${oneSidedVersionColumns(side)},
+             ${oneSidedChangeType(side)} AS "changeType",
+             FALSE AS "yieldsUnit"
+      FROM "_RowToTable" link
+      JOIN "Row" r ON r."versionId" = link."A"
+      WHERE link."B" = ${tableVersionId}
+    )
+  `;
+}
+
+function oneSidedVersionColumns(side: RevisionSide): Sql {
+  if (side === 'head') {
+    return raw(
+      `r."versionId" AS "headVersionId", NULL::text AS "draftVersionId"`,
+    );
+  }
+
+  return raw(
+    `NULL::text AS "headVersionId", r."versionId" AS "draftVersionId"`,
+  );
+}
+
+function oneSidedChangeType(side: RevisionSide): Sql {
+  if (side === 'head') {
+    return sql`${ChangeType.Removed}::text`;
+  }
+
+  return sql`${ChangeType.Added}::text`;
+}
+
+function rowsAfter(rowId: string | undefined): Sql {
+  if (rowId === undefined) {
+    return sql`TRUE`;
+  }
+
+  return sql`"rowId" COLLATE "C" > ${rowId}`;
 }
 
 function changeTypeOf(structure: TableStructure): Sql {

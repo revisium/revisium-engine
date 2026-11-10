@@ -6,6 +6,11 @@ import type {
   DraftChangesSummaryInput,
 } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import type {
+  DraftRowChangesInput,
+  DraftRowItem,
+  DraftRowPage,
+} from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import type {
   DraftTableChangesInput,
   DraftTableItem,
   DraftTablePage,
@@ -17,6 +22,7 @@ import { GetTableChangesHandler } from 'src/features/revision-changes/queries/ha
 import { RevisionChangesApiService } from 'src/features/revision-changes/revision-changes-api.service';
 import type {
   RevisionChanges,
+  RowChange,
   TableChange,
   TableChangesFilters,
 } from 'src/features/revision-changes/types';
@@ -25,6 +31,8 @@ import type { RevisionSide } from './snapshot-reading';
 
 export type DraftTableOptions = Omit<DraftTableChangesInput, 'branch'>;
 export type DraftTablePaging = Omit<DraftTableOptions, 'after'>;
+export type DraftRowOptions = Omit<DraftRowChangesInput, 'branch'>;
+export type DraftRowPaging = Omit<DraftRowOptions, 'after'>;
 export type DraftSummaryOptions = Omit<DraftChangesSummaryInput, 'branch'>;
 export type NativeTableFilters = Pick<
   TableChangesFilters,
@@ -68,6 +76,41 @@ export function readDraftTableChanges(
   options: DraftTableOptions,
 ): Promise<DraftTablePage> {
   return kit.partialChangesApi.draftTableChanges({ ...options, branch });
+}
+
+export function readDraftRowChanges(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  options: DraftRowOptions,
+): Promise<DraftRowPage> {
+  return kit.partialChangesApi.draftRowChanges({ ...options, branch });
+}
+
+export async function readEveryDraftRowPage(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  paging: DraftRowPaging,
+): Promise<DraftRowPage[]> {
+  const pages: DraftRowPage[] = [];
+  let after: string | null = null;
+
+  for (let index = 0; index < MAX_PAGES; index++) {
+    const page = await readDraftRowChanges(kit, branch, { ...paging, after });
+
+    pages.push(page);
+
+    if (!page.pageInfo.hasNextPage) {
+      return pages;
+    }
+
+    after = page.pageInfo.endCursor;
+  }
+
+  throw new Error(`The Draft rows did not end within ${MAX_PAGES} pages`);
+}
+
+export function rowItemsOf(pages: readonly DraftRowPage[]): DraftRowItem[] {
+  return pages.flatMap(({ edges }) => edges.map(({ node }) => node));
 }
 
 export function readDraftChangesSummary(
@@ -118,6 +161,17 @@ export async function readNativeTableChanges(
   const page = await kit.module
     .get(RevisionChangesApiService)
     .tableChanges({ ...comparison, filters, first: NATIVE_PAGE_SIZE });
+
+  return page.edges.map(({ node }) => node);
+}
+
+export async function readNativeRowChanges(
+  kit: PartialChangesTestKit,
+  comparison: NativeComparison,
+): Promise<RowChange[]> {
+  const page = await kit.module
+    .get(RevisionChangesApiService)
+    .rowChanges({ ...comparison, first: NATIVE_PAGE_SIZE });
 
   return page.edges.map(({ node }) => node);
 }

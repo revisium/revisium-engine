@@ -9,7 +9,7 @@ import {
   ReportedRowCountsReader,
 } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 import type { TableRows } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
-import { TableCatalogue } from 'src/features/partial-changes/draft-reads/table-catalogue';
+import { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
 import {
   hasChangeTypeAmong,
   hasIdContaining,
@@ -61,7 +61,7 @@ export class DraftTablesReader {
 
     return new DraftTables(
       compared,
-      new TableCatalogue(compared),
+      DraftCatalogue.tableLevel(compared),
       this.countsReader,
     );
   }
@@ -75,7 +75,7 @@ export class DraftTables {
 
   constructor(
     public readonly compared: ComparedSnapshot,
-    public readonly catalogue: TableCatalogue,
+    public readonly catalogue: DraftCatalogue,
     private readonly countsReader: ReportedRowCountsReader,
   ) {
     this.listed = listedTablesOf(compared);

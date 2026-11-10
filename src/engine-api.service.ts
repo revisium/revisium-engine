@@ -397,6 +397,12 @@ export class EngineApiService {
     return this.migrationApi.repairSchemaLedger(...args);
   }
 
+  backfillSchemaLedger(
+    ...args: Parameters<MigrationApiService['backfillSchemaLedger']>
+  ) {
+    return this.migrationApi.backfillSchemaLedger(...args);
+  }
+
   restoreProjectFileBytes(
     ...args: Parameters<FileUsageApiService['restoreProjectFileBytes']>
   ) {

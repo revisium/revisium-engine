@@ -189,7 +189,7 @@ export type {
   TableViewsData,
 } from './features/views/types';
 
-// Schema Ledger Scan and Repair — code lists
+// Schema Ledger Scan, Repair and Backfill — code lists
 export {
   DAMAGE_SHAPES,
   DAMAGED_TABLE_REPAIRS,
@@ -202,6 +202,10 @@ export {
 } from './features/migration/queries/impl/scan-schema-ledger.query';
 export { REPAIR_OUTCOMES } from './features/migration/queries/impl/plan-schema-ledger-repair.query';
 export { TABLE_REPAIR_OUTCOMES } from './features/migration/commands/impl/repair-schema-ledger.command';
+export {
+  BACKFILL_REFUSAL_CODES,
+  BACKFILL_STATUSES,
+} from './features/migration/commands/impl/backfill-schema-ledger.command';
 
 // Draft Command Data Types
 export type { ApiCreateRevisionCommandData } from './features/draft/commands/impl/api-create-revision.command';

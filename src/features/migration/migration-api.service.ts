@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { AbortMigrationCommand } from 'src/features/migration/commands/impl/abort-migration.command';
 import {
+  BackfillSchemaLedgerCommand,
+  type BackfillSchemaLedgerData,
+  type SchemaLedgerBackfill,
+} from 'src/features/migration/commands/impl/backfill-schema-ledger.command';
+import {
   RepairSchemaLedgerCommand,
   type RepairSchemaLedgerData,
   type SchemaLedgerRepair,
@@ -61,5 +66,11 @@ export class MigrationApiService {
     data: RepairSchemaLedgerData,
   ): Promise<SchemaLedgerRepair> {
     return this.commandBus.execute(new RepairSchemaLedgerCommand(data));
+  }
+
+  backfillSchemaLedger(
+    data: BackfillSchemaLedgerData,
+  ): Promise<SchemaLedgerBackfill> {
+    return this.commandBus.execute(new BackfillSchemaLedgerCommand(data));
   }
 }

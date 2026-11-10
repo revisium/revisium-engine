@@ -154,7 +154,8 @@ exclusive holder (partial-changes §8.4). The attempt cap and timeout are those 
 4. **Verify** by the ledger replay (`share/ledger-replay`): replaying the planned entries from an empty state must give
    every Head user table an intact slot that reproduces its Head schema row (`checkTableSlot` → `reproduces`). The
    replay applies the current rules (meta-schema, field names, formulas, foreign-key targets). Otherwise → `refused`
-   with `schemaNotReproducible` and the failing tables.
+   with `schemaNotReproducible` and the failing tables. An entry that fails `validateTableMigrationsSchema` refuses its
+   table the same way.
 5. If `dryRun` → `planned`; nothing is written.
 6. **Write** in the same attempt, with existing primitives and no change to the writer:
    1. Create the migration table in the Draft with `SystemTablesService.ensureSystemTable(draftRevisionId,

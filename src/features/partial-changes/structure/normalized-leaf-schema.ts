@@ -24,9 +24,7 @@ const KEYWORDS_IGNORED_BY_LEAF_COMPARISON: ReadonlySet<string> = new Set([
   'description',
   'deprecated',
 ]);
-const NON_VALIDATING_KEYWORDS: ReadonlySet<string> = new Set(
-  ANNOTATION_KEYWORDS,
-);
+const ANNOTATIONS: ReadonlySet<string> = new Set(ANNOTATION_KEYWORDS);
 const ITEMS = 'items';
 const PROPERTIES = 'properties';
 
@@ -34,20 +32,30 @@ export function normalizedLeafSchema(
   schema: JsonSchema,
   tableIdentities: ReadonlyMap<string, string>,
 ): NormalizedLeafSchema {
-  return new LeafSchemaNormalisation(
+  return new SchemaNormalizer(
     KEYWORDS_IGNORED_BY_LEAF_COMPARISON,
     tableIdentities,
   ).of(schema);
 }
 
-export function validatingLeafSchema(
+export function validatingSchema(
   schema: JsonSchema,
   tableIdentities: ReadonlyMap<string, string>,
 ): NormalizedLeafSchema {
-  return new LeafSchemaNormalisation(
-    NON_VALIDATING_KEYWORDS,
-    tableIdentities,
-  ).of(schema);
+  return new SchemaNormalizer(ANNOTATIONS, tableIdentities).of(schema);
+}
+
+export function annotationsDifferingBetween(
+  head: SchemaWithTables,
+  draft: SchemaWithTables,
+): AnnotationKeyword[] {
+  return ANNOTATION_KEYWORDS.filter(
+    (annotation) =>
+      !deepEqual(
+        schemaWithAnnotationOnly(head, annotation),
+        schemaWithAnnotationOnly(draft, annotation),
+      ),
+  );
 }
 
 export function ownAnnotationsDifferingBetween(
@@ -63,18 +71,22 @@ export function ownAnnotationsDifferingBetween(
   );
 }
 
-export function leafSchemaWithAnnotation(
-  schema: JsonSchema,
+export interface SchemaWithTables {
+  readonly schema: JsonSchema;
+  readonly tableIdentities: ReadonlyMap<string, string>;
+}
+
+function schemaWithAnnotationOnly(
+  { schema, tableIdentities }: SchemaWithTables,
   annotation: AnnotationKeyword,
-  tableIdentities: ReadonlyMap<string, string>,
 ): NormalizedLeafSchema {
-  return new LeafSchemaNormalisation(
+  return new SchemaNormalizer(
     new Set(ANNOTATION_KEYWORDS.filter((keyword) => keyword !== annotation)),
     tableIdentities,
   ).of(schema);
 }
 
-class LeafSchemaNormalisation {
+class SchemaNormalizer {
   constructor(
     private readonly ignoredKeywords: ReadonlySet<string>,
     private readonly tableIdentities: ReadonlyMap<string, string>,

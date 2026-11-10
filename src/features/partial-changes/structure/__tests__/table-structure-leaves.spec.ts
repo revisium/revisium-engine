@@ -14,6 +14,7 @@ import {
 } from 'src/__tests__/fixtures/ledger-steps';
 import {
   analyzeStructure,
+  annotatedObjectsOf,
   changedPointersOf,
   createdWith,
   describedChangesOf,
@@ -475,6 +476,27 @@ describe('TableStructure: pending migrations that do not replay', () => {
       expect(describedChangesOf(analyzeStructure(scenario))).toEqual(described);
     },
   );
+
+  it('describes a leaf whose Head and Draft schemas differ only in a validating annotation as annotated, and no object, when the patches do not replay (AS-60c)', () => {
+    const structure = analyzeStructure({
+      head: obj({
+        code: str({ default: 'none' }),
+        price: num(),
+        address: obj({ city: str() }),
+      }),
+      draft: obj({
+        code: str(),
+        price: num({ description: 'In euros' }),
+        address: obj({ city: str() }, { description: 'Where to ship' }),
+      }),
+      pending: [pendingUpdate(removeField('stock'))],
+    });
+
+    expect(describedChangesOf(structure)).toEqual([
+      { pointer: '/code', change: 'annotated', annotations: ['default'] },
+    ]);
+    expect(annotatedObjectsOf(structure)).toEqual([]);
+  });
 
   it('keeps the leaf that a patch path names structure-bound', () => {
     const structure = analyzeStructure({

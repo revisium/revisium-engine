@@ -158,6 +158,10 @@ export class NativeSchemaStore {
     return this.storeAt(fieldPath)?.getPlainSchema();
   }
 
+  public heldSchemaAt(fieldPath: readonly string[]): JsonSchema | undefined {
+    return this.storeAt(fieldPath)?.getPlainSchema({ skip$Ref: true });
+  }
+
   public schema(): JsonSchema {
     return this.root.getPlainSchema();
   }

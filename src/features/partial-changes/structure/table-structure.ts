@@ -13,12 +13,11 @@ import {
   replayPendingPatches,
 } from 'src/features/partial-changes/structure/node-origins';
 import {
-  ANNOTATION_KEYWORDS,
   type AnnotationKeyword,
-  leafSchemaWithAnnotation,
+  annotationsDifferingBetween,
   normalizedLeafSchema,
   ownAnnotationsDifferingBetween,
-  validatingLeafSchema,
+  validatingSchema,
 } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
   dataPointerOfSchemaPath,
@@ -109,6 +108,7 @@ export function analyzeTableStructure(
     input.head.schema,
     pendingBatches,
     rules,
+    { head: input.head.tableIdentities, draft: input.draft.tableIdentities },
   );
   const leaves = new LeafComparison(
     input.head,
@@ -299,7 +299,10 @@ class LeafComparison {
     headLeaf: SchemaLeaf,
     draftLeaf: SchemaLeaf,
   ): ChangedLeaf[] {
-    const annotations = this.differingAnnotations(headLeaf, draftLeaf);
+    const annotations = annotationsDifferingBetween(
+      { schema: headLeaf.schema, tableIdentities: this.head.tableIdentities },
+      { schema: draftLeaf.schema, tableIdentities: this.draft.tableIdentities },
+    );
 
     if (annotations.length === 0) {
       return [];
@@ -367,29 +370,8 @@ class LeafComparison {
 
   private validateAlike(headLeaf: SchemaLeaf, draftLeaf: SchemaLeaf): boolean {
     return deepEqual(
-      validatingLeafSchema(headLeaf.schema, this.head.tableIdentities),
-      validatingLeafSchema(draftLeaf.schema, this.draft.tableIdentities),
-    );
-  }
-
-  private differingAnnotations(
-    headLeaf: SchemaLeaf,
-    draftLeaf: SchemaLeaf,
-  ): AnnotationKeyword[] {
-    return ANNOTATION_KEYWORDS.filter(
-      (annotation) =>
-        !deepEqual(
-          leafSchemaWithAnnotation(
-            headLeaf.schema,
-            annotation,
-            this.head.tableIdentities,
-          ),
-          leafSchemaWithAnnotation(
-            draftLeaf.schema,
-            annotation,
-            this.draft.tableIdentities,
-          ),
-        ),
+      validatingSchema(headLeaf.schema, this.head.tableIdentities),
+      validatingSchema(draftLeaf.schema, this.draft.tableIdentities),
     );
   }
 

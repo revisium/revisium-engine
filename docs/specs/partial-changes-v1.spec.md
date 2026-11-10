@@ -472,10 +472,14 @@ into an array, a File or another schema keyword lies inside the value where it s
   below `path`, and ends the other values at or below `path`. A chain of moves resolves to its first source: a→b→c
   gives `from: a`.
 - Every other patch acts at each of its paths (both paths of a `move`). At a data node, a `replace` rewrites the values
-  at or below it, and an `add`, a `remove` or a `move` ends them. A `replace` at a data node whose value differs from
-  the schema it replaces (as native holds it) only in annotations annotates the values at or below it instead of
-  rewriting them. A path inside a value rewrites that whole value, so no value moves into or out of an array or File.
-  Annotating a value touches its leaves as rewriting does (§3.3, condition 3).
+  at or below it, and an `add`, a `remove` or a `move` ends them. A `replace` at a data node whose value is not the
+  schema it replaces, and which changes the schema native holds at that node only in annotations, annotates the values
+  at or below it instead of rewriting them. That is decided on what native holds before and after the patch, File
+  contents included (a field a patch added inside a File and the replace dropped is a rewrite), and a `foreignKey` is
+  compared by the identity of the referenced table: an id the held schema names is read as a Head id, else a Draft id,
+  and an id the value names as a Draft id, else a Head id (the referrers of a renamed table record no patch). A path
+  inside a value rewrites that whole value, so no value moves into or out of an array or File. Annotating a value
+  touches its leaves as rewriting does (§3.3, condition 3).
 
 A Draft leaf **comes from** the Head leaf whose value is at its pointer after these patches. Each Draft leaf is
 described as follows:
@@ -484,11 +488,11 @@ described as follows:
   and no patch rewrote or annotated its value, otherwise `changed`; `from` is the Head pointer. That Head pointer is
   not reported as `removed`.
 - It comes from the Head leaf at its own pointer: not reported when its leaf schema is equal (§3.3, condition 2) and no
-  patch rewrote or annotated its value (an unchanged leaf, or a move reverted inside the Draft); `annotated` when no
-  patch rewrote its value and its leaf schema differs from that leaf's only in annotations (a changed default,
-  description or title); not reported either when no patch rewrote its value and its leaf schema equals that leaf's in
-  every keyword, although a patch annotated it (an enclosing object whose annotations changed, or an annotation that a
-  patch sets and the stored schema does not keep); otherwise `changed`.
+  patch rewrote or annotated its value (an unchanged leaf, or a move reverted inside the Draft). Otherwise, when no
+  patch rewrote its value and its leaf schema differs from that leaf's only in annotations: `annotated` (a changed
+  default, description or title), or not reported when the two leaf schemas are equal in every keyword (an enclosing
+  object whose annotations changed, or an annotation that a patch sets and the stored schema does not keep).
+  Otherwise `changed`.
 - It comes from no Head leaf: `added` when Head has no leaf at its pointer or that Head leaf's value moved to another
   Draft leaf (a field added where a moved field was), otherwise `changed` (a field removed and added again).
 
@@ -508,12 +512,14 @@ the same pointer (the replay carries an object as it carries a leaf, so a moved,
 come from it), a pending patch annotated or rewrote it, and the annotations of the object schema itself (not of its
 properties) differ; `annotations` lists those keywords in code-point order. For example, a description given to
 `/dims` reads `{ path: '/dims', change: 'annotated', annotations: ['description'] }`, and its unchanged fields are not
-reported. Other changes inside the object are reported at their own pointers beside it: a field added to `/dims` and a
-new description of `/dims` give `/dims` (`annotated`) and `/dims/depth` (`added`); a field whose own annotations
-changed in the same patch is `annotated` by its own keywords. An array whose item object got a description is one
-atomic leaf (§3.2) and reads `annotated` with `['description']`. A moved object reports no annotations of its own: its
-leaves read `moved`, or `changed` when a patch annotated them. Without a replay (below), for a `replaced` table and for
-the root schema, no object is reported.
+reported. Other changes inside the object are reported at their own pointers beside it: a field added to `/dims` and,
+by a later patch, a new description of `/dims` give `/dims` (`annotated`) and `/dims/depth` (`added`); a field whose
+own annotations changed in the same patch is `annotated` by its own keywords. One `replace` that both adds the field
+and gives the description rewrites `/dims`, so its other fields read `changed` beside them. An array whose item object
+got a description through a `replace` of the array is one atomic leaf (§3.2) and reads `annotated` with
+`['description']`; a `replace` at its `items` lies inside the value and reads `changed`. A moved object reports no
+annotations of its own: its leaves read `moved`, or `changed` when a patch annotated them. Without a replay (below),
+for a `replaced` table and for the root schema, no object is reported.
 
 Native accepted every pending migration, so a patch that this replay cannot apply means the replay diverged from
 native. The listing then follows no value through the patches: `fields` compares the Head leaves with the Draft leaves
@@ -1980,9 +1986,13 @@ versions unchanged" (§14) holds in every scenario.
   `structureChange` the listing gives for that unit; over random Drafts, the `sample` of each listed selector holds
   the listed unit with its `structureChange` (AS-61).
 - AS-60c Annotations: a changed default, description or title of a field at its Head pointer is `annotated` with its
-  sorted `annotations`, also nested in array `items`; an object whose own description changed is an `annotated`
-  entry at its pointer beside the added or changed fields inside it; a field whose stored schema did not change is not
-  reported; a moved field stays `moved` or `changed`; the values of an annotated field stay with the structure unit.
+  sorted `annotations`, also for an array replaced with annotated item fields or item object; an object whose own
+  description changed is an `annotated` entry at its pointer beside the added or changed fields inside it; a field
+  whose stored schema did not change is not reported; a moved field or object stays `moved` or `changed`; a referrer
+  given a description after a rename of its referenced table is `annotated`; a replace that drops a field held inside a
+  File, or one that also adds a field, rewrites; a `replaced` table and Head and Draft compared without a replay report
+  no object; the values of an annotated field and of the fields below an annotated object stay with the structure
+  unit and are committed and reverted with it.
 - AS-61 Property over random Drafts: each listed selector alone previews one unit with no `unmatched` or
   `notSelectable`; the union of the listed selectors previews with the same status, counts and fingerprint as
   `all: true`, for commit and revert.
@@ -2268,8 +2278,9 @@ Unit model and algorithm:
   through the pending history, the reason `viewsDoNotFitStructure` and the role `counterpart` are removed;
   `invalidViews` comes from target validation of the Draft documents a commit publishes (§6.9 step 5).
 - §5.2: structure descriptions report `annotated` fields with their `annotations` (`ANNOTATION_KEYWORDS`), and an
-  object whose own annotations changed as an `annotated` entry at its pointer (PoC 1.4–1.6); `StructureChange.views`
-  says that the unit carries a views change.
+  object whose own annotations changed as an `annotated` entry at its pointer (PoC 1.4–1.6); a `replace` counts as
+  annotating by what native holds before and after it, File contents included, with foreign keys compared by the
+  identity of the referenced table; `StructureChange.views` says that the unit carries a views change.
 
 Selection (§4.1, §4.2, §4.5, §5.1):
 

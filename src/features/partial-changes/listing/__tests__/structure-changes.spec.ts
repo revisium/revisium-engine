@@ -24,13 +24,16 @@ import {
   type ListedUnit,
   STRUCTURE_TABLE_CHANGES,
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import { ANNOTATION_KEYWORDS } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import { STRUCTURE_FIELD_CHANGES } from 'src/features/partial-changes/structure/table-structure';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
+const ALBUMS = 'albums';
 const CATEGORIES = 'categories';
 const GROUPS = 'groups';
+const ITEMS = 'items';
 const MEDIA = 'media';
 const MEMOS = 'memos';
 const NOTES = 'notes';
@@ -60,6 +63,9 @@ const shipmentSchema = obj({
 });
 
 const mediaSchema = obj({ title: str(), cover: ref(SystemSchemaIds.File) });
+const albumSchema = obj({
+  album: obj({ cover: ref(SystemSchemaIds.File), name: str() }),
+});
 
 const emptyFile = {
   status: '',
@@ -719,6 +725,256 @@ describe('listChanges: structure changes', () => {
     );
 
     it.each([
+      { operation: 'commit', side: 'head', code: 'edited', city: 'Tallinn' },
+      { operation: 'revert', side: 'draft', code: 'p1', city: 'Riga' },
+    ] as const)(
+      'applies the values of annotated fields and objects with the structure on $operation (AS-60c)',
+      async ({ operation, side, code, city }) => {
+        const draft = await givenCommittedProducts();
+        await draft.updateTable(PRODUCTS, [
+          replaceField('code', str({ description: 'Article' })),
+          replaceField('address', describedAddressSchema),
+        ]);
+        await draft.updateRow(PRODUCTS, 'p1', {
+          ...productRow,
+          code: 'edited',
+          address: { city: 'Tallinn', street: 'Main' },
+        });
+        const options = {
+          selection: { structures: [{ tableId: PRODUCTS }] },
+        };
+
+        const result =
+          operation === 'commit'
+            ? await draft.commitChanges(options)
+            : await draft.revertChanges(options);
+
+        expect(result).toMatchObject({ status: 'applied' });
+        expect(
+          (await draft.rows(side, PRODUCTS)).map(({ data }) => data),
+        ).toEqual([{ ...productRow, code, address: { city, street: 'Main' } }]);
+      },
+    );
+
+    it.each<{
+      change: string;
+      updates: JsonPatch[][];
+      fields: ChangedField[];
+    }>([
+      {
+        change:
+          'an object removed and added again with a description as its fields and no object',
+        updates: [
+          [removeField('address')],
+          [addField('address', describedAddressSchema)],
+        ],
+        fields: [
+          { path: '/address/city', change: 'changed' },
+          { path: '/address/street', change: 'changed' },
+        ],
+      },
+      {
+        change:
+          'an object replaced with its own schema with unsorted required and a description as the annotated object alone',
+        updates: [
+          [
+            replaceField('address', {
+              ...describedAddressSchema,
+              required: ['street', 'city'],
+            } as JsonSchema),
+          ],
+        ],
+        fields: [
+          {
+            path: '/address',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+      },
+    ])('describes $change (AS-60c)', async ({ updates, fields }) => {
+      const draft = await givenCommittedProducts();
+
+      for (const patches of updates) {
+        await draft.updateTable(PRODUCTS, patches);
+      }
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields,
+        views: false,
+      });
+    });
+
+    it('describes an object one replace gave a field and a description as the annotated object, the added field and its rewritten fields (AS-60c)', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: { schema: productSchema, rows: {} },
+      });
+      await draft.updateTable(PRODUCTS, [
+        replaceField(
+          'address',
+          obj(
+            { city: str(), street: str(), zip: str() },
+            { description: 'Where to ship' },
+          ),
+        ),
+      ]);
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          {
+            path: '/address',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+          { path: '/address/city', change: 'changed' },
+          { path: '/address/street', change: 'changed' },
+          { path: '/address/zip', change: 'added' },
+        ],
+        views: false,
+      });
+    });
+
+    it('describes a default that a later update of another field reset as annotated by its default (AS-60c)', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: obj({ code: str({ default: 'none' }), price: num() }),
+        },
+      });
+      await draft.updateTable(PRODUCTS, [replaceField('price', str())]);
+
+      const structure = await listedStructureOf(draft, PRODUCTS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          { path: '/code', change: 'annotated', annotations: ['default'] },
+          { path: '/price', change: 'changed' },
+        ],
+        views: false,
+      });
+    });
+
+    it('describes a File given a description as annotated by its description (AS-60c)', async () => {
+      const draft = await givenCommittedMedia();
+      await draft.updateTable(MEDIA, [
+        replaceField(
+          'cover',
+          ref(SystemSchemaIds.File, { description: 'Cover image' }),
+        ),
+      ]);
+
+      const structure = await listedStructureOf(draft, MEDIA);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          {
+            path: '/cover',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+        views: false,
+      });
+    });
+
+    it('describes an object whose replace dropped a field held inside its File as rewritten, although the replace adds only a description (AS-60c)', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [ALBUMS]: { schema: albumSchema, rows: {} },
+      });
+      await draft.updateTable(ALBUMS, [
+        {
+          op: 'add',
+          path: '/properties/album/properties/cover/properties/custom',
+          value: obj({ x: str() }),
+        },
+        replaceField(
+          'album',
+          obj(
+            { cover: ref(SystemSchemaIds.File), name: str() },
+            { description: 'An album' },
+          ),
+        ),
+      ]);
+
+      const structure = await listedStructureOf(draft, ALBUMS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          { path: '/album', change: 'annotated', annotations: ['description'] },
+          { path: '/album/cover', change: 'changed' },
+          { path: '/album/name', change: 'changed' },
+        ],
+        views: false,
+      });
+    });
+
+    it('describes a referrer given a description after a rename of its referenced table as annotated by its description (AS-60c)', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'c' } } },
+        [ITEMS]: {
+          schema: obj({ category: str({ foreignKey: CATEGORIES }) }),
+          rows: { i1: { category: 'c1' } },
+        },
+      });
+      await draft.renameTable(CATEGORIES, GROUPS);
+      await draft.updateTable(ITEMS, [
+        replaceField(
+          'category',
+          str({ foreignKey: GROUPS, description: 'Its group' }),
+        ),
+      ]);
+
+      const structure = await listedStructureOf(draft, ITEMS);
+
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields: [
+          {
+            path: '/category',
+            change: 'annotated',
+            annotations: ['description'],
+          },
+        ],
+        views: false,
+      });
+    });
+
+    it('covers every value of ANNOTATION_KEYWORDS', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateTable(PRODUCTS, [
+        replaceField(
+          'code',
+          str({
+            title: 'Code',
+            description: 'Article code',
+            deprecated: true,
+            readOnly: true,
+            contentMediaType: 'text/markdown',
+          }),
+        ),
+      ]);
+      const created = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: { schema: obj({ code: str({ default: 'none' }) }) },
+      });
+      await created.updateTable(PRODUCTS, [addField('sku', str())]);
+
+      const annotations = [
+        ...changedFieldsOf(await listedStructureOf(draft, PRODUCTS)),
+        ...changedFieldsOf(await listedStructureOf(created, PRODUCTS)),
+      ].flatMap((field) => field.annotations ?? []);
+
+      expect(new Set(annotations)).toEqual(new Set(ANNOTATION_KEYWORDS));
+    });
+
+    it.each([
       {
         change: 'a moved field',
         updates: [[moveField('code', 'sku')]],
@@ -1060,6 +1316,10 @@ describe('listChanges: structure changes', () => {
         rows: { p1: productRow },
       },
     });
+  }
+
+  function changedFieldsOf(unit: ListedUnit): readonly ChangedField[] {
+    return unit.structureChange?.fields ?? [];
   }
 
   function givenCommittedShipments(): Promise<ChangesScenario> {

@@ -8,6 +8,7 @@ import type {
   Migration,
   UpdateMigration,
 } from '@revisium/schema-toolkit/types';
+import type { AnnotationKeyword } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
   analyzeTableStructure,
   type StructureFieldChange,
@@ -68,6 +69,12 @@ export interface DescribedChange {
   readonly pointer: string;
   readonly change: StructureFieldChange;
   readonly from?: string;
+  readonly annotations?: readonly AnnotationKeyword[];
+}
+
+export interface DescribedObject {
+  readonly pointer: string;
+  readonly annotations: readonly AnnotationKeyword[];
 }
 
 export function pendingUpdate(...patches: JsonPatch[]): UpdateMigration {
@@ -100,10 +107,22 @@ export function changedPointersOf(structure: TableStructure): string[] {
 export function describedChangesOf(
   structure: TableStructure,
 ): DescribedChange[] {
-  return structure.changedLeaves.map(({ pointer, change, from }) => ({
+  return structure.changedLeaves.map(
+    ({ pointer, change, from, annotations }) => ({
+      pointer: pointer.toString(),
+      change,
+      from: from?.toString(),
+      annotations,
+    }),
+  );
+}
+
+export function annotatedObjectsOf(
+  structure: TableStructure,
+): DescribedObject[] {
+  return structure.annotatedObjects.map(({ pointer, annotations }) => ({
     pointer: pointer.toString(),
-    change,
-    from: from?.toString(),
+    annotations,
   }));
 }
 

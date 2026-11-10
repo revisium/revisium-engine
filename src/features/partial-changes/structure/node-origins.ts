@@ -5,7 +5,7 @@ import type {
   JsonSchema,
 } from '@revisium/schema-toolkit/types';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
-import { validatingLeafSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
+import { validatingSchema } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
   type DataTarget,
   dataTargetOfSchemaPath,
@@ -38,15 +38,34 @@ export type PatchEffect =
   | { readonly kind: 'annotate'; readonly at: JsonPointer }
   | { readonly kind: 'end'; readonly at: JsonPointer };
 
-const WITHOUT_TABLE_IDENTITIES: ReadonlyMap<string, string> = new Map();
+export interface ReplayTables {
+  readonly head: ReadonlyMap<string, string>;
+  readonly draft: ReadonlyMap<string, string>;
+}
+
+interface ReplacementTables {
+  readonly replaced: ReadonlyMap<string, string>;
+  readonly replacement: ReadonlyMap<string, string>;
+}
+
+interface HeldNode {
+  readonly schema: JsonSchema;
+  readonly held: JsonSchema;
+}
 
 export function replayPendingPatches(
   headSchema: JsonSchema,
   pendingBatches: readonly (readonly JsonPatch[])[],
   rules: NativeSchemaRules,
+  tables: ReplayTables,
 ): PatchEffect[] | undefined {
   try {
-    return effectsOfBatches(headSchema, pendingBatches, rules);
+    return effectsOfBatches(
+      headSchema,
+      pendingBatches,
+      rules,
+      replacementTablesOf(tables),
+    );
   } catch {
     return undefined;
   }
@@ -83,13 +102,14 @@ function effectsOfBatches(
   headSchema: JsonSchema,
   batches: readonly (readonly JsonPatch[])[],
   rules: NativeSchemaRules,
+  tables: ReplacementTables,
 ): PatchEffect[] {
   const effects: PatchEffect[] = [];
   let schema = headSchema;
 
   for (const batch of batches) {
     const store = rules.schemaStore(schema);
-    effects.push(...effectsOfBatch(batch, store));
+    effects.push(...effectsOfBatch(batch, store, tables));
     schema = store.schema();
   }
 
@@ -99,11 +119,12 @@ function effectsOfBatches(
 function effectsOfBatch(
   batch: readonly JsonPatch[],
   store: NativeSchemaStore,
+  tables: ReplacementTables,
 ): PatchEffect[] {
   const effects: PatchEffect[] = [];
 
   for (const patch of batch) {
-    effects.push(...effectsOfApplying(patch, store));
+    effects.push(...effectsOfApplying(patch, store, tables));
   }
 
   return effects;
@@ -112,9 +133,10 @@ function effectsOfBatch(
 function effectsOfApplying(
   patch: JsonPatch,
   store: NativeSchemaStore,
+  tables: ReplacementTables,
 ): PatchEffect[] {
   if (patch.op === 'replace') {
-    return [effectOfReplacing(patch, store)];
+    return [effectOfReplacing(patch, store, tables)];
   }
 
   const effects = effectsOfAddRemoveOrMove(patch, store);
@@ -126,31 +148,63 @@ function effectsOfApplying(
 function effectOfReplacing(
   patch: JsonPatchReplace,
   store: NativeSchemaStore,
+  tables: ReplacementTables,
 ): PatchEffect {
   const { pointer, isNode } = dataTargetOfSchemaPath(store, patch.path);
-  const replaced = store.schemaAt(pointer.segments);
+  const replaced = isNode ? heldNodeAt(store, pointer) : undefined;
 
   store.applyPatch(patch);
 
-  if (isNode && differOnlyInAnnotations(replaced, patch.value)) {
+  if (
+    replaced &&
+    changesOnlyAnnotations(
+      replaced,
+      heldNodeAt(store, pointer),
+      patch.value,
+      tables,
+    )
+  ) {
     return { kind: 'annotate', at: pointer };
   }
 
   return { kind: 'rewrite', at: pointer };
 }
 
-function differOnlyInAnnotations(
-  replaced: JsonSchema | undefined,
-  replacement: JsonSchema,
+function changesOnlyAnnotations(
+  replaced: HeldNode,
+  replacement: HeldNode | undefined,
+  value: JsonSchema,
+  tables: ReplacementTables,
 ): boolean {
-  if (!replaced || deepEqual(replaced, replacement)) {
+  if (!replacement || deepEqual(replaced.schema, value)) {
     return false;
   }
 
   return deepEqual(
-    validatingLeafSchema(replaced, WITHOUT_TABLE_IDENTITIES),
-    validatingLeafSchema(replacement, WITHOUT_TABLE_IDENTITIES),
+    validatingSchema(replaced.held, tables.replaced),
+    validatingSchema(replacement.held, tables.replacement),
   );
+}
+
+function heldNodeAt(
+  store: NativeSchemaStore,
+  pointer: JsonPointer,
+): HeldNode | undefined {
+  const schema = store.schemaAt(pointer.segments);
+  const held = store.heldSchemaAt(pointer.segments);
+
+  if (!schema || !held) {
+    return undefined;
+  }
+
+  return { schema, held };
+}
+
+function replacementTablesOf({ head, draft }: ReplayTables): ReplacementTables {
+  return {
+    replaced: new Map([...draft, ...head]),
+    replacement: new Map([...head, ...draft]),
+  };
 }
 
 function effectsOfAddRemoveOrMove(

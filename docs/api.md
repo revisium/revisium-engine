@@ -569,8 +569,9 @@ A typical client:
 2. builds a `Selection` from the selectors the user picked;
 3. previews the commit or revert and shows `required`, `blockers`, `deferred` and `coverage`;
 4. applies it with `expected: preview.fingerprint`, and with `includeRequired: true` when the user accepts the
-   additions listed in `required`;
-5. on `stale`, drops the `unmatched` selectors and previews again.
+   additions listed in `required` (or adds their selectors to the selection and previews again);
+5. on `blocked`, shows the `blockers` and lets the user change the selection; on `stale`, drops the `unmatched`
+   selectors and previews again.
 
 ```typescript
 const branch = { projectId: 'proj-1', branchName: 'master' };
@@ -586,7 +587,7 @@ if (preview.status === 'ready' || preview.status === 'required') {
     expected: preview.fingerprint,
     comment: 'Rename the lamp',
   });
-  // result.status: 'applied' | 'required' | 'blocked' | 'stale' | 'empty'
+  // result.status: 'applied' | 'blocked' | 'stale' | 'empty' ('required' only without includeRequired)
 }
 ```
 
@@ -631,7 +632,7 @@ with a reason ([SPEC §5.7](specs/partial-changes-v1.spec.md#57-required-reasons
 
 - An optional input given as `null` is treated as absent, at any depth, so a transport that sends `null` for an
   omitted argument (as GraphQL clients do) needs no mapping. A required field given as `null` is refused.
-- An unknown field is refused, including the pre-v2.0 selection fields `tables` and `renames`.
+- An unknown field of a selection is refused, including the pre-v2.0 fields `tables` and `renames`.
 - `expected` is optional in the engine. A host's public API and MCP must require it for `commit` and `revert` unless
   the selection is exactly `{ all: true }`, so that users apply only what they reviewed. `includeRequired: true`
   requires `expected` in the engine too.
@@ -684,7 +685,7 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | `deferred` | Commit only: created or replaced rows committed without their table's structure, with the values the commit writes (`defaulted`) and the paths it leaves out (`omitted`). |
 | `sample` | The first 20 applied units in listing order, for display (`changes.list` is the complete list). |
 | `unmatched` | The selectors that matched no unit; `{}` when every selector matched, `null` when not `planned`. |
-| `refusedTables` | Tables that partial operations refuse on this branch (see [Refused tables](#refused-tables)). |
+| `refusedTables` | Tables that partial operations refuse on this branch (see [Refused tables](#refused-tables)); empty for exactly `{ all: true }`. |
 | `estimate` | What the plan measured against the limits. |
 
 A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts` and `unmatched` are `null`, and
@@ -737,7 +738,7 @@ Decided in this order ([SPEC §5.6](specs/partial-changes-v1.spec.md#56-statuses
 `ready` at step 6:
 
 1. a limit stopped the plan → `blocked` (`tooLarge`), whatever `expected` is;
-2. no unit to apply and no blocker → `empty`;
+2. no unit to apply and no blocker → `empty` (also when no selector matched anything: `unmatched` lists them all);
 3. `expected` is given and differs from the current fingerprint → `stale`;
 4. a blocker, or a selector that matched nothing (`unmatchedSelector`) → `blocked`;
 5. required additions exist and `includeRequired` is not set → `required`;
@@ -836,9 +837,10 @@ every row of both revisions.
 
 ### Refused tables
 
-Partial operations refuse a table whose stored history they cannot trust, and every result lists it in
-`refusedTables` with a `code`. Its units are not computed: `changes.list` lists none, and the Draft reads show its
-items as `refused`. A selection that involves it is `blocked` with the same code. Exactly `{ all: true }` and the
+Partial operations refuse a table whose stored history they cannot trust. `changes.list`, `changes.preview` and the
+Draft reads list it in `refusedTables` with a `code`. Its units are not computed: `changes.list` lists none, and the
+Draft reads show its items as `refused`. A preview, commit or revert whose selection involves it is `blocked` with a
+blocker of the same code. Exactly `{ all: true }` and the
 native `createRevision` and `revertChanges` still work.
 
 - `unledgeredTable`: the table has no intact migration history. On a branch without a migration table (projects
@@ -852,7 +854,7 @@ native `createRevision` and `revertChanges` still work.
 
 | Condition | Error |
 | --- | --- |
-| Malformed input: an unknown field, a wrong type, an empty id, a `path` that is not a JSON Pointer, `includeRequired: true` without `expected`, a `pageSize` or `first` out of range, a malformed cursor or filter | `BadRequestException` (400), before any transaction |
+| Malformed input: an unknown selection field, a wrong type, an empty id, a `path` that is not a JSON Pointer, `includeRequired: true` without `expected`, a `pageSize` or `first` out of range, a malformed cursor, a filter of a wrong type | `BadRequestException` (400), before any transaction |
 | A malformed `expected`, including the bare SHA-256 hex fingerprints of engines before this API | `BadRequestException` (400): `expected must be a fingerprint` |
 | `changes.list` with a `tableId` that names no Head or Draft table | `BadRequestException` (400) |
 | Unknown project or branch | The native `BadRequestException`: `A branch with this name does not exist in the project` |
@@ -861,7 +863,10 @@ native `createRevision` and `revertChanges` still work.
 | An operation past `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | `OPERATION_TIMEOUT` (408) |
 | Serialization failures on every attempt (`PARTIAL_CHANGES_MAX_ATTEMPTS`) | The last serialization error |
 
-A failed operation is rolled back and persists nothing, so a retry is safe.
+`MIGRATION_LOCKED`, `BRANCH_WRITE_FENCED` and `OPERATION_TIMEOUT` are NestJS `HttpException`s with the `code` in
+their response body. Exhausted attempts surface the database's serialization error (a Prisma `P2034` or the
+PostgreSQL `40001` / `40P01`), which a host maps to a retryable response. A failed operation is rolled back and
+persists nothing, so a retry is safe.
 
 ### Code lists
 
@@ -888,9 +893,11 @@ list types, and how a typed transport maps the unions:
   native `createRevision` and `revertChanges`, and writes audit records for `applied` results only. The proposed
   names of the GraphQL, REST and MCP operations:
   [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports).
-- **Endpoint notifications.** The engine notifies nothing itself. Endpoints bound to a revision should be refreshed
-  after an `applied` commit for its `headRevisionId` (the former Draft revision, whose content became the new Head)
-  and its `draftRevisionId` (the new Draft), and after an `applied` revert for its `draftRevisionId`.
+- **Endpoint notifications.** After an `applied` commit the engine calls its endpoint hook
+  (`notifyEndpoints`) for `headRevisionId` (the former Draft revision, whose content became the new Head) and
+  `draftRevisionId` (the new Draft), and after an `applied` revert for `draftRevisionId`, as native writes do. In this
+  package the hook does nothing, so a host that serves endpoints by revision refreshes those revisions itself, once,
+  after the call returns; a failure there does not undo the operation, which is already committed.
 - **Limits.** Each operation reads only the tables its selection affects (`all: true` reads every table) and refuses
   work above its limits with `tooLarge`. The defaults are conservative; a host raises them through the environment
   once the operation logs show the real costs ([ENV.md](../ENV.md),

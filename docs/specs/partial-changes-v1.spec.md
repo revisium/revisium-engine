@@ -1832,9 +1832,9 @@ All rows have landed (statuses in [plan](../plan.md)); [async-row-migration-v2] 
   Head-synced replicas need a re-sync.
 - **Ledger backfill** for branches without a migration table is specified in
   [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md); **row remediation** for damaged tables whose Draft
-  rows fail validation (`rowsNeedMigration`) is decided with the scan results ([async-row-migration-v2] §7). Neither is
-  a release gate. Until a branch is backfilled or a remediation exists, partial operations refuse those tables
-  (`unledgeredTable`, `headSchemaInconsistent`).
+  rows fail validation (`rowsNeedMigration`) is designed only if a host's scan finds such tables
+  ([async-row-migration-v2] §7). Neither is a release gate. Until a branch is backfilled or a remediation exists,
+  partial operations refuse those tables (`unledgeredTable`, `headSchemaInconsistent`).
 - **No change to table rename** in stage 0: re-hashing the referencing rows would copy every row of every
   referencing table; predicate (a) reports such tables as known false positives instead.
 - **Release gate:** the async migration fix shipped; the forward-only repair tool; the Head schema check
@@ -2396,7 +2396,8 @@ effective settings are logged at startup; every listing page, preview, commit an
 structure digest is measured; the release gate takes these instead of a re-measurement on production-like hardware.
 
 Release gate (§12): the scan run on existing deployments is no longer part of it (dropped on 2026-11-08, since no
-production table has reached the async-migration threshold).
+production table has reached the async-migration threshold), and a row remediation is designed only if a host's scan
+finds tables that need it.
 
 Scenarios: AS-10, AS-17, AS-19, AS-45, AS-64 reworded; AS-60c, AS-76 and §13.8 (AS-80 – AS-92) added.
 

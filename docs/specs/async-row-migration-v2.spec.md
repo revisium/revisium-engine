@@ -54,7 +54,7 @@ start take the fence shared); #93 the ledger replay; #119 and #128 fence part 2 
 | Copy-on-write, recorded `update` row and history; swap re-checks (partial-changes §12) | §3.5, §3.6 |
 | One per revision in the transaction; synchronous validation; file references | §3.3, §3.4 |
 | Orphan cleanup (landed, #90); `applyMigrations` above the threshold (must) | §3.7; §4 |
-| Detection scan; forward-only repair; ledger backfill ([schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)) and row remediation (decided with the scan results) | §5, §6, §7 |
+| Detection scan; forward-only repair; ledger backfill ([schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)) and row remediation (designed only if a host's scan finds such tables) | §5, §6, §7 |
 | REQ-001.BR-004 (a Head-synced replica accepts every commit) | Recorded async updates (§3.5), imported updates with source ids (§4), repaired tables (§6). |
 | REQ-001.BR-005 (whole-Draft operations unchanged) | Native commit and revert are unchanged; every other observable change is in §9. |
 
@@ -386,7 +386,7 @@ them instead of a hand-kept copy:
 
 1. Per branch of the page, read the Head and Draft ids, the Draft's links and its system rows in one `READ ONLY`
    RepeatableRead transaction; committed revisions are read without a long transaction, which is valid once no old
-   worker runs (§12, production scan after the fix is deployed).
+   worker runs (§12: a host runs the scan only after the fix is deployed).
 2. Deduplicate (partial-changes §12): replay once per distinct migration-table version; read once per distinct
    schema-table version; evaluate (b) once per distinct pair of migration-table and schema-row versions; evaluate (a)
    once per distinct pair of table version and schema-row hash. Caches live for the call.
@@ -431,13 +431,13 @@ and `stale`.
 
 | Outcome | Condition | Operator action |
 | --- | --- | --- |
-| `unledgered` | Unledgered by the identity pass (§5.1). | Decided with the scan results (§7). |
+| `unledgered` | Unledgered by the identity pass (§5.1). | `backfillSchemaLedger` for a branch without a migration table; otherwise the table stays refused (§7). |
 | `ledgerDoesNotReplay` | Ledgered with a tainted slot in the Head replay. | Stays refused; replicas re-sync. |
 | `notDamaged`, `draftOnlyDamage` | `RS` (replayed) equals `HS` (Head schema row); the Draft passes (b) or not. | None; or revert the table's structure. |
 | `ledgerInconsistent` | The Draft lacks or alters a published Head migration row, a pending migration cannot be attributed (partial-changes §10.1), or a Draft history does not extend its Head history. | Revert the Draft natively. |
 | `alreadyRepaired` | Replaying the pending migrations `P` from the Head schemas with `RS` reproduces the Draft schemas, and the Draft rows pass validation (§6.3 step 3). | Publish with a native or `{ all: true }` commit. |
 | `repaired` | The `HS` baseline reproduces the Draft schema; the plan is accepted, verified and written. | Publish. |
-| `rowsNeedMigration` | The schemas are consistent from one of the baselines, but Draft rows fail native data validation (for example shape (i) after a native revert relinked the Head's unmigrated rows, `draft-revision/commands/handlers/draft-revision-revert.handler.ts:27-50`). Nothing is written; the table stays refused. | Decided with the scan results (§7). |
+| `rowsNeedMigration` | The schemas are consistent from one of the baselines, but Draft rows fail native data validation (for example shape (i) after a native revert relinked the Head's unmigrated rows, `draft-revision/commands/handlers/draft-revision-revert.handler.ts:27-50`). Nothing is written; the table stays refused. | Fix the rows natively; a remediation is designed only if a host's scan finds such tables (§7). |
 | `patchNotReproducible` | The generated patch does not turn `RS` into `HS` or fails validation (§6.3). | Not repairable by this tool. |
 | `blockedByDependency` | The plan of the table fails only because a damaged table coupled to it (§6.3) is not repaired in this call (not requested, or itself rejected); `blockedBy` lists them. | Repair them together, or resolve the blocking table first. |
 | `needsDraftStructureRevert` | Neither baseline reproduces the Draft schema, or the table fails the combined verification for another reason (§6.3). | Revert the table's Draft structure natively, then rerun. |
@@ -506,7 +506,7 @@ After the commit, endpoints of the Draft are notified. Rows are not revalidated 
 of a large table would exceed `TRANSACTION_TIMEOUT`); the fingerprint proves the validated input unchanged. A second run
 plans `alreadyRepaired`; after a commit publishes the repair, `notDamaged`.
 
-## 7. Decided with the scan results: ledger backfill and row remediation
+## 7. Ledger backfill and row remediation
 
 Neither is a release gate; partial operations keep refusing the affected tables until a decision is implemented.
 
@@ -778,5 +778,7 @@ async swap can still rewrite committed rows during the scan.
 - §5.2, §11, §12 (PR 11), §13 (3): the scan run on every deployment, its review and the host-side storage check are no
   longer part of the partial-changes release gate (dropped on 2026-11-08: no production table has reached the
   async-migration threshold, so no async-migration damage exists); the scan and the repair stay available to hosts.
+- Overview, §5.3, §6.2, §7: nothing waits for the scan results any more. The ledger backfill is specified; a row
+  remediation is designed only if a host's scan finds `rowsNeedMigration` tables.
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

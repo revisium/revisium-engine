@@ -13,11 +13,11 @@ import {
 } from 'src/features/partial-changes/closure/findings';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
 import {
-  withCause,
   causeOf,
   positionOf,
   type ReasonSite,
   type ReferencedEntity,
+  withCause,
 } from 'src/features/partial-changes/plan/reason';
 import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 

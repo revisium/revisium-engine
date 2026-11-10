@@ -10,7 +10,7 @@ import {
   requiringOrDangling,
 } from 'src/features/partial-changes/closure/findings';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
-import { withCause, causeOf } from 'src/features/partial-changes/plan/reason';
+import { causeOf, withCause } from 'src/features/partial-changes/plan/reason';
 
 @Injectable()
 export class TableIdCollisions implements TargetCheck, TargetChecking {

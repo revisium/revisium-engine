@@ -10,8 +10,8 @@ import type { TargetTable } from 'src/features/partial-changes/closure/target-ta
 import {
   type CatalogueCause,
   type CatalogueReason,
-  withCause,
   type RequiredReasonCode,
+  withCause,
 } from 'src/features/partial-changes/plan/reason';
 import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';

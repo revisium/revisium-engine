@@ -14,7 +14,7 @@ import {
   idUnitOf,
   type TargetTable,
 } from 'src/features/partial-changes/closure/target-tables';
-import { withCause, causeOf } from 'src/features/partial-changes/plan/reason';
+import { causeOf, withCause } from 'src/features/partial-changes/plan/reason';
 import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 @Injectable()

@@ -16,9 +16,9 @@ import { TableIdTimeline } from 'src/features/partial-changes/closure/table-id-t
 import {
   type CatalogueCause,
   type CatalogueReason,
+  causeOf,
   type CauseRole,
   withCause,
-  causeOf,
 } from 'src/features/partial-changes/plan/reason';
 import {
   readTableIdsByStep,

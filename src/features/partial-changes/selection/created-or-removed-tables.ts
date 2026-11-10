@@ -27,10 +27,8 @@ export function requireStructureOfCreatedOrRemoved(
     refusing(targets.refusalsOfStructure(table)) ??
     requiringUnit(units.tableUnitOf('structure', table), {
       code: 'structureBoundData',
-      tableId,
-      rowId,
-      path,
       because: `the rows of ${tableId} exist only with its structure (created or removed table)`,
+      site: { kind: 'selector', tableId, rowId, path },
     })
   );
 }

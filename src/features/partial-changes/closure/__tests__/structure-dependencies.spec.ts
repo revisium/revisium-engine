@@ -55,6 +55,15 @@ const deletedRow = ({ tableId, rowId }: RowRef) => ({
   selector: { rows: [{ tableId, rowId }] },
 });
 
+const referringField = (tableId: string, rowId: string) => ({
+  kind: 'row',
+  tableId,
+  rowId,
+  path: '/category',
+});
+const schemaOf = (tableId: string) => ({ kind: 'schema', tableId });
+const referencedTable = (tableId: string) => ({ kind: 'table', tableId });
+
 type Given = (kit: PartialChangesTestKit) => Promise<ChangesScenario>;
 type Tables = Readonly<Record<string, TableFixture>>;
 type Committing = (
@@ -121,6 +130,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       operation: ChangeOperation;
       selected: string;
       required: Record<string, unknown>;
+      taker: Record<string, unknown>;
       tableId: string;
       target: string;
     }>([
@@ -128,6 +138,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         operation: 'commit',
         selected: BETA,
         required: renamedStructureOf(ALPHA, BETA),
+        taker: renamedStructureOf(BETA, ALPHA),
         tableId: BETA,
         target: 'new Head',
       },
@@ -135,6 +146,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         operation: 'commit',
         selected: ALPHA,
         required: renamedStructureOf(BETA, ALPHA),
+        taker: renamedStructureOf(ALPHA, BETA),
         tableId: ALPHA,
         target: 'new Head',
       },
@@ -142,12 +154,13 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         operation: 'revert',
         selected: BETA,
         required: renamedStructureOf(ALPHA, BETA),
+        taker: renamedStructureOf(BETA, ALPHA),
         tableId: ALPHA,
         target: 'reverted Draft',
       },
     ])(
       'requires the other half of a table id swap when $selected is selected in a $operation',
-      async ({ operation, selected, required, tableId, target }) => {
+      async ({ operation, selected, required, taker, tableId, target }) => {
         const draft = await givenSwappedTables(kit);
 
         const closure = await draft.closeDependencies(operation, {
@@ -159,8 +172,9 @@ describe('DependencyClosure: structures, views and rows that come with a structu
             unit: required,
             reason: {
               code: 'idOccupied',
-              tableId,
               because: `the table id ${tableId} would be held by two tables in the ${target}`,
+              site: { kind: 'tableId', tableId },
+              cause: { unit: taker, role: 'taker' },
             },
           },
         ]);
@@ -182,9 +196,11 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           unit: structureOf(BRANDS),
           reason: {
             code: 'referencedTableMissing',
-            tableId: PRODUCTS,
             because:
               'the schema of products references the table brands, which exists only in the Draft',
+            site: schemaOf(PRODUCTS),
+            references: referencedTable(BRANDS),
+            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
           },
         },
       ]);
@@ -203,9 +219,11 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           unit: structureOf(PRODUCTS),
           reason: {
             code: 'referrerStillReferences',
-            tableId: PRODUCTS,
             because:
               'the schema of products references the table brands, which the reverted Draft no longer contains',
+            site: schemaOf(PRODUCTS),
+            references: referencedTable(BRANDS),
+            cause: { unit: structureOf(BRANDS), role: 'remover' },
           },
         },
       ]);
@@ -217,6 +235,8 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       required: Record<string, unknown>;
       code: string;
       because: string;
+      referenced: string;
+      cause: Record<string, unknown>;
     }>([
       {
         selected: KINDS,
@@ -224,6 +244,11 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         code: 'referrerStillReferences',
         because:
           'the schema of products references the table categories, which the new Head no longer contains',
+        referenced: CATEGORIES,
+        cause: {
+          unit: renamedStructureOf(KINDS, CATEGORIES),
+          role: 'remover',
+        },
       },
       {
         selected: PRODUCTS,
@@ -231,10 +256,12 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         code: 'referencedTableMissing',
         because:
           'the schema of products references the table kinds, which exists only in the Draft',
+        referenced: KINDS,
+        cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
       },
     ])(
       'commits a table rename and the referrer schema it rewrote together when $selected is selected',
-      async ({ selected, required, code, because }) => {
+      async ({ selected, required, code, because, referenced, cause }) => {
         const draft = await givenRenamedCategoriesUnderProducts(kit);
 
         const closure = await draft.closeDependencies('commit', {
@@ -242,7 +269,16 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         });
 
         expect(closure.required).toEqual([
-          { unit: required, reason: { code, tableId: PRODUCTS, because } },
+          {
+            unit: required,
+            reason: {
+              code,
+              because,
+              site: schemaOf(PRODUCTS),
+              references: referencedTable(referenced),
+              cause,
+            },
+          },
         ]);
         expect(closure.blockers).toEqual([]);
       },
@@ -265,8 +301,10 @@ describe('DependencyClosure: structures, views and rows that come with a structu
             unit: structureOf(PRODUCTS),
             reason: {
               code: 'referrerStillReferences',
-              tableId: PRODUCTS,
               because: `the schema of products references the table ${tableId}, which is another table in the ${target}`,
+              site: schemaOf(PRODUCTS),
+              references: referencedTable(tableId),
+              cause: { unit: renamedStructureOf(ALPHA, BETA), role: 'remover' },
             },
           },
         ]);
@@ -286,18 +324,21 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           unit: renamedStructureOf(ALPHA, BETA),
           reason: {
             code: 'referencedTableMissing',
-            tableId: PRODUCTS,
             because:
               'the schema of products references the table alpha, which is another table in the new Head',
+            site: schemaOf(PRODUCTS),
+            references: referencedTable(ALPHA),
+            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
           },
         },
         {
           unit: renamedStructureOf(BETA, ALPHA),
           reason: {
             code: 'idOccupied',
-            tableId: ALPHA,
             because:
               'the table id alpha would be held by two tables in the new Head',
+            site: { kind: 'tableId', tableId: ALPHA },
+            cause: { unit: renamedStructureOf(ALPHA, BETA), role: 'taker' },
           },
         },
       ]);
@@ -323,8 +364,8 @@ describe('DependencyClosure: structures, views and rows that come with a structu
             unit: structureOf(tableId),
             reason: {
               code: 'structureBoundData',
-              tableId,
               because: `the views of ${tableId} change with its structure`,
+              site: { kind: 'selector', tableId },
             },
           },
         ]);
@@ -366,8 +407,8 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           unit: structureOf(OFFERS),
           reason: {
             code: 'structureBoundData',
-            tableId: OFFERS,
             because: 'the views of offers change with its structure',
+            site: { kind: 'selector', tableId: OFFERS },
           },
         },
       ]);
@@ -398,10 +439,11 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           unit: createdRow({ tableId: CATEGORIES, rowId: 'c9' }),
           reason: {
             code: 'referencedRowMissing',
-            tableId: OFFERS,
-            rowId: 'o2',
             because:
-              'offers/o2 references categories/c9, which exists only in the Draft',
+              'offers/o2/category references categories/c9, which exists only in the Draft',
+            site: referringField(OFFERS, 'o2'),
+            references: { kind: 'row', tableId: CATEGORIES, rowId: 'c9' },
+            cause: { unit: structureOf(OFFERS), role: 'referrer' },
           },
         },
       ]);
@@ -435,10 +477,11 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           unit: deletedRow({ tableId: CATEGORIES, rowId: 'c1' }),
           reason: {
             code: 'referencedRowMissing',
-            tableId: OFFERS,
-            rowId: 'o1',
             because:
-              'offers/o1 references categories/c1, which exists only in Head',
+              'offers/o1/category references categories/c1, which exists only in Head',
+            site: referringField(OFFERS, 'o1'),
+            references: { kind: 'row', tableId: CATEGORIES, rowId: 'c1' },
+            cause: { unit: structureOf(OFFERS), role: 'referrer' },
           },
         },
       ]);
@@ -448,23 +491,26 @@ describe('DependencyClosure: structures, views and rows that come with a structu
     it.each<{
       operation: ChangeOperation;
       required: Record<string, unknown>;
+      referenced: string;
       because: string;
     }>([
       {
         operation: 'commit',
         required: createdRow({ tableId: BRANDS, rowId: 'c1' }),
+        referenced: BRANDS,
         because:
-          'products/p1 references brands/c1, which exists only in the Draft',
+          'products/p1/category references brands/c1, which exists only in the Draft',
       },
       {
         operation: 'revert',
         required: deletedRow({ tableId: CATEGORIES, rowId: 'c1' }),
+        referenced: CATEGORIES,
         because:
-          'products/p1 references categories/c1, which exists only in Head',
+          'products/p1/category references categories/c1, which exists only in Head',
       },
     ])(
       'requires the rows that a foreign key changed by the structure needs in a $operation',
-      async ({ operation, required, because }) => {
+      async ({ operation, required, referenced, because }) => {
         const draft = await givenProductsReferencingBrandsInstead(kit);
 
         const closure = await draft.closeDependencies(operation, {
@@ -476,15 +522,67 @@ describe('DependencyClosure: structures, views and rows that come with a structu
             unit: required,
             reason: {
               code: 'referencedRowMissing',
-              tableId: PRODUCTS,
-              rowId: 'p1',
               because,
+              site: referringField(PRODUCTS, 'p1'),
+              references: { kind: 'row', tableId: referenced, rowId: 'c1' },
+              cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
             },
           },
         ]);
         expect(closure.blockers).toEqual([]);
       },
     );
+
+    it('names the structure as the cause when it brings the value of an edited row under a foreign key it changed (AS-85)', async () => {
+      const draft = await givenProductsReferencingBrandsInstead(kit);
+      await draft.updateRow(PRODUCTS, 'p1', {
+        title: 'renamed',
+        category: 'c1',
+      });
+
+      const closure = await draft.closeDependencies('commit', {
+        structures: [{ tableId: PRODUCTS }],
+      });
+
+      expect(closure.required).toEqual([
+        {
+          unit: createdRow({ tableId: BRANDS, rowId: 'c1' }),
+          reason: {
+            code: 'referencedRowMissing',
+            because:
+              'products/p1/category references brands/c1, which exists only in the Draft',
+            site: referringField(PRODUCTS, 'p1'),
+            references: { kind: 'row', tableId: BRANDS, rowId: 'c1' },
+            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+          },
+        },
+      ]);
+      expect(closure.blockers).toEqual([]);
+    });
+
+    it('names the structure as the cause when it brings a reference that only a deleted row of the base keeps (AS-85)', async () => {
+      const draft = await givenProductsReferencingBrandsInstead(kit);
+      await draft.removeRow(PRODUCTS, 'p1');
+
+      const closure = await draft.closeDependencies('commit', {
+        structures: [{ tableId: PRODUCTS }],
+      });
+
+      expect(closure.required).toEqual([
+        {
+          unit: deletedRow({ tableId: PRODUCTS, rowId: 'p1' }),
+          reason: {
+            code: 'referrerStillReferences',
+            because:
+              'products/p1/category references brands/c1, which the new Head no longer contains',
+            site: referringField(PRODUCTS, 'p1'),
+            references: { kind: 'row', tableId: BRANDS, rowId: 'c1' },
+            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+          },
+        },
+      ]);
+      expect(closure.blockers).toEqual([]);
+    });
 
     it('blocks a created table whose row references a row of neither revision as danglingInSource', async () => {
       const draft = await givenCreatedOfferOfMissingCategory(kit);
@@ -499,8 +597,9 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           code: 'danglingInSource',
           tableId: OFFERS,
           rowId: 'o1',
+          path: '/category',
           message:
-            'No unit can restore consistency: offers/o1 references categories/c404, which the new Head does not contain',
+            'No unit can restore consistency: offers/o1/category references categories/c404, which the new Head does not contain',
           unit: structureOf(OFFERS),
         },
       ]);
@@ -585,9 +684,11 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         unit: structureOf(BRANDS),
         reason: {
           code: 'referencedTableMissing',
-          tableId: PRODUCTS,
           because:
             'the schema of products references the table brands, which exists only in the Draft',
+          site: schemaOf(PRODUCTS),
+          references: referencedTable(BRANDS),
+          cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
         },
       },
     ]);

@@ -9,7 +9,7 @@ import type {
 import type { Finding } from 'src/features/partial-changes/closure/findings';
 import { type AddressedUnit, addressedUnitOf } from './catalogue-reading';
 import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type { CatalogueReason } from 'src/features/partial-changes/plan/reason';
 
 export type CheckScript = (pass: ScriptedPass) => Finding[];
 
@@ -46,13 +46,13 @@ export class ScriptedPass {
     return this.choice.applied.has(this.keyOf(unit));
   }
 
-  public requires(unit: AddressedUnit, reason: Reason): Finding {
+  public requires(unit: AddressedUnit, reason: CatalogueReason): Finding {
     return { kind: 'requires', unitKey: this.keyOf(unit), reason };
   }
 
   public requiresUntilApplied(
     unit: AddressedUnit,
-    reason: Reason,
+    reason: CatalogueReason,
     { after }: { readonly after?: AddressedUnit } = {},
   ): Finding[] {
     if (this.applies(unit) || (after && !this.applies(after))) {

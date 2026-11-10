@@ -103,11 +103,14 @@ describe('SelectionResolver: exclusions and unmatched selectors', () => {
             unit: createdP3,
             reason: {
               code: 'wholeRowUnit',
-              tableId: PRODUCTS,
-              rowId: 'p3',
-              path: '/code',
               because:
                 'products/p3 is created, deleted or replaced as a whole row',
+              site: {
+                kind: 'selector',
+                tableId: PRODUCTS,
+                rowId: 'p3',
+                path: '/code',
+              },
             },
           },
         ],

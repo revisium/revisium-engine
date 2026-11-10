@@ -12,6 +12,14 @@ import {
   requiring,
 } from 'src/features/partial-changes/closure/findings';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
+import {
+  causeOf,
+  positionOf,
+  type ReasonSite,
+  type ReferencedEntity,
+  withCause,
+} from 'src/features/partial-changes/plan/reason';
+import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 @Injectable()
 export class TableReferences implements TargetCheck, TargetChecking {
@@ -41,34 +49,57 @@ export class TableReferences implements TargetCheck, TargetChecking {
   ): Finding {
     const { rules, names } = context;
     const structure = context.structureOf(referrer.pair);
-    const tableIdSite = { tableId: referrer.tableId };
+    const site: ReasonSite = {
+      kind: 'schema',
+      tableId: publicTableIdOf(referrer.pair),
+    };
+    const references: ReferencedEntity = { kind: 'table', tableId };
 
     if (structure !== undefined && !rules.isApplied(structure)) {
-      return requiring(structure, {
-        ...tableIdSite,
-        code: 'referrerStillReferences',
-        because: this.brokenReference(
-          context,
-          referrer,
-          tableId,
-          `which the ${names.target} no longer contains`,
+      return requiring(
+        structure,
+        withCause(
+          {
+            code: 'referrerStillReferences',
+            because: this.brokenReference(
+              context,
+              referrer,
+              tableId,
+              `which the ${names.target} no longer contains`,
+            ),
+            site,
+            references,
+          },
+          context.appliedCause(
+            causeOf(
+              this.structureMeantBy(context, referrer, tableId),
+              'remover',
+            ),
+          ),
         ),
-      });
+      );
     }
 
     const provider = this.unappliedStructureMeantBy(context, referrer, tableId);
 
     if (provider !== undefined) {
-      return requiring(provider, {
-        ...tableIdSite,
-        code: 'referencedTableMissing',
-        because: this.brokenReference(
-          context,
-          referrer,
-          tableId,
-          `which exists only in ${names.other}`,
+      return requiring(
+        provider,
+        withCause(
+          {
+            code: 'referencedTableMissing',
+            because: this.brokenReference(
+              context,
+              referrer,
+              tableId,
+              `which exists only in ${names.other}`,
+            ),
+            site,
+            references,
+          },
+          context.appliedCause(causeOf(structure, 'referrer')),
         ),
-      });
+      );
     }
 
     const refusal = context.tables.refusalOfReference(referrer, tableId);
@@ -85,7 +116,7 @@ export class TableReferences implements TargetCheck, TargetChecking {
           tableId,
           `which the ${names.target} does not contain`,
         ),
-        tableIdSite,
+        positionOf(site),
         structure,
       ),
     );
@@ -97,7 +128,7 @@ export class TableReferences implements TargetCheck, TargetChecking {
     tableId: string,
     whichWhenMissing: string,
   ): string {
-    const reference = `the schema of ${referrer.tableId} references the table ${tableId}`;
+    const reference = `the schema of ${publicTableIdOf(referrer.pair)} references the table ${tableId}`;
 
     if (tables.named(tableId) !== undefined) {
       return `${reference}, which is another table in the ${names.target}`;
@@ -111,13 +142,22 @@ export class TableReferences implements TargetCheck, TargetChecking {
     referrer: TargetTable,
     tableId: string,
   ): string | undefined {
-    const meant = context.tables.tableMeantBy(referrer, tableId);
-    const structure = meant && context.structureOf(meant);
+    const structure = this.structureMeantBy(context, referrer, tableId);
 
     if (structure === undefined || context.rules.isApplied(structure)) {
       return undefined;
     }
 
     return structure;
+  }
+
+  private structureMeantBy(
+    context: CheckContext,
+    referrer: TargetTable,
+    tableId: string,
+  ): string | undefined {
+    const meant = context.tables.tableMeantBy(referrer, tableId);
+
+    return meant && context.structureOf(meant);
   }
 }

@@ -11,7 +11,10 @@ import type {
   ChangeOperation,
 } from 'src/features/partial-changes/plan/change-operation';
 import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type {
+  CatalogueReason,
+  CauseRole,
+} from 'src/features/partial-changes/plan/reason';
 import {
   isWholeDraftSelection,
   type ItemKind,
@@ -19,6 +22,8 @@ import {
   type SelectionItems,
 } from 'src/features/partial-changes/selection/selection';
 import {
+  type DescribedUnitRef,
+  type RequiredReason,
   type RequiredUnit,
   type UnitRef,
   unitRefOf,
@@ -29,13 +34,21 @@ import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadl
 import { readSelectionSource, unitKeyed } from './selection-resolving';
 import { readInPlanningTransaction } from './snapshot-reading';
 
-export type ClosureBlockerView = Omit<CatalogueBlocker, 'unitKey'> & {
+export type ClosureReasonView = Omit<RequiredReason, 'cause'> & {
+  readonly cause?: { readonly unit: UnitRef; readonly role: CauseRole };
+};
+
+export type ClosureBlockerView = Omit<
+  CatalogueBlocker,
+  'unitKey' | 'reason'
+> & {
   readonly unit?: UnitRef;
+  readonly reason?: ClosureReasonView;
 };
 
 export interface ClosureRequiredView {
   readonly unit: UnitRef;
-  readonly reason: Reason;
+  readonly reason: ClosureReasonView;
 }
 
 export interface ClosureView {
@@ -138,19 +151,56 @@ function withItems(selection: Selection, items: SelectionItems): Selection {
 }
 
 function closureRequiredView({
-  unit: { structureChange: _structureChange, ...unit },
-  reason,
+  unit,
+  reason: { cause, ...reason },
 }: RequiredUnit): ClosureRequiredView {
-  return { unit, reason };
+  if (cause === undefined) {
+    return { unit: undescribed(unit), reason };
+  }
+
+  return {
+    unit: undescribed(unit),
+    reason: { ...reason, cause: { ...cause, unit: undescribed(cause.unit) } },
+  };
+}
+
+function undescribed({
+  structureChange: _structureChange,
+  ...unit
+}: DescribedUnitRef): UnitRef {
+  return unit;
 }
 
 function closureBlockerView(
   catalogue: ChangeCatalogue,
-  { unitKey, ...blocker }: CatalogueBlocker,
+  { unitKey, reason, ...blocker }: CatalogueBlocker,
 ): ClosureBlockerView {
-  if (unitKey === undefined) {
-    return blocker;
+  let view: ClosureBlockerView = blocker;
+
+  if (reason !== undefined) {
+    view = { ...view, reason: closureReasonView(catalogue, reason) };
   }
 
-  return { ...blocker, unit: unitRefOf(unitKeyed(catalogue, unitKey)) };
+  if (unitKey !== undefined) {
+    view = { ...view, unit: unitRefOf(unitKeyed(catalogue, unitKey)) };
+  }
+
+  return view;
+}
+
+function closureReasonView(
+  catalogue: ChangeCatalogue,
+  { cause, ...reason }: CatalogueReason,
+): ClosureReasonView {
+  if (cause === undefined) {
+    return reason;
+  }
+
+  return {
+    ...reason,
+    cause: {
+      unit: unitRefOf(unitKeyed(catalogue, cause.unitKey)),
+      role: cause.role,
+    },
+  };
 }

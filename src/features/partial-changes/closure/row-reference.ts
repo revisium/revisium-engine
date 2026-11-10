@@ -1,3 +1,4 @@
+import type { CheckContext } from 'src/features/partial-changes/closure/check-context';
 import {
   blocking,
   danglingInSource,
@@ -6,16 +7,21 @@ import {
   requiring,
 } from 'src/features/partial-changes/closure/findings';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
-import type { SideNames } from 'src/features/partial-changes/plan/change-operation';
-import type {
-  Reason,
-  RequiredReasonCode,
+import {
+  type CatalogueCause,
+  type CatalogueReason,
+  type RequiredReasonCode,
+  withCause,
 } from 'src/features/partial-changes/plan/reason';
+import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
+// Public ids of the referring row; `path` is the referring field, the array's
+// pointer for a reference inside an array.
 export interface ReferringSite {
   readonly tableId: string;
   readonly rowId: string;
-  readonly path?: string;
+  readonly path: string;
 }
 
 export interface RowReference {
@@ -24,25 +30,48 @@ export interface RowReference {
   readonly referencedId: string;
 }
 
+export function referringSiteOf(
+  referrer: TargetTable,
+  rowId: string,
+  field: JsonPointer,
+): ReferringSite {
+  return {
+    tableId: publicTableIdOf(referrer.pair),
+    rowId,
+    path: field.toString(),
+  };
+}
+
 export function referenceReason(
   { site, referenced, referencedId }: RowReference,
   code: RequiredReasonCode,
   which: string,
-): Reason {
-  const { tableId, rowId, path = '' } = site;
+  cause?: CatalogueCause,
+): CatalogueReason {
+  const { tableId, rowId, path } = site;
+  const referencedTableId = publicTableIdOf(referenced.pair);
 
-  return {
-    code,
-    ...site,
-    because: `${tableId}/${rowId}${path} references ${referenced.tableId}/${referencedId}, ${which}`,
-  };
+  return withCause(
+    {
+      code,
+      because: `${tableId}/${rowId}${path} references ${referencedTableId}/${referencedId}, ${which}`,
+      site: { kind: 'row', tableId, rowId, path },
+      references: {
+        kind: 'row',
+        tableId: referencedTableId,
+        rowId: referencedId,
+      },
+    },
+    cause,
+  );
 }
 
 export function referencedRowFinding(
   reference: RowReference,
-  names: SideNames,
-  culprit: string | undefined,
+  context: CheckContext,
+  culprit: CatalogueCause | undefined,
 ): Finding {
+  const { names } = context;
   const { referenced, referencedId } = reference;
   const provider = referenced.providerOf(referencedId);
 
@@ -53,6 +82,7 @@ export function referencedRowFinding(
         reference,
         'referencedRowMissing',
         `which exists only in ${names.other}`,
+        context.appliedCause(culprit),
       ),
     );
   }
@@ -67,5 +97,5 @@ export function referencedRowFinding(
     `which the ${names.target} does not contain`,
   );
 
-  return blocking(danglingInSource(because, reference.site, culprit));
+  return blocking(danglingInSource(because, reference.site, culprit?.unitKey));
 }

@@ -1,11 +1,14 @@
 import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
-import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type {
+  CatalogueBlocker,
+  PlainBlocker,
+} from 'src/features/partial-changes/plan/plan-blocker';
 
 export function changedRowsTooLarge(
   changedRowCount: number,
   maxChangedRows: number,
-): CatalogueBlocker {
+): PlainBlocker {
   return {
     code: 'tooLarge',
     message: `The affected tables hold ${changedRowCount} changed rows; the limit for one operation is ${maxChangedRows}`,

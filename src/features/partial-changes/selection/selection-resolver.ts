@@ -4,7 +4,7 @@ import {
   refusalBlocker,
   requiredExcluded,
 } from 'src/features/partial-changes/plan/plan-blocker';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type { CatalogueReason } from 'src/features/partial-changes/plan/reason';
 import {
   isWholeDraftSelection,
   type Selection,
@@ -87,7 +87,7 @@ class SelectionResolver {
 
   private requiredAdditions(
     selected: ReadonlySet<string>,
-  ): Map<string, Reason> {
+  ): Map<string, CatalogueReason> {
     return new Map(
       [...this.included.required].filter(
         ([key]) => !selected.has(key) && !this.excluded.has(key),

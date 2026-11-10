@@ -10,10 +10,12 @@ import type { Selection } from 'src/features/partial-changes/selection/selection
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const PRODUCTS = 'products';
+const BRANDS = 'brands';
 
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
 
 const productSchema = obj({ title: str(), price: num() });
+const brandSchema = obj({ title: str() });
 
 const colorOfP1: Selection = {
   fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/color' }],
@@ -95,6 +97,47 @@ describe('structure units in preview and apply results', () => {
     });
   });
 
+  describe('the cause of a reason (AS-85)', () => {
+    it('describes the structure unit a required unit is caused by as the listing does', async () => {
+      const draft = await givenProductsReferencingCreatedBrands();
+      const products = await listedStructureOf(draft);
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: structureOfProducts,
+      });
+
+      expect(preview.required.map(({ reason }) => reason.cause)).toEqual([
+        { unit: products, role: 'referrer' },
+      ]);
+    });
+
+    it('describes the same cause in the reason of a requiredExcluded blocker', async () => {
+      const draft = await givenProductsReferencingCreatedBrands();
+      const products = await listedStructureOf(draft);
+
+      const result = await draft.commitChanges({
+        selection: {
+          ...structureOfProducts,
+          exclude: { structures: [{ tableId: BRANDS }] },
+        },
+      });
+
+      const excluded =
+        'blockers' in result
+          ? result.blockers.find(({ code }) => code === 'requiredExcluded')
+          : undefined;
+
+      expect(result.status).toBe('blocked');
+      expect(excluded?.reason).toMatchObject({
+        code: 'referencedTableMissing',
+        site: { kind: 'schema', tableId: PRODUCTS },
+        references: { kind: 'table', tableId: BRANDS },
+        cause: { unit: products, role: 'referrer' },
+      });
+    });
+  });
+
   describe('commitChanges and revertChanges', () => {
     it('describes the structure unit a commit requires as the listing does', async () => {
       const draft = await givenProductsGettingColor();
@@ -147,6 +190,18 @@ describe('structure units in preview and apply results', () => {
     }
 
     return structure;
+  }
+
+  async function givenProductsReferencingCreatedBrands(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: { schema: productSchema },
+    });
+    await draft.createTable(BRANDS, brandSchema);
+    await draft.updateTable(PRODUCTS, [
+      addField('brand', str({ foreignKey: BRANDS })),
+    ]);
+
+    return draft;
   }
 
   async function givenProductsGettingColor(): Promise<ChangesScenario> {

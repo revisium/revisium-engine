@@ -25,6 +25,8 @@ const KINDS = 'kinds';
 const PRODUCTS = 'products';
 const BRANDS = 'brands';
 const SHELVES = 'shelves';
+const RACKS = 'racks';
+const GOODS = 'goods';
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({
@@ -37,6 +39,11 @@ const plainCategorySchema = obj({ title: str(), category: str() });
 const shelfSchema = obj({
   title: str(),
   categories: arr(str({ foreignKey: CATEGORIES })),
+});
+
+const rackSchema = obj({
+  title: str(),
+  slots: arr(obj({ category: str({ foreignKey: CATEGORIES }) })),
 });
 
 const brandSchema = obj({
@@ -65,6 +72,36 @@ const categoryOf = (rowId: string): FieldRef => ({
   tableId: PRODUCTS,
   rowId,
   path: '/category',
+});
+
+const categoryRow = (kind: 'rowCreate' | 'rowDelete', rowId: string) => ({
+  kind,
+  tableId: CATEGORIES,
+  rowId,
+  selector: { rows: [category(rowId)] },
+});
+const categoryRename = (rowId: string, previousRowId: string) => ({
+  kind: 'rowRename',
+  tableId: CATEGORIES,
+  rowId,
+  previousRowId,
+  selector: { rowRenames: [category(rowId)] },
+});
+const categoryOfProduct = (rowId: string) => ({
+  kind: 'field',
+  ...categoryOf(rowId),
+  selector: { fields: [categoryOf(rowId)] },
+});
+const referringField = (tableId: string, rowId: string, path: string) => ({
+  kind: 'row',
+  tableId,
+  rowId,
+  path,
+});
+const referencedCategory = (rowId: string) => ({
+  kind: 'row',
+  tableId: CATEGORIES,
+  rowId,
 });
 
 type Given = (kit: PartialChangesTestKit) => Promise<ChangesScenario>;
@@ -190,11 +227,11 @@ describe('DependencyClosure: references and ids of rows', () => {
           },
           reason: {
             code: 'referencedRowMissing',
-            tableId: PRODUCTS,
-            rowId: 'p1',
-            path: '/category',
             because:
               'products/p1/category references categories/c9, which exists only in the Draft',
+            site: referringField(PRODUCTS, 'p1', '/category'),
+            references: referencedCategory('c9'),
+            cause: { unit: categoryOfProduct('p1'), role: 'referrer' },
           },
         },
       ]);
@@ -218,16 +255,99 @@ describe('DependencyClosure: references and ids of rows', () => {
           },
           reason: {
             code: 'referencedRowMissing',
-            tableId: PRODUCTS,
-            rowId: 'p1',
-            path: '/category',
             because:
               'products/p1/category references categories/c1, which exists only in Head',
+            site: referringField(PRODUCTS, 'p1', '/category'),
+            references: referencedCategory('c1'),
+            cause: { unit: categoryOfProduct('p1'), role: 'referrer' },
           },
         },
       ]);
       expect(closure.blockers).toEqual([]);
     });
+  });
+
+  it('names the site and the referenced row by the public ids units carry, also for a renamed referrer (AS-84)', async () => {
+    const draft = await givenRenamedProductMovedToCreatedCategory(kit);
+
+    const closure = await draft.closeDependencies('commit', {
+      fields: [categoryOf('p1x')],
+    });
+
+    expect(closure.required).toEqual([
+      {
+        unit: categoryRow('rowCreate', 'c9'),
+        reason: {
+          code: 'referencedRowMissing',
+          because:
+            'products/p1x/category references categories/c9, which exists only in the Draft',
+          site: referringField(PRODUCTS, 'p1x', '/category'),
+          references: referencedCategory('c9'),
+          cause: { unit: categoryOfProduct('p1x'), role: 'referrer' },
+        },
+      },
+    ]);
+    expect(closure.blockers).toEqual([]);
+  });
+
+  it('names the referring table by the Draft id a rename that stays out gives it (AS-84)', async () => {
+    const draft = await givenProductMovedToCreatedCategory(kit);
+    await draft.renameTable(PRODUCTS, GOODS);
+    const categoryOfGoods = { ...categoryOf('p1'), tableId: GOODS };
+
+    const closure = await draft.closeDependencies('commit', {
+      fields: [categoryOfGoods],
+    });
+
+    expect(closure.required).toEqual([
+      {
+        unit: categoryRow('rowCreate', 'c9'),
+        reason: {
+          code: 'referencedRowMissing',
+          because:
+            'goods/p1/category references categories/c9, which exists only in the Draft',
+          site: referringField(GOODS, 'p1', '/category'),
+          references: referencedCategory('c9'),
+          cause: {
+            unit: {
+              kind: 'field',
+              ...categoryOfGoods,
+              selector: { fields: [categoryOfGoods] },
+            },
+            role: 'referrer',
+          },
+        },
+      },
+    ]);
+    expect(closure.blockers).toEqual([]);
+  });
+
+  it('places a reference inside an array of objects at the array, which is one field (AS-84)', async () => {
+    const draft = await givenRackOfDeletedCategory(kit);
+    const slotsOfR1 = { tableId: RACKS, rowId: 'r1', path: '/slots' };
+
+    const closure = await draft.closeDependencies('commit', {
+      rows: [category('c1')],
+    });
+
+    expect(closure.required).toEqual([
+      {
+        unit: {
+          kind: 'field',
+          ...slotsOfR1,
+          selector: { fields: [slotsOfR1] },
+        },
+        reason: {
+          code: 'referrerStillReferences',
+          because:
+            'racks/r1/slots references categories/c1, which the new Head no longer contains',
+          site: referringField(RACKS, 'r1', '/slots'),
+          references: referencedCategory('c1'),
+          cause: { unit: categoryRow('rowDelete', 'c1'), role: 'remover' },
+        },
+      },
+    ]);
+    expect(closure.blockers).toEqual([]);
   });
 
   it('requires the structure when a restored row would reference a missing row through a changed field', async () => {
@@ -246,9 +366,12 @@ describe('DependencyClosure: references and ids of rows', () => {
         },
         reason: {
           code: 'structureBoundData',
-          tableId: PRODUCTS,
-          rowId: 'p1',
-          path: '/category',
+          site: referringField(PRODUCTS, 'p1', '/category'),
+          references: { kind: 'row', tableId: BRANDS, rowId: 'c1' },
+          cause: {
+            unit: { kind: 'rowDelete', tableId: PRODUCTS, rowId: 'p1' },
+            role: 'referrer',
+          },
         },
       },
     ]);
@@ -260,25 +383,31 @@ describe('DependencyClosure: references and ids of rows', () => {
       operation: ChangeOperation;
       given: Given;
       selection: Selection;
+      lost: string;
       because: string;
+      remover: Record<string, unknown>;
     }>([
       {
         operation: 'revert',
         given: givenProductMovedToCreatedCategory,
         selection: { rows: [category('c9')] },
+        lost: 'c9',
         because:
           'products/p1/category references categories/c9, which the reverted Draft no longer contains',
+        remover: categoryRow('rowCreate', 'c9'),
       },
       {
         operation: 'commit',
         given: givenProductMovedFromDeletedCategory,
         selection: { rows: [category('c1')] },
+        lost: 'c1',
         because:
           'products/p1/category references categories/c1, which the new Head no longer contains',
+        remover: categoryRow('rowDelete', 'c1'),
       },
     ])(
       'requires the edit of the referrer kept on the base side in a $operation',
-      async ({ operation, given, selection, because }) => {
+      async ({ operation, given, selection, lost, because, remover }) => {
         const draft = await given(kit);
 
         const closure = await draft.closeDependencies(operation, selection);
@@ -294,10 +423,10 @@ describe('DependencyClosure: references and ids of rows', () => {
             },
             reason: {
               code: 'referrerStillReferences',
-              tableId: PRODUCTS,
-              rowId: 'p1',
-              path: '/category',
               because,
+              site: referringField(PRODUCTS, 'p1', '/category'),
+              references: referencedCategory(lost),
+              cause: { unit: remover, role: 'remover' },
             },
           },
         ]);
@@ -311,6 +440,7 @@ describe('DependencyClosure: references and ids of rows', () => {
       operation: ChangeOperation;
       selection: Selection;
       provider: Record<string, unknown>;
+      remover: Record<string, unknown>;
       side: string;
     }>([
       {
@@ -319,12 +449,8 @@ describe('DependencyClosure: references and ids of rows', () => {
           rowRenames: [category('c2')],
           exclude: { rows: [product('p1')] },
         },
-        provider: {
-          kind: 'rowCreate',
-          tableId: CATEGORIES,
-          rowId: 'c1',
-          selector: { rows: [category('c1')] },
-        },
+        provider: categoryRow('rowCreate', 'c1'),
+        remover: categoryRename('c2', 'c1'),
         side: 'the Draft',
       },
       {
@@ -333,18 +459,13 @@ describe('DependencyClosure: references and ids of rows', () => {
           rows: [category('c1')],
           exclude: { rows: [product('p1')] },
         },
-        provider: {
-          kind: 'rowRename',
-          tableId: CATEGORIES,
-          rowId: 'c2',
-          previousRowId: 'c1',
-          selector: { rowRenames: [category('c2')] },
-        },
+        provider: categoryRename('c2', 'c1'),
+        remover: categoryRow('rowCreate', 'c1'),
         side: 'Head',
       },
     ])(
       'requires the row the reference needs, not the excluded replacement that references it as well, in a $operation',
-      async ({ operation, selection, provider, side }) => {
+      async ({ operation, selection, provider, remover, side }) => {
         const draft = await givenRenamedCategoryAndReplacedProduct(kit);
 
         const closure = await draft.closeDependencies(operation, selection);
@@ -354,10 +475,10 @@ describe('DependencyClosure: references and ids of rows', () => {
             unit: provider,
             reason: {
               code: 'referencedRowMissing',
-              tableId: PRODUCTS,
-              rowId: 'p1',
-              path: '/category',
               because: `products/p1/category references categories/c1, which exists only in ${side}`,
+              site: referringField(PRODUCTS, 'p1', '/category'),
+              references: referencedCategory('c1'),
+              cause: { unit: remover, role: 'remover' },
             },
           },
         ]);
@@ -383,11 +504,11 @@ describe('DependencyClosure: references and ids of rows', () => {
           },
           reason: {
             code: 'referencedRowMissing',
-            tableId: SHELVES,
-            rowId: 's1',
-            path: '/categories/0',
             because:
-              'shelves/s1/categories/0 references categories/c1, which exists only in the Draft',
+              'shelves/s1/categories references categories/c1, which exists only in the Draft',
+            site: referringField(SHELVES, 's1', '/categories'),
+            references: referencedCategory('c1'),
+            cause: { unit: categoryRename('c2', 'c1'), role: 'remover' },
           },
         },
       ]);
@@ -410,11 +531,11 @@ describe('DependencyClosure: references and ids of rows', () => {
           },
           reason: {
             code: 'referrerStillReferences',
-            tableId: SHELVES,
-            rowId: 's1',
-            path: '/categories/0',
             because:
-              'shelves/s1/categories/0 references categories/c1, which the new Head no longer contains',
+              'shelves/s1/categories references categories/c1, which the new Head no longer contains',
+            site: referringField(SHELVES, 's1', '/categories'),
+            references: referencedCategory('c1'),
+            cause: { unit: categoryRename('c2', 'c1'), role: 'remover' },
           },
         },
       ]);
@@ -460,10 +581,11 @@ describe('DependencyClosure: references and ids of rows', () => {
           },
           reason: {
             code: 'referencedRowMissing',
-            tableId: PRODUCTS,
-            rowId: 'q1',
             because:
-              'products/q1 references categories/c2, which the new Head loses',
+              'products/q1/category references categories/c2, which the new Head loses',
+            site: referringField(PRODUCTS, 'q1', '/category'),
+            references: referencedCategory('c2'),
+            cause: { unit: categoryRename('c9', 'c2'), role: 'remover' },
           },
         },
         {
@@ -476,11 +598,11 @@ describe('DependencyClosure: references and ids of rows', () => {
           },
           reason: {
             code: 'referrerStillReferences',
-            tableId: PRODUCTS,
-            rowId: 'p1',
-            path: '/category',
             because:
               'products/p1/category references categories/c1, which the new Head no longer contains',
+            site: referringField(PRODUCTS, 'p1', '/category'),
+            references: referencedCategory('c1'),
+            cause: { unit: categoryRename('c2', 'c1'), role: 'remover' },
           },
         },
       ]);
@@ -513,14 +635,10 @@ describe('DependencyClosure: references and ids of rows', () => {
             code: 'danglingInSource',
             tableId: PRODUCTS,
             rowId: 'p1',
+            path: '/category',
             message:
-              'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
-            unit: {
-              kind: 'rowDelete',
-              tableId: CATEGORIES,
-              rowId: 'c1',
-              selector: { rows: [category('c1')] },
-            },
+              'No unit can restore consistency: products/p1/category references categories/c1, which the new Head loses',
+            unit: categoryRow('rowDelete', 'c1'),
           },
         ]);
         expect(referrerReads).toHaveBeenCalledTimes(1);
@@ -534,25 +652,31 @@ describe('DependencyClosure: references and ids of rows', () => {
       operation: ChangeOperation;
       given: Given;
       selection: Selection;
+      lost: string;
       because: string;
+      remover: Record<string, unknown>;
     }>([
       {
         operation: 'commit',
         given: givenCategoryDeletedAfterItsKeyWasDropped,
         selection: { rows: [category('c1')] },
+        lost: 'c1',
         because:
           'products/p1/category references categories/c1, which the new Head loses; the value follows the structure of products',
+        remover: categoryRow('rowDelete', 'c1'),
       },
       {
         operation: 'revert',
         given: givenCategoryCreatedForANewKey,
         selection: { rows: [category('c9')] },
+        lost: 'c9',
         because:
           'products/p1/category references categories/c9, which the reverted Draft loses; the value follows the structure of products',
+        remover: categoryRow('rowCreate', 'c9'),
       },
     ])(
       'requires the structure that owns the key in a $operation',
-      async ({ operation, given, selection, because }) => {
+      async ({ operation, given, selection, lost, because, remover }) => {
         const draft = await given(kit);
 
         const closure = await draft.closeDependencies(operation, selection);
@@ -562,10 +686,10 @@ describe('DependencyClosure: references and ids of rows', () => {
             unit: productsStructure,
             reason: {
               code: 'structureBoundData',
-              tableId: PRODUCTS,
-              rowId: 'p1',
-              path: '/category',
               because,
+              site: referringField(PRODUCTS, 'p1', '/category'),
+              references: referencedCategory(lost),
+              cause: { unit: remover, role: 'remover' },
             },
           },
         ]);
@@ -590,11 +714,11 @@ describe('DependencyClosure: references and ids of rows', () => {
           unit: productsStructure,
           reason: {
             code: 'structureBoundData',
-            tableId: PRODUCTS,
-            rowId: 'p1',
-            path: '/category',
             because:
               'products/p1/category references categories/c1, which the new Head loses; the value follows the structure of products',
+            site: referringField(PRODUCTS, 'p1', '/category'),
+            references: referencedCategory('c1'),
+            cause: { unit: categoryRow('rowDelete', 'c1'), role: 'remover' },
           },
         },
       ]);
@@ -642,14 +766,10 @@ describe('DependencyClosure: references and ids of rows', () => {
             code: 'danglingInSource',
             tableId: PRODUCTS,
             rowId: 'p1',
+            path: '/category',
             message:
-              'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
-            unit: {
-              kind: 'rowDelete',
-              tableId: CATEGORIES,
-              rowId: 'c1',
-              selector: { rows: [category('c1')] },
-            },
+              'No unit can restore consistency: products/p1/category references categories/c1, which the new Head loses',
+            unit: categoryRow('rowDelete', 'c1'),
           },
         ]);
       },
@@ -672,8 +792,9 @@ describe('DependencyClosure: references and ids of rows', () => {
             code: 'danglingInSource',
             tableId: PRODUCTS,
             rowId: 'p1',
+            path: '/category',
             message:
-              'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
+              'No unit can restore consistency: products/p1/category references kinds/c1, which the new Head loses',
             unit: {
               kind: 'rowDelete',
               tableId: KINDS,
@@ -742,25 +863,31 @@ describe('DependencyClosure: references and ids of rows', () => {
       operation: ChangeOperation;
       given: Given;
       selection: Selection;
+      lost: string;
       because: string;
+      remover: Record<string, unknown>;
     }>([
       {
         operation: 'revert',
         given: givenCreatedBrandOfCreatedCategory,
         selection: { rows: [category('c9')] },
+        lost: 'c9',
         because:
           'brands/b1/category references categories/c9, which the reverted Draft loses; the value follows the structure of brands',
+        remover: categoryRow('rowCreate', 'c9'),
       },
       {
         operation: 'commit',
         given: givenRemovedBrandOfDeletedCategory,
         selection: { rows: [category('c1')] },
+        lost: 'c1',
         because:
           'brands/b1/category references categories/c1, which the new Head loses; the value follows the structure of brands',
+        remover: categoryRow('rowDelete', 'c1'),
       },
     ])(
       'requires the structure of that table in a $operation',
-      async ({ operation, given, selection, because }) => {
+      async ({ operation, given, selection, lost, because, remover }) => {
         const draft = await given(kit);
 
         const closure = await draft.closeDependencies(operation, selection);
@@ -770,10 +897,10 @@ describe('DependencyClosure: references and ids of rows', () => {
             unit: brandsStructure,
             reason: {
               code: 'structureBoundData',
-              tableId: BRANDS,
-              rowId: 'b1',
-              path: '/category',
               because,
+              site: referringField(BRANDS, 'b1', '/category'),
+              references: referencedCategory(lost),
+              cause: { unit: remover, role: 'remover' },
             },
           },
         ]);
@@ -833,9 +960,9 @@ describe('DependencyClosure: references and ids of rows', () => {
             },
             reason: {
               code: 'idOccupied',
-              tableId: CATEGORIES,
-              rowId,
               because: `categories/${rowId} would be held by two rows in the ${target}`,
+              site: { kind: 'rowId', tableId: CATEGORIES, rowId },
+              cause: { unit: categoryRename('c2', 'c1'), role: 'taker' },
             },
           },
         ]);
@@ -861,9 +988,9 @@ describe('DependencyClosure: references and ids of rows', () => {
           },
           reason: {
             code: 'idOccupied',
-            tableId: CATEGORIES,
-            rowId: 'c1',
             because: 'categories/c1 would be held by two rows in the new Head',
+            site: { kind: 'rowId', tableId: CATEGORIES, rowId: 'c1' },
+            cause: { unit: categoryRename('c1', 'c2'), role: 'taker' },
           },
         },
       ]);
@@ -893,11 +1020,11 @@ describe('DependencyClosure: references and ids of rows', () => {
         },
         reason: {
           code: 'referencedRowMissing',
-          tableId: PRODUCTS,
-          rowId: 'p1',
-          path: '/category',
           because:
             'products/p1/category references categories/c9, which exists only in the Draft',
+          site: referringField(PRODUCTS, 'p1', '/category'),
+          references: referencedCategory('c9'),
+          cause: { unit: categoryOfProduct('p1'), role: 'referrer' },
         },
       },
     ]);
@@ -993,6 +1120,41 @@ async function givenProductMovedToCreatedCategory(
   const draft = await givenCatalogue(kit, ['c1'], { p1: 'c1' });
   await draft.createRows(CATEGORIES, { c9: { title: 'c9' } });
   await draft.updateRow(PRODUCTS, 'p1', { title: 'p1', category: 'c9' });
+
+  return draft;
+}
+
+async function givenRackOfDeletedCategory(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: {
+      schema: categorySchema,
+      rows: { c1: { title: 'c1' }, c2: { title: 'c2' } },
+    },
+    [RACKS]: {
+      schema: rackSchema,
+      rows: {
+        r1: { title: 'r1', slots: [{ category: 'c2' }, { category: 'c1' }] },
+      },
+    },
+  });
+  await draft.updateRow(RACKS, 'r1', {
+    title: 'r1',
+    slots: [{ category: 'c2' }],
+  });
+  await draft.removeRow(CATEGORIES, 'c1');
+
+  return draft;
+}
+
+async function givenRenamedProductMovedToCreatedCategory(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await givenCatalogue(kit, ['c1'], { p1: 'c1' });
+  await draft.createRows(CATEGORIES, { c9: { title: 'c9' } });
+  await draft.renameRow(PRODUCTS, 'p1', 'p1x');
+  await draft.updateRow(PRODUCTS, 'p1x', { title: 'p1', category: 'c9' });
 
   return draft;
 }

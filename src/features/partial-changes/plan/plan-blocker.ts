@@ -6,7 +6,7 @@ import {
   type RefusalCode,
   type RefusedTable,
 } from 'src/features/partial-changes/head-schema/head-schema-check';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import type { CatalogueReason } from 'src/features/partial-changes/plan/reason';
 import {
   publicIdOrIdentityOf,
   type TablePair,
@@ -35,8 +35,11 @@ export interface CatalogueBlocker {
   readonly path?: string;
   readonly message: string;
   readonly unitKey?: string;
-  readonly reason?: Reason;
+  readonly reason?: CatalogueReason;
 }
+
+// A blocker that names no unit, so it reads the same in a plan.
+export type PlainBlocker = Omit<CatalogueBlocker, 'unitKey' | 'reason'>;
 
 const REFUSAL_REASONS: Readonly<Record<RefusalCode, string>> = {
   headSchemaInconsistent: 'its Head schema does not match its Head ledger',
@@ -56,7 +59,7 @@ export function refusalBlocker({
 
 export function requiredExcluded(
   { key, unit }: CatalogueUnit,
-  reason: Reason,
+  reason: CatalogueReason,
 ): CatalogueBlocker {
   const { tableId, rowId, path } = unit;
 

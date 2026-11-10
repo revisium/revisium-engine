@@ -11,10 +11,14 @@ import {
   requiringOrDangling,
 } from 'src/features/partial-changes/closure/findings';
 import { LostIdReferrers } from 'src/features/partial-changes/closure/lost-id-referrers';
-import { referenceReason } from 'src/features/partial-changes/closure/row-reference';
+import {
+  referenceReason,
+  referringSiteOf,
+} from 'src/features/partial-changes/closure/row-reference';
 import type { ForeignKeyLeaf } from 'src/features/partial-changes/closure/table-schemas';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
+import { causeOf } from 'src/features/partial-changes/plan/reason';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
@@ -99,19 +103,22 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
     const { losing, referrer, leaf } = scan;
     const structure = context.unappliedStructureHolding(referrer, leaf.pointer);
     const { target } = context.names;
-    const site = { tableId: referrer.tableId, rowId };
+    const reference = {
+      site: referringSiteOf(referrer, rowId, leaf.pointer),
+      referenced: losing,
+      referencedId,
+    };
+    const culprit = losing.unitLosing(referencedId);
+    const cause = context.appliedCause(causeOf(culprit, 'remover'));
 
     if (structure !== undefined) {
       return requiring(
         structure,
         referenceReason(
-          {
-            site: { ...site, path: leaf.pointer.toString() },
-            referenced: losing,
-            referencedId,
-          },
+          reference,
           'structureBoundData',
-          `which the ${target} loses; the value follows the structure of ${referrer.tableId}`,
+          `which the ${target} loses; the value follows the structure of ${reference.site.tableId}`,
+          cause,
         ),
       );
     }
@@ -129,11 +136,12 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
     return requiringOrDangling(
       provider,
       referenceReason(
-        { site, referenced: losing, referencedId },
+        reference,
         'referencedRowMissing',
         `which the ${target} loses`,
+        cause,
       ),
-      losing.unitLosing(referencedId),
+      culprit,
     );
   }
 

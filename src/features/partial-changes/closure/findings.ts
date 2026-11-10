@@ -4,22 +4,24 @@ import {
   type CatalogueBlocker,
   refusalBlocker,
 } from 'src/features/partial-changes/plan/plan-blocker';
-import type { Reason } from 'src/features/partial-changes/plan/reason';
+import {
+  type CatalogueReason,
+  positionOf,
+  type SitePosition,
+} from 'src/features/partial-changes/plan/reason';
 import type { SelectionSource } from 'src/features/partial-changes/selection/selection-resolution';
 
 export type Finding =
   | {
       readonly kind: 'requires';
       readonly unitKey: string;
-      readonly reason: Reason;
+      readonly reason: CatalogueReason;
     }
   | { readonly kind: 'blocks'; readonly blocker: CatalogueBlocker };
 
-export type Site = Pick<Reason, 'tableId' | 'rowId' | 'path'>;
-
 export type CheckSource = AssemblySource & Pick<SelectionSource, 'headSchema'>;
 
-export function requiring(unitKey: string, reason: Reason): Finding {
+export function requiring(unitKey: string, reason: CatalogueReason): Finding {
   return { kind: 'requires', unitKey, reason };
 }
 
@@ -33,19 +35,21 @@ export function refusedBy(refusal: RefusedTable): Finding {
 
 export function requiringOrDangling(
   unitKey: string | undefined,
-  reason: Reason,
+  reason: CatalogueReason,
   culprit?: string,
 ): Finding {
   if (unitKey !== undefined) {
     return requiring(unitKey, reason);
   }
 
-  return blocking(danglingInSource(reason.because, reason, culprit));
+  return blocking(
+    danglingInSource(reason.because, positionOf(reason.site), culprit),
+  );
 }
 
 export function danglingInSource(
   because: string,
-  { tableId, rowId, path }: Site,
+  { tableId, rowId, path }: SitePosition,
   unitKey: string | undefined,
 ): CatalogueBlocker {
   const blocker: CatalogueBlocker = {

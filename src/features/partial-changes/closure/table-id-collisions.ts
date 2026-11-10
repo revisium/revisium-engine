@@ -10,6 +10,7 @@ import {
   requiringOrDangling,
 } from 'src/features/partial-changes/closure/findings';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
+import { causeOf, withCause } from 'src/features/partial-changes/plan/reason';
 
 @Injectable()
 export class TableIdCollisions implements TargetCheck, TargetChecking {
@@ -24,7 +25,7 @@ export class TableIdCollisions implements TargetCheck, TargetChecking {
         .flatMap((holders) =>
           holders
             .filter((table) => this.keepsBaseId(context, table))
-            .map((table) => this.moveFromOccupiedId(context, table)),
+            .map((table) => this.moveFromOccupiedId(context, table, holders)),
         ),
     );
   }
@@ -41,16 +42,28 @@ export class TableIdCollisions implements TargetCheck, TargetChecking {
   private moveFromOccupiedId(
     context: CheckContext,
     { tableId, pair, refusal }: TargetTable,
+    holders: readonly TargetTable[],
   ): Finding {
     if (refusal) {
       return refusedBy(refusal);
     }
 
-    return requiringOrDangling(context.structureOf(pair), {
-      code: 'idOccupied',
-      tableId,
-      because: `the table id ${tableId} would be held by two tables in the ${context.names.target}`,
-    });
+    return requiringOrDangling(
+      context.structureOf(pair),
+      withCause(
+        {
+          code: 'idOccupied',
+          because: `the table id ${tableId} would be held by two tables in the ${context.names.target}`,
+          site: { kind: 'tableId', tableId },
+        },
+        causeOf(
+          context.appliedUnitAmong(
+            holders.map((holder) => context.structureOf(holder.pair)),
+          ),
+          'taker',
+        ),
+      ),
+    );
   }
 }
 

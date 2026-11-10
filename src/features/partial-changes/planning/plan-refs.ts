@@ -5,10 +5,14 @@ import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-bl
 import {
   type DescribedUnitRef,
   describedUnitRefOf,
+  describedUnitRefOfKey,
+  type RequiredReason,
+  requiredReasonOf,
 } from 'src/features/partial-changes/selection/unit-refs';
 
-export type PlanBlocker = Omit<CatalogueBlocker, 'unitKey'> & {
+export type PlanBlocker = Omit<CatalogueBlocker, 'unitKey' | 'reason'> & {
   readonly unit?: DescribedUnitRef;
+  readonly reason?: RequiredReason;
 };
 
 export interface Deferred {
@@ -23,11 +27,13 @@ export function blockerRefOf(
   catalogue: ChangeCatalogue,
   { unitKey, ...blocker }: CatalogueBlocker,
 ): PlanBlocker {
+  const ref = withRequiredReason(catalogue, blocker);
+
   if (unitKey === undefined) {
-    return blocker;
+    return ref;
   }
 
-  return { ...blocker, unit: describedUnitRefOfKey(catalogue, unitKey) };
+  return { ...ref, unit: describedUnitRefOfKey(catalogue, unitKey) };
 }
 
 export function deferredRefOf(
@@ -50,9 +56,13 @@ export function sampleOf(
     .map((unit) => describedUnitRefOf(unit, tables));
 }
 
-function describedUnitRefOfKey(
-  { lookup, tables }: ChangeCatalogue,
-  unitKey: string,
-): DescribedUnitRef {
-  return describedUnitRefOf(lookup.unit(unitKey), tables);
+function withRequiredReason(
+  catalogue: ChangeCatalogue,
+  { reason, ...blocker }: Omit<CatalogueBlocker, 'unitKey'>,
+): PlanBlocker {
+  if (reason === undefined) {
+    return blocker;
+  }
+
+  return { ...blocker, reason: requiredReasonOf(catalogue, reason) };
 }

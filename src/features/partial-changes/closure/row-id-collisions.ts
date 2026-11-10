@@ -10,9 +10,12 @@ import {
   requiringOrDangling,
 } from 'src/features/partial-changes/closure/findings';
 import {
+  type IdCollision,
   idUnitOf,
   type TargetTable,
 } from 'src/features/partial-changes/closure/target-tables';
+import { causeOf, withCause } from 'src/features/partial-changes/plan/reason';
+import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 @Injectable()
 export class RowIdCollisions implements TargetCheck, TargetChecking {
@@ -25,11 +28,11 @@ export class RowIdCollisions implements TargetCheck, TargetChecking {
       context.tables.all.flatMap((table) =>
         table
           .collisions()
-          .flatMap(({ id, rows }) =>
-            rows
-              .filter(({ row }) => this.keepsBaseId(context, row, id))
+          .flatMap((collision) =>
+            collision.rows
+              .filter(({ row }) => this.keepsBaseId(context, row, collision.id))
               .map(({ row }) =>
-                this.moveFromOccupiedId(context, table, row, id),
+                this.moveFromOccupiedId(context, table, row, collision),
               ),
           ),
       ),
@@ -51,15 +54,25 @@ export class RowIdCollisions implements TargetCheck, TargetChecking {
 
   private moveFromOccupiedId(
     context: CheckContext,
-    { tableId }: TargetTable,
+    { pair }: TargetTable,
     row: CatalogueRow,
-    rowId: string,
+    { id: rowId, rows }: IdCollision,
   ): Finding {
-    return requiringOrDangling(idUnitOf(row), {
-      code: 'idOccupied',
-      tableId,
-      rowId,
-      because: `${tableId}/${rowId} would be held by two rows in the ${context.names.target}`,
-    });
+    const tableId = publicTableIdOf(pair);
+
+    return requiringOrDangling(
+      idUnitOf(row),
+      withCause(
+        {
+          code: 'idOccupied',
+          because: `${tableId}/${rowId} would be held by two rows in the ${context.names.target}`,
+          site: { kind: 'rowId', tableId, rowId },
+        },
+        causeOf(
+          context.appliedUnitAmong(rows.map((held) => idUnitOf(held.row))),
+          'taker',
+        ),
+      ),
+    );
   }
 }

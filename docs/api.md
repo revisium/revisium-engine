@@ -874,6 +874,100 @@ Returns: `{ tables: number, rows: number }` — counts of deleted entities
 
 ---
 
+## Schema Ledger
+
+Maintenance operations on the schema migration ledger (the rows of `revisium_migration_table`). The host exposes them
+to administrators; the engine has no permission layer. How they work: [migration.md](migration.md).
+
+### scanSchemaLedger
+
+```typescript
+engine.scanSchemaLedger({
+  projectId?: string | null;
+  branchName?: string | null; // requires projectId
+  cursor?: string | null;
+  limit?: number | null; // 1–1,000, default 50
+  rowDiagnostics?: 'none' | 'headAndDraft' | 'all' | null; // default 'headAndDraft'
+}): Promise<{
+  findings: SchemaLedgerFinding[];
+  nextCursor: string | null;
+  stats: SchemaLedgerScanStats;
+}>
+```
+
+Reports, read-only, where a revision's ledger does not reproduce its schema rows: one branch, the branches of a
+project, or every branch, paged by branch. Codes: `FINDING_CODES`, `FINDING_ROLES`, `UNLEDGERED_REASONS`,
+`DAMAGE_SHAPES`, `DAMAGED_TABLE_REPAIRS`, `ROW_HASH_REASONS`. See
+[How does the schema ledger scan report damage?](migration.md#how-does-the-schema-ledger-scan-report-damage)
+
+### repairSchemaLedger
+
+```typescript
+engine.repairSchemaLedger({
+  projectId: string;
+  branchName: string;
+  tableIds?: string[] | null;
+  dryRun?: boolean | null;
+}): Promise<{
+  headRevisionId: string;
+  draftRevisionId: string;
+  dryRun: boolean;
+  tables: TableRepair[];
+  renumbered: RenumberedMigration[];
+}>
+```
+
+Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. Outcomes:
+`REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. See
+[How is the schema ledger repaired?](migration.md#how-is-the-schema-ledger-repaired)
+
+### backfillSchemaLedger
+
+```typescript
+engine.backfillSchemaLedger({
+  projectId: string;
+  branchName: string;
+  dryRun?: boolean | null; // default false
+  comment?: string | null; // default 'Backfill the schema ledger'
+}): Promise<
+  | { status: 'notNeeded'; headRevisionId: string; draftRevisionId: string }
+  | { status: 'planned'; headRevisionId: string; draftRevisionId: string; entries: BackfillEntry[] }
+  | {
+      status: 'backfilled';
+      previousHeadRevisionId: string;
+      headRevisionId: string;
+      draftRevisionId: string;
+      entries: BackfillEntry[];
+    }
+  | {
+      status: 'refused';
+      headRevisionId: string;
+      draftRevisionId: string;
+      refusal: {
+        code: 'draftStructureChanged' | 'schemaNotReproducible';
+        tableIds: string[];
+        message: string;
+      };
+    }
+>
+
+type BackfillEntry = {
+  id: string;
+  changeType: 'init' | 'update';
+  tableId: string;
+  hash: string;
+};
+```
+
+Gives a branch whose Head has no migration table (projects created before core v2.0.0 and their clones) one: a commit
+whose only change is a migration table with an `init` for every Head user table, plus `update` entries that close
+foreign-key cycles. The new Draft keeps the Draft's changes and links the same migration table. Partial commit and
+revert stop refusing the branch's tables, and native writers record schema changes from then on. `dryRun: true`
+returns `planned` and writes nothing; its ids are provisional. A branch that has a migration table gets `notNeeded`,
+so a repeated call is safe. Codes: `BACKFILL_STATUSES`, `BACKFILL_REFUSAL_CODES`. Errors: unknown project or branch,
+`MIGRATION_LOCKED` (423) while an async migration is active, `BRANCH_WRITE_FENCED` (423), `OPERATION_TIMEOUT` (408).
+See [How is a missing schema ledger backfilled?](migration.md#how-is-a-missing-schema-ledger-backfilled)
+
 ## Migrations (Async Row Migration)
 
 ### getMigrationStatus

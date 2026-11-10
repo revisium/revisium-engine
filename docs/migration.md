@@ -468,6 +468,65 @@ An unledgered or unreplayable table gets only that finding; a ledgered table can
 runs, the scan replays ledgers with their trail, the schema after each step of a slot with its cause (an own step or
 a referrer rewrite), and hashes it for the reasons above; with `rowDiagnostics: 'none'` no trail is kept.
 
+### How is a missing schema ledger backfilled?
+
+Core creates `revisium_migration_table` only for projects created since core v2.0.0; a project created before, and every
+clone of one, has none. Native writers then record nothing, the scan reports every table as `unledgeredTable` with
+`reason: 'noMigrationTable'`, and partial commit and revert refuse every table (only exactly `{ all: true }` works).
+`backfillSchemaLedger({ projectId, branchName, dryRun?, comment? })` on the engine facade (and `MigrationApiService`)
+gives such a branch a ledger ([schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md)); the host exposes
+it to administrators. Input types are checked before any transaction; `null` means absent.
+
+| Result | When |
+| --- | --- |
+| `notNeeded` | The Head already links a migration table. Nothing is written. |
+| `planned` | `dryRun: true`: the entries a run would write now, with provisional ids. |
+| `backfilled` | The commit is written: `previousHeadRevisionId`, `headRevisionId` (the former Draft revision), `draftRevisionId`, `entries`. |
+| `refused` | Nothing is written; `refusal: { code, tableIds, message }`. |
+
+| Refusal | When | What to do |
+| --- | --- | --- |
+| `draftStructureChanged` | The Draft creates, removes or renames a user table, changes a schema row (data or history, even if changed back), or links a migration table the Head does not. | Commit or revert those changes natively (a Draft migration table only by a revert), then run again. |
+| `schemaNotReproducible` | A Head schema fails the current rules (table id, meta-schema, `$ref`, field names, formulas), a Head table has no schema row, a foreign key names a table outside the Head, or no table of a foreign-key cycle survives the split below. | Fix the schema natively and commit, then run again. For a cycle: a native `updateTable` of one table of each named cycle (it also resets that table's non-empty `default` values, so check them first), or remove one foreign key of the cycle. |
+
+1. **Dry run.** One `READ ONLY` RepeatableRead snapshot without the branch write fence; it fails with
+   `MIGRATION_LOCKED` while an async migration is active in the Draft.
+2. **Run.** Each Serializable attempt admits the write as a partial commit does (the branch write fence shared, then
+   the migration-lock check), reads the Head and Draft, plans and writes; a serialization failure starts the next
+   attempt from the read. After 2 consecutive failures each further attempt holds the fence exclusively. The attempt
+   cap and the timeout are those of partial operations (`PARTIAL_CHANGES_MAX_ATTEMPTS`,
+   `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`).
+3. **Plan.** The Head user tables, in foreign-key order (nested objects and array items included, self-references
+   ignored): repeatedly the smallest table id (code-point order) whose targets are all planned gets an `init` with its
+   Head schema. When only cycles remain, the smallest cycle member whose schema survives the split gets an `init`
+   without the foreign keys to unplanned tables, and an `update` with one `replace` patch per stripped subschema
+   restores them after every `init`. A table survives the split when the native patch rebuild of the schema equals the
+   Head schema: that rebuild sorts `required`, drops `readOnly: false`, `deprecated: false` and `description: ""`, and
+   resets every `default`. Entry shapes are those of native writers; ids follow `nextNativeMigrationId` from the clock.
+   Replaying the planned entries must reproduce every Head schema.
+4. **Write.** The migration table is created in the Draft, gets one row per entry (row id = migration id,
+   `publishedAt` at it), and is committed alone through the partial-commit writer: the former Draft revision becomes
+   the Head with the Head's tables plus the ledger, and the new Draft keeps the Draft's tables and links the same, now
+   readonly, ledger version.
+5. **Verify** in the same attempt: both new revisions link one readonly ledger version, its rows are readonly and are
+   exactly the planned entries in id order, and replaying them reproduces every Head schema row. A failure is a
+   defect: the attempt rolls back and the call fails.
+6. **Notify** the endpoints of the new Head and the new Draft after the commit.
+
+Afterwards:
+
+- The scan reports no `noMigrationTable` finding with role `head` or `draft`; the revisions before the backfill keep
+  theirs with role `history`, because history is not rewritten. A branch still to backfill has such findings with role
+  `head`.
+- Row diagnostics now run for the backfilled tables: a row whose `schemaHash` is not the table's schema hash (written
+  under an earlier schema, or `''` from the low-level row API) is reported as `rowSchemaHashMismatch` with
+  `unknownHash`. It refuses no partial operation.
+- `getMigrations` of the Head returns the entries, and a Head-synced replica built from scratch reproduces the Head
+  schemas. A replica whose tables were created by hand fails at the first `init`.
+- Each branch is backfilled separately; a branch created later from a revision before the backfill needs its own run.
+- A native writer racing the run either lands before it (its row change is carried into the new Draft; a `createTable`
+  makes the run `refused`) or fails as after a native commit.
+
 ### Read consistency during migration
 
 | What                           | Before migration | During COPY          | After SWAP                            |

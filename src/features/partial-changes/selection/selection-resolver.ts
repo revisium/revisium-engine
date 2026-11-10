@@ -12,7 +12,7 @@ import {
 import type {
   SelectionResolution,
   SelectionSource,
-  UnmatchedSelection,
+  UnmatchedSelectors,
 } from 'src/features/partial-changes/selection/selection-resolution';
 import { SelectionTargets } from 'src/features/partial-changes/selection/selection-targets';
 import type { ItemsResolution } from 'src/features/partial-changes/selection/selector-match';
@@ -123,7 +123,7 @@ class SelectionResolver {
     return this.included.hasUnmatched || this.exclusions.hasUnmatched;
   }
 
-  private unmatched(): UnmatchedSelection {
+  private unmatched(): UnmatchedSelectors {
     const included = this.included.unmatchedItems();
 
     if (!this.exclusions.hasUnmatched) {

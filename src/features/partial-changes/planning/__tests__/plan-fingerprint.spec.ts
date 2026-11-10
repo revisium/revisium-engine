@@ -34,7 +34,7 @@ const categorySchema = obj({ title: str() });
 
 const priceOfP1: FieldRef = { tableId: PRODUCTS, rowId: 'p1', path: '/price' };
 const priceSelection = { fields: [priceOfP1] };
-const productsStructure = { tables: [PRODUCTS] };
+const productsStructure = { structures: [{ tableId: PRODUCTS }] };
 const productRow = (rowId: string): RowRef => ({ tableId: PRODUCTS, rowId });
 
 interface EditCase {
@@ -301,7 +301,7 @@ describe('PlanFingerprint', () => {
     const digestReads = jest.spyOn(kit.snapshotReader, 'readRowDigest');
 
     await draft.fingerprintPlan('revert', {
-      tables: [PRODUCTS],
+      structures: [{ tableId: PRODUCTS }],
       tableData: [PRODUCTS],
     });
     const statements =

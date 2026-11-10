@@ -176,7 +176,9 @@ describe('ReadScope: the tables whose changed rows an operation reads', () => {
   it('reads a table that a table created and removed in the Draft referenced', async () => {
     const draft = await givenLettersCreatedAndRemovedWithAReferenceToNotes();
 
-    const read = await draft.readScopedCatalogue({ tables: [LETTERS] });
+    const read = await draft.readScopedCatalogue({
+      structures: [{ tableId: LETTERS }],
+    });
 
     expect(read).toMatchObject({ readTableIds: [NOTES], unreadTables: 2 });
   });

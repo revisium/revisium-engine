@@ -1,7 +1,7 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import {
   UNIT_KINDS,
-  type Unit,
+  type UnitAddress,
 } from 'src/features/partial-changes/catalogue/unit';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { RowBound } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -74,7 +74,7 @@ function sortKeyOf({
   path,
   previousTableId,
   previousRowId,
-}: Unit): Unit {
+}: UnitAddress): UnitAddress {
   return { kind, tableId, rowId, path, previousTableId, previousRowId };
 }
 
@@ -101,10 +101,14 @@ function isCursorPayload(value: unknown): value is CursorPayload {
 }
 
 function isPosition(value: unknown): value is ListedPosition {
-  return isFields(value) && typeof value.key === 'string' && isUnit(value.unit);
+  return (
+    isFields(value) &&
+    typeof value.key === 'string' &&
+    isUnitAddress(value.unit)
+  );
 }
 
-function isUnit(value: unknown): value is Unit {
+function isUnitAddress(value: unknown): value is UnitAddress {
   return (
     isFields(value) &&
     UNIT_KIND_NAMES.has(value.kind) &&

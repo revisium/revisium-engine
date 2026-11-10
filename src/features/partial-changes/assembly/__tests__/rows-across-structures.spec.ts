@@ -138,7 +138,7 @@ describe('TargetAssembler: rows moving between structures', () => {
     const draft = await givenProductsWithAddedField();
 
     const target = await draft.assembleTarget('commit', {
-      tables: [PRODUCTS],
+      structures: [{ tableId: PRODUCTS }],
       rows: [product('p3')],
     });
 
@@ -156,7 +156,7 @@ describe('TargetAssembler: rows moving between structures', () => {
   }>([
     {
       operation: 'commit',
-      selection: { tables: [PRODUCTS] },
+      selection: { structures: [{ tableId: PRODUCTS }] },
       removedLinks: ['draft p3'],
     },
     {
@@ -268,7 +268,7 @@ describe('TargetAssembler: rows moving between structures', () => {
       await draft.removeRow(PRODUCTS, 'p2');
 
       const target = await draft.assembleTarget('commit', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(target.blockers).toEqual([

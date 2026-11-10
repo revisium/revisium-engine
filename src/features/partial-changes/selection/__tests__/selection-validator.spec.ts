@@ -12,12 +12,15 @@ describe('SelectionValidator', () => {
   it('accepts a well-formed selection that uses every field', () => {
     const selection = {
       all: false,
-      tables: [PRODUCTS, { tableId: 'categories', side: 'head' }],
+      structures: [
+        { tableId: PRODUCTS },
+        { tableId: 'categories', side: 'head' },
+      ],
       tableData: [PRODUCTS],
       views: [PRODUCTS],
       sharedSchemas: ['address'],
       rows: [{ tableId: PRODUCTS, rowId: 'p1', side: 'head' }],
-      renames: [{ tableId: PRODUCTS, rowId: 'p2' }],
+      rowRenames: [{ tableId: PRODUCTS, rowId: 'p2' }],
       rowColumns: [{ tableId: PRODUCTS, rowId: 'p3' }],
       fields: [
         { tableId: PRODUCTS, rowId: 'p1', path: '' },
@@ -33,15 +36,15 @@ describe('SelectionValidator', () => {
   it('returns the selection without its optional fields given as null', () => {
     const selection = {
       all: null,
-      tables: [{ tableId: PRODUCTS, side: null }],
+      structures: [{ tableId: PRODUCTS, side: null }],
       rows: null,
-      renames: [{ tableId: PRODUCTS, rowId: 'p2', side: null }],
+      rowRenames: [{ tableId: PRODUCTS, rowId: 'p2', side: null }],
       exclude: { tableData: null, rowColumns: [] },
     };
 
     expect(validateSelection(selection)).toStrictEqual({
-      tables: [{ tableId: PRODUCTS }],
-      renames: [{ tableId: PRODUCTS, rowId: 'p2' }],
+      structures: [{ tableId: PRODUCTS }],
+      rowRenames: [{ tableId: PRODUCTS, rowId: 'p2' }],
       exclude: { rowColumns: [] },
     });
   });
@@ -87,8 +90,8 @@ describe('SelectionValidator', () => {
     },
     {
       error: 'a field of a wrong type',
-      input: { tables: PRODUCTS },
-      message: 'selection.tables must be an array',
+      input: { structures: PRODUCTS },
+      message: 'selection.structures must be an array',
     },
     {
       error: 'all of a wrong type',
@@ -102,8 +105,8 @@ describe('SelectionValidator', () => {
     },
     {
       error: 'a missing id',
-      input: { renames: [{ tableId: PRODUCTS }] },
-      message: 'selection.renames[0].rowId must be a non-empty string',
+      input: { rowRenames: [{ tableId: PRODUCTS }] },
+      message: 'selection.rowRenames[0].rowId must be a non-empty string',
     },
     {
       error: 'an empty table id',
@@ -142,8 +145,28 @@ describe('SelectionValidator', () => {
     },
     {
       error: 'a table side other than head',
-      input: { tables: [{ tableId: PRODUCTS, side: 'draft' }] },
-      message: "selection.tables[0].side must be 'head'",
+      input: { structures: [{ tableId: PRODUCTS, side: 'draft' }] },
+      message: "selection.structures[0].side must be 'head'",
+    },
+    {
+      error: 'a bare table id in structures',
+      input: { structures: [PRODUCTS] },
+      message: 'selection.structures[0] must be an object',
+    },
+    {
+      error: 'the field tables of version 1',
+      input: { tables: [{ tableId: PRODUCTS }] },
+      message: 'selection.tables is not allowed',
+    },
+    {
+      error: 'the field renames of version 1',
+      input: { renames: [{ tableId: PRODUCTS, rowId: 'p2' }] },
+      message: 'selection.renames is not allowed',
+    },
+    {
+      error: 'the field tables of version 1 inside exclude',
+      input: { all: true, exclude: { tables: [{ tableId: PRODUCTS }] } },
+      message: 'selection.exclude.tables is not allowed',
     },
     {
       error: 'all inside exclude',

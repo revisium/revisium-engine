@@ -36,7 +36,7 @@ import {
 import type {
   SelectionResolution,
   SelectionSource,
-  UnmatchedSelection,
+  UnmatchedSelectors,
 } from 'src/features/partial-changes/selection/selection-resolution';
 import { resolveSelection } from 'src/features/partial-changes/selection/selection-resolver';
 import {
@@ -57,7 +57,7 @@ export interface ClosureRequest {
 
 interface ClosureOutcome {
   readonly selected: ReadonlySet<string>;
-  readonly unmatched: UnmatchedSelection;
+  readonly unmatched: UnmatchedSelectors;
   readonly applied: ReadonlySet<string>;
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly PlanBlocker[];

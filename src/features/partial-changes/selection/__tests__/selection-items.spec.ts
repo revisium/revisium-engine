@@ -80,7 +80,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
   it.each<{ field: string; selection: Selection; units: AddressedUnit[] }>([
     {
       field: 'tables',
-      selection: { tables: [TAGS] },
+      selection: { structures: [{ tableId: TAGS }] },
       units: [createdTags],
     },
     {
@@ -105,7 +105,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
     },
     {
       field: 'renames',
-      selection: { renames: [{ tableId: PRODUCTS, rowId: 'p9' }] },
+      selection: { rowRenames: [{ tableId: PRODUCTS, rowId: 'p9' }] },
       units: [renameOfP1],
     },
     {
@@ -196,7 +196,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
     {
       tableId: 'the Draft id of a renamed table',
       edit: (draft) => draft.renameTable(CATEGORIES, GROUPS),
-      selection: { tables: [GROUPS] },
+      selection: { structures: [{ tableId: GROUPS }] },
       units: [
         { kind: 'structure', tableId: GROUPS, previousTableId: CATEGORIES },
       ],
@@ -204,7 +204,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
     {
       tableId: 'the Head id of a renamed table',
       edit: (draft) => draft.renameTable(CATEGORIES, GROUPS),
-      selection: { tables: [CATEGORIES] },
+      selection: { structures: [{ tableId: CATEGORIES }] },
       units: [
         { kind: 'structure', tableId: GROUPS, previousTableId: CATEGORIES },
       ],
@@ -212,7 +212,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
     {
       tableId: 'an id a rename took over, as the Draft table',
       edit: takeOverIdOfRemovedTable,
-      selection: { tables: [CATEGORIES] },
+      selection: { structures: [{ tableId: CATEGORIES }] },
       units: [
         { kind: 'structure', tableId: CATEGORIES, previousTableId: PRODUCTS },
       ],
@@ -221,7 +221,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
       tableId:
         "an id a rename took over, with side: 'head' as the removed table",
       edit: takeOverIdOfRemovedTable,
-      selection: { tables: [{ tableId: CATEGORIES, side: 'head' }] },
+      selection: { structures: [{ tableId: CATEGORIES, side: 'head' }] },
       units: [{ kind: 'structure', tableId: CATEGORIES, side: 'head' }],
     },
     {
@@ -230,7 +230,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
         await draft.createTable(IMPORTS, tagSchema);
         await draft.removeTable(IMPORTS);
       },
-      selection: { tables: [IMPORTS] },
+      selection: { structures: [{ tableId: IMPORTS }] },
       units: [{ kind: 'structure', tableId: IMPORTS }],
     },
   ])('resolves $tableId', async ({ edit, selection, units }) => {

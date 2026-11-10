@@ -4,15 +4,16 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import {
+  type SelectorSide,
   UNIT_KINDS,
   type Unit,
   type UnitKind,
 } from 'src/features/partial-changes/catalogue/unit';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
-import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
 import {
   addressedUnitOfListed,
   unitsOfPages,
@@ -81,13 +82,13 @@ describe('listChanges', () => {
   });
 
   describe('units', () => {
-    it('lists every unit kind in listing order with public ids, the Head side of taken-over ids and the structure of the same table', async () => {
+    it('lists every unit kind in listing order with exactly the public fields of its kind, the Head side of taken-over ids and the structure of the same table (AS-80)', async () => {
       const draft = await givenDraftWithEveryUnitKind();
 
       const page = await draft.listChanges();
 
-      expect(page.units.map(withoutSelector)).toEqual([
-        { kind: 'sharedSchema', tableId: ADDRESS },
+      expect(page.units.map(withoutSelector)).toStrictEqual([
+        { kind: 'sharedSchema', sharedSchemaId: ADDRESS },
         categoriesStructure,
         {
           kind: 'field',
@@ -158,27 +159,27 @@ describe('listChanges', () => {
 
       expect(page.units.map(({ selector }) => selector)).toEqual([
         { sharedSchemas: [ADDRESS] },
-        { tables: [CATEGORIES] },
+        { structures: [{ tableId: CATEGORIES }] },
         { fields: [{ tableId: CATEGORIES, rowId: 'c1', path: '/title' }] },
         { rows: [{ tableId: CATEGORIES, rowId: 'c3' }] },
-        { tables: [{ tableId: NOTES, side: 'head' }] },
-        { tables: [NOTES] },
+        { structures: [{ tableId: NOTES, side: 'head' }] },
+        { structures: [{ tableId: NOTES }] },
         { fields: [{ tableId: NOTES, rowId: 'm1', path: '/label' }] },
         { views: [PRODUCTS] },
         { fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/title' }] },
         { fields: [{ tableId: PRODUCTS, rowId: 'p2', path: '/labels' }] },
         { fields: [{ tableId: PRODUCTS, rowId: 'p30', path: '/price' }] },
-        { renames: [{ tableId: PRODUCTS, rowId: 'p30' }] },
+        { rowRenames: [{ tableId: PRODUCTS, rowId: 'p30' }] },
         { rows: [{ tableId: PRODUCTS, rowId: 'p4', side: 'head' }] },
-        { renames: [{ tableId: PRODUCTS, rowId: 'p4' }] },
+        { rowRenames: [{ tableId: PRODUCTS, rowId: 'p4' }] },
         { rows: [{ tableId: PRODUCTS, rowId: 'p6' }] },
         { rows: [{ tableId: PRODUCTS, rowId: 'p7' }] },
         { rows: [{ tableId: PRODUCTS, rowId: 'p8' }] },
         { rowColumns: [{ tableId: PRODUCTS, rowId: 'p9' }] },
-        { tables: [PURCHASES] },
+        { structures: [{ tableId: PURCHASES }] },
         { fields: [{ tableId: PURCHASES, rowId: 'o1', path: '/label' }] },
-        { tables: [SCRATCH] },
-        { tables: [TAGS] },
+        { structures: [{ tableId: SCRATCH }] },
+        { structures: [{ tableId: TAGS }] },
       ]);
     });
 
@@ -215,7 +216,7 @@ describe('listChanges', () => {
           {
             kind: 'structure',
             tableId: PRODUCTS,
-            selector: { tables: [PRODUCTS] },
+            selector: { structures: [{ tableId: PRODUCTS }] },
             structureChange: { table: 'changed', fields: [] },
           },
         ],
@@ -247,7 +248,11 @@ describe('listChanges', () => {
 
         const units = unitsOfPages(await draft.listEveryPage({ pageSize }));
 
-        expect(units.map(({ tableId, rowId }) => [tableId, rowId])).toEqual([
+        expect(
+          units
+            .map(addressedUnitOfListed)
+            .map(({ tableId, rowId }) => [tableId, rowId]),
+        ).toEqual([
           [MIXED_CASE, 'z1'],
           [UNDERSCORED, 'u1'],
           ...[
@@ -315,7 +320,7 @@ describe('listChanges', () => {
 
       const page = await draft.listChanges({ tableId: ORDERS });
 
-      expect(page.units.map(withoutSelector)).toEqual([
+      expect(page.units.map(withoutSelector)).toStrictEqual([
         purchasesStructure,
         {
           kind: 'field',
@@ -500,21 +505,31 @@ describe('listChanges', () => {
   }
 });
 
+type SidedUnit = Unit & { readonly side?: SelectorSide };
+
+type ListedUnitFields = SidedUnit & { readonly structure?: SidedUnit };
+
 function withoutSelector({
+  selector: _selector,
+  structureChange: _structureChange,
   structure,
-  ...listed
-}: ListedUnit): AddressedUnit & { readonly structure?: AddressedUnit } {
+  ...unit
+}: ListedUnit): ListedUnitFields {
   if (structure === undefined) {
-    return addressedUnitOfListed(listed);
+    return unit;
   }
 
-  return {
-    ...addressedUnitOfListed(listed),
-    structure: addressedUnitOfListed(structure),
-  };
+  return { ...unit, structure: unitFieldsOf(structure) };
 }
 
-function describeUnit({ kind, tableId, rowId, path }: ListedUnit): string {
+function unitFieldsOf({ selector: _selector, ...unit }: UnitRef): SidedUnit {
+  return unit;
+}
+
+function describeUnit(unit: ListedUnit): string {
+  const { kind } = unit;
+  const { tableId, rowId, path } = addressedUnitOfListed(unit);
+
   return [rowId ?? tableId, kind, path].filter(Boolean).join(' ');
 }
 

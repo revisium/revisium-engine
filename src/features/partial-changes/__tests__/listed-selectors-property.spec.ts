@@ -16,7 +16,7 @@ import { UnitKindCoverage } from './support/unit-kind-coverage';
 
 const OPERATIONS: readonly ChangeOperation[] = ['commit', 'revert'];
 
-describe('listed selectors over random Drafts (AS-61)', () => {
+describe('listed selectors over random Drafts (AS-61, AS-80)', () => {
   let kit: PartialChangesTestKit;
   const coverage = new UnitKindCoverage();
 
@@ -33,15 +33,26 @@ describe('listed selectors over random Drafts (AS-61)', () => {
   });
 
   it.each(RANDOM_DRAFT_SEEDS)(
-    'previews each listed selector as its unit alone, and their union as { all: true } (seed %i)',
+    'previews each listed selector as its unit alone and excluded as the whole Draft without it, and their union as { all: true } (seed %i)',
     async (seed) => {
       const draft = await givenRandomDraft(kit, seed);
       const units = await draft.listEveryUnit();
       coverage.record(units);
 
       for (const operation of OPERATIONS) {
+        const wholeDraft = await draft.previewChanges({
+          operation,
+          selection: { all: true },
+        });
+
         for (const unit of units) {
           await expectSelectorToPreviewOnlyItsUnit(draft, operation, unit);
+          await expectExcludedSelectorToLeaveOutOnlyItsUnit(
+            draft,
+            operation,
+            unit,
+            wholeDraft,
+          );
         }
 
         await expectUnionToPreviewAsWholeDraft(draft, operation, units);
@@ -73,6 +84,28 @@ describe('listed selectors over random Drafts (AS-61)', () => {
       },
     });
     expect(preview.sample).toContainEqual(sampledUnitOf(unit));
+  }
+
+  async function expectExcludedSelectorToLeaveOutOnlyItsUnit(
+    draft: ChangesScenario,
+    operation: ChangeOperation,
+    unit: ListedUnit,
+    wholeDraft: PreviewChangesResult,
+  ): Promise<void> {
+    const preview = await draft.previewChanges({
+      operation,
+      selection: { all: true, exclude: unit.selector },
+    });
+
+    expect({ unit, preview: selectionOutcomeOf(preview) }).toEqual({
+      unit,
+      preview: {
+        selected: wholeDraft.counts.selected - 1,
+        unmatched: {},
+        notSelectable: [],
+      },
+    });
+    expect(preview.sample).not.toContainEqual(sampledUnitOf(unit));
   }
 
   async function expectUnionToPreviewAsWholeDraft(

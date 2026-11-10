@@ -95,7 +95,7 @@ export class ReplicaSequence {
     await this.draft.createTable(LATER_TABLE, labelSchema);
 
     return this.commitAsReviewed('commitLaterTable', {
-      tables: [LATER_TABLE],
+      structures: [{ tableId: LATER_TABLE }],
     });
   }
 

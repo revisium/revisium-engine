@@ -366,7 +366,7 @@ describe('listChanges: structure changes', () => {
         listed: {
           kind: 'structure',
           tableId: TAGS,
-          selector: { tables: [TAGS] },
+          selector: { structures: [{ tableId: TAGS }] },
           structureChange: { table: 'created', fields: [] },
         },
       },
@@ -376,7 +376,7 @@ describe('listChanges: structure changes', () => {
         listed: {
           kind: 'structure',
           tableId: CATEGORIES,
-          selector: { tables: [CATEGORIES] },
+          selector: { structures: [{ tableId: CATEGORIES }] },
           structureChange: { table: 'removed', fields: [] },
         },
       },
@@ -390,7 +390,7 @@ describe('listChanges: structure changes', () => {
           kind: 'structure',
           tableId: GROUPS,
           previousTableId: CATEGORIES,
-          selector: { tables: [GROUPS] },
+          selector: { structures: [{ tableId: GROUPS }] },
           structureChange: {
             table: 'changed',
             fields: [{ path: '/color', change: 'added' }],
@@ -406,7 +406,7 @@ describe('listChanges: structure changes', () => {
         listed: {
           kind: 'structure',
           tableId: CATEGORIES,
-          selector: { tables: [CATEGORIES] },
+          selector: { structures: [{ tableId: CATEGORIES }] },
           structureChange: {
             table: 'replaced',
             fields: [
@@ -425,7 +425,7 @@ describe('listChanges: structure changes', () => {
         listed: {
           kind: 'structure',
           tableId: SCRATCH,
-          selector: { tables: [SCRATCH] },
+          selector: { structures: [{ tableId: SCRATCH }] },
           structureChange: { table: 'transient', fields: [] },
         },
       },
@@ -485,7 +485,7 @@ describe('listChanges: structure changes', () => {
       expect(field.structure).toEqual({
         kind: 'structure',
         tableId: CATEGORIES,
-        selector: { tables: [CATEGORIES] },
+        selector: { structures: [{ tableId: CATEGORIES }] },
       });
       await expectToResolveToExactly(draft, field.structure);
     });
@@ -502,21 +502,21 @@ describe('listChanges: structure changes', () => {
         kind: 'structure',
         tableId: NOTES,
         side: 'head',
-        selector: { tables: [{ tableId: NOTES, side: 'head' }] },
+        selector: { structures: [{ tableId: NOTES, side: 'head' }] },
         structureChange: { table: 'removed', fields: [] },
       });
       expect(renamed).toEqual({
         kind: 'structure',
         tableId: NOTES,
         previousTableId: MEMOS,
-        selector: { tables: [NOTES] },
+        selector: { structures: [{ tableId: NOTES }] },
         structureChange: { table: 'changed', fields: [] },
       });
       expect(field?.structure).toEqual({
         kind: 'structure',
         tableId: NOTES,
         previousTableId: MEMOS,
-        selector: { tables: [NOTES] },
+        selector: { structures: [{ tableId: NOTES }] },
       });
       await expectToResolveToExactly(draft, removed);
       await expectToResolveToExactly(draft, field?.structure);

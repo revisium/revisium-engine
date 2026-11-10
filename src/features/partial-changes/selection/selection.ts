@@ -1,13 +1,14 @@
-import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
+import type { SelectorSide } from 'src/features/partial-changes/catalogue/unit';
 
-export type TableRef =
-  | string
-  | { readonly tableId: string; readonly side?: HeadQualifier };
+export interface TableRef {
+  readonly tableId: string;
+  readonly side?: SelectorSide;
+}
 
 export interface RowRef {
   readonly tableId: string;
   readonly rowId: string;
-  readonly side?: HeadQualifier;
+  readonly side?: SelectorSide;
 }
 
 export interface FieldRef {
@@ -17,12 +18,12 @@ export interface FieldRef {
 }
 
 export interface SelectionItems {
-  readonly tables?: readonly TableRef[];
+  readonly structures?: readonly TableRef[];
   readonly tableData?: readonly string[];
   readonly views?: readonly string[];
   readonly sharedSchemas?: readonly string[];
   readonly rows?: readonly RowRef[];
-  readonly renames?: readonly RowRef[];
+  readonly rowRenames?: readonly RowRef[];
   readonly rowColumns?: readonly RowRef[];
   readonly fields?: readonly FieldRef[];
 }
@@ -51,14 +52,6 @@ export type ItemSelector<K extends ItemKind> = NonNullable<
 >[number];
 
 const WHOLE_DRAFT_KEY = 'all';
-
-export function tableRefOf(selector: TableRef): Exclude<TableRef, string> {
-  if (typeof selector === 'string') {
-    return { tableId: selector };
-  }
-
-  return selector;
-}
 
 export function isWholeDraftSelection(selection: Selection): boolean {
   return (

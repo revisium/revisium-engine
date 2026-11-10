@@ -35,7 +35,7 @@ import {
   isWholeDraftSelection,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
-import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
+import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
   DescribedUnitRef,
   RequiredUnit,
@@ -86,7 +86,7 @@ export interface ChangePlan {
   readonly blockers: readonly Blocker[];
   readonly deferred: readonly Deferred[];
   readonly sample: readonly DescribedUnitRef[];
-  readonly unmatched: UnmatchedSelection;
+  readonly unmatched: UnmatchedSelectors;
   readonly estimate: Estimate;
   readonly target?: PlannedTarget;
 }

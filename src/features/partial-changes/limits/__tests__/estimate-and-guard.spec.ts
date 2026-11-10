@@ -269,7 +269,7 @@ describe('EstimateAndGuard: the estimate before every closure assembly', () => {
       {
         tables: 'the schemas and the migrations',
         given: givenFiveTablesWithTwoStructuresEdited,
-        selection: { tables: ['t1'] },
+        selection: { structures: [{ tableId: 't1' }] },
         blockers: [
           tooLargeSystemTable(SystemTables.Migration, 5),
           tooLargeSystemTable(SystemTables.Schema, 4),

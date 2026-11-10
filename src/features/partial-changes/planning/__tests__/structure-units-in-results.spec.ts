@@ -20,10 +20,10 @@ const colorOfP1: Selection = {
 };
 const colorOfP1WithoutStructure: Selection = {
   ...colorOfP1,
-  exclude: { tables: [PRODUCTS] },
+  exclude: { structures: [{ tableId: PRODUCTS }] },
 };
 const creationOfP2: Selection = { rows: [{ tableId: PRODUCTS, rowId: 'p2' }] };
-const structureOfProducts: Selection = { tables: [PRODUCTS] };
+const structureOfProducts: Selection = { structures: [{ tableId: PRODUCTS }] };
 
 describe('structure units in preview and apply results', () => {
   let kit: PartialChangesTestKit;

@@ -8,7 +8,7 @@ import { readAddressedRows } from 'src/features/partial-changes/selection/addres
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type {
   SelectionResolution,
-  UnmatchedSelection,
+  UnmatchedSelectors,
 } from 'src/features/partial-changes/selection/selection-resolution';
 import { resolveSelection } from 'src/features/partial-changes/selection/selection-resolver';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -31,7 +31,7 @@ export interface ResolutionView {
   readonly excluded: AddressedUnit[];
   readonly required: RequiredUnitView[];
   readonly blockers: BlockerView[];
-  readonly unmatched: UnmatchedSelection;
+  readonly unmatched: UnmatchedSelectors;
 }
 
 export interface ResolvedSelection {

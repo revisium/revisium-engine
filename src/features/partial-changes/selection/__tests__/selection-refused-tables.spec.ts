@@ -84,7 +84,7 @@ describe('SelectionResolver: refused tables', () => {
       const draft = await given();
 
       const resolution = await draft.resolveSelection({
-        renames: [{ tableId: PRODUCTS, rowId: 'p9' }],
+        rowRenames: [{ tableId: PRODUCTS, rowId: 'p9' }],
         fields: [{ tableId: CATEGORIES, rowId: 'c1', path: '/title' }],
       });
 
@@ -185,7 +185,7 @@ describe('SelectionResolver: refused tables', () => {
     const draft = await givenRefusedIdTakenOverByAHealthyTable();
 
     const resolution = await draft.resolveSelection({
-      tables: [{ tableId: PRODUCTS, side: 'head' }],
+      structures: [{ tableId: PRODUCTS, side: 'head' }],
     });
 
     expect(resolution.blockers).toEqual([

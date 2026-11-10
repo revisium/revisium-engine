@@ -48,12 +48,12 @@ const category = (rowId: string): RowRef => ({ tableId: CATEGORIES, rowId });
 const productsStructure = {
   kind: 'structure',
   tableId: PRODUCTS,
-  selector: { tables: [PRODUCTS] },
+  selector: { structures: [{ tableId: PRODUCTS }] },
 };
 const brandsStructure = {
   kind: 'structure',
   tableId: BRANDS,
-  selector: { tables: [BRANDS] },
+  selector: { structures: [{ tableId: BRANDS }] },
 };
 const product = (rowId: string): RowRef => ({ tableId: PRODUCTS, rowId });
 const categoriesOfS1: FieldRef = {
@@ -242,7 +242,7 @@ describe('DependencyClosure: references and ids of rows', () => {
         unit: {
           kind: 'structure',
           tableId: PRODUCTS,
-          selector: { tables: [PRODUCTS] },
+          selector: { structures: [{ tableId: PRODUCTS }] },
         },
         reason: {
           code: 'structureBoundData',
@@ -316,7 +316,7 @@ describe('DependencyClosure: references and ids of rows', () => {
       {
         operation: 'commit',
         selection: {
-          renames: [category('c2')],
+          rowRenames: [category('c2')],
           exclude: { rows: [product('p1')] },
         },
         provider: {
@@ -338,7 +338,7 @@ describe('DependencyClosure: references and ids of rows', () => {
           tableId: CATEGORIES,
           rowId: 'c2',
           previousRowId: 'c1',
-          selector: { renames: [category('c2')] },
+          selector: { rowRenames: [category('c2')] },
         },
         side: 'Head',
       },
@@ -369,7 +369,7 @@ describe('DependencyClosure: references and ids of rows', () => {
       const draft = await givenShelfOfRenamedCategory(kit, ['c2', 'c1']);
 
       const closure = await draft.closeDependencies('commit', {
-        renames: [category('c2')],
+        rowRenames: [category('c2')],
         exclude: { fields: [categoriesOfS1] },
       });
 
@@ -398,7 +398,7 @@ describe('DependencyClosure: references and ids of rows', () => {
       const draft = await givenShelfOfRenamedCategory(kit, ['c2']);
 
       const closure = await draft.closeDependencies('commit', {
-        renames: [category('c2')],
+        rowRenames: [category('c2')],
       });
 
       expect(closure.required).toEqual([
@@ -430,7 +430,7 @@ describe('DependencyClosure: references and ids of rows', () => {
       );
 
       const closure = await draft.closeDependencies('commit', {
-        renames: [category('c5')],
+        rowRenames: [category('c5')],
       });
 
       expect(closure.required.map(({ unit }) => unit)).toMatchObject([
@@ -446,7 +446,7 @@ describe('DependencyClosure: references and ids of rows', () => {
       const draft = await givenRenameChainUnderUnchangedReferrer(kit);
 
       const closure = await draft.closeDependencies('commit', {
-        renames: [category('c9')],
+        rowRenames: [category('c9')],
       });
 
       expect(closure.required).toEqual([
@@ -456,7 +456,7 @@ describe('DependencyClosure: references and ids of rows', () => {
             tableId: CATEGORIES,
             rowId: 'c2',
             previousRowId: 'c1',
-            selector: { renames: [category('c2')] },
+            selector: { rowRenames: [category('c2')] },
           },
           reason: {
             code: 'referencedRowMissing',
@@ -578,7 +578,7 @@ describe('DependencyClosure: references and ids of rows', () => {
 
       const closure = await draft.closeDependencies('commit', {
         rows: [category('c1')],
-        exclude: { tables: [PRODUCTS] },
+        exclude: { structures: [{ tableId: PRODUCTS }] },
       });
 
       expect(closure.required).toEqual([]);
@@ -819,7 +819,7 @@ describe('DependencyClosure: references and ids of rows', () => {
         const draft = await givenSwappedCategoryIds(kit);
 
         const closure = await draft.closeDependencies(operation, {
-          renames: [category('c2')],
+          rowRenames: [category('c2')],
         });
 
         expect(closure.required).toEqual([
@@ -829,7 +829,7 @@ describe('DependencyClosure: references and ids of rows', () => {
               tableId: CATEGORIES,
               rowId: 'c1',
               previousRowId: 'c2',
-              selector: { renames: [category('c1')] },
+              selector: { rowRenames: [category('c1')] },
             },
             reason: {
               code: 'idOccupied',
@@ -847,7 +847,7 @@ describe('DependencyClosure: references and ids of rows', () => {
       const draft = await givenRenameIntoDeletedCategoryId(kit);
 
       const closure = await draft.closeDependencies('commit', {
-        renames: [category('c1')],
+        rowRenames: [category('c1')],
       });
 
       expect(closure.required).toEqual([
@@ -919,19 +919,19 @@ describe('DependencyClosure: references and ids of rows', () => {
       name: 'a rename and the referrer edit it needs',
       operation: 'commit',
       given: givenRenameChainUnderUnchangedReferrer,
-      selection: { renames: [category('c9')] },
+      selection: { rowRenames: [category('c9')] },
     },
     {
       name: 'a Head-side deletion',
       operation: 'commit',
       given: givenRenameIntoDeletedCategoryId,
-      selection: { renames: [category('c1')] },
+      selection: { rowRenames: [category('c1')] },
     },
     {
       name: 'the other half of a swap',
       operation: 'revert',
       given: givenSwappedCategoryIds,
-      selection: { renames: [category('c2')] },
+      selection: { rowRenames: [category('c2')] },
     },
     {
       name: 'the structure that dropped the key of an unchanged referrer',

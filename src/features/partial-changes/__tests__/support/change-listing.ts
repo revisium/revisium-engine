@@ -1,5 +1,9 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type {
+  Unit,
+  UnitAddress,
+} from 'src/features/partial-changes/catalogue/unit';
+import type {
   ListChangesInput,
   ListChangesResult,
   ListedUnit,
@@ -9,6 +13,7 @@ import {
   type RowPair,
   unitRowIdOf,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { AddressedUnit } from './catalogue-reading';
 
 export type ListingOptions = Omit<ListChangesInput, 'branch'>;
@@ -79,13 +84,14 @@ export function unitsOfPages(
   return pages.flatMap(({ units }) => units);
 }
 
-export function addressedUnitOfListed(listed: ListedUnit): AddressedUnit {
-  const { kind, tableId, previousTableId, rowId, previousRowId } = listed;
-  const { path, columns, side } = listed;
+export function addressedUnitOfListed(listed: UnitRef): AddressedUnit {
+  const { kind, side } = listed;
+  const parts: Partial<UnitAddress> = listed;
+  const { previousTableId, rowId, previousRowId, path, columns } = parts;
 
   return {
     kind,
-    tableId,
+    tableId: addressIdOf(listed),
     previousTableId,
     rowId,
     previousRowId,
@@ -93,6 +99,14 @@ export function addressedUnitOfListed(listed: ListedUnit): AddressedUnit {
     columns,
     side,
   };
+}
+
+function addressIdOf(unit: Unit): string {
+  if (unit.kind === 'sharedSchema') {
+    return unit.sharedSchemaId;
+  }
+
+  return unit.tableId;
 }
 
 class ChangedRowsReads {

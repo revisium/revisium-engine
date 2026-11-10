@@ -34,13 +34,13 @@ const categoryReferrerSchema = obj({
 const structureOf = (tableId: string) => ({
   kind: 'structure',
   tableId,
-  selector: { tables: [tableId] },
+  selector: { structures: [{ tableId: tableId }] },
 });
 const renamedStructureOf = (tableId: string, previousTableId: string) => ({
   kind: 'structure',
   tableId,
   previousTableId,
-  selector: { tables: [tableId] },
+  selector: { structures: [{ tableId: tableId }] },
 });
 const createdRow = ({ tableId, rowId }: RowRef) => ({
   kind: 'rowCreate',
@@ -156,7 +156,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         const draft = await givenSwappedTables(kit);
 
         const closure = await draft.closeDependencies(operation, {
-          tables: [selected],
+          structures: [{ tableId: selected }],
         });
 
         expect(closure.required).toEqual([
@@ -179,7 +179,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       const draft = await givenProductsReferencingCreatedBrands(kit);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(closure.required).toEqual([
@@ -200,7 +200,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       const draft = await givenProductsReferencingCreatedBrands(kit);
 
       const closure = await draft.closeDependencies('revert', {
-        tables: [BRANDS],
+        structures: [{ tableId: BRANDS }],
       });
 
       expect(closure.required).toEqual([
@@ -243,7 +243,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         const draft = await givenRenamedCategoriesUnderProducts(kit);
 
         const closure = await draft.closeDependencies('commit', {
-          tables: [selected],
+          structures: [{ tableId: selected }],
         });
 
         expect(closure.required).toEqual([
@@ -262,7 +262,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         const draft = await givenSwappedTablesUnderProducts(kit);
 
         const closure = await draft.closeDependencies(operation, {
-          tables: [ALPHA, BETA],
+          structures: [{ tableId: ALPHA }, { tableId: BETA }],
         });
 
         expect(closure.required).toEqual([
@@ -283,7 +283,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       const draft = await givenSwappedTablesUnderProducts(kit);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(closure.required).toEqual([
@@ -323,7 +323,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       },
       {
         operation: 'revert',
-        selection: { tables: [PRODUCTS] },
+        selection: { structures: [{ tableId: PRODUCTS }] },
         required: viewsOf(PRODUCTS),
       },
     ])(
@@ -362,7 +362,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       },
       {
         operation: 'revert',
-        selection: { tables: [OFFERS] },
+        selection: { structures: [{ tableId: OFFERS }] },
         required: viewsOf(OFFERS),
         target: 'reverted Draft',
       },
@@ -392,7 +392,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
 
       const closure = await draft.closeDependencies('commit', {
         views: [OFFERS],
-        exclude: { tables: [OFFERS] },
+        exclude: { structures: [{ tableId: OFFERS }] },
       });
 
       expect(closure.required).toEqual([]);
@@ -416,7 +416,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       const draft = await givenViewsOfMissingField(kit);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
         views: [PRODUCTS],
       });
 
@@ -436,7 +436,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       const draft = await givenCreatedOffersOfCreatedCategory(kit);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [OFFERS],
+        structures: [{ tableId: OFFERS }],
       });
 
       expect(closure.required).toEqual([
@@ -462,7 +462,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       );
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [OFFERS],
+        structures: [{ tableId: OFFERS }],
       });
 
       expect(closure.required).toHaveLength(1);
@@ -473,7 +473,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       const draft = await givenRemovedOffersOfDeletedCategory(kit);
 
       const closure = await draft.closeDependencies('revert', {
-        tables: [OFFERS],
+        structures: [{ tableId: OFFERS }],
       });
 
       expect(closure.required).toEqual([
@@ -514,7 +514,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         const draft = await givenProductsReferencingBrandsInstead(kit);
 
         const closure = await draft.closeDependencies(operation, {
-          tables: [PRODUCTS],
+          structures: [{ tableId: PRODUCTS }],
         });
 
         expect(closure.required).toEqual([
@@ -536,7 +536,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       const draft = await givenCreatedOfferOfMissingCategory(kit);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [OFFERS],
+        structures: [{ tableId: OFFERS }],
       });
 
       expect(closure.required).toEqual([]);
@@ -560,7 +560,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         const draft = await givenSwappedTables(kit, committedRefusing(ALPHA));
 
         const closure = await draft.closeDependencies(operation, {
-          tables: [ALPHA],
+          structures: [{ tableId: ALPHA }],
         });
 
         expect(closure.required).toEqual([]);
@@ -577,7 +577,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         );
 
         const closure = await draft.closeDependencies(operation, {
-          tables: [KINDS],
+          structures: [{ tableId: KINDS }],
         });
 
         expect(closure.required).toEqual([]);
@@ -594,7 +594,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         );
 
         const closure = await draft.closeDependencies(operation, {
-          tables: [PRODUCTS],
+          structures: [{ tableId: PRODUCTS }],
         });
 
         expect(closure.required).toEqual([]);
@@ -606,7 +606,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       const draft = await givenProductsReferencingBrandsCreatedWithoutInit(kit);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(closure.required).toEqual([]);
@@ -618,8 +618,8 @@ describe('DependencyClosure: structures, views and rows that come with a structu
     const draft = await givenProductsReferencingCreatedBrands(kit);
 
     const closure = await draft.closeDependencies('commit', {
-      tables: [PRODUCTS],
-      exclude: { tables: [BRANDS] },
+      structures: [{ tableId: PRODUCTS }],
+      exclude: { structures: [{ tableId: BRANDS }] },
     });
 
     expect(closure.required).toEqual([]);
@@ -649,37 +649,37 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       name: 'the other half of a table swap',
       operation: 'commit',
       given: givenSwappedTables,
-      selection: { tables: [BETA] },
+      selection: { structures: [{ tableId: BETA }] },
     },
     {
       name: 'a referenced created table',
       operation: 'commit',
       given: givenProductsReferencingCreatedBrands,
-      selection: { tables: [PRODUCTS] },
+      selection: { structures: [{ tableId: PRODUCTS }] },
     },
     {
       name: 'a referrer schema a rename rewrote',
       operation: 'commit',
       given: givenRenamedCategoriesUnderProducts,
-      selection: { tables: [KINDS] },
+      selection: { structures: [{ tableId: KINDS }] },
     },
     {
       name: 'a referrer schema a table swap rewrote',
       operation: 'commit',
       given: givenSwappedTablesUnderProducts,
-      selection: { tables: [ALPHA, BETA] },
+      selection: { structures: [{ tableId: ALPHA }, { tableId: BETA }] },
     },
     {
       name: 'the swap a committed referrer schema means',
       operation: 'commit',
       given: givenSwappedTablesUnderProducts,
-      selection: { tables: [PRODUCTS] },
+      selection: { structures: [{ tableId: PRODUCTS }] },
     },
     {
       name: 'a referrer schema a reverted table swap rewrote',
       operation: 'revert',
       given: givenSwappedTablesUnderProducts,
-      selection: { tables: [ALPHA, BETA] },
+      selection: { structures: [{ tableId: ALPHA }, { tableId: BETA }] },
     },
     {
       name: 'the structure that views need',
@@ -697,25 +697,25 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       name: 'the views of a reverted created table',
       operation: 'revert',
       given: givenCreatedOffersWithViews,
-      selection: { tables: [OFFERS] },
+      selection: { structures: [{ tableId: OFFERS }] },
     },
     {
       name: 'a row that a created table references',
       operation: 'commit',
       given: givenCreatedOffersOfCreatedCategory,
-      selection: { tables: [OFFERS] },
+      selection: { structures: [{ tableId: OFFERS }] },
     },
     {
       name: 'a row that a restored table references',
       operation: 'revert',
       given: givenRemovedOffersOfDeletedCategory,
-      selection: { tables: [OFFERS] },
+      selection: { structures: [{ tableId: OFFERS }] },
     },
     {
       name: 'a row that a reverted foreign key references',
       operation: 'revert',
       given: givenProductsReferencingBrandsInstead,
-      selection: { tables: [PRODUCTS] },
+      selection: { structures: [{ tableId: PRODUCTS }] },
     },
   ])(
     'closes with nothing required once the selectors of $name are added (AS-67)',

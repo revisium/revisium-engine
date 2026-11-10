@@ -20,7 +20,7 @@ import type {
   Deferred,
 } from 'src/features/partial-changes/planning/plan-refs';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
-import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
+import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
 import type {
   ChangesBranch,
@@ -60,7 +60,7 @@ export interface PlanView {
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly Blocker[];
   readonly deferred: readonly Deferred[];
-  readonly unmatched: UnmatchedSelection;
+  readonly unmatched: UnmatchedSelectors;
   readonly estimate: Omit<Estimate, 'changedRows'>;
   readonly target?: PlannedTargetView;
 }

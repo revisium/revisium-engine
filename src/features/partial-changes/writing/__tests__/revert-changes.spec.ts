@@ -454,7 +454,7 @@ describe('revertChanges', () => {
 
       await expectApplied(
         draft.revertChanges({
-          selection: { renames: [rowOf(PRODUCTS, 'p9')] },
+          selection: { rowRenames: [rowOf(PRODUCTS, 'p9')] },
         }),
       );
 
@@ -502,7 +502,7 @@ describe('revertChanges', () => {
       await draft.createRows(TAGS, { t1: { title: 'one' } });
 
       await expectApplied(
-        draft.revertChanges({ selection: { tables: [TAGS] } }),
+        draft.revertChanges({ selection: { structures: [{ tableId: TAGS }] } }),
       );
 
       expect(await draft.hasTable('draft', TAGS)).toBe(false);
@@ -524,7 +524,7 @@ describe('revertChanges', () => {
       );
 
       await expectApplied(
-        draft.revertChanges({ selection: { tables: [TAGS] } }),
+        draft.revertChanges({ selection: { structures: [{ tableId: TAGS }] } }),
       );
 
       await expectCopiedInsteadOfEdited(kit, draft, schemaTable);
@@ -539,7 +539,7 @@ describe('revertChanges', () => {
       await draft.removeTable(TAGS);
 
       await expectApplied(
-        draft.revertChanges({ selection: { tables: [TAGS] } }),
+        draft.revertChanges({ selection: { structures: [{ tableId: TAGS }] } }),
       );
 
       await expectDraftLinksHeadVersion(draft, TAGS);
@@ -554,7 +554,9 @@ describe('revertChanges', () => {
       await draft.renameTable(TAGS, GOODS);
 
       await expectApplied(
-        draft.revertChanges({ selection: { tables: [GOODS] } }),
+        draft.revertChanges({
+          selection: { structures: [{ tableId: GOODS }] },
+        }),
       );
 
       expect(await draft.hasTable('draft', GOODS)).toBe(false);
@@ -577,7 +579,9 @@ describe('revertChanges', () => {
       });
 
       await expectApplied(
-        draft.revertChanges({ selection: { tables: [PRODUCTS] } }),
+        draft.revertChanges({
+          selection: { structures: [{ tableId: PRODUCTS }] },
+        }),
       );
 
       await expectDraftSystemTableEqualsHead(draft, SystemTables.Schema);
@@ -644,12 +648,12 @@ describe('revertChanges', () => {
       {
         structure: 'the rename of a table with a File field',
         given: givenRenamedDocumentsWithATitleEdit,
-        selection: { tables: [ARCHIVE] },
+        selection: { structures: [{ tableId: ARCHIVE }] },
       },
       {
         structure: 'the removal of a File field',
         given: givenRemovedAttachmentFieldWithATitleEdit,
-        selection: { tables: [DOCUMENTS] },
+        selection: { structures: [{ tableId: DOCUMENTS }] },
       },
     ])(
       'restores the Head files on a revert of $structure, keeps the title edit of the row, and leaves the blob links and project bytes of native revertChanges (AS-38)',

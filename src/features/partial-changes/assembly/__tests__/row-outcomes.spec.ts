@@ -149,14 +149,14 @@ describe('TargetAssembler: row outcomes in a table of one structure', () => {
     {
       unit: 'a renamed row',
       operation: 'commit',
-      selection: { renames: [product('p5')] },
+      selection: { rowRenames: [product('p5')] },
       removedLinks: ['head p4'],
       addedLinks: ['draft p5'],
     },
     {
       unit: 'a renamed row',
       operation: 'revert',
-      selection: { renames: [product('p5')] },
+      selection: { rowRenames: [product('p5')] },
       removedLinks: ['draft p5'],
       addedLinks: ['head p4'],
     },

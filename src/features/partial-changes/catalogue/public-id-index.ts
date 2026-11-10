@@ -1,5 +1,5 @@
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
+import type { SelectorSide } from 'src/features/partial-changes/catalogue/unit';
 
 interface SidedVersions {
   readonly head?: { readonly id: string };
@@ -24,7 +24,7 @@ export class PublicIdIndex<T> {
     }
   }
 
-  public resolve(id: string, side?: HeadQualifier): T | undefined {
+  public resolve(id: string, side?: SelectorSide): T | undefined {
     const found = resolveSide(side, (revisionSide) =>
       this.entriesOn(revisionSide).has(id),
     );
@@ -46,7 +46,7 @@ export class PublicIdIndex<T> {
 }
 
 export function resolveSide(
-  side: HeadQualifier | undefined,
+  side: SelectorSide | undefined,
   holds: (revisionSide: RevisionSide) => boolean,
 ): RevisionSide | undefined {
   if (side !== 'head' && holds('draft')) {

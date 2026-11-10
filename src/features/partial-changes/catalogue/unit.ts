@@ -16,11 +16,43 @@ export const ROW_COLUMNS = ['publishedAt', 'meta', 'schemaHash'] as const;
 
 export type RowColumn = (typeof ROW_COLUMNS)[number];
 
-export const HEAD_QUALIFIERS = ['head'] as const;
+export const SELECTOR_SIDES = ['head'] as const;
 
-export type HeadQualifier = (typeof HEAD_QUALIFIERS)[number];
+export type SelectorSide = (typeof SELECTOR_SIDES)[number];
 
-export interface Unit {
+export type Unit =
+  | {
+      readonly kind: 'field';
+      readonly tableId: string;
+      readonly rowId: string;
+      readonly path: string;
+    }
+  | {
+      readonly kind: 'rowCreate' | 'rowDelete' | 'rowReplace';
+      readonly tableId: string;
+      readonly rowId: string;
+    }
+  | {
+      readonly kind: 'rowRename';
+      readonly tableId: string;
+      readonly rowId: string;
+      readonly previousRowId: string;
+    }
+  | {
+      readonly kind: 'rowColumns';
+      readonly tableId: string;
+      readonly rowId: string;
+      readonly columns: readonly RowColumn[];
+    }
+  | {
+      readonly kind: 'structure';
+      readonly tableId: string;
+      readonly previousTableId?: string;
+    }
+  | { readonly kind: 'views'; readonly tableId: string }
+  | { readonly kind: 'sharedSchema'; readonly sharedSchemaId: string };
+
+export interface UnitAddress {
   readonly kind: UnitKind;
   readonly tableId: string;
   readonly previousTableId?: string;

@@ -306,7 +306,7 @@ describe('previewChanges', () => {
               kind: 'structure',
               tableId: ALPHA,
               side: 'head',
-              selector: { tables: [{ tableId: ALPHA, side: 'head' }] },
+              selector: { structures: [{ tableId: ALPHA, side: 'head' }] },
             },
             reason: { code: 'structureBoundData', tableId: ALPHA, rowId: 'a1' },
           },
@@ -315,7 +315,7 @@ describe('previewChanges', () => {
               kind: 'structure',
               tableId: ALPHA,
               previousTableId: BETA,
-              selector: { tables: [ALPHA] },
+              selector: { structures: [{ tableId: ALPHA }] },
             },
             reason: { code: 'idOccupied', tableId: ALPHA },
           },
@@ -496,7 +496,7 @@ describe('previewChanges', () => {
             structure: {
               kind: 'structure',
               tableId: PRODUCTS,
-              selector: { tables: [PRODUCTS] },
+              selector: { structures: [{ tableId: PRODUCTS }] },
             },
           },
         ],
@@ -508,7 +508,7 @@ describe('previewChanges', () => {
   describe('structure units', () => {
     it('plans a commit of a structure unit as ready, as it plans its revert', async () => {
       const draft = await givenProductsWithNewField();
-      const selection = { tables: [PRODUCTS] };
+      const selection = { structures: [{ tableId: PRODUCTS }] };
 
       const commit = await draft.previewChanges({
         operation: 'commit',
@@ -666,7 +666,7 @@ describe('previewChanges', () => {
       const replays = await sourceReplaysDuring(kit, sourceLedgers, () =>
         draft.previewChanges({
           operation: 'revert',
-          selection: { tables: [PRODUCTS] },
+          selection: { structures: [{ tableId: PRODUCTS }] },
         }),
       );
 
@@ -801,7 +801,7 @@ describe('previewChanges', () => {
 
       const preview = await draft.previewChanges({
         operation: 'revert',
-        selection: { tables: [PRODUCTS] },
+        selection: { structures: [{ tableId: PRODUCTS }] },
       });
 
       expect(preview).toMatchObject({
@@ -1245,5 +1245,9 @@ function wholeRowOfC9() {
 }
 
 function structureOf(tableId: string): UnitRef {
-  return { kind: 'structure', tableId, selector: { tables: [tableId] } };
+  return {
+    kind: 'structure',
+    tableId,
+    selector: { structures: [{ tableId: tableId }] },
+  };
 }

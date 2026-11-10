@@ -9,6 +9,7 @@ import {
   seededRandom,
   type SeededRandom,
 } from 'src/features/share/ledger-replay/__tests__/support/seeded-random';
+import { addressedUnitOfListed } from './support/change-listing';
 import type { ChangesScenario } from './support/changes-scenario';
 import { unionOfSelections } from './support/dependency-closing';
 import {
@@ -112,7 +113,9 @@ function tableDataOf(
   random: SeededRandom,
 ): Selection[] {
   if (random.pick([true, false, false])) {
-    return [{ tableData: [random.pick(included).tableId] }];
+    return [
+      { tableData: [addressedUnitOfListed(random.pick(included)).tableId] },
+    ];
   }
 
   return [];

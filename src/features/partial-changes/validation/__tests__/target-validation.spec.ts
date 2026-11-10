@@ -116,7 +116,7 @@ describe('TargetValidator', () => {
       const draft = await givenUnrecordedProducts();
 
       const blockers = await draft.validateTarget('revert', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(blockers).toEqual([]);
@@ -185,8 +185,8 @@ describe('TargetValidator', () => {
       const draft = await givenForeignKeyAddedAndRemovedAgain();
 
       const blockers = await draft.validateTarget('revert', {
-        tables: [TAGS],
-        exclude: { tables: [PRODUCTS] },
+        structures: [{ tableId: TAGS }],
+        exclude: { structures: [{ tableId: PRODUCTS }] },
       });
 
       expect(blockers).toEqual([
@@ -204,7 +204,7 @@ describe('TargetValidator', () => {
 
       const blockers = await draft.validateTarget('commit', {
         all: true,
-        exclude: { tables: [TAGS] },
+        exclude: { structures: [{ tableId: TAGS }] },
       });
 
       expect(blockers).toEqual([
@@ -221,8 +221,8 @@ describe('TargetValidator', () => {
       const draft = await givenUnrecordedReferrerOfCreatedTags();
 
       const blockers = await draft.validateTarget('revert', {
-        tables: [TAGS],
-        exclude: { tables: [PRODUCTS] },
+        structures: [{ tableId: TAGS }],
+        exclude: { structures: [{ tableId: PRODUCTS }] },
       });
 
       expect(blockers).toEqual([
@@ -239,7 +239,7 @@ describe('TargetValidator', () => {
       const draft = await givenForeignKeyAddedAndRemovedAgain();
 
       const blockers = await draft.validateTarget('revert', {
-        tables: [TAGS, PRODUCTS],
+        structures: [{ tableId: TAGS }, { tableId: PRODUCTS }],
       });
 
       expect(blockers).toEqual([]);
@@ -265,7 +265,7 @@ describe('TargetValidator', () => {
           'a table created in the Draft whose structure its history does not record, renumbered in the remaining Draft by a structure commit of a later table',
         given: givenUnrecordedCreatedTagsBeforeANewProductField,
         operation: 'commit',
-        selection: { tables: [PRODUCTS] },
+        selection: { structures: [{ tableId: PRODUCTS }] },
       },
       {
         source: 'a damaged Head table, published again by { all: true }',

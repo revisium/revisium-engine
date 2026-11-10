@@ -17,11 +17,11 @@ export interface SelectionSource {
   readonly addressedRows: AddressedRows;
 }
 
-export type UnmatchedSelection = SelectionItems & {
+export type UnmatchedSelectors = SelectionItems & {
   readonly exclude?: SelectionItems;
 };
 
-export function hasUnmatchedSelectors(unmatched: UnmatchedSelection): boolean {
+export function hasUnmatchedSelectors(unmatched: UnmatchedSelectors): boolean {
   return Object.keys(unmatched).length > 0;
 }
 
@@ -30,5 +30,5 @@ export interface SelectionResolution {
   readonly excluded: ReadonlySet<string>;
   readonly required: ReadonlyMap<string, Reason>;
   readonly blockers: readonly PlanBlocker[];
-  readonly unmatched: UnmatchedSelection;
+  readonly unmatched: UnmatchedSelectors;
 }

@@ -203,13 +203,19 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       operation: 'commit',
       selected: 'the rename of the table that the unledgered table references',
       given: givenRenamedCategoriesUnderUnledgeredProducts,
-      apply: (draft) => draft.commitChanges({ selection: { tables: [KINDS] } }),
+      apply: (draft) =>
+        draft.commitChanges({
+          selection: { structures: [{ tableId: KINDS }] },
+        }),
     },
     {
       operation: 'revert',
       selected: 'the rename of the table that the unledgered table references',
       given: givenRenamedCategoriesUnderUnledgeredProducts,
-      apply: (draft) => draft.revertChanges({ selection: { tables: [KINDS] } }),
+      apply: (draft) =>
+        draft.revertChanges({
+          selection: { structures: [{ tableId: KINDS }] },
+        }),
     },
   ];
 

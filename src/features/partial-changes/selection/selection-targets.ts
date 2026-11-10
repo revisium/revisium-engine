@@ -1,7 +1,7 @@
 import type { AddressedRow } from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import { groupRecreations } from 'src/features/partial-changes/catalogue/public-id-groups';
 import { PublicIdIndex } from 'src/features/partial-changes/catalogue/public-id-index';
-import type { HeadQualifier } from 'src/features/partial-changes/catalogue/unit';
+import type { SelectorSide } from 'src/features/partial-changes/catalogue/unit';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { tablesOfRow } from 'src/features/partial-changes/selection/addressed-rows';
 import type { RowRef } from 'src/features/partial-changes/selection/selection';
@@ -34,7 +34,7 @@ export class SelectionTargets {
 
   public tableNamed(
     tableId: string,
-    side?: HeadQualifier,
+    side?: SelectorSide,
   ): TablePair | undefined {
     return this.tables.resolve(tableId, side);
   }
@@ -48,7 +48,7 @@ export class SelectionTargets {
   public rowNamed(
     table: TablePair,
     rowId: string,
-    side?: HeadQualifier,
+    side?: SelectorSide,
   ): AddressedRow | undefined {
     const rowSide = this.source.addressedRows.sideOf(table, rowId, side);
 
@@ -85,11 +85,7 @@ export class SelectionTargets {
     );
   }
 
-  private holds(
-    table: TablePair,
-    rowId: string,
-    side?: HeadQualifier,
-  ): boolean {
+  private holds(table: TablePair, rowId: string, side?: SelectorSide): boolean {
     return this.source.addressedRows.sideOf(table, rowId, side) !== undefined;
   }
 

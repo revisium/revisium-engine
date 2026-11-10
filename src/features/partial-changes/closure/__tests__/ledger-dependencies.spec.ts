@@ -37,13 +37,13 @@ const targetIn = (tableId: string) =>
 const structureOf = (tableId: string) => ({
   kind: 'structure',
   tableId,
-  selector: { tables: [tableId] },
+  selector: { structures: [{ tableId: tableId }] },
 });
 const renamedStructureOf = (tableId: string, previousTableId: string) => ({
   kind: 'structure',
   tableId,
   previousTableId,
-  selector: { tables: [tableId] },
+  selector: { structures: [{ tableId: tableId }] },
 });
 
 type Given = (kit: PartialChangesTestKit) => Promise<ChangesScenario>;
@@ -60,31 +60,31 @@ const REVERTS: LedgerDependency[] = [
     name: 'the renames of a table referenced by a table created in between',
     given: givenLinksCreatedWhileNotesWasRenamed,
     operation: 'revert',
-    selection: { tables: [NOTES] },
+    selection: { structures: [{ tableId: NOTES }] },
   },
   {
     name: 'the rename of a table referenced by a table created and removed in between',
     given: givenLinksCreatedAndRemovedWhileCategoriesWasRenamed,
     operation: 'revert',
-    selection: { tables: [KINDS] },
+    selection: { structures: [{ tableId: KINDS }] },
   },
   {
     name: 'the removal of a table whose id a rotation of renames took',
     given: givenTablesRotatedIntoRemovedNotes,
     operation: 'revert',
-    selection: { tables: [NOTES] },
+    selection: { structures: [{ tableId: NOTES }] },
   },
   {
     name: 'the rename that vacated an id a referenced created table took',
     given: givenProductsReferencingNotesCreatedInPlaceOfArchive,
     operation: 'revert',
-    selection: { tables: [ARCHIVE] },
+    selection: { structures: [{ tableId: ARCHIVE }] },
   },
   {
     name: 'the rename of a table that only pending migrations of another table referenced',
     given: givenProductsThatReferencedKindsOnlyInPendingMigrations,
     operation: 'revert',
-    selection: { tables: [KINDS] },
+    selection: { structures: [{ tableId: KINDS }] },
   },
 ];
 
@@ -93,37 +93,37 @@ const COMMITS: LedgerDependency[] = [
     name: 'a table created while the table it references had another id',
     given: givenLinksCreatedWhileNotesWasRenamed,
     operation: 'commit',
-    selection: { tables: [LINKS] },
+    selection: { structures: [{ tableId: LINKS }] },
   },
   {
     name: 'the renames of a table referenced by a table created in between',
     given: givenLinksCreatedWhileNotesWasRenamed,
     operation: 'commit',
-    selection: { tables: [NOTES] },
+    selection: { structures: [{ tableId: NOTES }] },
   },
   {
     name: 'a table created and removed while the table it references had another id',
     given: givenLinksCreatedAndRemovedWhileCategoriesWasRenamed,
     operation: 'commit',
-    selection: { tables: [LINKS] },
+    selection: { structures: [{ tableId: LINKS }] },
   },
   {
     name: 'a rotation of renames into the id of a removed table',
     given: givenTablesRotatedIntoRemovedNotes,
     operation: 'commit',
-    selection: { tables: [PRODUCTS] },
+    selection: { structures: [{ tableId: PRODUCTS }] },
   },
   {
     name: 'two tables that held one id in turn, without the referrer of the first',
     given: givenProductsReferencingNotesBeforeItsIdWasReused,
     operation: 'commit',
-    selection: { tables: [NOTES, MEMOS] },
+    selection: { structures: [{ tableId: NOTES }, { tableId: MEMOS }] },
   },
   {
     name: 'a table whose pending migrations alone referenced a renamed table',
     given: givenProductsThatReferencedKindsOnlyInPendingMigrations,
     operation: 'commit',
-    selection: { tables: [PRODUCTS] },
+    selection: { structures: [{ tableId: PRODUCTS }] },
   },
 ];
 
@@ -148,7 +148,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('revert', {
-        tables: [NOTES],
+        structures: [{ tableId: NOTES }],
       });
 
       expect(closure.required).toEqual([
@@ -169,7 +169,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [LINKS],
+        structures: [{ tableId: LINKS }],
       });
 
       expect(closure.required).toEqual([
@@ -190,7 +190,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [NOTES],
+        structures: [{ tableId: NOTES }],
       });
 
       expect(closure.required).toEqual([
@@ -211,8 +211,8 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('revert', {
-        tables: [NOTES],
-        exclude: { tables: [LINKS] },
+        structures: [{ tableId: NOTES }],
+        exclude: { structures: [{ tableId: LINKS }] },
       });
 
       expect(closure.required).toEqual([]);
@@ -239,7 +239,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('revert', {
-        tables: [KINDS],
+        structures: [{ tableId: KINDS }],
       });
 
       expect(closure.required).toEqual([
@@ -261,7 +261,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       const initOfLinks = await migrationIdOf(draft, 'init', LINKS);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [LINKS],
+        structures: [{ tableId: LINKS }],
       });
 
       expect(closure.required).toEqual([
@@ -288,7 +288,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       );
 
       const closure = await draft.closeDependencies('revert', {
-        tables: [NOTES],
+        structures: [{ tableId: NOTES }],
       });
 
       expect(closure.required).toEqual([
@@ -322,7 +322,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       );
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [PRODUCTS],
+        structures: [{ tableId: PRODUCTS }],
       });
 
       expect(closure.required).toEqual([
@@ -355,7 +355,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       const updateOfProducts = await migrationIdOf(draft, 'update', PRODUCTS);
 
       const closure = await draft.closeDependencies('commit', {
-        tables: [NOTES, MEMOS],
+        structures: [{ tableId: NOTES }, { tableId: MEMOS }],
       });
 
       expect(closure.required).toEqual([
@@ -376,7 +376,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
         await givenProductsReferencingNotesCreatedInPlaceOfArchive(kit);
 
       const closure = await draft.closeDependencies('revert', {
-        tables: [ARCHIVE],
+        structures: [{ tableId: ARCHIVE }],
       });
 
       expect(closure.required).toEqual([
@@ -407,7 +407,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
     it('requires nothing for a reference that a migration behind that failure no longer finds, and the revert applies', async () => {
       const draft =
         await givenProductsFailingToReplayBeforeReferencingNotes(kit);
-      const selection = { tables: [NOTES] };
+      const selection = { structures: [{ tableId: NOTES }] };
 
       const closure = await draft.closeDependencies('revert', selection);
       const preview = await draft.previewChanges({

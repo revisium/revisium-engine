@@ -8,7 +8,7 @@ import type {
   Deferred,
 } from 'src/features/partial-changes/planning/plan-refs';
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
-import type { UnmatchedSelection } from 'src/features/partial-changes/selection/selection-resolution';
+import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 import type {
   DescribedUnitRef,
   RequiredUnit,
@@ -34,7 +34,7 @@ export interface PreviewChangesResult {
   readonly blockers: readonly Blocker[];
   readonly deferred: readonly Deferred[];
   readonly sample: readonly DescribedUnitRef[];
-  readonly unmatched: UnmatchedSelection;
+  readonly unmatched: UnmatchedSelectors;
   readonly estimate: Estimate;
 }
 

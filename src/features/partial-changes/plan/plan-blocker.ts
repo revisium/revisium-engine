@@ -1,6 +1,6 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { LedgerInconsistency } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
-import type { Unit } from 'src/features/partial-changes/catalogue/unit';
+import type { UnitAddress } from 'src/features/partial-changes/catalogue/unit';
 import {
   REFUSAL_CODES,
   type RefusalCode,
@@ -105,7 +105,7 @@ export function distinctBlockers(
   return [...distinct.values()];
 }
 
-function addressOf({ tableId, rowId, path }: Unit): string {
+function addressOf({ tableId, rowId, path }: UnitAddress): string {
   if (rowId === undefined) {
     return tableId;
   }

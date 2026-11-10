@@ -5,6 +5,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type {
@@ -39,7 +40,7 @@ const BETA = 'beta';
 
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
 const SAMPLE_SIZE = 20;
-const SHA_256_HEX = /^[0-9a-f]{64}$/;
+const FINGERPRINT_FORMAT = /^pcf2\.[\w-]+$/;
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({
@@ -408,7 +409,9 @@ describe('previewChanges', () => {
         planned: true,
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
-        fingerprint: await draft.fingerprintPlan('commit', categoryOfP1),
+        fingerprint: encodeFingerprint(
+          await draft.fingerprintPlan('commit', categoryOfP1),
+        ),
         counts: { selected: 1, required: 1 },
         coverage: [
           {
@@ -1072,9 +1075,9 @@ describe('previewChanges', () => {
           selection: titleOfC1,
         });
 
-        expect(preview.fingerprint).toMatch(SHA_256_HEX);
+        expect(preview.fingerprint).toMatch(FINGERPRINT_FORMAT);
         expect(preview.fingerprint).toBe(
-          await draft.fingerprintPlan(operation, titleOfC1),
+          encodeFingerprint(await draft.fingerprintPlan(operation, titleOfC1)),
         );
       },
     );

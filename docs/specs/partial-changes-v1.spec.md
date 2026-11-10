@@ -757,7 +757,7 @@ added (§6.9).
 | --- | --- |
 | `includeRequired: true` without `expected` | Validation error before any transaction. |
 | `includeRequired` other than a boolean, `expected` other than a non-empty string, or `comment` other than a string (`null` in any of them is absent, §5) | Validation error before any transaction. |
-| `expected` that is malformed: no `pcf<n>.` prefix with a base64url body, or a `pcf2.` payload that is not a five-element array of strings (§9.1) | Validation error before any transaction. |
+| `expected` that is malformed: no `pcf<n>.` prefix with a base64url body, or a `pcf2.` body that is not the unpadded base64url of a five-element array of strings (§9.1) | Validation error before any transaction. |
 | A malformed selection: an unknown field (also the pre-v2.0 `tables` and `renames`), a wrong type (`null` in an optional field is absent, §5), an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
 | Invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
 | Unknown project or branch | Not-found error (native). |
@@ -1601,11 +1601,12 @@ An unsigned, opaque string with four parts, so that a `stale` result can say whi
 Encoding: `pcf2.` followed by the base64url (no padding) of the UTF-8 JSON array `[operation, headRevisionId,
 draftRevisionId, units, content]`, the two digests as lowercase hex. `pcf2` names the version of the fingerprint
 rules; the engine compares the parts one by one. Clients treat the fingerprint as opaque and compare it only for
-equality. An `expected` is read by its prefix, where `n` is one or more decimal digits: `pcf2.` followed by a payload
-that decodes to a five-element array of strings is a fingerprint of these rules; `pcf<n>.` with another `n` and a
-base64url body is a fingerprint of other rules (a later engine version), whose payload is not decoded, and gives
-`stale` with `changed: ['version']`; anything else is malformed (§5.9), including the bare SHA-256 hex that engines
-before v2.0 issued. The content part covers, for every applied unit, in unit order:
+equality. An `expected` is read by its prefix, where `n` is one or more decimal digits compared as written (`pcf02.`
+is not `pcf2.`): `pcf2.` followed by the unpadded base64url of a payload that is a five-element array of strings is a
+fingerprint of these rules; `pcf<n>.` with another `n` and a body of base64url characters is a fingerprint of other
+rules (a later engine version), whose payload is not decoded, and gives `stale` with `changed: ['version']`; anything
+else is malformed (§5.9), including a `pcf2.` body that is not exactly that encoding (padding, a stray last character
+or stray bits) and the bare SHA-256 hex that engines before v2.0 issued. The content part covers, for every applied unit, in unit order:
 
   - row units: per covered row, the Head and Draft row versions as `versionId`, `updatedAt` and the compared columns
     (`id`, `hash`, `schemaHash`, `publishedAt`, `meta`); for a `rowColumns` unit, the columns it owns (§3.4); for a
@@ -2371,7 +2372,8 @@ Results (§5.1, §5.3–§5.7, §5.11, §5.12):
 
 Fingerprint (§9.1, §9.2, §5.9): four parts (operation, revisions, units, content) behind a version prefix, so
 `stale` says which changed (`version` for a fingerprint of other rules); an `expected` the engine cannot decode is a
-validation error.
+validation error. The version digits are compared as written, and a `pcf2.` body must be the exact unpadded base64url
+of its payload.
 
 Names (§5.10, §5.11): `Branch` → `ChangesBranch`, `Side` → `SelectorSide` (`HEAD_QUALIFIERS` → `SELECTOR_SIDES`),
 `TableChange` → `StructureTableChange` (`TABLE_CHANGES` → `STRUCTURE_TABLE_CHANGES`), `FieldChange` →

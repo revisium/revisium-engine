@@ -4,6 +4,10 @@ import {
   CHANGE_OPERATIONS,
   type ChangeOperation,
 } from 'src/features/partial-changes/plan/change-operation';
+import {
+  type ExpectedFingerprint,
+  readExpected,
+} from 'src/features/partial-changes/plan/fingerprint';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
@@ -11,7 +15,7 @@ export class SelectionValidationError extends BadRequestException {}
 
 export interface RequiredAdditionsAcceptance {
   readonly includeRequired: boolean;
-  readonly expected?: string;
+  readonly expected?: ExpectedFingerprint;
 }
 
 interface RequiredAdditionsAcceptanceInput {
@@ -68,10 +72,10 @@ export function validateComment(input: unknown): string | undefined {
   return optionalInputOf(input, 'comment', checkString) as string | undefined;
 }
 
-function validateExpected(input: unknown): string | undefined {
-  const expected = optionalInputOf(input, 'expected', checkNonEmptyString);
-
-  return expected as string | undefined;
+function validateExpected(input: unknown): ExpectedFingerprint | undefined {
+  return optionalInputOf(input, 'expected', checkFingerprint) as
+    | ExpectedFingerprint
+    | undefined;
 }
 
 const checkString: Check = (value, at) => {
@@ -88,6 +92,16 @@ const checkNonEmptyString: Check = (value, at) => {
   }
 
   return value;
+};
+
+const checkFingerprint: Check = (value, at) => {
+  const expected = readExpected(checkNonEmptyString(value, at) as string);
+
+  if (expected === undefined) {
+    throw invalid(`${at} must be a fingerprint`);
+  }
+
+  return expected;
 };
 
 const checkBoolean: Check = (value, at) => {

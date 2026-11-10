@@ -222,6 +222,22 @@ describe('commitChanges', () => {
         options: { selection: categoryOfP1, expected: 1 },
       },
       {
+        input: 'an expected that is not a fingerprint',
+        options: { selection: categoryOfP1, expected: 'other' },
+      },
+      {
+        input:
+          'the bare SHA-256 hex that engines before v2.0 issued as expected',
+        options: { selection: categoryOfP1, expected: 'a'.repeat(64) },
+      },
+      {
+        input: 'a pcf2 expected whose payload is not five strings',
+        options: {
+          selection: categoryOfP1,
+          expected: `pcf2.${Buffer.from('["commit"]').toString('base64url')}`,
+        },
+      },
+      {
         input: 'comment given as a number',
         options: { selection: categoryOfP1, comment: 1 },
       },
@@ -342,7 +358,13 @@ describe('commitChanges', () => {
         expected: preview.fingerprint,
       });
 
-      expect(result).toEqual<CommitChangesResult>({ status: 'stale' });
+      expect(result).toEqual<CommitChangesResult>({
+        status: 'stale',
+        changed: ['content'],
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: {},
+      });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
 
@@ -364,7 +386,7 @@ describe('commitChanges', () => {
         expected: preview.fingerprint,
       });
 
-      expect(result).toEqual<CommitChangesResult>({ status: 'stale' });
+      expect(result).toMatchObject({ status: 'stale', changed: ['content'] });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
 
@@ -416,7 +438,13 @@ describe('commitChanges', () => {
           expected: preview.fingerprint,
         });
 
-        expect(result).toEqual({ status: 'stale' });
+        expect(result).toEqual({
+          status: 'stale',
+          changed: ['operation'],
+          headRevisionId: await draft.revisionId('head'),
+          draftRevisionId: await draft.revisionId('draft'),
+          unmatched: {},
+        });
         expect(await branchContentsOf(kit, draft)).toEqual(contents);
       },
     );
@@ -939,7 +967,7 @@ describe('commitChanges', () => {
         branchRevisionsOf(draft),
       );
 
-      await draft.commitChanges({ selection: titleOfP1, expected: 'other' });
+      await draft.commitChanges({ selection: titleOfP1, expected: 'pcf3.AA' });
 
       expect(notifications).toEqual([]);
     });

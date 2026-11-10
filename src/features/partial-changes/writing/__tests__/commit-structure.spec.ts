@@ -265,7 +265,10 @@ describe('commitChanges of structure units', () => {
         operation: 'commit',
         selection,
       });
-      await expectApplied(draft.commitChanges({ selection }));
+      // Every plan gives the new File another id; the fingerprint covers stored versions only, so it still matches.
+      await expectApplied(
+        draft.commitChanges({ selection, expected: preview.fingerprint }),
+      );
 
       expect(preview).toMatchObject({
         status: 'ready',

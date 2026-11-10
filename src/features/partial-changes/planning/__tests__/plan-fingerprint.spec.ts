@@ -4,6 +4,10 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
+import {
+  type Fingerprint,
+  staleChangesOf,
+} from 'src/features/partial-changes/plan/fingerprint';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type {
   FieldRef,
@@ -36,6 +40,7 @@ const priceOfP1: FieldRef = { tableId: PRODUCTS, rowId: 'p1', path: '/price' };
 const priceSelection = { fields: [priceOfP1] };
 const productsStructure = { structures: [{ tableId: PRODUCTS }] };
 const productRow = (rowId: string): RowRef => ({ tableId: PRODUCTS, rowId });
+const rowP1 = { rows: [productRow('p1')] };
 
 interface EditCase {
   readonly edit: string;
@@ -65,23 +70,41 @@ describe('PlanFingerprint', () => {
     await kit.close();
   });
 
-  it('is the same SHA-256 for the same state', async () => {
+  it('is the same for the same state: the operation, the revision ids and SHA-256 digests of the units and their content', async () => {
     const draft = await givenPriceEdit();
 
     const first = await draft.fingerprintPlan('commit', priceSelection);
     const second = await draft.fingerprintPlan('commit', priceSelection);
 
-    expect(first).toMatch(SHA_256_HEX);
-    expect(second).toBe(first);
+    expect(first).toEqual<Fingerprint>({
+      operation: 'commit',
+      headRevisionId: await draft.revisionId('head'),
+      draftRevisionId: await draft.revisionId('draft'),
+      units: expect.stringMatching(SHA_256_HEX),
+      content: expect.stringMatching(SHA_256_HEX),
+    });
+    expect(second).toEqual(first);
   });
 
-  it('differs between a commit and a revert of the same selection', async () => {
+  it('differs between a commit and a revert of the same selection in the operation only', async () => {
     const draft = await givenPriceEdit();
 
     const commit = await draft.fingerprintPlan('commit', priceSelection);
     const revert = await draft.fingerprintPlan('revert', priceSelection);
 
-    expect(revert).not.toBe(commit);
+    expect(staleChangesOf(commit, revert)).toEqual(['operation']);
+    expect(revert).toEqual({ ...commit, operation: 'revert' });
+  });
+
+  it('changes its units when an edit of another field of a selected row adds a unit', async () => {
+    const draft = await givenPriceEdit();
+    const before = await draft.fingerprintPlan('commit', rowP1);
+
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
+
+    expect(
+      staleChangesOf(before, await draft.fingerprintPlan('commit', rowP1)),
+    ).toEqual(['units']);
   });
 
   it.each<{ revision: string; variant: PlanVariant }>([
@@ -100,7 +123,8 @@ describe('PlanFingerprint', () => {
       variant,
     );
 
-    expect(varied).not.toBe(planned);
+    expect(staleChangesOf(planned, varied)).toEqual(['revisions']);
+    expect({ ...varied, ...revisionIdsOf(planned) }).toEqual(planned);
   });
 
   it.each<EditCase>([
@@ -119,26 +143,35 @@ describe('PlanFingerprint', () => {
       apply: (draft) =>
         draft.writeRowColumns(PRODUCTS, 'p1', { publishedAt: RELEASE_DATE }),
     },
-  ])('changes when a covered row changes: $edit', async ({ apply }) => {
-    const draft = await givenPriceEdit();
-    const before = await draft.fingerprintPlan('commit', priceSelection);
+  ])(
+    'changes its content when a covered row changes: $edit',
+    async ({ apply }) => {
+      const draft = await givenPriceEdit();
+      const before = await draft.fingerprintPlan('commit', priceSelection);
 
-    await apply(draft);
+      await apply(draft);
 
-    expect(await draft.fingerprintPlan('commit', priceSelection)).not.toBe(
-      before,
-    );
-  });
+      expect(
+        staleChangesOf(
+          before,
+          await draft.fingerprintPlan('commit', priceSelection),
+        ),
+      ).toEqual(['content']);
+    },
+  );
 
-  it('changes when a system row owned by a selected unit changes', async () => {
+  it('changes its content when a system row owned by a selected unit changes', async () => {
     const draft = await givenViewsEdit();
     const before = await draft.fingerprintPlan('commit', { views: [PRODUCTS] });
 
     await draft.updateViews(PRODUCTS, productViews('Edited again'));
 
     expect(
-      await draft.fingerprintPlan('commit', { views: [PRODUCTS] }),
-    ).not.toBe(before);
+      staleChangesOf(
+        before,
+        await draft.fingerprintPlan('commit', { views: [PRODUCTS] }),
+      ),
+    ).toEqual(['content']);
   });
 
   it.each<EditCase>([
@@ -157,16 +190,19 @@ describe('PlanFingerprint', () => {
         draft.writeRowColumns(PRODUCTS, 'p2', { meta: { note: 'checked' } }),
     },
   ])(
-    'changes when any row of the mutable Draft table version of a selected structure unit changes: $edit',
+    'changes its content when any row of the mutable Draft table version of a selected structure unit changes: $edit',
     async ({ apply }) => {
       const draft = await givenAddedColor();
       const before = await draft.fingerprintPlan('revert', productsStructure);
 
       await apply(draft);
 
-      expect(await draft.fingerprintPlan('revert', productsStructure)).not.toBe(
-        before,
-      );
+      expect(
+        staleChangesOf(
+          before,
+          await draft.fingerprintPlan('revert', productsStructure),
+        ),
+      ).toEqual(['content']);
     },
   );
 
@@ -196,16 +232,19 @@ describe('PlanFingerprint', () => {
       given: givenDeletedRowWithStaleSchemaHash,
     },
   ])(
-    'changes when a rename of the table hands the schemaHash that a selected $unit unit applies to the structure',
+    'changes its content when a rename of the table hands the schemaHash that a selected $unit unit applies to the structure',
     async ({ operation, selection, given }) => {
       const draft = await given();
       const before = await draft.fingerprintPlan(operation, selection);
 
       await draft.renameTable(PRODUCTS, GOODS);
 
-      expect(await draft.fingerprintPlan(operation, selection)).not.toBe(
-        before,
-      );
+      expect(
+        staleChangesOf(
+          before,
+          await draft.fingerprintPlan(operation, selection),
+        ),
+      ).toEqual(['content']);
     },
   );
 
@@ -228,7 +267,7 @@ describe('PlanFingerprint', () => {
 
       await apply(draft);
 
-      expect(await draft.fingerprintPlan('commit', priceSelection)).toBe(
+      expect(await draft.fingerprintPlan('commit', priceSelection)).toEqual(
         before,
       );
     },
@@ -241,7 +280,7 @@ describe('PlanFingerprint', () => {
 
     await draft.renameTable(PRODUCTS, GOODS);
 
-    expect(await draft.fingerprintPlan('revert', creationOfP3)).toBe(before);
+    expect(await draft.fingerprintPlan('revert', creationOfP3)).toEqual(before);
   });
 
   it('does not change for a selected created row of an unchanged structure when the structure of another table changes', async () => {
@@ -251,7 +290,7 @@ describe('PlanFingerprint', () => {
 
     await draft.updateTable(CATEGORIES, [addField('color', str())]);
 
-    expect(await draft.fingerprintPlan('commit', creationOfP3)).toBe(before);
+    expect(await draft.fingerprintPlan('commit', creationOfP3)).toEqual(before);
   });
 
   it('reads a number of statements that does not grow with the covered rows', async () => {
@@ -288,7 +327,33 @@ describe('PlanFingerprint', () => {
         priceSelection,
       );
 
-      expect(wide).toBe(scoped);
+      expect(wide).toEqual(scoped);
+    });
+  });
+
+  describe('another engine instance (AS-91)', () => {
+    let otherKit: PartialChangesTestKit;
+
+    beforeAll(async () => {
+      otherKit = await createPartialChangesTestKit();
+    });
+
+    afterAll(async () => {
+      await otherKit.close();
+    });
+
+    it('gives the same fingerprint for the same plan', async () => {
+      const draft = await givenPriceEdit();
+
+      const here = await draft.fingerprintPlan('commit', priceSelection);
+      const there = await readPlanFingerprint(
+        otherKit,
+        draft.branch,
+        'commit',
+        priceSelection,
+      );
+
+      expect(there).toEqual(here);
     });
   });
 
@@ -445,6 +510,13 @@ function withRevisionIds(
   revisions: Partial<{ headRevisionId: string; draftRevisionId: string }>,
 ): PlanVariant {
   return (plan) => ({ ...plan, snapshot: { ...plan.snapshot, ...revisions } });
+}
+
+function revisionIdsOf({
+  headRevisionId,
+  draftRevisionId,
+}: Fingerprint): Pick<Fingerprint, 'headRevisionId' | 'draftRevisionId'> {
+  return { headRevisionId, draftRevisionId };
 }
 
 function productViews(name: string): TableViewsData {

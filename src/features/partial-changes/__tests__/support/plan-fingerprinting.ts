@@ -1,5 +1,6 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import type { Fingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import type { FingerprintedPlan } from 'src/features/partial-changes/planning/plan-fingerprint';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -16,7 +17,7 @@ export function readPlanFingerprint(
   operation: ChangeOperation,
   selection: Selection,
   variant: PlanVariant = AS_PLANNED,
-): Promise<string> {
+): Promise<Fingerprint> {
   return readInPlanningTransaction(kit, async () => {
     const { source, choice } = await closedPlanOf(
       kit,

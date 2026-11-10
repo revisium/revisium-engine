@@ -5,10 +5,7 @@ import type {
   ApplyChangesInput,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
-import {
-  type OperationTrace,
-  PartialOperationLog,
-} from 'src/features/partial-changes/logging/partial-operation-log';
+import type { OperationTrace } from 'src/features/partial-changes/logging/partial-operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import {
   type ChangePlan,
@@ -54,23 +51,21 @@ export class ChangeApplier {
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly draftWriteAdmission: DraftWriteAdmissionService,
     private readonly planner: ChangePlanner,
-    private readonly operationLog: PartialOperationLog,
   ) {}
 
-  public apply<Applied extends object>(
+  public apply<Applied>(
     operation: ChangeOperation,
     input: ApplyChangesInput,
     writeTarget: TargetWrite<Applied>,
+    trace: OperationTrace,
   ): Promise<Applied | UnappliedChanges> {
-    return this.operationLog.track(operation, input.branch, (trace) => {
-      const request = applyRequestOf(operation, input);
+    const request = applyRequestOf(operation, input);
 
-      return this.transactionRunner.runWrite(
-        request.branch,
-        (deadline) => this.planAndWrite(request, writeTarget, deadline, trace),
-        trace,
-      );
-    });
+    return this.transactionRunner.runWrite(
+      request.branch,
+      (deadline) => this.planAndWrite(request, writeTarget, deadline, trace),
+      trace,
+    );
   }
 
   private async planAndWrite<Applied>(

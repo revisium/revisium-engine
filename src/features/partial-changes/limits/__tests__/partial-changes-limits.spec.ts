@@ -31,7 +31,14 @@ describe('PartialChangesLimits', () => {
     });
   });
 
-  it.each(['many', '0', '-1'])(
+  it('reads a configured value with surrounding whitespace', () => {
+    expect(
+      limitsConfiguredWith({ PARTIAL_CHANGES_MAX_CHANGED_ROWS: ' 500 ' })
+        .maxChangedRows,
+    ).toBe(500);
+  });
+
+  it.each(['many', '0', '-1', '1e5', '100_000', '2000abc', '2.5'])(
     'keeps the default for the invalid setting %p with a warning',
     (value) => {
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();

@@ -6,7 +6,7 @@ import {
   readNumericSetting,
 } from 'src/infrastructure/database/numeric-setting';
 
-// Conservative defaults (SPEC §11): each keeps the worst case measured in the PoC well under a minute. Raise them
+// Conservative defaults (SPEC §11): each keeps the cost it bounds at about 20 s or less on the PoC sandbox. Raise them
 // through the environment when the operation logs show the real costs.
 const MAX_CHANGED_ROWS: NumericSetting = {
   envKey: 'PARTIAL_CHANGES_MAX_CHANGED_ROWS',

@@ -54,15 +54,16 @@ export class OperationTrace implements AttemptObserver {
 
   private facts?: PlannedFacts;
 
+  // Each attempt plans again, so the facts of an earlier one no longer describe the operation.
   public attempted(escalated: boolean): void {
     this.attempts += 1;
+    this.facts = undefined;
 
     if (escalated) {
       this.escalations += 1;
     }
   }
 
-  // A retried attempt plans again; the last plan is the one the result comes from.
   public planned({
     headRevisionId,
     draftRevisionId,
@@ -141,17 +142,34 @@ type ErrorFields = Pick<OperationLogEntry, 'error' | 'errorCode'>;
 export class PartialOperationLog {
   private readonly logger = new Logger(PartialOperationLog.name);
 
-  public async track<Result extends object>(
+  public async track<Result>(
     operation: PartialOperation,
     branch: unknown,
     run: (trace: OperationTrace) => Promise<Result>,
   ): Promise<Result> {
     const trace = new OperationTrace();
     const startedAt = performance.now();
+    let result: Result;
 
     try {
-      const result = await run(trace);
+      result = await run(trace);
+    } catch (error) {
+      this.write(() =>
+        this.logger.warn({
+          ...trace.entryOf(
+            operation,
+            branch,
+            elapsedMsSince(startedAt),
+            'error',
+          ),
+          ...errorFieldsOf(error),
+        }),
+      );
 
+      throw error;
+    }
+
+    this.write(() =>
       this.logger.log(
         trace.entryOf(
           operation,
@@ -159,22 +177,24 @@ export class PartialOperationLog {
           elapsedMsSince(startedAt),
           outcomeOf(result),
         ),
-      );
+      ),
+    );
 
-      return result;
-    } catch (error) {
-      this.logger.warn({
-        ...trace.entryOf(operation, branch, elapsedMsSince(startedAt), 'error'),
-        ...errorFieldsOf(error),
-      });
+    return result;
+  }
 
-      throw error;
+  // The host's logger must not turn an applied commit into an error, or replace the operation's own error.
+  private write(entry: () => void): void {
+    try {
+      entry();
+    } catch {
+      // Logging is best effort.
     }
   }
 }
 
 // A listing page has no status.
-function outcomeOf(result: object): string {
+function outcomeOf(result: unknown): string {
   const { status } = result as { status?: unknown };
 
   return typeof status === 'string' ? status : 'listed';

@@ -36,14 +36,15 @@ export function readNumericSetting(
     return setting.defaultValue;
   }
 
-  const parsed = Number.parseInt(value, 10);
-
-  if (Number.isNaN(parsed)) {
+  // Whole decimal digits only: parseInt would read "1e5" as 1 and "100_000" as 100.
+  if (!/^\s*-?\d+\s*$/.test(value)) {
     logger.warn(
-      `Invalid ${setting.envKey}: "${value}" is not a number, using default ${setting.defaultValue}`,
+      `Invalid ${setting.envKey}: "${value}" is not an integer, using default ${setting.defaultValue}`,
     );
     return setting.defaultValue;
   }
+
+  const parsed = Number.parseInt(value, 10);
 
   if (parsed < setting.minValue) {
     logger.warn(

@@ -12,6 +12,7 @@ import {
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { commitWhileNativeWriteLands } from '../../__tests__/support/commit-races';
 
 const NOTES = 'notes';
 const MAX_CHANGED_ROWS = 3;
@@ -76,6 +77,26 @@ describe('PartialOperationLog', () => {
       expect(entries.finished()).toMatchObject([
         { draftRevisionId: 'next draft', outcome: 'stale', refusedTables: 0 },
       ]);
+    });
+
+    it('forgets the plan of an earlier attempt when a later one fails before planning', async () => {
+      const entries = loggedEntries();
+
+      await expect(
+        new PartialOperationLog().track('commit', BRANCH, (trace) => {
+          trace.attempted(false);
+          trace.planned({ ...PLANNED, refusedByLimit: true });
+          trace.attempted(false);
+
+          return Promise.reject(new OperationTimeoutException(5));
+        }),
+      ).rejects.toThrow(OperationTimeoutException);
+
+      const [entry] = entries.failed();
+      expect(entry).toMatchObject({ attempts: 2, outcome: 'error' });
+      expect(entry).not.toHaveProperty('headRevisionId');
+      expect(entry).not.toHaveProperty('tooLarge');
+      expect(entry).not.toHaveProperty('refusedTables');
     });
 
     it('names the refused tables by their count and the first five ids', async () => {
@@ -212,6 +233,48 @@ describe('PartialOperationLog', () => {
       expect(JSON.stringify(entry)).not.toContain(SECRET_TITLE);
     });
 
+    it('names a thrown value that is not an Error by its type', async () => {
+      const entries = loggedEntries();
+
+      await expect(
+        new PartialOperationLog().track('list', BRANCH, () =>
+          Promise.reject(SECRET_TITLE),
+        ),
+      ).rejects.toBe(SECRET_TITLE);
+
+      const [entry] = entries.failed();
+      expect(entry).toMatchObject({ error: 'string' });
+      expect(JSON.stringify(entry)).not.toContain(SECRET_TITLE);
+    });
+
+    it('does not reach the caller when the logger throws after the operation returned', async () => {
+      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {
+        throw new Error('logger down');
+      });
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      await expect(
+        new PartialOperationLog().track('commit', BRANCH, () =>
+          Promise.resolve({ status: 'applied' }),
+        ),
+      ).resolves.toEqual({ status: 'applied' });
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('rethrows the error of the operation when the logger throws', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
+        throw new Error('logger down');
+      });
+      const timeout = new OperationTimeoutException(5);
+
+      await expect(
+        new PartialOperationLog().track('commit', BRANCH, () =>
+          Promise.reject(timeout),
+        ),
+      ).rejects.toBe(timeout);
+    });
+
     it('reads no branch from input that is not one', async () => {
       const entries = loggedEntries();
 
@@ -288,6 +351,23 @@ describe('PartialOperationLog', () => {
       ]);
     });
 
+    it('log every attempt of a commit that a native write made retry', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      const { attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: { fields: [titleOf('n1')] } },
+        () => draft.updateRow(NOTES, 'n1', { title: 'newer' }),
+      );
+
+      expect(attempts).toBe(2);
+      expect(entries.finished()).toMatchObject([
+        { operation: 'commit', outcome: 'applied', attempts, escalations: 0 },
+      ]);
+    });
+
     it('log the estimate of a preview the changed-rows limit stopped', async () => {
       const draft = await givenEditedNotes(['n1', 'n2', 'n3', 'n4']);
       const entries = loggedEntries();
@@ -350,6 +430,55 @@ describe('PartialOperationLog', () => {
           outcome: 'error',
           attempts: 0,
           escalations: 0,
+          error: 'SelectionValidationError',
+        },
+      ]);
+    });
+
+    it('log a commit comment the operation refuses as a failure before any attempt', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await expect(
+        draft.commitChanges({
+          selection: { fields: [titleOf('n1')] },
+          comment: 42 as never,
+        }),
+      ).rejects.toThrow();
+
+      expect(entries.failed()).toMatchObject([
+        {
+          operation: 'commit',
+          outcome: 'error',
+          attempts: 0,
+          error: 'SelectionValidationError',
+        },
+      ]);
+    });
+
+    it('log a listing page and a preview whose input is refused', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await expect(draft.listChanges({ pageSize: 0 })).rejects.toThrow();
+      await expect(
+        draft.previewChanges({
+          operation: 'commit',
+          selection: { tables: [NOTES] } as never,
+        }),
+      ).rejects.toThrow();
+
+      expect(entries.failed()).toMatchObject([
+        {
+          operation: 'list',
+          outcome: 'error',
+          attempts: 0,
+          error: 'ListingValidationError',
+        },
+        {
+          operation: 'preview',
+          outcome: 'error',
+          attempts: 0,
           error: 'SelectionValidationError',
         },
       ]);

@@ -1700,8 +1700,8 @@ migration could be neither published nor reverted.
 
 ## 11. Limits and configuration
 
-The defaults are **conservative**: each keeps the worst case measured below well under a minute on the PoC sandbox,
-far above today's production sizes, where no table holds 1,000 rows. No measurement on production-like hardware gates
+The defaults are **conservative**: each keeps the cost it bounds at about 20 s or less on the PoC sandbox (runs there
+varied up to ±2×), far above today's production sizes, where no table holds 1,000 rows. No measurement on production-like hardware gates
 the release. A host raises a limit through its environment once the operation logs (§11.1) show what operations
 really cost. The PoC sandbox (2 CPU, 4 GB) measured at 100k changed rows (cases as named in the
 [research summary](../research/partial-changes-poc-v2.md)):
@@ -1735,15 +1735,16 @@ Where the defaults come from, scaled linearly from the measurements above:
 
 | Setting | Was | Worst case at the default |
 | --- | --- | --- |
-| `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 100,000 | Preview ~2 s (8.4–9.6 s at 100k); commit or revert without per-row work up to ~18 s (43.9 s for 50k rows); planning memory ~90 MB (~4.4 KB per changed row). |
-| `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 10,000 | Up to ~11 s: 2.0–2.9 ms per merged row with a formula (99.7 / 142.5 s for 50,000), 5.3–5.7 ms with formulas and files (158–172 s for 30,000, measured before set-based file registration landed in #94). |
-| `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | ~6–8 s per table: ~61 s per 1M copied links on the sandbox, 3.8 s per 50k links on the 2026-11-07 scale-PoC host. |
-| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | unchanged | The three worst cases together stay under 40 s. The timeout stays at 3 minutes because the scan, the repair and the backfill run under the same runner (async-row-migration-v2 §5, §6; schema-ledger-backfill-v1 §3). |
+| `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | 100,000 | Preview ~4–6 s (3.9 s cold at 10k × 10k, 8.4–9.6 s at 100k); commit or revert without per-row work up to ~18 s (43.9 s for 50k rows); planning memory ~90 MB (~4.4 KB per changed row). |
+| `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 10,000 | Up to ~12 s: 2.0–3.9 ms per merged row with a formula (99.7–142.5 s for 50,000; 19.6 s for 5,000), 5.3–5.8 ms with formulas and files (158–172 s for 30,000; 17.1–17.5 s for 3,000), measured before set-based file registration landed in #94. |
+| `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 250,000 | ~6–8 s per mixed table: ~61 s per 1M copied links on the sandbox, 3.8 s per 50k links on the 2026-11-07 scale-PoC host. The limit is per table, so several large mixed tables add up; only the timeout bounds their total. |
+| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | unchanged | One operation at every limit with one mixed table stays under ~40 s, about twice that at the measured spread; each further large mixed table adds ~6–8 s. The timeout stays at 3 minutes because the scan, the repair and the backfill run under the same runner (async-row-migration-v2 §5, §6; schema-ledger-backfill-v1 §3). |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | unchanged | Two shared attempts and one under the exclusive fence (§8.4). |
 
-The engine reads every setting from its environment once, at startup. A value that does not parse as an integer, or
-is below 1, keeps the default and logs a warning; the effective values are logged once (`Partial changes limits: …`,
-`Partial operation settings: …`), each configured one with the variable it came from.
+The engine reads every setting from its environment once, at startup. A value that is not a whole decimal integer
+(such as `1e5`, `100_000` or `2000abc`), or is below 1, keeps the default and logs a warning; the effective values are
+logged once (`Partial changes limits: …`, `Partial operation settings: …`), each that differs from its default with the
+variable it came from.
 
 `all: true` reads every table, so a Draft above `maxChangedRows` can be committed whole only natively.
 
@@ -1757,10 +1758,10 @@ the engine's NestJS logger): `log` when it returns, `warn` when it throws. The e
 | --- | --- |
 | `operation` | `list`, `preview`, `commit` or `revert`. |
 | `projectId`, `branchName` | From the input, when they are strings. |
-| `headRevisionId`, `draftRevisionId` | The revisions the last plan (or the listing page) read; absent when it failed before that. |
+| `headRevisionId`, `draftRevisionId` | The revisions the plan of the last attempt (or the listing page) read; absent when the last attempt failed before planning. |
 | `durationMs` | From the start of the operation to its result, endpoint notification excluded. |
 | `outcome` | The result's `status` (`ready`, `applied`, `blocked`, `required`, `stale`, `empty`), `listed` for a listing page, or `error`. |
-| `attempts`, `escalations` | Attempts started, and those of them under the exclusive fence (§8.1, §8.4); `0` when the input was refused before any. |
+| `attempts`, `escalations` | Attempts started, and how many of them were escalated to the exclusive fence (§8.1, §8.4), counted even when one ends waiting for the fence; `0` when the input, a commit comment included, was refused before any. |
 | `tooLarge` | Preview, commit and revert: whether a limit stopped the plan. |
 | `estimate` | Only when `tooLarge`: `changedRows`, `mergedRows`, `perRowWorkRows`, the number of `mixedTables` and the largest `linksCopied` (`maxLinksCopied`). |
 | `refusedTables`, `refusedTableIds` | The number of refused tables (§6.10) and the first five of their ids. |
@@ -1768,7 +1769,8 @@ the engine's NestJS logger): `log` when it returns, `warn` when it throws. The e
 
 An entry never holds row data, values, selectors or an error message, since a message can quote them. The
 endpoint notification after a commit or revert is outside the entry: a failing notification is the caller's error,
-not the operation's outcome.
+not the operation's outcome. Logging is best effort: a logger that throws changes neither the result nor the error the
+caller gets.
 
 ## 12. Native prerequisites (stage 0)
 
@@ -2094,12 +2096,15 @@ versions unchanged" (§14) holds in every scenario.
   default transaction timeout still returns; a Draft that grows past a limit after preview → `blocked` (`tooLarge`),
   not `stale`.
 - AS-76 Defaults and logs: the limits default to 20,000, 2,000 and 100,000, the timeout to 180,000 ms and the attempt
-  cap to 3; an invalid configured value keeps its default with a warning; the effective values are logged at startup,
-  each configured one with its variable. A listing page, a preview, a commit and a revert each log one entry with the
-  fields of §11.1 (exactly, for an applied commit and revert, a ready preview and a listing page); a preview the
-  changed-rows limit stopped logs `tooLarge` and the estimate; a branch without a migration table logs its refused
+  cap to 3; an invalid configured value (`many`, `0`, `-1`, `1e5`, `100_000`, `2000abc`, `2.5`) keeps its default with
+  a warning; the effective values are logged at startup, each non-default one with its variable. A listing page, a
+  preview, a commit and a revert each log one entry with the fields of §11.1 (exactly, for an applied commit and
+  revert, a ready preview and a listing page); a commit that a native write made retry logs both attempts; a preview
+  the changed-rows limit stopped logs `tooLarge` and the estimate; a branch without a migration table logs its refused
   tables; an attempt observer hears every attempt and the escalated ones; a failure logs `error` with its name and
-  code at `warn` and is rethrown; refused input logs `attempts: 0`; no entry holds a row value or an error message.
+  code at `warn` and is rethrown, without the plan of an earlier attempt; refused input (a selection, a comment, a
+  listing page size) logs `attempts: 0`; a throwing logger changes nothing for the caller; no entry holds a row value
+  or an error message.
 
 ### 13.8 API revision v2.0 (REQ-001.BR-001)
 
@@ -2369,9 +2374,9 @@ engine value and keep one spelling per code (§5.10); the transport contract nam
 
 Limits and logs (§9.1, §11, §11.1, §12): the changed-rows, per-row-work and mixed-table-link limits default to 20,000,
 2,000 and 100,000 instead of 100,000, 10,000 and 250,000, with the worst case each keeps; the timeout and the attempt
-cap stay; the effective settings are logged at startup; every listing page, preview, commit and revert logs one entry
-(§11.1); the row digest is measured; the release gate takes these instead of a re-measurement on production-like
-hardware.
+cap stay; a setting must be a whole decimal integer; the effective settings are logged at startup; every listing
+page, preview, commit and revert logs one entry (§11.1); the row digest is measured; the release gate takes these
+instead of a re-measurement on production-like hardware.
 
 Scenarios: AS-10, AS-17, AS-19, AS-45, AS-64 reworded; AS-60c, AS-76 and §13.8 (AS-80 – AS-92) added.
 

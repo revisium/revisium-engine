@@ -48,7 +48,7 @@ Each item is delivered by its own pull requests, in this order.
 | `createRevision` locking without scanning readonly rows | Should | Done (#91) |
 | Formulas compiled once per schema | Should | Not started |
 | Set-based file registration | Should | Done (#94) |
-| Conservative configurable limits and operation logs, instead of a re-measurement on production-like hardware ([SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration)) | Gate | Done (PR_NUMBER) |
+| Conservative configurable limits and operation logs, instead of a re-measurement on production-like hardware ([SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration)) | Gate | Done (#183) |
 | Scan run on existing deployments, results reviewed | Gate | Not started |
 
 Acceptance scenarios for every stage: [SPEC §13](specs/partial-changes-v1.spec.md#13-acceptance-scenarios).

@@ -578,7 +578,7 @@ describe('commitChanges of structure units', () => {
       expect(await viewsOf(draft, 'head')).toEqual(migratedViews);
     });
 
-    it('requires the structure for committed views of a new field, and commits them together (AS-45)', async () => {
+    it('requires the structure for committed views of a new field, and commits them together (AS-45, AS-82)', async () => {
       const draft = await givenCommittedProductsWithViews();
       await draft.updateTable(PRODUCTS, [addField('color', str())]);
       await draft.updateViews(
@@ -602,7 +602,7 @@ describe('commitChanges of structure units', () => {
         required: [
           {
             unit: structureOf(PRODUCTS),
-            reason: { code: 'viewsDoNotFitStructure' },
+            reason: { code: 'structureBoundData' },
           },
         ],
       });
@@ -612,7 +612,7 @@ describe('commitChanges of structure units', () => {
       );
     });
 
-    it('migrates the Head views with a committed structure while a views edit stays in the Draft (AS-45)', async () => {
+    it('commits a views edit made after the migration with the structure, leaving no views unit (AS-82)', async () => {
       const draft = await givenCommittedProductsWithViews();
       await draft.updateTable(PRODUCTS, [moveField('price', 'cost')]);
       await draft.updateViews(PRODUCTS, productViews('Renamed', ['cost']));
@@ -624,12 +624,9 @@ describe('commitChanges of structure units', () => {
       );
 
       expect(await viewsOf(draft, 'head')).toEqual(
-        productViews('All', ['title', 'cost']),
-      );
-      expect(await viewsOf(draft, 'draft')).toEqual(
         productViews('Renamed', ['cost']),
       );
-      expect(unitsOf(await draft.listEveryUnit())).toEqual([{ kind: 'views' }]);
+      expect(await draft.listEveryUnit()).toEqual([]);
     });
   });
 

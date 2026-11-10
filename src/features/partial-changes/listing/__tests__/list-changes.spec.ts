@@ -234,7 +234,7 @@ describe('listChanges', () => {
             kind: 'structure',
             tableId: PRODUCTS,
             selector: { structures: [{ tableId: PRODUCTS }] },
-            structureChange: { table: 'changed', fields: [] },
+            structureChange: { table: 'changed', fields: [], views: false },
           },
         ],
         nextCursor: null,

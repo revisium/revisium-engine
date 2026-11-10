@@ -3,9 +3,7 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { DraftRevisionModule } from 'src/features/draft-revision/draft-revision.module';
 import { DraftModule } from 'src/features/draft/draft.module';
 import { RowMerger } from 'src/features/partial-changes/assembly/row-merger';
-import { SystemTargetAssembler } from 'src/features/partial-changes/assembly/system-target-assembler';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
-import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import { DraftChangesSummaryReader } from 'src/features/partial-changes/draft-reads/draft-changes-summary';
 import { DraftTableItems } from 'src/features/partial-changes/draft-reads/draft-table-items';
@@ -51,12 +49,10 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
   providers: [
     ChangesSnapshotReader,
     ComparedSnapshotReader,
-    HeadViewsMigration,
     ReadScope,
     PartialChangesLimits,
     ScopedCatalogueReader,
     RowMerger,
-    SystemTargetAssembler,
     TargetAssembler,
     OperationEstimator,
     ...TARGET_CHECKS_IN_SPEC_ORDER,

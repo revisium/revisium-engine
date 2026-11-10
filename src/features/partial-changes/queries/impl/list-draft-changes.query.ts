@@ -32,6 +32,7 @@ export interface ChangedField {
 export interface StructureChange {
   readonly table: StructureTableChange;
   readonly fields: readonly ChangedField[];
+  readonly views: boolean;
 }
 
 export type ListedUnit = DescribedUnitRef & {

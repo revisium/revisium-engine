@@ -12,6 +12,7 @@ import {
 } from 'src/features/partial-changes/plan/plan-blocker';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { InvalidRows } from 'src/features/partial-changes/validation/invalid-rows';
+import { InvalidViews } from 'src/features/partial-changes/validation/invalid-views';
 import {
   LedgerConsistency,
   type ValidationSource,
@@ -22,6 +23,7 @@ import {
   storesMigrationsUnderTheirIds,
 } from 'src/features/share/ledger/migration-ledger';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
+import { ViewValidationService } from 'src/features/views/services';
 
 export interface AppliedTarget {
   readonly choice: AppliedUnits;
@@ -44,12 +46,13 @@ export class TargetValidator {
 
   constructor(
     private readonly dataValidator: JsonSchemaValidatorService,
+    private readonly viewValidation: ViewValidationService,
     replayer: LedgerReplayer,
   ) {
     this.ledgerConsistency = new LedgerConsistency(replayer);
   }
 
-  // §6.9 step 5, uniqueness over whole target tables, is added here once
+  // §6.9 step 6, uniqueness over whole target tables, is added here once
   // unique constraints (ADR-0029) exist in the engine.
   public async validate(
     source: ValidationSource,
@@ -66,6 +69,11 @@ export class TargetValidator {
       source,
       choice,
     ).of(assembled);
+    const invalidViews = await new InvalidViews(
+      this.viewValidation,
+      source,
+      choice,
+    ).of(assembled);
 
     return distinctBlockers([
       ...unrecorded,
@@ -73,6 +81,7 @@ export class TargetValidator {
       ...alteredPublishedMigrationsOf(source.snapshot),
       ...unexplainedBy(unrecorded, ledger),
       ...invalidRows,
+      ...invalidViews,
     ]);
   }
 }

@@ -3,7 +3,6 @@ import {
   buildChangeCatalogue,
   type ChangeCatalogue,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { changedRowsTooLarge } from 'src/features/partial-changes/limits/too-large-blockers';
 import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
@@ -36,7 +35,6 @@ export class ScopedCatalogueReader {
     private readonly snapshotReader: ChangesSnapshotReader,
     private readonly readScope: ReadScope,
     private readonly limits: PartialChangesLimits,
-    private readonly headViews: HeadViewsMigration,
   ) {}
 
   public async readCatalogue(
@@ -81,6 +79,6 @@ export class ScopedCatalogueReader {
       scope.affectedTables,
     );
 
-    return buildChangeCatalogue({ ...compared, changedRows }, this.headViews);
+    return buildChangeCatalogue({ ...compared, changedRows });
   }
 }

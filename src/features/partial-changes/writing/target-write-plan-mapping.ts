@@ -8,7 +8,7 @@ import type {
   TargetWritePlan,
 } from 'src/features/draft-revision/commands/impl';
 import type { RenumberedMigrationRow } from 'src/features/partial-changes/assembly/ledger-plan';
-import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
+import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-table-plans';
 import type {
   AssembledTarget,
   TablePlan,

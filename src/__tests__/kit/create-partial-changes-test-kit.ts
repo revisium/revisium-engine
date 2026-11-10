@@ -12,8 +12,6 @@ import { ScopedCatalogueReader } from 'src/features/partial-changes/scope/scoped
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { ComparedSnapshotReader } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import { TargetValidator } from 'src/features/partial-changes/validation/target-validator';
-import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
-import { ViewsMigrationService } from 'src/features/share/views-migration.service';
 
 export interface PartialChangesTestKit extends BranchScenarioTestKit {
   partialChangesApi: PartialChangesApiService;
@@ -24,8 +22,6 @@ export interface PartialChangesTestKit extends BranchScenarioTestKit {
   dependencyClosure: DependencyClosure;
   targetValidator: TargetValidator;
   planFingerprint: PlanFingerprint;
-  schemaRules: NativeSchemaRules;
-  viewsMigration: ViewsMigrationService;
 }
 
 export type PartialChangesTestKitOptions = Omit<
@@ -52,7 +48,5 @@ export async function createPartialChangesTestKit(
     dependencyClosure: module.get(DependencyClosure),
     targetValidator: module.get(TargetValidator),
     planFingerprint: module.get(PlanFingerprint),
-    schemaRules: module.get(NativeSchemaRules),
-    viewsMigration: module.get(ViewsMigrationService),
   };
 }

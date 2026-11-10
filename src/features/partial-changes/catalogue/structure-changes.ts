@@ -1,5 +1,6 @@
 import type { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import { carriesViewsChange } from 'src/features/partial-changes/catalogue/views-units';
 import type {
   ChangedField,
   StructureChange,
@@ -14,10 +15,22 @@ import { compareCodePoints } from 'src/features/share/utils/compare-code-points'
 
 type WholeTableChange = Exclude<StructureTableChange, 'changed' | 'replaced'>;
 
+type TableDescription = Omit<StructureChange, 'views'>;
+
 export function structureChangeOf(
-  { tableIdentities }: CatalogueUnit,
+  unit: CatalogueUnit,
   tables: CatalogueTables,
 ): StructureChange {
+  return {
+    ...tableChangeOf(unit, tables),
+    views: carriesViewsChange(unit, tables),
+  };
+}
+
+function tableChangeOf(
+  { tableIdentities }: CatalogueUnit,
+  tables: CatalogueTables,
+): TableDescription {
   const pairs = tableIdentities.map((identity) => tables.pairOf(identity));
   const changedTable = pairs.find(isOnBothSides);
 

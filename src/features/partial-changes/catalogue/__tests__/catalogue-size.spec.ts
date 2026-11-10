@@ -4,7 +4,6 @@ import {
   buildChangeCatalogue,
   type CatalogueSource,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { checkHeadSchema } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type {
   ChangesSnapshot,
@@ -14,9 +13,7 @@ import type {
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { attributeLedger } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
-import { refs, replayer, validator } from 'src/__tests__/fixtures/ledger-steps';
-import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
-import { ViewsMigrationService } from 'src/features/share/views-migration.service';
+import { replayer } from 'src/__tests__/fixtures/ledger-steps';
 import { analyzeStructure } from '../../structure/__tests__/support/table-structure-scenario';
 
 const TABLE_IDENTITY = 'products-identity';
@@ -28,13 +25,7 @@ const productSchema = obj({ code: str(), title: str(), color: str() });
 
 describe('ChangeCatalogue: size', () => {
   it('builds the catalogue of a table with 50,000 rows and three edited fields per row', () => {
-    const catalogue = buildChangeCatalogue(
-      givenEditedRows(ROW_COUNT),
-      new HeadViewsMigration(
-        new ViewsMigrationService(),
-        new NativeSchemaRules(refs, validator),
-      ),
-    );
+    const catalogue = buildChangeCatalogue(givenEditedRows(ROW_COUNT));
 
     expect(catalogue.units).toHaveLength(ROW_COUNT * EDITED_FIELDS.length);
   });

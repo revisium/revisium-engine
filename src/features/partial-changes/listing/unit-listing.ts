@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import { buildChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { buildRowUnits } from 'src/features/partial-changes/catalogue/row-units';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import { listedUnitsOf } from 'src/features/partial-changes/listing/listed-units';
@@ -36,7 +35,6 @@ export class UnitListing {
   constructor(
     private readonly comparedSnapshotReader: ComparedSnapshotReader,
     private readonly snapshotReader: ChangesSnapshotReader,
-    private readonly headViews: HeadViewsMigration,
   ) {}
 
   public async listPage(request: ListingRequest): Promise<ListChangesResult> {
@@ -44,10 +42,10 @@ export class UnitListing {
       request.branch,
       PARTIAL_OPERATION,
     );
-    const tableLevel = buildChangeCatalogue(
-      { ...compared, changedRows: NO_CHANGED_ROWS },
-      this.headViews,
-    );
+    const tableLevel = buildChangeCatalogue({
+      ...compared,
+      changedRows: NO_CHANGED_ROWS,
+    });
     const tables = listingTablesOf(compared, tableLevel.units, request.tableId);
     const page = new ListingPage(request.pageSize, request.cursor);
 

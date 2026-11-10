@@ -4,7 +4,6 @@ import type {
   CatalogueRow,
   CatalogueUnit,
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
-import type { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import {
   type LedgerInconsistency,
   ledgerInconsistenciesOf,
@@ -43,15 +42,12 @@ interface RowUnitsOfTables {
   readonly rows: ReadonlyMap<string, readonly CatalogueRow[]>;
 }
 
-export function buildChangeCatalogue(
-  source: CatalogueSource,
-  headViews: HeadViewsMigration,
-): ChangeCatalogue {
+export function buildChangeCatalogue(source: CatalogueSource): ChangeCatalogue {
   const tables = new CatalogueTables(source.snapshot, source.tables);
   const rowUnits = buildRowUnitsOfChangedTables(source);
   const tableUnits = [
     ...buildStructureUnits(tables, source.ledger),
-    ...buildViewsUnits(tables, headViews),
+    ...buildViewsUnits(tables),
   ];
   const units = [
     ...tableUnits.filter((unit) => !holdsRefusedTable(unit, source.headSchema)),

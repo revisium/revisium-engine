@@ -56,9 +56,7 @@ describe('scoped reading over random Drafts and selections (AS-74)', () => {
       const units = await draft.listEveryUnit();
       const random = seededRandom(seed);
 
-      for (let made = 0; made < SELECTIONS_PER_DRAFT; made += 1) {
-        const selection = randomSelectionOf(units, random);
-
+      for (const selection of selectionsOf(units, random)) {
         for (const operation of OPERATIONS) {
           await expectScopedPlanToEqualWidePlan(draft, operation, selection);
         }
@@ -88,6 +86,32 @@ describe('scoped reading over random Drafts and selections (AS-74)', () => {
     );
   }
 });
+
+// The first selection takes one unit of every listed kind, so that a kind a Draft lists rarely is still applied.
+function selectionsOf(
+  units: readonly ListedUnit[],
+  random: SeededRandom,
+): Selection[] {
+  return [
+    unionOfSelections(
+      unitsOfEveryKind(units, random).map(({ selector }) => selector),
+    ),
+    ...Array.from({ length: SELECTIONS_PER_DRAFT - 1 }, () =>
+      randomSelectionOf(units, random),
+    ),
+  ];
+}
+
+function unitsOfEveryKind(
+  units: readonly ListedUnit[],
+  random: SeededRandom,
+): ListedUnit[] {
+  const kinds = [...new Set(units.map(({ kind }) => kind))];
+
+  return kinds.map((kind) =>
+    random.pick(units.filter((unit) => unit.kind === kind)),
+  );
+}
 
 function randomSelectionOf(
   units: readonly ListedUnit[],

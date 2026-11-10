@@ -1179,6 +1179,10 @@ describe('draft table changes', () => {
         { first: 10, filters: { changeTypes: ChangeType.Added } },
       ],
       ['a search that is not a string', { first: 10, filters: { search: 1 } }],
+      [
+        'a search with the NUL character',
+        { first: 10, filters: { search: 'p\u00001' } },
+      ],
     ])('refuses %s before reading the snapshot', async (_input, options) => {
       const draft = await givenCommittedTables();
       const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');

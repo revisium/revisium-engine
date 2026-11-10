@@ -119,7 +119,8 @@ function isRowCursorPayload(value: unknown): value is RowCursorPayload {
     isFields(value) &&
     hasOnlyFields(value, ROW_CURSOR_FIELDS) &&
     hasTablePosition(value) &&
-    typeof value.rowId === 'string'
+    typeof value.rowId === 'string' &&
+    !value.rowId.includes('\u0000')
   );
 }
 

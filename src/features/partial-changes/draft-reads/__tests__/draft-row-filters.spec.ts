@@ -401,7 +401,7 @@ describe('Draft row filters', () => {
       ]);
       expect(linkSetReads).toEqual({ [NOTES]: 0, [PRODUCTS]: 1, [TAGS]: 1 });
     });
-    it('reads every table from the cursor once when a filter leaves the page unfilled', async () => {
+    it('reads every table once when a filter leaves the page unfilled', async () => {
       const draft = await givenCommittedProductsAndTags();
       await draft.updateRow(PRODUCTS, 'p1', product('edited'));
       await draft.createTable(NOTES, labelSchema);

@@ -64,6 +64,11 @@ const PAIR_ON_ONE_SIDE = raw(
 
 const HEAD_ONLY_PAIR_FIRST = raw(`p."draftVersionId" IS NOT NULL`);
 
+const PAIRS = raw('pairs AS');
+
+// A page reads the pairs through its matching rows twice, in the page and the look-ahead, so it builds them once.
+const MATERIALIZED_PAIRS = raw('pairs AS MATERIALIZED');
+
 const PAIR_JSON = raw(`json_build_object(
   'identity', p."identity",
   'rowId', p."rowId",
@@ -73,15 +78,14 @@ const PAIR_JSON = raw(`json_build_object(
   'yieldsUnit', p."yieldsUnit"
 )`);
 
-// Of two items with one row id, the row that exists only in Head comes first. The matching rows are inlined into the
-// page and the look-ahead, so an unfiltered page scans the pairs as it did before the filters.
+// Of two items with one row id, the row that exists only in Head comes first.
 export function reportedRowPairsPageSql(
   rows: TableRows,
   filters: TableFilters,
   { afterRowId, limit }: RowRange,
 ): Sql {
   return sql`
-    WITH ${reportedPairsCtes(rows)},
+    WITH ${reportedPairsCtes(rows, MATERIALIZED_PAIRS)},
     matching AS NOT MATERIALIZED (
       SELECT * FROM pairs WHERE ${rowsMatching(filters)}
     ),
@@ -167,20 +171,20 @@ function rowsWithUnitsCount(): Sql {
   )::int`;
 }
 
-function reportedPairsCtes(rows: TableRows): Sql {
+function reportedPairsCtes(rows: TableRows, pairs: Sql = PAIRS): Sql {
   if (rows.kind === 'compared') {
-    return comparedPairsCtes(rows.table);
+    return comparedPairsCtes(rows.table, pairs);
   }
 
-  return oneSidedPairsCte(rows);
+  return oneSidedPairsCte(rows, pairs);
 }
 
-function comparedPairsCtes(table: ComparedTable): Sql {
+function comparedPairsCtes(table: ComparedTable, pairs: Sql = PAIRS): Sql {
   const { structure } = table;
 
   return sql`
     ${unsharedRowVersionsCtes(table)},
-    pairs AS (
+    ${pairs} (
       SELECT coalesce(h."createdId", d."createdId") AS "identity",
              coalesce(d."id", h."id") AS "rowId",
              h."id" AS "headRowId",
@@ -193,9 +197,12 @@ function comparedPairsCtes(table: ComparedTable): Sql {
   `;
 }
 
-function oneSidedPairsCte({ side, tableVersionId }: OneSidedRows): Sql {
+function oneSidedPairsCte(
+  { side, tableVersionId }: OneSidedRows,
+  pairs: Sql,
+): Sql {
   return sql`
-    pairs AS (
+    ${pairs} (
       SELECT r."createdId" AS "identity", r."id" AS "rowId",
              ${oneSidedColumns(side)},
              ${oneSidedChangeType(side)} AS "changeType",

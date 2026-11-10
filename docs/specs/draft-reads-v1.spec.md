@@ -517,7 +517,7 @@ Paging, filters, validation, snapshot:
 - §8: the pair query of a filtered row page also returns the other pairs of the page's row ids, for its catalogue; the
   page reads no created or removed table whose change type `changeTypes` leaves out; a filtered page that does not fill
   reads every table from the cursor's table on.
-- §1: a `search` holding the NUL character is a validation error.
+- §1: a `search` holding the NUL character is a validation error, and a cursor whose row id holds it is malformed.
 - Status: PR 11 (row filters) implemented; the Draft reads are complete.
 
 ### Version 1.3 (2026-11-10)

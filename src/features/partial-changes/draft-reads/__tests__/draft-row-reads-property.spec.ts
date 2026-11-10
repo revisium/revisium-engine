@@ -185,8 +185,8 @@ describe('Draft row reads over random Drafts', () => {
   }
 });
 
-// Every change type, none, every id a table item shows or names as previous, searches by the Draft id in another case
-// and by the Head id of rows across the read, and two filters together.
+// Every change type, none, every id a table item shows or names as previous, searches by a whole Draft id in another
+// case, by part of one and by a Head id across the read, and two filters together.
 function rowFiltersOf(
   tables: readonly DraftTableItem[],
   rows: readonly DraftRowItem[],
@@ -196,7 +196,7 @@ function rowFiltersOf(
     '_',
     '1',
     ...sampleOf(rows).flatMap(({ rowId, previousRowId }) =>
-      [rowId.toUpperCase(), previousRowId].filter(isDefined),
+      [rowId.toUpperCase(), rowId.slice(1, 3), previousRowId].filter(isDefined),
     ),
   ]);
   const [firstSearch] = searches;

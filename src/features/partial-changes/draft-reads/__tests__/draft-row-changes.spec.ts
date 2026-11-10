@@ -1144,6 +1144,18 @@ describe('draft row changes', () => {
         },
       ],
       ['an after that is not a string', { first: 10, after: 1 }],
+      [
+        'a cursor whose row id holds the NUL character',
+        {
+          first: 10,
+          after: cursorOf({
+            v: 1,
+            tableId: 'a',
+            headOnly: false,
+            rowId: 'r\u0000',
+          }),
+        },
+      ],
     ])('refuses %s before reading the snapshot', async (_input, options) => {
       const draft = await givenCommittedProducts();
       const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');

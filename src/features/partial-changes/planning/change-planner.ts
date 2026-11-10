@@ -22,8 +22,8 @@ import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fing
 import {
   type PlanBlocker,
   blockerRefOf,
-  type Deferred,
-  deferredRefOf,
+  type DeferredRow,
+  deferredRowsOf,
   sampleOf,
 } from 'src/features/partial-changes/planning/plan-refs';
 import {
@@ -84,7 +84,7 @@ export interface ChangePlan {
   readonly refusedTables: readonly RefusedTable[];
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly PlanBlocker[];
-  readonly deferred: readonly Deferred[];
+  readonly deferred: readonly DeferredRow[];
   readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
   readonly estimate: PlanEstimate;
@@ -257,9 +257,7 @@ function planOf({
     refusedTables: headSchema.refusedTables,
     required: closure.required,
     blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),
-    deferred: deferredValuesOf(validated).map((deferred) =>
-      deferredRefOf(catalogue, deferred),
-    ),
+    deferred: deferredRowsOf(catalogue, deferredValuesOf(validated)),
     sample: sampleOf(catalogue, appliedUnits),
     unmatched: closure.unmatched,
     estimate: closure.estimate,

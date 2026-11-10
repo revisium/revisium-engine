@@ -498,7 +498,8 @@ describe('previewChanges', () => {
               rowId: 'p2',
               selector: selection,
             },
-            paths: ['/color'],
+            defaulted: [],
+            omitted: [{ path: '/color' }],
             structure: {
               kind: 'structure',
               tableId: PRODUCTS,
@@ -508,6 +509,45 @@ describe('previewChanges', () => {
         ],
       });
       expect(revert).toMatchObject({ status: 'ready', deferred: [] });
+    });
+
+    it('lists deferred rows in the listing order of their units, across tables', async () => {
+      const draft = await givenTwoTablesWithNewFields();
+      const created = [
+        [PRODUCTS, 'p6'],
+        [CATEGORIES, 'c3'],
+        [PRODUCTS, 'p2'],
+        [CATEGORIES, 'c2'],
+        [PRODUCTS, 'p4'],
+      ] as const;
+      for (const [tableId, rowId] of created) {
+        await draft.createRows(tableId, {
+          [rowId]: { title: rowId, color: 'red' },
+        });
+      }
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: {
+          rows: created.map(([tableId, rowId]) => rowOf(tableId, rowId)),
+        },
+      });
+      const listing = await draft.listChanges();
+      const keyOf = (unit: { kind: string; tableId?: string }): string =>
+        `${unit.tableId}/${'rowId' in unit ? String(unit.rowId) : ''}`;
+
+      expect(preview.deferred.map(({ unit }) => keyOf(unit))).toEqual(
+        listing.units
+          .filter(({ kind }) => kind === 'rowCreate')
+          .map((unit) => keyOf(unit)),
+      );
+      expect(preview.deferred.map(({ unit }) => keyOf(unit))).toEqual([
+        'categories/c2',
+        'categories/c3',
+        'products/p2',
+        'products/p4',
+        'products/p6',
+      ]);
     });
   });
 

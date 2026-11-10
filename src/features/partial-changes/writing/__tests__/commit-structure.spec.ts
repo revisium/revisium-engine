@@ -272,7 +272,13 @@ describe('commitChanges of structure units', () => {
         deferred: [
           {
             unit: { kind: 'rowCreate', tableId: MEDIA, rowId: 'm2' },
-            paths: ['/cover'],
+            defaulted: [
+              {
+                path: '/cover',
+                value: expect.objectContaining({ fileId: '' }),
+              },
+            ],
+            omitted: [],
             structure: structureOf(MEDIA),
           },
         ],
@@ -281,6 +287,11 @@ describe('commitChanges of structure units', () => {
         ...emptyFile,
         status: 'ready',
         fileId: expect.stringMatching(/.+/),
+      });
+      // The commit gives the new File its id when it writes it; the preview shows every other field.
+      expect(preview.deferred[0]?.defaulted[0]?.value).toEqual({
+        ...((await coverOf(draft, 'head', 'm2')) as object),
+        fileId: '',
       });
     });
 

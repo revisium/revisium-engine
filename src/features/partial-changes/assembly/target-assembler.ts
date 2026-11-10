@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type {
   RevisionSide,
   RowLinkChanges,
@@ -55,7 +57,11 @@ import {
   versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
-import { SchemaLeaves } from 'src/features/partial-changes/structure/schema-leaves';
+import {
+  type SchemaLeaf,
+  SchemaLeaves,
+} from 'src/features/partial-changes/structure/schema-leaves';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface AssemblySource {
   readonly snapshot: ChangesSnapshot;
@@ -84,9 +90,19 @@ export interface TablePlan extends RowLinkChanges {
   readonly rows: readonly TargetRow[];
 }
 
+export interface DeferredValue {
+  readonly path: string;
+  readonly value: unknown;
+}
+
+export interface DeferredPath {
+  readonly path: string;
+}
+
 export interface DeferredValues {
   readonly unitKey: string;
-  readonly paths: readonly string[];
+  readonly defaulted: readonly DeferredValue[];
+  readonly omitted: readonly DeferredPath[];
   readonly structureKey: string;
 }
 
@@ -243,7 +259,8 @@ class ReadTableAssembly {
 
   public async assemble(): Promise<AssembledTable> {
     const { pair } = this.table;
-    const rows = await this.targetRows();
+    const newVersions = await this.newVersions();
+    const rows = this.targetRowsOf(newVersions);
     const outcome = this.rules.tableOutcomeOf(rows);
 
     return {
@@ -258,13 +275,13 @@ class ReadTableAssembly {
         rows,
       },
       blockers: this.unrecordedStructureBlockers(),
-      deferred: this.deferredValues(),
+      deferred: this.deferredValues(newVersions),
     };
   }
 
-  private async targetRows(): Promise<TargetRow[]> {
-    const newVersions = await this.newVersions();
-
+  private targetRowsOf(
+    newVersions: ReadonlyMap<string, MergedRow>,
+  ): TargetRow[] {
     return this.decided.map(({ row: { pair }, outcome }) =>
       targetRowOf(pair, outcome, newVersions.get(pair.identity), this.rules),
     );
@@ -334,17 +351,26 @@ class ReadTableAssembly {
     );
   }
 
-  private deferredValues(): DeferredValues[] {
+  // A row moved into the Head structure has the value the commit writes at each deferred pointer the Head schema
+  // keeps as an input field; its version is the row assembled by mapIntoHeadStructure.
+  private deferredValues(
+    newVersions: ReadonlyMap<string, MergedRow>,
+  ): DeferredValues[] {
     const structureKey = this.table.units.structure;
 
     if (!this.commitsWithoutStructure() || structureKey === undefined) {
       return [];
     }
 
-    const paths = changedFieldsOf(this.table);
+    const pointers = deferredPointersOf(this.table);
 
     return this.rowsMoving().flatMap(({ row }) =>
-      deferredValuesOf(row, paths, structureKey),
+      deferredValuesOf(
+        row,
+        newVersions.get(row.pair.identity),
+        pointers,
+        structureKey,
+      ),
     );
   }
 
@@ -423,35 +449,93 @@ function collapsedRowOf(
   return { pair, kind: 'merge', merged: newVersion };
 }
 
-function changedFieldsOf({ pair, structure }: ReadTable): string[] {
-  const schemas = [
-    SchemaLeaves.of(versionOn(pair, 'head').schema),
-    SchemaLeaves.of(versionOn(pair, 'draft').schema),
-  ];
-
-  return structure.changedPointers
-    .filter((pointer) =>
-      schemas.some((leaves) => hasInputLeafAt(leaves, pointer)),
-    )
-    .map((pointer) => pointer.toString());
+interface DeferredPointers {
+  readonly defaulted: readonly SchemaLeaf[];
+  readonly omitted: readonly JsonPointer[];
 }
 
-function hasInputLeafAt(leaves: SchemaLeaves, pointer: JsonPointer): boolean {
+// The changed input fields of either side, in code-point order as the structure description lists them: the Head
+// schema keeps an input leaf at a defaulted pointer, and has none or computes the value at an omitted one.
+function deferredPointersOf({ pair, structure }: ReadTable): DeferredPointers {
+  const head = SchemaLeaves.of(versionOn(pair, 'head').schema);
+  const draft = SchemaLeaves.of(versionOn(pair, 'draft').schema);
+  const changed = structure.changedPointers
+    .filter(
+      (pointer) =>
+        inputLeafAt(head, pointer) !== undefined ||
+        inputLeafAt(draft, pointer) !== undefined,
+    )
+    .sort((left, right) =>
+      compareCodePoints(left.toString(), right.toString()),
+    );
+
+  return {
+    defaulted: changed.flatMap((pointer) => inputLeafAt(head, pointer) ?? []),
+    omitted: changed.filter(
+      (pointer) => inputLeafAt(head, pointer) === undefined,
+    ),
+  };
+}
+
+function inputLeafAt(
+  leaves: SchemaLeaves,
+  pointer: JsonPointer,
+): SchemaLeaf | undefined {
   const leaf = leaves.at(pointer);
 
-  return leaf !== undefined && leaf.kind !== 'computed';
+  return leaf?.kind === 'computed' ? undefined : leaf;
 }
 
 function deferredValuesOf(
-  { existence }: CatalogueRow,
-  paths: readonly string[],
+  { existence, pair }: CatalogueRow,
+  written: MergedRow | undefined,
+  { defaulted, omitted }: DeferredPointers,
   structureKey: string,
 ): DeferredValues[] {
-  if (existence === undefined || paths.length === 0) {
+  if (existence === undefined || defaulted.length + omitted.length === 0) {
     return [];
   }
 
-  return [{ unitKey: existence, paths, structureKey }];
+  if (written === undefined) {
+    throw new Error(
+      `Row ${publicIdOrIdentityOf(pair)} was not assembled into the Head structure`,
+    );
+  }
+
+  return [
+    {
+      unitKey: existence,
+      defaulted: defaulted.map((leaf) => ({
+        path: leaf.pointer.toString(),
+        value: writtenValueAt(written, leaf),
+      })),
+      omitted: omitted.map((pointer) => ({ path: pointer.toString() })),
+      structureKey,
+    },
+  ];
+}
+
+// The published-at field reads the row's publishedAt column (§3.1); its data leaf keeps ''. A defaulted File is a new
+// one, whose id every planning mints anew: it is shown without it, so that two plans of one Draft agree.
+function writtenValueAt(
+  written: MergedRow,
+  { pointer, kind, schema }: SchemaLeaf,
+): unknown {
+  if (kind === 'publishedAt') {
+    return written.publishedAt.toISOString();
+  }
+
+  const value = structuredClone(pointer.valueIn(written.data));
+
+  if (isFileSchema(schema)) {
+    return { ...(value as object), fileId: '' };
+  }
+
+  return value;
+}
+
+function isFileSchema(schema: JsonSchema): boolean {
+  return '$ref' in schema && schema.$ref === SystemSchemaIds.File;
 }
 
 function linkChangesOf(

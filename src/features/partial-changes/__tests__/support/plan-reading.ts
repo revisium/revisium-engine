@@ -16,8 +16,8 @@ import {
   type PreviewStatus,
 } from 'src/features/partial-changes/planning/plan-decision';
 import type {
+  DeferredRow,
   PlanBlocker,
-  Deferred,
 } from 'src/features/partial-changes/planning/plan-refs';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
@@ -59,7 +59,7 @@ export interface PlanView {
   readonly selected: number;
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly PlanBlocker[];
-  readonly deferred: readonly Deferred[];
+  readonly deferred: readonly DeferredRow[];
   readonly unmatched: UnmatchedSelectors;
   readonly estimate: Omit<PlanEstimate, 'changedRows'>;
   readonly target?: PlannedTargetView;

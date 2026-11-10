@@ -9,6 +9,8 @@ import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-table-plans';
 import type {
   AssembledTarget,
+  DeferredPath,
+  DeferredValue,
   DeferredValues,
   TablePlan,
   TargetRow,
@@ -68,7 +70,8 @@ export interface SystemTablePlanView {
 
 export interface DeferredView {
   readonly unit: AddressedUnit;
-  readonly paths: readonly string[];
+  readonly defaulted: readonly DeferredValue[];
+  readonly omitted: readonly DeferredPath[];
   readonly structure: AddressedUnit;
 }
 
@@ -172,11 +175,12 @@ export function systemTablePlanViewOf(
 
 function deferredView(
   catalogue: ChangeCatalogue,
-  { unitKey, paths, structureKey }: DeferredValues,
+  { unitKey, defaulted, omitted, structureKey }: DeferredValues,
 ): DeferredView {
   return {
     unit: addressedUnitOf(unitKeyed(catalogue, unitKey)),
-    paths,
+    defaulted,
+    omitted,
     structure: addressedUnitOf(unitKeyed(catalogue, structureKey)),
   };
 }

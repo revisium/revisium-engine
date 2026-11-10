@@ -344,8 +344,8 @@ cause?: ReasonCause }` (§5.7):
   `migration` site, the table id the step references, in the ledger's ids).
 - `cause` is `{ unit: DescribedUnitRef; role: CauseRole }`: the applied unit (selected, or added before as required)
   whose application needs the unit to add, and how it stands to it (§5.7). It is absent at a `selector` site, which
-  needs the unit by itself, and when no applied unit is the cause, for example a step whose provider is a published
-  migration.
+  needs the unit by itself, and when no applied unit is the cause, for example at a ledger step that no applied
+  unit's migration changed the id before (§5.7).
 - `because` is the same requirement in English, for display and logs.
 
 **Blocker** (exported as `PlanBlocker`) `{ code: BlockerCode; tableId?: string; rowId?: string; path?: string;
@@ -684,15 +684,18 @@ Each code arises at fixed kinds of site (§5.1), with `references` set for refer
 - `idOccupied`: the applied unit that moves the other row or table into the id: its rename or existence unit, or its
   structure unit.
 - A pending migration's step (§6.6): when the provider is required, the applied structure unit of the step
-  (`referrer` or `taker`). When the step's unit is required, the applied unit whose migration last changed the id
-  before that step in the resulting ledger: for a taken id the one that placed it there (`occupant`), for a
-  referenced id the one that removed it or renamed it away (`remover`); no cause when that migration was published
-  before the operation. For example, the Draft creates table `x`, renames it to `y`, and creates another table `x`;
+  (`referrer` or `taker`). When the step's unit is required, the applied unit that changed the id before that step
+  (for a taken id, by placing it or keeping it there: `occupant`; for a referenced id, by removing it or renaming it
+  away: `remover`), found in two steps: (1) the unit of the resulting ledger's last change of the id before the step,
+  when that migration belongs to an applied unit (a commit publishes it); otherwise (2) the unit of the Draft
+  ledger's last change of the id before the step, when it is an applied unit (a revert takes that migration out, so
+  the resulting ledger falls back to an earlier holder). No cause when neither is an applied unit. For example, the Draft creates table `x`, renames it to `y`, and creates another table `x`;
   committing the second table alone requires the first one's unit (its `init` of `x` cannot replay after the
   published `init` of the second), and the cause is the committed table, which holds `x` at that step (`occupant`).
   Head has `notes`; the Draft creates `links` with a foreign key to `notes`, drops the key, then removes `notes`;
   committing the removal alone requires `links` (`referrerStillReferences`), and the cause is the removal
-  (`remover`).
+  (`remover`, step 1). Reverting a table removal whose id a pending rename of another table took requires reverting
+  that rename, and the cause is the reverted removal (`occupant`, step 2).
 
 **The role of the cause** (`CauseRole`) says what applying `cause.unit` does to the target that makes the unit to add
 necessary:
@@ -1156,8 +1159,8 @@ vacated the taken id (`rename` away, `remove`), before that step.
 
 `because` names the migration and the table id. An excluded unit gives `requiredExcluded`. A step whose unit is not in
 the catalogue (a published migration, a refused table), or, when the provider would be the required unit, whose
-provider is not, adds nothing and is left to validation (`ledgerInconsistent`, §6.9). The cause of a requirement is
-taken from the resulting ledger (§5.7), not from the provider lookup above. A step that fails only because a table it reads failed earlier is not
+provider is not, adds nothing and is left to validation (`ledgerInconsistent`, §6.9). The cause of a requirement
+follows §5.7: the provider lookup above decides which unit is required, not which applied unit caused it. A step that fails only because a table it reads failed earlier is not
 a dependency of its own: the closure follows the earlier step and checks again after adding its unit. Every
 requirement adds a unit, so the loop terminates; replays are cached per closure by ledger content, and a choice that
 applies no unit with pending migrations leaves every ledger as in its source and is not replayed. Examples, built
@@ -1572,10 +1575,11 @@ An unsigned, opaque string with four parts, so that a `stale` result can say whi
 Encoding: `pcf2.` followed by the base64url (no padding) of the UTF-8 JSON array `[operation, headRevisionId,
 draftRevisionId, units, content]`, the two digests as lowercase hex. `pcf2` names the version of the fingerprint
 rules; the engine compares the parts one by one. Clients treat the fingerprint as opaque and compare it only for
-equality. An `expected` is read by its prefix: `pcf2.` followed by a payload that decodes to a five-element array of
-strings is a fingerprint of these rules; `pcf<n>.` with another `n` and a base64url body is a fingerprint of other
-rules (an engine version before or after), whose payload is not decoded, and gives `stale` with
-`changed: ['version']`; anything else is malformed (§5.9). The content part covers, for every applied unit, in unit order:
+equality. An `expected` is read by its prefix, where `n` is one or more decimal digits: `pcf2.` followed by a payload
+that decodes to a five-element array of strings is a fingerprint of these rules; `pcf<n>.` with another `n` and a
+base64url body is a fingerprint of other rules (a later engine version), whose payload is not decoded, and gives
+`stale` with `changed: ['version']`; anything else is malformed (§5.9), including the bare SHA-256 hex that engines
+before v2.0 issued. The content part covers, for every applied unit, in unit order:
 
   - row units: per covered row, the Head and Draft row versions as `versionId`, `updatedAt` and the compared columns
     (`id`, `hash`, `schemaHash`, `publishedAt`, `meta`); for a `rowColumns` unit, the columns it owns (§3.4); for a
@@ -2037,7 +2041,7 @@ versions unchanged" (§14) holds in every scenario.
   `structureChange.views: true`, and no views unit; committing the structure publishes the Draft views, reverting it
   restores the Head views, and the other units of the table stay; `views: [table]` requires the structure
   (`structureBoundData`, site `selector`); `exclude: { views: [table] }` excludes the structure; `views: [table]` of a
-  table whose structure changed and whose views did not is unmatched; a table without a structure change lists its
+  table whose structure changed and whose views did not is unmatched, included or excluded; a table without a structure change lists its
   views edit as a views unit that commits and reverts alone.
 - AS-83 No views combination is checked or migrated: over random Drafts with views edits and schema changes, every
   commit and revert writes the views document of the structure side (or of the views unit's side), and a views
@@ -2051,8 +2055,10 @@ versions unchanged" (§14) holds in every scenario.
   step; the selection codes at a `selector` site with no `cause`.
 - AS-85 Causes: every closure reason caused by an applied unit carries `cause` with that unit (a DescribedUnitRef with
   its exact selector) and the role of §5.7, including the `occupant` at a ledger step (the example of §5.7: a table
-  created at `x` and renamed to `y`, another created at `x`, the second committed alone); a step whose provider is a
-  published migration has no `cause`; the `reason` of a `requiredExcluded` blocker carries the same `cause`.
+  created at `x` and renamed to `y`, another created at `x`, the second committed alone), the `remover` at a ledger
+  step (the `notes` / `links` example of §5.7) and the reverted removal as `occupant`; a ledger step whose id no
+  applied unit's migration changed before it has no `cause`; the `reason` of a `requiredExcluded` blocker carries the
+  same `cause`.
 - AS-86 Deferred values: a created row committed without its table's structure lists in `defaulted` each Head input
   field with the value the commit writes, equal to the value in the written row (a declared default, and a type default
   after a native schema update); fields the Head schema lacks or computes are in `omitted` as `{ path }`; a moved field

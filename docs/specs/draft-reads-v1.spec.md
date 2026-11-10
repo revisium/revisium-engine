@@ -96,7 +96,7 @@ Migrations and views come from the compared snapshot, by the table's identity, w
 history and compare reads look both up by table id and keep doing so. Units compare whole views documents
 (`structureChange.views` and the views unit, partial-changes-v1 §3.6, §5.2), while `viewsChanges` lists the
 differences of the views and of the default view, as the native mapper does; so a document that differs only
-elsewhere (its `version`, or an empty document against none) has a unit or `structureChange.views: true` with
+elsewhere (for example its `version`, the order of its views, or an empty document against none) has a unit or `structureChange.views: true` with
 `viewsChanges.hasChanges: false`, and for a table that is not refused `viewsChanges.hasChanges: true` always comes with
 one of them.
 
@@ -181,8 +181,9 @@ formula values of the page's rows are computed), in native order, each as one en
   data; a removed row one `FIELD_REMOVED` entry with `newValue: null`. Its selection is that of any field of the row:
   `goesWith` the row's existence unit (`rowExistence`), or the structure for a created, removed or replaced table
   (`tableExistence`).
-- An entry at an object pointer appears only when one side has no object there, which only a structure change or the
-  root entry gives; it goes with the structure (`structureBound`) or follows the root entry's rule.
+- An entry at an object pointer appears when one side has no object there: an array element that is an object
+  (`/items/1`, `FIELD_ADDED` with the element), which selects the array's unit as below; a value of a field that a
+  structure change added, removed or retyped, which goes with the structure (`structureBound`); or the root entry.
 - The value diff does not follow schema moves: a field that a pending `move` patch carried reads as `FIELD_REMOVED` at
   its Head pointer and `FIELD_ADDED` at its Draft pointer, and both go with the structure (`structureBound`), whose
   `structureChange` reports the move (partial-changes-v1 §5.2).

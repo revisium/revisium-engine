@@ -608,8 +608,9 @@ describe('Draft row renames', () => {
     };
   }
 
-  // Visits that reference three owners and three vets, each renamed, beside an owner renamed that no visit names. The
-  // owners and vets come first, so a page of visits looks up the renames its references follow.
+  // Visits that reference three owners and three vets, each renamed. One visit is edited from o1 to the new id of
+  // another renamed owner, o9x, so the lookup finds that rename but no reference follows it. The owners and vets come
+  // first, so a page of visits looks up the renames its references follow.
   async function lookupsOfVisitsPage(visits: number) {
     const ownerIds = ['o1', 'o2', 'o3'];
     const vetIds = ['v1', 'v2', 'v3'];
@@ -646,6 +647,8 @@ describe('Draft row renames', () => {
     for (const vetId of vetIds) {
       await draft.renameRow(VETS, vetId, `${vetId}x`);
     }
+
+    await draft.updateRow(VISITS, 'x0', { owner: 'o9x', vet: 'v1x' });
 
     const before = await draft.readDraftRowChanges({ first: 7 });
     const unrelated = await draft.row('draft', OWNERS, 'o9x');

@@ -16,12 +16,6 @@ export interface RenameChain {
   readonly termination: IdExchangeTermination;
 }
 
-// The Head ids the walks reached and the page did not load, and how many ids a lookup must follow from them.
-export interface HeadIdLookup {
-  readonly headRowIds: readonly string[];
-  readonly steps: number;
-}
-
 type HeadIdHolding =
   | { readonly by: 'rename'; readonly rename: RowRename }
   | { readonly by: 'deletedRow' }
@@ -58,28 +52,20 @@ export class TableIdExchanges {
     }
   }
 
-  // A walk that listed n renames before an unresolved id needs the holders of the ids its renames n to 50 take.
-  public lookup(): HeadIdLookup | undefined {
+  // The Head ids the walks reached and the page did not load. The rename that takes such an id is on the page, so
+  // its own walk needs the holders of up to 50 ids from there.
+  public unresolvedHeadRowIds(): string[] {
     const headRowIds = new Set<string>();
-    let steps = 0;
 
     for (const rename of this.renames) {
       const walk = this.walkFrom(rename);
 
       if ('unresolvedHeadRowId' in walk) {
         headRowIds.add(walk.unresolvedHeadRowId);
-        steps = Math.max(
-          steps,
-          LONGEST_LISTED_EXCHANGE - walk.renames.length + 1,
-        );
       }
     }
 
-    if (headRowIds.size === 0) {
-      return undefined;
-    }
-
-    return { headRowIds: [...headRowIds], steps };
+    return [...headRowIds];
   }
 
   public learnHolders(holders: readonly HeadIdHolderRow[]): void {

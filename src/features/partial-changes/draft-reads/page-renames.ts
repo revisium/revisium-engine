@@ -9,6 +9,7 @@ import {
 } from 'src/features/partial-changes/draft-reads/changed-references';
 import type { DraftRowEntry } from 'src/features/partial-changes/draft-reads/draft-row';
 import {
+  LONGEST_LISTED_EXCHANGE,
   type RenameChain,
   TableIdExchanges,
 } from 'src/features/partial-changes/draft-reads/id-exchanges';
@@ -143,19 +144,21 @@ export class PageRenamesReader {
     const renames = new Map(
       rows.map((row) => [renameKeyOf(row.headRowId, row.draftRowId), row]),
     );
-    const following = references.filter(({ previousRowId, rowId }) =>
-      renames.has(renameKeyOf(previousRowId, rowId)),
-    );
+    const following: ChangedReference[] = [];
+    const followed: RenamedRowIds[] = [];
 
-    return {
-      table,
-      references: following,
-      renames: following.flatMap(({ previousRowId, rowId }) => {
-        const rename = renames.get(renameKeyOf(previousRowId, rowId));
+    for (const reference of references) {
+      const rename = renames.get(
+        renameKeyOf(reference.previousRowId, reference.rowId),
+      );
 
-        return rename ? [rename] : [];
-      }),
-    };
+      if (rename) {
+        following.push(reference);
+        followed.push(rename);
+      }
+    }
+
+    return { table, references: following, renames: followed };
   }
 
   private async readExchanges(
@@ -180,14 +183,14 @@ export class PageRenamesReader {
     pairs: readonly RowPair[],
   ): Promise<TableExchanges> {
     const exchanges = new TableIdExchanges(pairs);
-    const lookup = exchanges.lookup();
+    const headRowIds = exchanges.unresolvedHeadRowIds();
 
-    if (!lookup) {
+    if (headRowIds.length === 0) {
       return { table, exchanges, renames: [] };
     }
 
     const holders = await this.transaction.$queryRaw<HeadIdHolderRow[]>(
-      headIdHoldersSql(table, lookup.headRowIds, lookup.steps),
+      headIdHoldersSql(table, headRowIds, LONGEST_LISTED_EXCHANGE),
     );
     exchanges.learnHolders(holders);
 

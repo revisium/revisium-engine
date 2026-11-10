@@ -59,7 +59,7 @@ describe('ChangeCatalogue: views and shared schema units', () => {
       expectEveryDifferenceOwnedOnce(catalogue);
     });
 
-    it('lists a views edit made after a schema migration next to the structure unit', async () => {
+    it('lists a views edit made after a schema migration as part of the structure unit (AS-82)', async () => {
       const draft = await givenCommittedProductsWithViews();
       await draft.updateTable(PRODUCTS, [removeField('price')]);
       await draft.updateViews(PRODUCTS, productViews('Renamed', ['code']));
@@ -68,9 +68,22 @@ describe('ChangeCatalogue: views and shared schema units', () => {
 
       expect(catalogue.units()).toEqual([
         { kind: 'structure', tableId: PRODUCTS },
-        { kind: 'views', tableId: PRODUCTS },
       ]);
+      expect(
+        catalogue.systemRowsOf({ kind: 'structure', tableId: PRODUCTS }),
+      ).toContain('views products');
       expectEveryDifferenceOwnedOnce(catalogue);
+    });
+
+    it('owns only the views rows of its table in a views unit', async () => {
+      const draft = await givenCommittedProductsWithViews();
+      await draft.updateViews(PRODUCTS, productViews('Renamed', ['code']));
+
+      const catalogue = await draft.readCatalogue([PRODUCTS]);
+
+      expect(
+        catalogue.systemRowsOf({ kind: 'views', tableId: PRODUCTS }),
+      ).toEqual(['views products', 'views products']);
     });
   });
 

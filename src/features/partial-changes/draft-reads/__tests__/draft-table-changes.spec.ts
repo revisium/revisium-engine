@@ -34,7 +34,10 @@ import {
   draftReadQueriesDuring,
   tableItemsOf,
 } from '../../__tests__/support/draft-reading';
-import { describedStructureRef } from '../../__tests__/support/expected-unit-refs';
+import {
+  describedStructureRef,
+  viewsRef,
+} from '../../__tests__/support/expected-unit-refs';
 
 const PRODUCTS = 'products';
 const ORDERS = 'orders';
@@ -99,7 +102,7 @@ describe('draft table changes', () => {
           {
             state: 'selectable',
             structure: describedStructureRef(
-              { table: 'changed', fields: [] },
+              { table: 'changed', fields: [], views: false },
               PURCHASES,
               ORDERS,
             ),
@@ -115,7 +118,7 @@ describe('draft table changes', () => {
       const replaced = {
         state: 'selectable',
         structure: describedStructureRef(
-          { table: 'replaced', fields: [] },
+          { table: 'replaced', fields: [], views: false },
           NOTES,
         ),
       };
@@ -141,7 +144,7 @@ describe('draft table changes', () => {
           {
             state: 'selectable',
             structure: describedStructureRef(
-              { table: 'removed', fields: [] },
+              { table: 'removed', fields: [], views: false },
               NOTES,
             ),
           },
@@ -152,7 +155,7 @@ describe('draft table changes', () => {
           {
             state: 'selectable',
             structure: describedStructureRef(
-              { table: 'created', fields: [] },
+              { table: 'created', fields: [], views: false },
               TAGS,
             ),
           },
@@ -615,14 +618,179 @@ describe('draft table changes', () => {
         ],
       ]);
     });
+  });
 
-    async function givenCommittedTablesWithViews(): Promise<ChangesScenario> {
-      const draft = await givenCommittedTables();
+  describe('views that follow the structure (DR-10)', () => {
+    it('gives a table whose structure and views changed its structure unit with the views change, and no views unit', async () => {
+      const draft = await givenCommittedTablesWithViews();
+      await draft.updateTable(ORDERS, [addField('color', str())]);
+      await draft.updateViews(ORDERS, viewsNamed('Edited'));
+
+      const [item] = await readTableItems(draft);
+
+      expect(item?.selection).toMatchObject({
+        state: 'selectable',
+        structure: describedStructureRef(
+          {
+            table: 'changed',
+            fields: [{ path: '/color', change: 'added' }],
+            views: true,
+          },
+          ORDERS,
+        ),
+      });
+      expect(item?.selection).not.toHaveProperty('views');
+    });
+
+    it('keeps a renamed table with unchanged views RENAMED, its structure carrying no views change', async () => {
+      const draft = await givenCommittedTablesWithViews();
+      await draft.renameTable(ORDERS, PURCHASES);
+
+      expect(selectionsOf(await readTableItems(draft))).toEqual([
+        [
+          PURCHASES,
+          ChangeType.Renamed,
+          {
+            state: 'selectable',
+            structure: describedStructureRef(
+              { table: 'changed', fields: [], views: false },
+              PURCHASES,
+              ORDERS,
+            ),
+          },
+        ],
+      ]);
+    });
+
+    it('gives a replaced id whose two tables hold equal views a structure without a views change, while each item reports its own', async () => {
+      const draft = await givenCommittedTablesWithViews();
+      await draft.removeTable(ORDERS);
+      await draft.createTable(ORDERS, labelSchema);
       await draft.updateViews(ORDERS, orderViews);
-      await draft.commit();
 
-      return draft;
-    }
+      const items = await readTableItems(draft);
+
+      expect(
+        items.map(({ changeType, selection, viewsChanges }) => [
+          changeType,
+          selection.state === 'selectable'
+            ? selection.structure?.structureChange?.views
+            : undefined,
+          viewsChanges.hasChanges,
+        ]),
+      ).toEqual([
+        [ChangeType.Removed, false, true],
+        [ChangeType.Added, false, true],
+      ]);
+    });
+
+    it('says that the structure unit of a table whose views did not change carries no views change', async () => {
+      const draft = await givenCommittedTablesWithViews();
+      await draft.updateTable(ORDERS, [addField('color', str())]);
+
+      const [item] = await readTableItems(draft);
+
+      expect(item?.selection).toMatchObject({
+        structure: { structureChange: { views: false } },
+      });
+      expect(item?.selection).not.toHaveProperty('views');
+      expect(item?.viewsChanges).toEqual(NO_VIEWS_CHANGE);
+    });
+
+    it('gives a table without a structure change its views unit beside its row data', async () => {
+      const draft = await givenCommittedTablesWithViews();
+      await draft.updateViews(ORDERS, viewsNamed('Edited'));
+      await draft.updateRow(ORDERS, 'o1', { label: 'two' });
+
+      expect(selectionsOf(await readTableItems(draft))).toEqual([
+        [
+          ORDERS,
+          ChangeType.Modified,
+          {
+            state: 'selectable',
+            views: viewsRef(ORDERS),
+            tableData: { selector: { tableData: [ORDERS] }, rows: 1 },
+          },
+        ],
+      ]);
+    });
+
+    it('lists a table whose only change is its views in the summary alone', async () => {
+      const draft = await givenCommittedTablesWithViews();
+      await draft.updateViews(ORDERS, viewsNamed('Edited'));
+
+      const summary = await draft.readDraftChangesSummary();
+
+      expect(await readTableItems(draft)).toEqual([]);
+      expect(summary.viewsOnlyTables).toEqual([
+        {
+          tableId: ORDERS,
+          changeType: ChangeType.Modified,
+          views: viewsRef(ORDERS),
+        },
+      ]);
+    });
+
+    it.each<{
+      change: string;
+      edit: (draft: ChangesScenario) => Promise<void>;
+    }>([
+      {
+        change: 'a renamed table with edited views',
+        edit: async (draft) => {
+          await draft.renameTable(ORDERS, PURCHASES);
+          await draft.updateViews(PURCHASES, viewsNamed('Purchases'));
+        },
+      },
+      {
+        change: 'a changed structure with edited views',
+        edit: async (draft) => {
+          await draft.updateTable(ORDERS, [addField('color', str())]);
+          await draft.updateViews(ORDERS, viewsNamed('Edited'));
+        },
+      },
+      {
+        change: 'edited views next to an edited row',
+        edit: async (draft) => {
+          await draft.updateViews(ORDERS, viewsNamed('Edited'));
+          await draft.updateRow(ORDERS, 'o1', { label: 'two' });
+        },
+      },
+      {
+        change: 'a removed table with views',
+        edit: (draft) => draft.removeTable(ORDERS),
+      },
+      {
+        change: 'a replaced table with other views',
+        edit: async (draft) => {
+          await draft.removeTable(ORDERS);
+          await draft.createTable(ORDERS, labelSchema);
+          await draft.updateViews(ORDERS, viewsNamed('Orders'));
+        },
+      },
+      {
+        change: 'a created table with views',
+        edit: async (draft) => {
+          await draft.createTable(TAGS, labelSchema);
+          await draft.updateViews(TAGS, viewsNamed('Tags'));
+        },
+      },
+    ])(
+      'gives every item with a views change a views unit or a structure that carries it, for $change',
+      async ({ edit }) => {
+        const draft = await givenCommittedTablesWithViews();
+        await edit(draft);
+
+        const withViewsChanges = (await readTableItems(draft)).filter(
+          ({ viewsChanges }) => viewsChanges.hasChanges,
+        );
+
+        expect(withViewsChanges).not.toEqual([]);
+        expect(withViewsChanges.map(viewsOwnerOf)).toEqual(
+          withViewsChanges.map(({ tableId }) => [tableId, true]),
+        );
+      },
+    );
   });
 
   describe('migrations of a table', () => {
@@ -1124,6 +1292,14 @@ describe('draft table changes', () => {
     return nodesOf(await draft.readDraftTableChanges({ first: 100 }));
   }
 
+  async function givenCommittedTablesWithViews(): Promise<ChangesScenario> {
+    const draft = await givenCommittedTables();
+    await draft.updateViews(ORDERS, orderViews);
+    await draft.commit();
+
+    return draft;
+  }
+
   function givenCommittedTables(): Promise<ChangesScenario> {
     return ChangesScenario.committed(kit, {
       [PRODUCTS]: {
@@ -1166,6 +1342,21 @@ function viewsNamed(name: string): TableViewsData {
 
 function nodesOf({ edges }: DraftTablePage): DraftTableItem[] {
   return edges.map(({ node }) => node);
+}
+
+function viewsOwnerOf({
+  tableId,
+  selection,
+}: DraftTableItem): [string, boolean] {
+  if (selection.state !== 'selectable') {
+    return [tableId, false];
+  }
+
+  return [
+    tableId,
+    selection.views !== undefined ||
+      selection.structure?.structureChange?.views === true,
+  ];
 }
 
 function selectionsOf(items: readonly DraftTableItem[]): TableSelectionView[] {

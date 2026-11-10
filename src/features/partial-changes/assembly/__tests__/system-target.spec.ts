@@ -26,7 +26,7 @@ const editedAddressSchema = obj({ city: str(), street: str() });
 const phoneSchema = obj({ number: str() });
 const emailSchema = obj({ address: str() });
 
-describe('SystemTargetAssembler: system rows of the target', () => {
+describe('system table plans: system rows of the target', () => {
   let kit: PartialChangesTestKit;
 
   beforeAll(async () => {
@@ -74,10 +74,9 @@ describe('SystemTargetAssembler: system rows of the target', () => {
       });
     });
 
-    it('migrates the Head views with a committed structure while a views edit stays in the Draft', async () => {
+    it('links the Draft views row with a committed structure, a views edit after its migration included (AS-82)', async () => {
       const draft = await givenCommittedProductsWithViews();
       await draft.updateTable(PRODUCTS, [removeField('price')]);
-      const migratedViews = await draftViewsOf(draft, PRODUCTS);
       await draft.updateViews(PRODUCTS, tableViews('Renamed', ['code']));
 
       const target = await draft.assembleTarget('commit', {
@@ -85,17 +84,13 @@ describe('SystemTargetAssembler: system rows of the target', () => {
       });
 
       expect(target.systemTableOf(SystemTables.Views)).toMatchObject({
-        outcome: 'mixed',
-        version: 'head',
-        removedLinks: ['head views products'],
-        addedLinks: [],
-        newRows: [
-          expect.objectContaining({ id: PRODUCTS, data: migratedViews }),
-        ],
+        outcome: 'other',
+        version: 'draft',
+        newRows: [],
       });
     });
 
-    it('keeps the views edit of a renamed table under its Head id when the rename is reverted', async () => {
+    it('links the Head views row of a renamed table, its views edit dropped, when the rename is reverted (AS-82)', async () => {
       const draft = await givenCommittedProductsWithViews();
       await draft.renameTable(PRODUCTS, GOODS);
       await draft.updateViews(GOODS, tableViews('Renamed', ['code']));
@@ -105,16 +100,9 @@ describe('SystemTargetAssembler: system rows of the target', () => {
       });
 
       expect(target.systemTableOf(SystemTables.Views)).toMatchObject({
-        outcome: 'mixed',
-        version: 'draft',
-        removedLinks: ['draft views goods'],
-        addedLinks: [],
-        newRows: [
-          expect.objectContaining({
-            id: PRODUCTS,
-            data: tableViews('Renamed', ['code']),
-          }),
-        ],
+        outcome: 'other',
+        version: 'head',
+        newRows: [],
       });
     });
 
@@ -422,15 +410,6 @@ describe('SystemTargetAssembler: system rows of the target', () => {
     await draft.commit();
 
     return draft;
-  }
-
-  async function draftViewsOf(
-    draft: ChangesScenario,
-    tableId: string,
-  ): Promise<unknown> {
-    const row = await draft.row('draft', SystemTables.Views, tableId);
-
-    return row.data;
   }
 });
 

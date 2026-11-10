@@ -6,7 +6,7 @@ import {
 } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
-import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
+import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-table-plans';
 import type {
   AssembledTarget,
   DeferredValues,

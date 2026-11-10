@@ -1,7 +1,9 @@
 import type { AddressedRow } from 'src/features/partial-changes/catalogue/catalogue-lookup';
+import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import { groupRecreations } from 'src/features/partial-changes/catalogue/public-id-groups';
 import { PublicIdIndex } from 'src/features/partial-changes/catalogue/public-id-index';
 import type { SelectorSide } from 'src/features/partial-changes/catalogue/unit';
+import { carriesViewsChange } from 'src/features/partial-changes/catalogue/views-units';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { tablesOfRow } from 'src/features/partial-changes/selection/addressed-rows';
 import type { RowRef } from 'src/features/partial-changes/selection/selection';
@@ -74,6 +76,10 @@ export class SelectionTargets {
 
   public structureOf(table: TablePair): TableStructure {
     return this.source.catalogue.tables.structureOf(table);
+  }
+
+  public carriesViewsChange(structure: CatalogueUnit): boolean {
+    return carriesViewsChange(structure, this.source.catalogue.tables);
   }
 
   public leafAtOrAbove(

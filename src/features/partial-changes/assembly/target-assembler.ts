@@ -27,10 +27,13 @@ import {
   RowMerger,
 } from 'src/features/partial-changes/assembly/row-merger';
 import {
+  type TableViews,
+  tableViewsOf,
+} from 'src/features/partial-changes/assembly/system-table-targets';
+import {
   type SystemTablePlan,
-  SystemTargetAssembler,
-  type TargetViews,
-} from 'src/features/partial-changes/assembly/system-target-assembler';
+  systemTablePlansOf,
+} from 'src/features/partial-changes/assembly/system-table-plans';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { differInContent } from 'src/features/partial-changes/catalogue/row-differences';
@@ -90,7 +93,7 @@ export interface DeferredValues {
 export interface AssembledTarget {
   readonly tables: readonly TablePlan[];
   readonly systemTables: readonly SystemTablePlan[];
-  readonly views: readonly TargetViews[];
+  readonly views: readonly TableViews[];
   readonly ledger: LedgerPlan;
   readonly blockers: readonly CatalogueBlocker[];
   readonly deferred: readonly DeferredValues[];
@@ -115,10 +118,7 @@ interface DecidedRow {
 
 @Injectable()
 export class TargetAssembler {
-  constructor(
-    private readonly rowMerger: RowMerger,
-    private readonly systemTargetAssembler: SystemTargetAssembler,
-  ) {}
+  constructor(private readonly rowMerger: RowMerger) {}
 
   public async assemble(
     source: AssemblySource,
@@ -133,8 +133,8 @@ export class TargetAssembler {
 
     return {
       tables: tables.map(({ plan }) => plan),
-      systemTables: await this.systemTargetAssembler.assemble(source, rules),
-      views: this.systemTargetAssembler.viewsOf(source, rules),
+      systemTables: systemTablePlansOf(source, rules),
+      views: tableViewsOf(source, rules),
       ledger: planLedger(source, rules),
       blockers: tables.flatMap(({ blockers }) => blockers),
       deferred: tables.flatMap(({ deferred }) => deferred),

@@ -8,7 +8,6 @@ import {
   buildChangeCatalogue,
   type ChangeCatalogue,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import type { LedgerInconsistency } from 'src/features/partial-changes/catalogue/ledger-inconsistency';
 import type {
   SelectorSide,
@@ -90,10 +89,13 @@ async function buildCatalogueView(
   const changedRows = await kit.snapshotReader.readChangedRows(
     affectedTablesIn(scope, snapshot, tables),
   );
-  const catalogue = buildChangeCatalogue(
-    { snapshot, ledger, headSchema, tables, changedRows },
-    new HeadViewsMigration(kit.viewsMigration, kit.schemaRules),
-  );
+  const catalogue = buildChangeCatalogue({
+    snapshot,
+    ledger,
+    headSchema,
+    tables,
+    changedRows,
+  });
 
   return catalogueView(catalogue, snapshot, headSchema, tables, changedRows);
 }

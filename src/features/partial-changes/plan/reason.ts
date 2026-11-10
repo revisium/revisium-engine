@@ -6,7 +6,6 @@ export const REQUIRED_REASON_CODES = [
   'referrerStillReferences',
   'idOccupied',
   'referencedTableMissing',
-  'viewsDoNotFitStructure',
 ] as const;
 
 export type RequiredReasonCode = (typeof REQUIRED_REASON_CODES)[number];

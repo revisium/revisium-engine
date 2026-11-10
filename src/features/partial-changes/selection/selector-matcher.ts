@@ -18,6 +18,7 @@ import {
   ItemsResolution,
   NO_MATCH,
   refusing,
+  requiringUnit,
   type SelectorMatch,
   selecting,
   selectingUnit,
@@ -40,9 +41,7 @@ export class SelectorMatcher {
       this.atTable(tableId, (table) => this.matchTableData(table, tableId)),
     );
     resolution.addEach('views', items.views, (tableId) =>
-      this.atTable(tableId, (table) =>
-        selectingUnit(this.units.tableUnitOf('views', table)),
-      ),
+      this.atTable(tableId, (table) => this.matchViews(table, tableId)),
     );
     resolution.addEach('sharedSchemas', items.sharedSchemas, (id) =>
       selectingUnit(this.units.unitWithoutTable('sharedSchema', id)),
@@ -113,6 +112,36 @@ export class SelectorMatcher {
     }
 
     return selectingUnit(this.units.unitWithoutTable('structure', tableId));
+  }
+
+  private matchViews(table: TablePair, tableId: string): SelectorMatch {
+    const views = this.units.tableUnitOf('views', table);
+
+    if (views) {
+      return selectingUnit(views);
+    }
+
+    return (
+      refusing(this.targets.refusalsOfStructure(table)) ??
+      this.requireStructureCarryingViews(table, tableId)
+    );
+  }
+
+  private requireStructureCarryingViews(
+    table: TablePair,
+    tableId: string,
+  ): SelectorMatch {
+    const structure = this.units.tableUnitOf('structure', table);
+
+    if (!structure || !this.targets.carriesViewsChange(structure)) {
+      return NO_MATCH;
+    }
+
+    return requiringUnit(structure, {
+      code: 'structureBoundData',
+      tableId,
+      because: `the views of ${tableId} change with its structure`,
+    });
   }
 
   private matchTableData(table: TablePair, tableId: string): SelectorMatch {

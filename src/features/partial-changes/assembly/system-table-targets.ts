@@ -20,8 +20,6 @@ import { SystemTables } from 'src/features/share/system-tables.consts';
 export interface TableViews {
   readonly pair: TablePair;
   readonly tableId: string;
-  readonly tableSide: RevisionSide;
-  readonly viewsSide: RevisionSide;
   readonly source: Row;
 }
 
@@ -32,7 +30,6 @@ export interface SystemTableTarget {
   readonly keptWhenEmpty: boolean;
   readonly editInPlace: boolean;
   readonly versions: readonly Row[];
-  readonly rewrites: readonly TableViews[];
   readonly ownerKinds: readonly UnitKind[];
 }
 
@@ -57,20 +54,17 @@ export function tableViewsOf(
   return new SystemTableTargets(source, rules).tableViews();
 }
 
-export function systemTableOutcomeOf(
-  { rows, linkSide, keptWhenEmpty }: SystemTableTarget,
-  versions: readonly Row[],
-  hasNewRows: boolean,
-): TableOutcome {
+export function systemTableOutcomeOf({
+  rows,
+  linkSide,
+  keptWhenEmpty,
+  versions,
+}: SystemTableTarget): TableOutcome {
   const otherSide = oppositeOf(linkSide);
   const onBothSides = rows.versions[otherSide] !== undefined;
 
-  if (!onBothSides && !keptWhenEmpty && versions.length === 0 && !hasNewRows) {
+  if (!onBothSides && !keptWhenEmpty && versions.length === 0) {
     return 'absent';
-  }
-
-  if (hasNewRows) {
-    return 'mixed';
   }
 
   if (holdsExactly(rows[linkSide], versions)) {
@@ -135,20 +129,16 @@ class SystemTableTargets {
         ...rows.head.filter((row) => sideOf(row) === 'head'),
         ...rows.draft.filter((row) => sideOf(row) === 'draft'),
       ]),
-      rewrites: [],
       ownerKinds: [kind],
     };
   }
 
   private viewsTarget(rows: SystemTableRows): SystemTableTarget {
-    const views = this.tableViews();
-
     return {
       tableId: SystemTables.Views,
       rows,
       ...this.linkOf(rows),
-      versions: views.filter(followsStructure).map(({ source }) => source),
-      rewrites: views.filter((table) => !followsStructure(table)),
+      versions: this.tableViews().map(({ source }) => source),
       ownerKinds: ['structure', 'views'],
     };
   }
@@ -165,7 +155,7 @@ class SystemTableTargets {
       return [];
     }
 
-    return [{ pair, tableId: table.id, tableSide, viewsSide, source }];
+    return [{ pair, tableId: table.id, source }];
   }
 
   private viewsSideOf(pair: TablePair, tableSide: RevisionSide): RevisionSide {
@@ -224,10 +214,6 @@ export function ownersByVersionId(
   }
 
   return owners;
-}
-
-function followsStructure({ tableSide, viewsSide }: TableViews): boolean {
-  return viewsSide === tableSide;
 }
 
 function holdsExactly(rows: readonly Row[], versions: readonly Row[]): boolean {

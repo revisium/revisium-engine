@@ -2,7 +2,7 @@ import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
-import type { TargetViews } from 'src/features/partial-changes/assembly/system-target-assembler';
+import type { TableViews } from 'src/features/partial-changes/assembly/system-table-targets';
 import type { TablePlan } from 'src/features/partial-changes/assembly/target-assembler';
 import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
@@ -49,7 +49,7 @@ export interface PlannedTableView extends TablePlanView {
 export interface PlannedTargetView {
   readonly tables: readonly PlannedTableView[];
   readonly systemTables: readonly SystemTablePlanView[];
-  readonly views: readonly TargetViews[];
+  readonly views: readonly TableViews[];
 }
 
 export interface PlanView {

@@ -241,7 +241,7 @@ describe('draft changes summary', () => {
           tableId: SCRATCH,
           changeType: ChangeType.Added,
           structure: describedStructureRef(
-            { table: 'transient', fields: [] },
+            { table: 'transient', fields: [], views: false },
             SCRATCH,
           ),
         },

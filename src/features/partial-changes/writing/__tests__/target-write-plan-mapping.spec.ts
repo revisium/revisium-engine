@@ -13,7 +13,7 @@ import type {
 import type { RenumberedMigrationRow } from 'src/features/partial-changes/assembly/ledger-plan';
 import type { TableOutcome } from 'src/features/partial-changes/assembly/outcome-rules';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
-import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-target-assembler';
+import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-table-plans';
 import type { TablePlan } from 'src/features/partial-changes/assembly/target-assembler';
 import type {
   TablePair,

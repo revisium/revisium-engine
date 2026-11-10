@@ -54,11 +54,6 @@ const deletedRow = ({ tableId, rowId }: RowRef) => ({
   rowId,
   selector: { rows: [{ tableId, rowId }] },
 });
-const viewsOf = (tableId: string) => ({
-  kind: 'views',
-  tableId,
-  selector: { views: [tableId] },
-});
 
 type Given = (kit: PartialChangesTestKit) => Promise<ChangesScenario>;
 type Tables = Readonly<Record<string, TableFixture>>;
@@ -310,37 +305,26 @@ describe('DependencyClosure: structures, views and rows that come with a structu
     });
   });
 
-  describe('views against the target structure', () => {
-    it.each<{
-      operation: ChangeOperation;
-      selection: Selection;
-      required: Record<string, unknown>;
-    }>([
-      {
-        operation: 'commit',
-        selection: { views: [PRODUCTS] },
-        required: structureOf(PRODUCTS),
-      },
-      {
-        operation: 'revert',
-        selection: { structures: [{ tableId: PRODUCTS }] },
-        required: viewsOf(PRODUCTS),
-      },
+  describe('views that follow the structure (AS-82)', () => {
+    it.each<{ given: Given; tableId: string }>([
+      { given: givenViewsOfNewField, tableId: PRODUCTS },
+      { given: givenCreatedOffersWithViews, tableId: OFFERS },
     ])(
-      'requires the unit the views of a new field need in a $operation',
-      async ({ operation, selection, required }) => {
-        const draft = await givenViewsOfNewField(kit);
+      'requires the structure that holds the views of $tableId',
+      async ({ given, tableId }) => {
+        const draft = await given(kit);
 
-        const closure = await draft.closeDependencies(operation, selection);
+        const closure = await draft.closeDependencies('commit', {
+          views: [tableId],
+        });
 
         expect(closure.required).toEqual([
           {
-            unit: required,
+            unit: structureOf(tableId),
             reason: {
-              code: 'viewsDoNotFitStructure',
-              tableId: PRODUCTS,
-              because:
-                'the Draft views of products do not fit its Head structure',
+              code: 'structureBoundData',
+              tableId,
+              because: `the views of ${tableId} change with its structure`,
             },
           },
         ]);
@@ -348,41 +332,19 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       },
     );
 
-    it.each<{
-      operation: ChangeOperation;
-      selection: Selection;
-      required: Record<string, unknown>;
-      target: string;
-    }>([
-      {
-        operation: 'commit',
-        selection: { views: [OFFERS] },
-        required: structureOf(OFFERS),
-        target: 'new Head',
-      },
-      {
-        operation: 'revert',
-        selection: { structures: [{ tableId: OFFERS }] },
-        required: viewsOf(OFFERS),
-        target: 'reverted Draft',
-      },
+    it.each<{ given: Given; tableId: string }>([
+      { given: givenViewsOfNewField, tableId: PRODUCTS },
+      { given: givenCreatedOffersWithViews, tableId: OFFERS },
     ])(
-      'keeps the views of a created table together with the table in a $operation',
-      async ({ operation, selection, required, target }) => {
-        const draft = await givenCreatedOffersWithViews(kit);
+      'reverts the structure of $tableId with its views and requires nothing more',
+      async ({ given, tableId }) => {
+        const draft = await given(kit);
 
-        const closure = await draft.closeDependencies(operation, selection);
+        const closure = await draft.closeDependencies('revert', {
+          structures: [{ tableId }],
+        });
 
-        expect(closure.required).toEqual([
-          {
-            unit: required,
-            reason: {
-              code: 'viewsDoNotFitStructure',
-              tableId: OFFERS,
-              because: `the Draft views of offers belong to a table the ${target} does not contain`,
-            },
-          },
-        ]);
+        expect(closure.required).toEqual([]);
         expect(closure.blockers).toEqual([]);
       },
     );
@@ -403,31 +365,23 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           message: 'offers is required but excluded',
           unit: structureOf(OFFERS),
           reason: {
-            code: 'viewsDoNotFitStructure',
+            code: 'structureBoundData',
             tableId: OFFERS,
-            because:
-              'the Draft views of offers belong to a table the new Head does not contain',
+            because: 'the views of offers change with its structure',
           },
         },
       ]);
     });
 
-    it('blocks views that do not fit the structure of their own side as invalidViews', async () => {
+    it('checks no views against a structure: a views document that does not fit its own side is left to target validation', async () => {
       const draft = await givenViewsOfMissingField(kit);
 
       const closure = await draft.closeDependencies('commit', {
         structures: [{ tableId: PRODUCTS }],
-        views: [PRODUCTS],
       });
 
       expect(closure.required).toEqual([]);
-      expect(closure.blockers).toEqual([
-        {
-          code: 'invalidViews',
-          tableId: PRODUCTS,
-          message: 'The Draft views of products do not fit its Draft structure',
-        },
-      ]);
+      expect(closure.blockers).toEqual([]);
     });
   });
 
@@ -692,12 +646,6 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       operation: 'commit',
       given: givenCreatedOffersWithViews,
       selection: { views: [OFFERS] },
-    },
-    {
-      name: 'the views of a reverted created table',
-      operation: 'revert',
-      given: givenCreatedOffersWithViews,
-      selection: { structures: [{ tableId: OFFERS }] },
     },
     {
       name: 'a row that a created table references',

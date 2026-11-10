@@ -18,6 +18,7 @@ import {
   describedLedgerOf,
   pendingMigrationIds,
 } from 'src/__tests__/fixtures/stored-ledger';
+import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const PRODUCTS = 'products';
@@ -93,6 +94,154 @@ describe('TargetValidator', () => {
       });
 
       expect(blockers).toEqual([]);
+    });
+  });
+
+  describe('views documents (AS-83)', () => {
+    it.each<{
+      unit: string;
+      given: () => Promise<ChangesScenario>;
+      selection: Selection;
+      owner: Record<string, unknown>;
+    }>([
+      {
+        unit: 'a structure unit',
+        given: givenNewFieldWithViewsOfMissingField,
+        selection: { structures: [{ tableId: PRODUCTS }] },
+        owner: { kind: 'structure', tableId: PRODUCTS },
+      },
+      {
+        unit: 'a structure unit whose views document equals the Head one',
+        given: givenRemovedPriceWithHeadViews,
+        selection: { structures: [{ tableId: PRODUCTS }] },
+        owner: { kind: 'structure', tableId: PRODUCTS },
+      },
+      {
+        unit: 'a views unit',
+        given: givenViewsOfMissingField,
+        selection: { views: [PRODUCTS] },
+        owner: { kind: 'views', tableId: PRODUCTS },
+      },
+      {
+        unit: 'exactly { all: true }',
+        given: givenViewsOfMissingField,
+        selection: { all: true },
+        owner: { kind: 'views', tableId: PRODUCTS },
+      },
+    ])(
+      'blocks a Draft views document that is invalid for its own Draft structure, committed with $unit, as invalidViews',
+      async ({ given, selection, owner }) => {
+        const draft = await given();
+
+        const blockers = await draft.validateTarget('commit', selection);
+
+        expect(blockers).toEqual([
+          {
+            code: 'invalidViews',
+            tableId: PRODUCTS,
+            message: expect.stringMatching(
+              /^The Draft views of products are invalid for its Draft structure: Invalid fields in views: /,
+            ),
+            unit: owner,
+          },
+        ]);
+      },
+    );
+
+    it.each<{
+      table: string;
+      given: () => Promise<ChangesScenario>;
+      tableId: string;
+      owner: Record<string, unknown>;
+    }>([
+      {
+        table: 'a created table',
+        given: givenCreatedTagsWithViewsOfMissingField,
+        tableId: TAGS,
+        owner: { kind: 'structure', tableId: TAGS },
+      },
+      {
+        table: 'a renamed table',
+        given: givenRenamedProductsWithViewsOfMissingField,
+        tableId: ITEMS,
+        owner: { kind: 'structure', tableId: ITEMS, previousTableId: PRODUCTS },
+      },
+    ])(
+      'names the Draft id of $table whose committed views are invalid',
+      async ({ given, tableId, owner }) => {
+        const draft = await given();
+
+        const blockers = await draft.validateTarget('commit', {
+          structures: [{ tableId }],
+        });
+
+        expect(blockers).toEqual([
+          expect.objectContaining({
+            code: 'invalidViews',
+            tableId,
+            message: expect.stringContaining(
+              `The Draft views of ${tableId} are invalid for its Draft structure`,
+            ),
+            unit: owner,
+          }),
+        ]);
+      },
+    );
+
+    it.each<{ operation: ChangeOperation; selection: Selection }>([
+      { operation: 'commit', selection: { fields: [titleOfP1] } },
+      { operation: 'revert', selection: { views: [PRODUCTS] } },
+      { operation: 'revert', selection: { all: true } },
+    ])(
+      'accepts a $operation of $selection that does not publish the invalid Draft views document',
+      async ({ operation, selection }) => {
+        const draft = await givenViewsOfMissingField();
+        await draft.updateRow(PRODUCTS, 'p1', { title: 'edited', price: 1 });
+
+        const blockers = await draft.validateTarget(operation, selection);
+
+        expect(blockers).toEqual([]);
+      },
+    );
+
+    it.each<{ operation: ChangeOperation; selection: Selection }>([
+      { operation: 'commit', selection: { all: true } },
+      { operation: 'revert', selection: { all: true } },
+      { operation: 'commit', selection: { fields: [titleOfP1] } },
+    ])(
+      'accepts a $operation of $selection over invalid Head views that the Draft holds as a content-equal copy, as native does',
+      async ({ operation, selection }) => {
+        const draft = await givenInvalidHeadViewsCopiedIntoTheDraft();
+
+        const blockers = await draft.validateTarget(operation, selection);
+
+        expect(blockers).toEqual([]);
+      },
+    );
+
+    it('accepts a revert of a structure that restores Head views already invalid for the Head structure', async () => {
+      const draft = await givenInvalidHeadViewsUnderAChangedStructure();
+
+      const blockers = await draft.validateTarget('revert', {
+        structures: [{ tableId: PRODUCTS }],
+      });
+
+      expect(blockers).toEqual([]);
+    });
+
+    it('blocks a commit of a structure that would publish views invalid for it, even when Head holds them already', async () => {
+      const draft = await givenInvalidHeadViewsUnderAChangedStructure();
+
+      const blockers = await draft.validateTarget('commit', {
+        structures: [{ tableId: PRODUCTS }],
+      });
+
+      expect(blockers).toEqual([
+        expect.objectContaining({
+          code: 'invalidViews',
+          unit: { kind: 'structure', tableId: PRODUCTS },
+        }),
+      ]);
     });
   });
 
@@ -443,6 +592,73 @@ describe('TargetValidator', () => {
     return draft;
   }
 
+  async function givenCommittedProductsWithViews(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: productFixture(),
+    });
+    await draft.updateViews(PRODUCTS, tableViews(['title', 'price']));
+    await draft.commit();
+
+    return draft;
+  }
+
+  async function givenViewsOfMissingField(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProductsWithViews();
+    await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'missing']));
+
+    return draft;
+  }
+
+  async function givenRemovedPriceWithHeadViews(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProductsWithViews();
+    await draft.updateTable(PRODUCTS, [removeField('price')]);
+    await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'price']));
+
+    return draft;
+  }
+
+  async function givenInvalidHeadViewsCopiedIntoTheDraft(): Promise<ChangesScenario> {
+    const draft = await givenViewsOfMissingField();
+    await draft.commit();
+    await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'missing']));
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'edited', price: 1 });
+
+    return draft;
+  }
+
+  async function givenCreatedTagsWithViewsOfMissingField(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProductsWithViews();
+    await draft.createTable(TAGS, tagSchema);
+    await draft.updateViews(TAGS, tableViews(['label']));
+    await draft.writeInvalidViews(TAGS, tableViews(['label', 'missing']));
+
+    return draft;
+  }
+
+  async function givenRenamedProductsWithViewsOfMissingField(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProductsWithViews();
+    await draft.renameTable(PRODUCTS, ITEMS);
+    await draft.writeInvalidViews(ITEMS, tableViews(['title', 'missing']));
+
+    return draft;
+  }
+
+  async function givenInvalidHeadViewsUnderAChangedStructure(): Promise<ChangesScenario> {
+    const draft = await givenViewsOfMissingField();
+    await draft.commit();
+    await draft.updateTable(PRODUCTS, addColor);
+
+    return draft;
+  }
+
+  async function givenNewFieldWithViewsOfMissingField(): Promise<ChangesScenario> {
+    const draft = await givenCommittedProductsWithViews();
+    await draft.updateTable(PRODUCTS, addColor);
+    await draft.writeInvalidViews(PRODUCTS, tableViews(['color', 'missing']));
+
+    return draft;
+  }
+
   async function givenHeadTableWithoutInit(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [ORDERS]: { schema: orderSchema },
@@ -484,5 +700,19 @@ function productFixture() {
   return {
     schema: productSchema,
     rows: { p1: { title: 'one', price: 1 } },
+  };
+}
+
+function tableViews(fields: readonly string[]): TableViewsData {
+  return {
+    version: 1,
+    defaultViewId: 'default',
+    views: [
+      {
+        id: 'default',
+        name: 'All',
+        columns: fields.map((field) => ({ field: `data.${field}` })),
+      },
+    ],
   };
 }

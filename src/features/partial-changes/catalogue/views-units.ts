@@ -1,84 +1,73 @@
 import { deepEqual } from '@revisium/schema-toolkit/lib';
-import type { Row } from 'src/engine-prisma-types';
-import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type { JsonValue } from 'src/engine-prisma-types';
 import {
   type CatalogueTables,
   distinctRows,
 } from 'src/features/partial-changes/catalogue/catalogue-tables';
-import type { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
+import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import { viewsUnitKey } from 'src/features/partial-changes/catalogue/unit-key';
 import {
   publicTableIdOf,
   type TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { TableViewsData } from 'src/features/views/types';
 
-export function buildViewsUnits(
-  tables: CatalogueTables,
-  headViews: HeadViewsMigration,
-): CatalogueUnit[] {
-  return new ViewsUnitsBuilder(tables, headViews).build();
+// A table whose structure changed has no views unit: its views document travels with the structure unit (§3.6).
+export function buildViewsUnits(tables: CatalogueTables): CatalogueUnit[] {
+  return tables.pairs
+    .filter((pair) => hasViewsUnit(pair, tables))
+    .map((pair) => viewsUnitOf(pair, tables));
 }
 
-class ViewsUnitsBuilder {
-  constructor(
-    private readonly tables: CatalogueTables,
-    private readonly headViews: HeadViewsMigration,
-  ) {}
+export function carriesViewsChange(
+  { tableIdentities }: CatalogueUnit,
+  tables: CatalogueTables,
+): boolean {
+  return viewsDiffer(
+    tableIdentities.map((identity) => tables.pairOf(identity)),
+    tables,
+  );
+}
 
-  public build(): CatalogueUnit[] {
-    return this.tables.pairs.flatMap((pair) => {
-      if (!this.hasIndependentViewsEdit(pair)) {
-        return [];
-      }
+// The views document under the Head id in Head against the one under the Draft id in Draft; a side without the table
+// or without a views row has none (§5.2).
+function viewsDiffer(
+  pairs: readonly TablePair[],
+  tables: CatalogueTables,
+): boolean {
+  return !deepEqual(
+    viewsDocumentOn(pairs, 'head', tables),
+    viewsDocumentOn(pairs, 'draft', tables),
+  );
+}
 
-      return [this.viewsUnitOf(pair)];
-    });
-  }
+function hasViewsUnit(pair: TablePair, tables: CatalogueTables): boolean {
+  return (
+    pair.head !== undefined &&
+    pair.draft !== undefined &&
+    !tables.structureOf(pair).differs &&
+    viewsDiffer([pair], tables)
+  );
+}
 
-  private hasIndependentViewsEdit(pair: TablePair): boolean {
-    if (!pair.draft) {
-      return false;
-    }
+function viewsDocumentOn(
+  pairs: readonly TablePair[],
+  side: RevisionSide,
+  tables: CatalogueTables,
+): JsonValue | undefined {
+  return pairs
+    .map((pair) => tables.viewsRowsOf(pair)[side])
+    .find((row) => row !== undefined)?.data;
+}
 
-    const views = this.tables.viewsRowsOf(pair);
+function viewsUnitOf(pair: TablePair, tables: CatalogueTables): CatalogueUnit {
+  const views = tables.viewsRowsOf(pair);
 
-    return !deepEqual(
-      views.draft?.data,
-      this.migratedHeadViewsOf(pair, views.head),
-    );
-  }
-
-  private migratedHeadViewsOf(
-    pair: TablePair,
-    headViews: Row | undefined,
-  ): TableViewsData | undefined {
-    if (!pair.head || !headViews) {
-      return undefined;
-    }
-
-    return this.headViews.migrate(
-      headViews.data as unknown as TableViewsData,
-      pair.head.schema,
-      this.tables.structureOf(pair).pendingHistory,
-    );
-  }
-
-  private viewsUnitOf(pair: TablePair): CatalogueUnit {
-    const views = this.tables.viewsRowsOf(pair);
-    const schema = this.tables.schemaRowsOf(pair);
-
-    return {
-      key: viewsUnitKey(pair.identity),
-      tableIdentities: [pair.identity],
-      rowIdentities: [],
-      systemRows: distinctRows([
-        views.head,
-        views.draft,
-        schema.head,
-        schema.draft,
-      ]),
-      unit: { kind: 'views', tableId: publicTableIdOf(pair) },
-    };
-  }
+  return {
+    key: viewsUnitKey(pair.identity),
+    tableIdentities: [pair.identity],
+    rowIdentities: [],
+    systemRows: distinctRows([views.head, views.draft]),
+    unit: { kind: 'views', tableId: publicTableIdOf(pair) },
+  };
 }

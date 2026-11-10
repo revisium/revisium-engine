@@ -154,7 +154,11 @@ describe('listChanges: structure changes', () => {
 
         const structure = await listedStructureOf(draft, PRODUCTS);
 
-        expect(structure.structureChange).toEqual({ table: 'changed', fields });
+        expect(structure.structureChange).toEqual({
+          table: 'changed',
+          fields,
+          views: false,
+        });
       },
     );
 
@@ -195,7 +199,11 @@ describe('listChanges: structure changes', () => {
 
       const structure = await listedStructureOf(draft, PRODUCTS);
 
-      expect(structure.structureChange).toEqual({ table: 'changed', fields });
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields,
+        views: false,
+      });
     });
 
     it.each<{ change: string; updates: JsonPatch[][]; fields: ChangedField[] }>(
@@ -249,7 +257,11 @@ describe('listChanges: structure changes', () => {
 
       const structure = await listedStructureOf(draft, PRODUCTS);
 
-      expect(structure.structureChange).toEqual({ table: 'changed', fields });
+      expect(structure.structureChange).toEqual({
+        table: 'changed',
+        fields,
+        views: false,
+      });
     });
 
     it.each([
@@ -303,6 +315,7 @@ describe('listChanges: structure changes', () => {
       expect(unitOfKind(units, 'structure').structureChange).toEqual({
         table: 'changed',
         fields: [{ path: '/cover', change: 'changed' }],
+        views: false,
       });
     });
 
@@ -317,6 +330,7 @@ describe('listChanges: structure changes', () => {
       expect(structure.structureChange).toEqual({
         table: 'changed',
         fields: [{ path: '/asset', change: 'changed', from: '/cover' }],
+        views: false,
       });
     });
 
@@ -337,6 +351,7 @@ describe('listChanges: structure changes', () => {
           { path: '/extracted/newTitle', change: 'moved', from: '/title' },
           { path: '/extracted/x', change: 'added' },
         ],
+        views: false,
       });
     });
 
@@ -367,7 +382,7 @@ describe('listChanges: structure changes', () => {
           kind: 'structure',
           tableId: TAGS,
           selector: { structures: [{ tableId: TAGS }] },
-          structureChange: { table: 'created', fields: [] },
+          structureChange: { table: 'created', fields: [], views: false },
         },
       },
       {
@@ -377,7 +392,7 @@ describe('listChanges: structure changes', () => {
           kind: 'structure',
           tableId: CATEGORIES,
           selector: { structures: [{ tableId: CATEGORIES }] },
-          structureChange: { table: 'removed', fields: [] },
+          structureChange: { table: 'removed', fields: [], views: false },
         },
       },
       {
@@ -394,6 +409,7 @@ describe('listChanges: structure changes', () => {
           structureChange: {
             table: 'changed',
             fields: [{ path: '/color', change: 'added' }],
+            views: false,
           },
         },
       },
@@ -413,6 +429,7 @@ describe('listChanges: structure changes', () => {
               { path: '/label', change: 'added' },
               { path: '/title', change: 'removed' },
             ],
+            views: false,
           },
         },
       },
@@ -426,7 +443,7 @@ describe('listChanges: structure changes', () => {
           kind: 'structure',
           tableId: SCRATCH,
           selector: { structures: [{ tableId: SCRATCH }] },
-          structureChange: { table: 'transient', fields: [] },
+          structureChange: { table: 'transient', fields: [], views: false },
         },
       },
     ];
@@ -459,6 +476,7 @@ describe('listChanges: structure changes', () => {
           { path: '/sku', change: 'added' },
           { path: '/variants', change: 'removed' },
         ],
+        views: false,
       });
     });
 
@@ -503,14 +521,14 @@ describe('listChanges: structure changes', () => {
         tableId: NOTES,
         side: 'head',
         selector: { structures: [{ tableId: NOTES, side: 'head' }] },
-        structureChange: { table: 'removed', fields: [] },
+        structureChange: { table: 'removed', fields: [], views: false },
       });
       expect(renamed).toEqual({
         kind: 'structure',
         tableId: NOTES,
         previousTableId: MEMOS,
         selector: { structures: [{ tableId: NOTES }] },
-        structureChange: { table: 'changed', fields: [] },
+        structureChange: { table: 'changed', fields: [], views: false },
       });
       expect(field?.structure).toEqual({
         kind: 'structure',

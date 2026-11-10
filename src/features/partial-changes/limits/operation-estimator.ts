@@ -165,7 +165,7 @@ export class OperationEstimation {
 
   private mixedSystemTables(rules: OutcomeRules): MixedTableEstimate[] {
     return systemTableTargetsOf(this.source, rules)
-      .filter(mayBeMixed)
+      .filter(isMixed)
       .map(systemTableEstimateOf);
   }
 
@@ -215,26 +215,19 @@ function convertedRowsIn(tables: readonly PlannedTable[]): number {
   );
 }
 
-function mayBeMixed(target: SystemTableTarget): boolean {
-  const outcome = systemTableOutcomeOf(
-    target,
-    target.versions,
-    target.rewrites.length > 0,
-  );
-
-  return outcome === 'mixed';
+function isMixed(target: SystemTableTarget): boolean {
+  return systemTableOutcomeOf(target) === 'mixed';
 }
 
 function systemTableEstimateOf(target: SystemTableTarget): MixedTableEstimate {
-  const { tableId, rows, linkSide, versions, rewrites } = target;
+  const { tableId, rows, linkSide, versions } = target;
   const linkedIds = new Set(rows[linkSide].map(({ versionId }) => versionId));
 
   return {
     tableId,
     linksCopied: systemLinksCopied(target),
-    linksAdded:
-      versions.filter(({ versionId }) => !linkedIds.has(versionId)).length +
-      rewrites.length,
+    linksAdded: versions.filter(({ versionId }) => !linkedIds.has(versionId))
+      .length,
   };
 }
 
@@ -243,20 +236,14 @@ function systemLinksCopied({
   linkSide,
   editInPlace,
   versions,
-  rewrites,
 }: SystemTableTarget): number {
   if (editInPlace) {
     return 0;
   }
 
-  const possiblyKept = new Set(
-    [...versions, ...rewrites.map(({ source }) => source)].map(
-      ({ versionId }) => versionId,
-    ),
-  );
+  const kept = new Set(versions.map(({ versionId }) => versionId));
 
-  return rows[linkSide].filter(({ versionId }) => possiblyKept.has(versionId))
-    .length;
+  return rows[linkSide].filter(({ versionId }) => kept.has(versionId)).length;
 }
 
 function needsPerRowWork({ version }: PlannedTable): boolean {

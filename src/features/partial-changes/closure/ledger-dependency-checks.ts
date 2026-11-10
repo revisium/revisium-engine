@@ -81,44 +81,34 @@ class LedgerDependencyChecking implements TargetChecking {
     }
 
     return Promise.resolve(
-      resultingRolesOf(this.source, choice, target.ledger).flatMap((role) => [
-        ...this.refusalsOf(role),
-        ...this.reportedDependentStepsOf(role).flatMap((step) =>
-          this.requirementsOf(step, role, rules),
-        ),
-      ]),
+      resultingRolesOf(this.source, choice, target.ledger).flatMap((role) =>
+        this.findingsOfRole(role, rules),
+      ),
     );
   }
 
-  private refusalsOf(role: ResultingRole): Finding[] {
-    const { replayed } = this.resultingLedgerOf(role.ledger);
+  private findingsOfRole(role: ResultingRole, rules: OutcomeRules): Finding[] {
+    const resulting = this.resultingLedgerOf(role.ledger);
+    const { inconsistencies, refusals } = this.inconsistenciesOfSource().assess(
+      {
+        ...role,
+        replayed: resulting.replayed,
+      },
+    );
+    const reported = new Set(inconsistencies.map(({ lineage }) => lineage));
 
-    return this.inconsistenciesOfSource()
-      .refusalsOf({ ...role, replayed })
-      .map(refusedBy);
+    return [
+      ...refusals.map(refusedBy),
+      ...reportedDependentStepsOf(resulting, reported).flatMap((step) =>
+        this.requirementsOf(step, role, rules),
+      ),
+    ];
   }
 
   private movesPendingMigrations(rules: OutcomeRules): boolean {
     return [...this.unitsWithPendingMigrations].some((unit) =>
       rules.isApplied(unit),
     );
-  }
-
-  private reportedDependentStepsOf(role: ResultingRole): DependentStep[] {
-    const { replayed, dependentSteps, lineagesByStep } = this.resultingLedgerOf(
-      role.ledger,
-    );
-    const reported = new Set(
-      this.inconsistenciesOfSource()
-        .newInconsistenciesOf({ ...role, replayed })
-        .map(({ lineage }) => lineage),
-    );
-
-    return dependentSteps.filter(({ migration }) => {
-      const lineage = lineagesByStep.get(migration.id);
-
-      return lineage !== undefined && reported.has(lineage);
-    });
   }
 
   private inconsistenciesOfSource(): SourceInconsistencies {
@@ -251,6 +241,17 @@ class DependentSteps {
 
     return [{ migration, tableId, dependency: 'occupied' }];
   }
+}
+
+function reportedDependentStepsOf(
+  { dependentSteps, lineagesByStep }: ResultingLedger,
+  reported: ReadonlySet<string>,
+): DependentStep[] {
+  return dependentSteps.filter(({ migration }) => {
+    const lineage = lineagesByStep.get(migration.id);
+
+    return lineage !== undefined && reported.has(lineage);
+  });
 }
 
 function pendingMigrationOwnersOf({

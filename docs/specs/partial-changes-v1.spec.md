@@ -1187,19 +1187,26 @@ natively:
 
 **Steps that need a refused table.** A refused table (§6.10) has no units, so nothing can bring what a step would need
 from its lineage. Validation leaves such lineages out (§6.9 step 3); the closure blocks the plan instead, with the
-refusal code of the table, whenever a resulting ledger fails or differs, where its source role did not, in a lineage
-that validation leaves out:
+refusal code of the table, whenever a resulting ledger fails or differs, where its source role did not (same lineage,
+same first failure), in a slot that validation leaves out:
 
-- a step of the refused table itself, for example its pending `update` that references a table the revert removes;
-- a step that, at its own position, reads only tables that are refused or held only by a refused lineage: an `init`
-  or `update` whose foreign key names a table without a ledger lineage or one whose slot is tainted, or an id that
-  only a pending `rename` of a refused table holds at that step (example 1 with `notes` refused: committing `links`
-  is blocked with the code of `notes`, not with `ledgerInconsistent`).
+- a lineage of the refused table itself, for example its pending `update` that references a table the revert
+  removes, or that the remaining Draft replays after the rename of that table once the renumbering moved it;
+- a slot whose failing step failed only because of refused tables, judged at that step: every read the step cannot
+  resolve there (no table holds the id, or the table holding it failed earlier) and the id it takes when another
+  table holds it there belong to a left-out lineage. An id the resulting ledger does not hold at that step counts by
+  the lineage the source Draft held it with at that step, or, when none held it, as an unledgered table's id. So an
+  `init` or `update` whose foreign key names a table without a ledger lineage or a tainted one, an id that only a
+  pending `rename` of a refused table holds at that step (example 1 with `notes` refused: committing `links` is
+  blocked with the code of `notes`, not with `ledgerInconsistent`), and an id that only such a `rename` vacated are
+  each blocked; an id that a refused lineage held once but another table holds at that step is an ordinary
+  dependency.
 
-So a partial plan never writes a pending migration whose step needs a refused table, and never leaves a new Head table
-refused that was not. A foreign key to a refused table whose own slot replays (a damaged table whose schema row
-differs from its replay, §6.10 (b), with no failed step) is no such need: the step replays, and committing it applies.
-Exactly `{ all: true }` refuses no table, so it is not affected.
+So a partial plan does not write a pending migration whose step newly fails or differs because it needs a refused
+table, and does not make a new Head table refused. A failure that the source role already has is tolerated as for any
+other table. A foreign key to a refused table whose own slot replays (a damaged table whose schema row differs from
+its replay, §6.10 (b), with no failed step) is no such need: the step replays, and committing it applies. Exactly
+`{ all: true }` refuses no table, so it is never blocked this way.
 
 ### 6.7 AssembleTarget
 
@@ -1282,10 +1289,11 @@ Per user table on both sides, with structure side S and the opposite side O:
    tainted slot taints its own. Compare the result with the role's schemas: commit → new Head and remaining Draft (with
    renumbered ids); revert → reverted Draft. A mismatch or failure that the source role does not already have →
    `ledgerInconsistent`. Inconsistencies that exist natively are tolerated, except damaged Head tables (§6.10).
-   Refused tables (§6.10) are left out of the comparison with the lineages that hold them in the source revisions,
-   the ids those lineages held in between included, and so is a failure whose step reads, at that step, only tables
-   left out: only exactly `{ all: true }` can apply their units, and a partial plan that needs them is blocked with
-   their refusal code (§6.6). Exactly `{ all: true }` refuses no table; it leaves out unledgered tables only.
+   Refused tables (§6.10) are left out of the comparison: the lineages that hold them in the source revisions (the
+   broken lineages of an unledgered table), and a slot whose failing step failed only because of them, judged at that
+   step as §6.6 says. Only exactly `{ all: true }` can apply their units; a partial plan that needs them is blocked
+   with their refusal code (§6.6), which validation reports as well. Exactly `{ all: true }` refuses no table: it
+   leaves out unledgered tables and the failures that only they cause.
 4. Validate every merged row against its target schema → `invalidRow`.
 5. Validate every target views document that the operation changes against the target structure of its table, with
    the views owner → `invalidViews`. Views and structure always come from the same side (§3.6), so a failure is a
@@ -1952,9 +1960,12 @@ versions unchanged" (§14) holds in every scenario.
     `needsDraftStructureRevert` (`blockedByDependency` when the table is coupled to a damaged table that is not repaired
     in the same call), nothing is written, and the scan reports the same outcome.
   - AS-47j Ledger steps that need the damaged table (§6.6): committing a table created while the damaged table had
-    another id, and reverting a created table that only pending migrations of the damaged table referenced →
-    `blocked` (`headSchemaInconsistent`), not `ledgerInconsistent`. Committing a created table whose foreign key names
-    the damaged table applies: its slot replays.
+    another id, committing a table created under an id that only a rename of the damaged table vacated, committing a
+    created and renamed table whose earlier id a pending migration of the damaged table references (the remaining
+    Draft would replay it after the rename), and reverting a created table that only pending migrations of the damaged
+    table referenced → `blocked` (`headSchemaInconsistent`) and nothing else, not `ledgerInconsistent`. Committing a
+    created table whose foreign key names the damaged table applies: its slot replays. A table created under an id the
+    damaged table held before a published rename is an ordinary dependency: committing a referrer requires it.
 - AS-48 Ledger attribution: a pending migration that cannot be attributed (SQL fixture), or a Draft schema history
   that does not extend the Head history → every preview, commit and revert is `blocked` (`ledgerInconsistent`).
 - AS-49 Unledgered table (§6.10), with the lineage cases of [async-row-migration-v2] AM-46: a Head table with no
@@ -1966,9 +1977,12 @@ versions unchanged" (§14) holds in every scenario.
   unledgered table is `blocked` (`unledgeredTable`) too: the deletion of a row its Head references while its Draft
   references another, the revert of a created row its Draft references, the rename of a table it references. So is
   a pending migration that needs the unledgered table at its step (§6.6): committing a created table or an `update`
-  whose foreign key names it, or a table created while it had another id. A created table whose foreign key names a
-  table whose Head ledger fails to replay, because that table's `init` read the unledgered table, is `blocked` with
-  that table's `headSchemaInconsistent`. When its other side references the lost row as well, the source dangles and
+  whose foreign key names it, or a table created while it had another id; a created table that also references a
+  created table requires that table and is still `blocked`. A created table whose foreign key names a table whose
+  Head ledger fails to replay, because that table's `init` read the unledgered table, is `blocked` with that table's
+  `headSchemaInconsistent`, also when a committed table comes to reference that table later. An id the unledgered
+  table held in between and a created table takes later is an ordinary dependency. Exactly `{ all: true }` commits
+  these tables as native does. When its other side references the lost row as well, the source dangles and
   the blocker is `danglingInSource`. Not unledgered: a table created in the Draft with its pending `init` (AS-14), and
   a Head table recorded as `init A`, `rename A → B`, although no `init` names `B`. A failed `rename` taints the new
   id's slot: that table fails predicate (b) and is refused with `headSchemaInconsistent`.
@@ -2328,7 +2342,8 @@ Scenarios: AS-10, AS-17, AS-19, AS-45, AS-64 reworded; AS-60c and §13.8 (AS-80 
 Refused tables (§6.6, §6.9, §6.10, AS-47j, AS-49): a ledger step that needs a refused table blocks the plan with the
 table's refusal code. Before, a created table whose `init` read an unledgered or tainted table was committed and then
 refused itself (`headSchemaInconsistent`), and an intermediate rename of a refused table or a step of one gave
-`ledgerInconsistent`. Validation leaves out every refused table's lineage, not only unledgered ones.
+`ledgerInconsistent`. Validation leaves out every refused table's lineage, not only unledgered ones, and judges the
+causes of a failing step by lineage at that step, so an id a refused lineage held once no longer counts.
 
 ### Version 1.3 (2026-11-03)
 

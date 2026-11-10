@@ -35,6 +35,7 @@ const TAGS = 'tags';
 const REVIEWS = 'reviews';
 const ORDERS = 'orders';
 const BRANDS = 'brands';
+const DRAFTS = 'drafts';
 
 const titleSchema = obj({ title: str() });
 const linkSchemaTo = (tableId: string) =>
@@ -129,6 +130,27 @@ const REFUSED_DEPENDENCIES: RefusedDependency[] = [
     given: givenDamagedProductsThatReferencedBrandsOnlyInPendingMigrations,
     operation: 'revert',
     selection: { tables: [BRANDS] },
+    refusal: refusalOf(PRODUCTS, 'headSchemaInconsistent'),
+  },
+  {
+    name: 'a table created under an id that only a rename of a damaged table vacated',
+    given: givenTagsCreatedAsNotesWhileDamagedNotesWasRenamed,
+    operation: 'commit',
+    selection: { tables: [TAGS] },
+    refusal: refusalOf(NOTES, 'headSchemaInconsistent'),
+  },
+  {
+    name: 'a created table that references a table whose Head ledger fails to replay and a table that comes to reference it later',
+    given: givenReviewsOfTaintedProductsAndOfBrandsReferencingThemLater,
+    operation: 'commit',
+    selection: { tables: [REVIEWS, BRANDS] },
+    refusal: refusalOf(PRODUCTS, 'headSchemaInconsistent'),
+  },
+  {
+    name: 'a created and renamed table that a damaged table referenced before the rename, which the remaining Draft would replay after it',
+    given: givenDamagedProductsReferencingBrandsRenamedToKinds,
+    operation: 'commit',
+    selection: { tables: [KINDS] },
     refusal: refusalOf(PRODUCTS, 'headSchemaInconsistent'),
   },
 ];
@@ -537,6 +559,85 @@ describe('DependencyClosure: pending migrations that need a table id another uni
       },
     );
 
+    it('requires a created table and blocks with the refusal when a created table references both it and a table without a ledger lineage', async () => {
+      const draft = await givenReviewsOfUnledgeredProductsAndCreatedBrands(kit);
+
+      const closure = await draft.closeDependencies('commit', {
+        tables: [REVIEWS],
+      });
+
+      expect(closure.required.map(({ unit }) => unit)).toEqual([
+        structureOf(BRANDS),
+      ]);
+      expect(closure.blockers).toEqual([
+        refusalOf(PRODUCTS, 'unledgeredTable'),
+      ]);
+    });
+
+    it.each<{ name: string; given: Given }>([
+      {
+        name: 'a damaged table held it before a rename',
+        given:
+          givenProductsThatReferencedDraftsReusingTheFormerIdOfDamagedNotes,
+      },
+      {
+        name: 'a table without a ledger lineage held it in between',
+        given: givenProductsThatReferencedDraftsReusingAnIdUnledgeredNotesHeld,
+      },
+    ])(
+      'requires the created table that a committed reference names when $name, and applies with it',
+      async ({ given }) => {
+        const draft = await given(kit);
+        const selection = { tables: [PRODUCTS] };
+
+        const closure = await draft.closeDependencies('commit', selection);
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection,
+        });
+        const result = await draft.commitChanges({
+          selection,
+          includeRequired: true,
+          expected: preview.fingerprint,
+        });
+
+        expect(closure.required.map(({ unit }) => unit)).toEqual([
+          structureOf(DRAFTS),
+        ]);
+        expect(closure.blockers).toEqual([]);
+        expect(result.status).toBe('applied');
+        expect(await replayedSchemasOf(draft, 'head')).toMatchObject({
+          [DRAFTS]: expect.any(Object),
+          [PRODUCTS]: expect.any(Object),
+        });
+      },
+    );
+
+    it('commits a table created after a damaged table had another id, next to the steps that need that table', async () => {
+      const draft = await givenLinksCreatedWhileNotesWasRenamed(
+        kit,
+        migratedInPlace(NOTES),
+      );
+      await draft.createTable(TAGS, titleSchema);
+
+      const result = await draft.commitChanges({
+        selection: { tables: [TAGS] },
+      });
+
+      expect(result.status).toBe('applied');
+      expect(await draft.hasTable('head', TAGS)).toBe(true);
+      expect(await draft.hasTable('head', LINKS)).toBe(false);
+    });
+
+    it('commits exactly { all: true } of a created table whose init references a table without a ledger lineage', async () => {
+      const draft = await givenReviewsOfProducts(kit, withoutInit(PRODUCTS));
+
+      const result = await draft.commitChanges({ selection: { all: true } });
+
+      expect(result.status).toBe('applied');
+      expect(await draft.hasTable('head', REVIEWS)).toBe(true);
+    });
+
     it('commits a created table that references a damaged table whose Head ledger still replays', async () => {
       const draft = await givenReviewsOfProducts(
         kit,
@@ -824,4 +925,110 @@ function withoutInit(refusedTableId: string): Committing {
 
     return draft;
   };
+}
+
+async function givenTagsCreatedAsNotesWhileDamagedNotesWasRenamed(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await migratedInPlace(NOTES)(kit, {
+    [NOTES]: { schema: titleSchema, rows: { n1: { title: 'n1' } } },
+  });
+  await draft.renameTable(NOTES, MEMOS);
+  await draft.createTable(NOTES, titleSchema);
+  await draft.renameTable(NOTES, TAGS);
+  await draft.renameTable(MEMOS, NOTES);
+
+  return draft;
+}
+
+async function givenReviewsOfTaintedProductsAndOfBrandsReferencingThemLater(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await withoutInit(CATEGORIES)(kit, {
+    [CATEGORIES]: { schema: titleSchema },
+    [PRODUCTS]: { schema: linkSchemaTo(CATEGORIES) },
+    [BRANDS]: { schema: titleSchema },
+  });
+  await draft.createTable(
+    REVIEWS,
+    obj({
+      title: str(),
+      product: str({ foreignKey: PRODUCTS }),
+      brand: str({ foreignKey: BRANDS }),
+    }),
+  );
+  await draft.updateTable(BRANDS, [targetIn(PRODUCTS)]);
+
+  return draft;
+}
+
+async function givenDamagedProductsReferencingBrandsRenamedToKinds(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await migratedInPlace(PRODUCTS)(kit, {
+    [PRODUCTS]: { schema: titleSchema },
+  });
+  await draft.createTable(BRANDS, titleSchema);
+  await draft.updateTable(PRODUCTS, [targetIn(BRANDS)]);
+  await draft.renameTable(BRANDS, KINDS);
+
+  return draft;
+}
+
+async function givenReviewsOfUnledgeredProductsAndCreatedBrands(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await withoutInit(PRODUCTS)(kit, {
+    [PRODUCTS]: { schema: titleSchema },
+  });
+  await draft.createTable(BRANDS, titleSchema);
+  await draft.createTable(
+    REVIEWS,
+    obj({
+      title: str(),
+      product: str({ foreignKey: PRODUCTS }),
+      brand: str({ foreignKey: BRANDS }),
+    }),
+  );
+
+  return draft;
+}
+
+async function givenProductsThatReferencedDraftsReusingTheFormerIdOfDamagedNotes(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [DRAFTS]: { schema: titleSchema },
+    [PRODUCTS]: { schema: titleSchema },
+  });
+  await draft.renameTable(DRAFTS, NOTES);
+  await draft.commit();
+  await completeAsyncMigrationInPlace(kit, draft, NOTES, [
+    addField('color', str()),
+  ]);
+  await givenProductsReferencedCreatedDraftsOnlyInPendingMigrations(draft);
+
+  return draft;
+}
+
+async function givenProductsThatReferencedDraftsReusingAnIdUnledgeredNotesHeld(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await withoutInit(NOTES)(kit, {
+    [NOTES]: { schema: titleSchema },
+    [PRODUCTS]: { schema: titleSchema },
+  });
+  await draft.renameTable(NOTES, DRAFTS);
+  await draft.renameTable(DRAFTS, NOTES);
+  await givenProductsReferencedCreatedDraftsOnlyInPendingMigrations(draft);
+
+  return draft;
+}
+
+async function givenProductsReferencedCreatedDraftsOnlyInPendingMigrations(
+  draft: ChangesScenario,
+): Promise<void> {
+  await draft.createTable(DRAFTS, titleSchema);
+  await draft.updateTable(PRODUCTS, [targetIn(DRAFTS)]);
+  await draft.updateTable(PRODUCTS, [removeField('target')]);
 }

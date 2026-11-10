@@ -34,6 +34,10 @@ export class TableIdTimeline {
     });
   }
 
+  public includes(step: Migration): boolean {
+    return this.positions.has(step.id);
+  }
+
   public lastChangeBefore(
     step: Migration,
     tableId: string,

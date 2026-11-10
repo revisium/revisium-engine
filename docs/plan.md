@@ -60,4 +60,5 @@ Status: not reached. No partial operation is released before the gate holds:
 
 ### Open questions
 
-Questions 2 and 3 of [SPEC §17](specs/partial-changes-v1.spec.md#17-open-questions) are decided during stage 0.
+Question 2 of [SPEC §17](specs/partial-changes-v1.spec.md#17-open-questions) is still open; question 3 was decided on
+2026-11-01.

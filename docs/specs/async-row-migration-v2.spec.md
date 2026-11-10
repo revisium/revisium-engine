@@ -714,7 +714,7 @@ fixtures repeating the old in-place swap, asserted first. Recovery scenarios ass
 
 ## 12. Delivery
 
-Landed prerequisites: #85–#92 (Overview). Each PR updates the engine's `docs/migration.md`.
+Landed prerequisites: #85–#93, #119, #128 (Overview). Each PR updates the engine's `docs/migration.md`.
 
 | PR | Content | Depends on | Done when |
 | --- | --- | --- | --- |
@@ -723,7 +723,7 @@ Landed prerequisites: #85–#92 (Overview). Each PR updates the engine's `docs/m
 | 3 | Start: lock check inside the fenced transaction and one per revision, schema validation parity, ledger availability and imported-id check, trigger errors (§3.3). | 1 | AM-30, AM-31, AM-33, AM-43, AM-44. |
 | 4 | Batch row validation, file references, explicit timeout (§3.4). | 1, 2 | AM-34–AM-36. |
 | 5 | `applyMigrations` drive and observe (§4). | 2, 3, 4 | AM-37–AM-42, AM-45. |
-| 6 | Swap fence admission (shared, without the lock check); the `exclusiveHeld` admission mode (§3.9). | 2; fence part 2 for the mode | Shared fence asserted in AM-15; AM-32 once part 2 exists. |
+| 6 | Swap fence admission (shared, without the lock check); the `exclusiveHeld` admission mode (§3.9). | 2; fence part 2 for the mode | Shared fence asserted in AM-15; AM-32 (#128). |
 | 7 | Ledger replay with identity and schema passes (§5.1; #93). | — | Its slot, lineage, self-reference, atomicity and taint tests. |
 | 8 | Repair planner, read-only, including coupling, combined verification and rejection, data and foreign-key row validation and the fingerprint (§6.2–§6.3). | 7, 4 (shared row validation) | AM-55, AM-56, AM-58, AM-60, the planning part of AM-61–AM-63. |
 | 9 | Scan (§5). | 7, 8 | AM-46–AM-49. |

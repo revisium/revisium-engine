@@ -20,7 +20,8 @@ export class MyService {
 }
 ```
 
-`EngineApiService` is a flat facade over all engine services. See [api.md](api.md) for the full method reference.
+`EngineApiService` is a facade over all engine services: flat methods, plus the Draft changes operations in its
+`changes` namespace ([Draft Changes](api.md#draft-changes)). See [api.md](api.md) for the full method reference.
 
 If you prefer module-level composition instead of the unified facade, `FileUsageModule` and `FileUsageApiService` are also exported from `@revisium/engine`.
 

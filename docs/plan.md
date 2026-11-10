@@ -9,7 +9,7 @@ Design: Accepted on 2026-10-31.
 | [REQ-001](requirements/REQ-001-partial-commit-and-revert.md) | Accepted |
 | [ADR-001](adr/ADR-001-partial-commit-and-revert.md) | Accepted; amended by ADR-002 |
 | [ADR-002](adr/ADR-002-draft-reads-and-public-changes-api.md) | Accepted (2026-11-10): the public API revision and the Draft reads |
-| [partial-changes-v1](specs/partial-changes-v1.spec.md) | Accepted; v2.0 (the API revision) implemented (ADR-002 PRs 1–7 and 12) |
+| [partial-changes-v1](specs/partial-changes-v1.spec.md) | Accepted; v2.0 (the API revision) implemented (ADR-002 PRs 1–7, 12 and 13) |
 | [draft-reads-v1](specs/draft-reads-v1.spec.md) | Accepted; implemented: the table reads, the summary, the row items, id takeovers, id exchanges, followed renames and row filters (#177, #179, #180, PR 11); on the facade since ADR-002 PR 12 (#145) |
 | [async-row-migration-v2](specs/async-row-migration-v2.spec.md) | Accepted |
 | [schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md) | Accepted |
@@ -22,11 +22,11 @@ The stages run in the order 0–4; stages 1–3 may be developed in parallel wit
 
 | Stage | Work | Status | Design |
 | --- | --- | --- | --- |
-| 0 | Native prerequisites | Must items done; one should item and the release gate open | [SPEC §12](specs/partial-changes-v1.spec.md#12-native-prerequisites-stage-0) |
+| 0 | Native prerequisites | Must items and the release gate done; one should item open | [SPEC §12](specs/partial-changes-v1.spec.md#12-native-prerequisites-stage-0) |
 | 1 | Partial revert, `listChanges`, `previewChanges`, Head schema check | Done (#104, #125, #129, #133) | [SPEC §5.2](specs/partial-changes-v1.spec.md#52-listchanges), [§5.3](specs/partial-changes-v1.spec.md#53-previewchanges), [§5.5](specs/partial-changes-v1.spec.md#55-revertchanges), [§6.10](specs/partial-changes-v1.spec.md#610-checkheadschema), [§6.14](specs/partial-changes-v1.spec.md#614-writerevert) |
 | 2 | Partial commit of data units | Done (#130, #137) | [SPEC §5.4](specs/partial-changes-v1.spec.md#54-commitchanges), [§6.13](specs/partial-changes-v1.spec.md#613-writecommit) |
 | 3 | Partial commit of structure units, ledger renumbering, replica guarantee | Done (#142, #144) | [SPEC §6.8](specs/partial-changes-v1.spec.md#68-planledger), [§10](specs/partial-changes-v1.spec.md#10-migration-history-and-replicas) |
-| 4 | Public API, CLI and MCP | In progress: the API revision, the Draft reads and the engine facade are done ([ADR-002, Delivery](adr/ADR-002-draft-reads-and-public-changes-api.md#delivery), PRs 1–12: PR 1 in #175, PR 2 in #178, PR 3 in #181, PR 4 in #184, PR 5 in #185, PR 6 in #186, PR 7 in #187; PR 8, the table reads and the summary, in #177; PR 9, the row items, in #179; PR 10, id takeovers, id exchanges and followed renames, in #180; PR 11, the row filters, implemented; PR 12, the facade and the package exports, in #145); `docs/api.md` (PR 13) remains | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports), [draft-reads-v1](specs/draft-reads-v1.spec.md) |
+| 4 | Public API, CLI and MCP | In progress: the engine part is done: the API revision, the Draft reads, the engine facade and its documentation ([ADR-002, Delivery](adr/ADR-002-draft-reads-and-public-changes-api.md#delivery), PRs 1–13: PR 1 in #175, PR 2 in #178, PR 3 in #181, PR 4 in #184, PR 5 in #185, PR 6 in #186, PR 7 in #187; PR 8, the table reads and the summary, in #177; PR 9, the row items, in #179; PR 10, id takeovers, id exchanges and followed renames, in #180; PR 11, the row filters, implemented; PR 12, the facade and the package exports, in #145; PR 13, `docs/api.md`, in #188); the host transports (GraphQL, REST, MCP) are not started; stabilization and the review of the whole epic remain | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports), [draft-reads-v1](specs/draft-reads-v1.spec.md) |
 
 ### Stage 0 items
 
@@ -41,15 +41,14 @@ Each item is delivered by its own pull requests, in this order.
 | Table copy-on-write by `INSERT … SELECT` | Must | Done (#85) |
 | `applyMigrations` waits for the async migration ([async SPEC §4](specs/async-row-migration-v2.spec.md#4-applymigrations-above-the-threshold)) | Must | Done (#115) |
 | Async migration fix ([async-row-migration-v2 §3](specs/async-row-migration-v2.spec.md#3-the-fixed-async-migration)) | Must | Done (cleanup: #90, state machine: #97, recovery: #102, atomic swap: #105, guarded start: #109, batches: #112, applyMigrations: #115, exclusive fence: #128) |
-| Detection scan ([async-row-migration-v2 §5](specs/async-row-migration-v2.spec.md#5-detection-scan-scanschemaledger)) | Must | Done (#124, #126, #127); host exposure with the release gate |
-| Forward-only repair tool ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger)) | Must | Done (planner: #118, #121; write: #131); host exposure with the release gate |
-| Schema ledger backfill ([schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md)) | Must | Done (SPEC: #169; planning: #172; write: #173; docs: #176); host exposure with the release gate |
+| Detection scan ([async-row-migration-v2 §5](specs/async-row-migration-v2.spec.md#5-detection-scan-scanschemaledger)) | Must | Done (#124, #126, #127); host exposure with the host transports (stage 4) |
+| Forward-only repair tool ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger)) | Must | Done (planner: #118, #121; write: #131); host exposure with the host transports (stage 4) |
+| Schema ledger backfill ([schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md)) | Must | Done (SPEC: #169; planning: #172; write: #173; docs: #176); host exposure with the host transports (stage 4) |
 | Branch write fence | Must | Done (shared: #92, exclusive escalation: #119) |
 | `createRevision` locking without scanning readonly rows | Should | Done (#91) |
 | Formulas compiled once per schema | Should | Not started |
 | Set-based file registration | Should | Done (#94) |
 | Conservative configurable limits and operation logs, instead of a re-measurement on production-like hardware ([SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration)) | Gate | Done (#183) |
-| Scan run on existing deployments, results reviewed | Gate | Not started |
 
 Acceptance scenarios for every stage: [SPEC §13](specs/partial-changes-v1.spec.md#13-acceptance-scenarios).
 After stages 1–3, an audit of master (2026-11-08) led to #162–#167: input types, database errors in lookups, the
@@ -57,10 +56,13 @@ fingerprint, and tests for AS-36, AS-38, AS-39, AS-41 and AS-54.
 
 ### Release gate
 
-Status: not reached. No partial operation is released before the gate holds:
+Status: every gate item is done in code. No partial operation is released before the gate holds:
 [ADR-001, Delivery stages](adr/ADR-001-partial-commit-and-revert.md#delivery-stages),
 [SPEC §12](specs/partial-changes-v1.spec.md#12-native-prerequisites-stage-0) (release gate) and
-[SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration) (limits and operation logs).
+[SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration) (limits and operation logs). The scan run on
+existing deployments was dropped from the gate on 2026-11-08: no production table has reached the async-migration
+threshold, so no async-migration damage exists to review; the scan and the repair stay available. The operations are
+on the facade on master and not released; the release follows the stabilization and the review of the whole epic.
 
 ### Open questions
 

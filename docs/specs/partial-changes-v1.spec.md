@@ -834,14 +834,15 @@ added (§6.9).
   `revertChanges` notifies for the Draft after its transaction. A partial commit changes what revision X contains
   (from Draft content to the assembled Head) and creates a new Draft, so after the transaction it notifies for X and
   for the new Draft (§6.13); a partial revert notifies for the Draft after the transaction (§6.14). Both call the
-  engine's internal `notifyEndpoints` hook, as the native writers do. The hook is a no-op in the engine package and a
-  host cannot replace it: `EngineModuleOptions` has no option for it and the package does not export it. A host
-  therefore does the endpoint work itself after the call returns, as revisium-core does after
-  native `createRevision`: after an applied commit it moves the endpoints bound to the former Draft
-  (`headRevisionId`) to the new Draft (`draftRevisionId`) and those bound to `previousHeadRevisionId` to
-  `headRevisionId`, drops what it caches for those revisions, and refreshes the moved endpoints; after an applied
-  revert it refreshes the endpoints bound to `draftRevisionId`, as after native `revertChanges`. A failure there does
-  not undo the operation, which is already committed.
+  engine's internal `notifyEndpoints` hook, as the native writers do. The hook is a no-op in the engine package, with
+  no supported way to replace it: `EngineModuleOptions` has no option for it and the package does not export it. A
+  host therefore does the endpoint work itself after the call returns, as revisium-core does after native
+  `createRevision`: after an applied commit it moves, in one transaction and in this order, the endpoints bound to the
+  former Draft (`headRevisionId`) to the new Draft (`draftRevisionId`), then those bound to `previousHeadRevisionId`
+  to `headRevisionId` (the other order, or repeating the moves after they committed, would carry the Head endpoints
+  on to the Draft); then it drops what it caches for those revisions and refreshes the moved endpoints. After an
+  applied revert it refreshes the endpoints bound to `draftRevisionId`, as after native `revertChanges`. A failure
+  there does not undo the operation, which is already committed.
 
 **Exported names.** The package exports the types of §5.11 and of draft-reads-v1 §9 under these names. Names that
 would clash with native diff payloads or read as generic nouns are qualified: the structure classifications are
@@ -1788,8 +1789,8 @@ the engine's NestJS logger): `log` when it returns, `warn` when it throws. The e
 | `error`, `errorCode` | Only on `warn`: the error's name and its code (an engine code such as `OPERATION_TIMEOUT`, or a database code such as `P2034`). |
 
 An entry never holds row data, values, selectors or an error message, since a message can quote them. The
-endpoint notification after a commit or revert is outside the entry: a failing notification is the caller's error,
-not the operation's outcome. Logging is best effort: a logger that throws changes neither the result nor the error the
+endpoint notification after a commit or revert (the internal hook, a no-op in this package) is outside the entry: a
+failing notification is the caller's error, not the operation's outcome. Logging is best effort: a logger that throws changes neither the result nor the error the
 caller gets.
 
 ## 12. Native prerequisites (stage 0)

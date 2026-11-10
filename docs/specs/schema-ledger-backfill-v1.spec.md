@@ -184,8 +184,8 @@ exclusive holder (partial-changes §8.4). The attempt cap and timeout are those 
 
 After the transaction commits, endpoints of the new Head and the new Draft are notified, as partial-changes §6.13 step
 8 says, through the engine's internal no-op hook. A `backfilled` result is a commit for the host: it moves and
-refreshes endpoints as after an applied partial commit (partial-changes §5.10). Nothing is notified for a rolled-back attempt, a dry run, `notNeeded` or `refused`. A caller that repeats a
-call whose response was lost gets `notNeeded`.
+refreshes endpoints as after an applied partial commit (partial-changes §5.10). Nothing is notified for a rolled-back
+attempt, a dry run, `notNeeded` or `refused`. A caller that repeats a call whose response was lost gets `notNeeded`.
 
 A Head without user tables gets an empty migration table: `backfilled` with `entries: []`. The scan does not report such
 a branch (`LedgerScan.tablesOf` returns nothing for a revision without user tables), but without the table every table

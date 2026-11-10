@@ -384,7 +384,7 @@ describe('draft changes summary', () => {
       );
     });
 
-    it('raises the native not-found error for an unknown branch', async () => {
+    it('raises the native lookup error for an unknown branch', async () => {
       const draft = await givenCommittedProducts();
 
       await expect(

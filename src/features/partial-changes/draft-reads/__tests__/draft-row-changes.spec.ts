@@ -1189,7 +1189,7 @@ describe('draft row changes', () => {
       expect(page).toEqual(await draft.readDraftRowChanges({ first: 10 }));
     });
 
-    it('raises the native not-found error for an unknown branch', async () => {
+    it('raises the native lookup error for an unknown branch', async () => {
       const draft = await givenCommittedProducts();
 
       await expect(

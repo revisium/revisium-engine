@@ -893,16 +893,24 @@ list types, and how a typed transport maps the unions:
   native `createRevision` and `revertChanges`, and writes audit records for `applied` results only. The proposed
   names of the GraphQL, REST and MCP operations:
   [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports).
-- **Endpoints.** The engine tells a host nothing: its internal endpoint hook does nothing in this package, and a
-  host cannot replace it (`EngineModuleOptions` has no option for it). A host that serves endpoints by revision does
-  the work itself after the call returns, as after the native operations:
-  - after an `applied` commit, the same follow-up as after native `createRevision`, because a commit moves the Head
-    and the Draft to other revisions: `headRevisionId` is the former Draft revision, now the Head, and
-    `draftRevisionId` is a new Draft. Move the endpoints bound to `headRevisionId` to `draftRevisionId` and those
-    bound to `previousHeadRevisionId` to `headRevisionId`, drop what you cache for those revisions, then refresh the
-    moved endpoints;
-  - after an `applied` revert, refresh the endpoints bound to `draftRevisionId` (the Draft keeps its id), as after
-    native `revertChanges`.
+- **Endpoints.** The engine tells a host nothing: its internal endpoint hook does nothing in this package, and there
+  is no supported way to replace it (`EngineModuleOptions` has no option for it, and the package does not export
+  it). A host that serves endpoints by revision does the work itself after the call returns, as after the native
+  operations:
+  - after an `applied` `changes.commit` or a `backfilled` [`backfillSchemaLedger`](#backfillschemaledger), the same
+    follow-up as after native `createRevision`, because both move the Head and the Draft to other revisions:
+    `headRevisionId` is the former Draft revision, now the Head, and `draftRevisionId` is a new Draft. In one
+    transaction and in this order, move the endpoints bound to `headRevisionId` to `draftRevisionId`, then those
+    bound to `previousHeadRevisionId` to `headRevisionId`; the other order, or repeating the moves after they
+    committed, would carry the Head endpoints on to the Draft. Then drop what you cache for those revisions and
+    refresh the moved endpoints;
+  - after an `applied` `changes.revert`, refresh the endpoints bound to `draftRevisionId` (the Draft keeps its id),
+    as after native `revertChanges`;
+  - after a [`repairSchemaLedger`](#repairschemaledger) call with `dryRun: false` that returns a table with the
+    outcome `repaired`, refresh the endpoints bound to `draftRevisionId`;
+  - after an async migration swap, refresh the Draft's endpoints once you see the migration finished
+    (`getMigrationStatus` returns `null`, or `applyMigrations` returned): the swap changes the Draft's schema and
+    rows, and nothing tells the host when it commits.
 
   A failure there does not undo the operation, which is already committed.
 - **Limits.** Each operation reads only the tables its selection affects (`all: true` reads every table) and refuses
@@ -1290,9 +1298,9 @@ engine.repairSchemaLedger({
 }>
 ```
 
-Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. A repair that writes
-changes the Draft, so the host refreshes the Draft's endpoints after it, as after a native Draft write. Outcomes:
-`REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. See
+Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. A call with
+`dryRun: false` that returns a `repaired` table has changed the Draft, so the host refreshes the Draft's endpoints
+([Host integration](#host-integration)). Outcomes: `REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. See
 [How is the schema ledger repaired?](migration.md#how-is-the-schema-ledger-repaired)
 
 ### backfillSchemaLedger

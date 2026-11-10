@@ -215,11 +215,12 @@ in a later statement (`:511-520`), so a crash in between makes recovery rewrite 
 5. Migrate the views row through the synchronous views writer with copy-on-write (`update-table.handler.ts:232-291`).
 6. Set `hasChanges`; delete the record, requiring exactly one deleted row with the token.
 
-After the commit the worker notifies endpoints for the Draft (as `api-update-table.handler.ts:70`); a notification error
-is logged and does not repeat or fail the swap. The hook is the engine's internal no-op, which a host cannot replace
-(partial-changes §5.10), so a host is not told when a swap commits: it sees the finished swap through
-`getMigrationStatus` (`null` after success) or when `applyMigrations` returns. The swap is idempotent: change and deletion commit together, and a lost
-acknowledgement leaves no record to repeat. **Caller observes:** the Draft ledger gains the `update`, the Draft history
+After the commit the worker notifies endpoints for the Draft (as `api-update-table.handler.ts:72`); a notification error
+is logged and does not repeat or fail the swap. The hook is the engine's internal no-op, with no supported way to
+replace it (partial-changes §5.10), so a host is not told when a swap commits: it sees the finished swap through
+`getMigrationStatus` (`null` after success) or when `applyMigrations` returns, and then refreshes the Draft's endpoints
+itself. The swap is idempotent: change and deletion commit together, and a lost acknowledgement leaves no record to
+repeat. **Caller observes:** the Draft ledger gains the `update`, the Draft history
 its entry; the Head and earlier revisions keep their rows; `getMigrationStatus` returns `null` after success, as today;
 a failed re-check leaves `FAILED` with its code.
 
@@ -505,9 +506,10 @@ One Serializable transaction through the native runner, with the migration-lock 
    Draft history extends its Head history, and replaying the stored ledger reproduces the Draft schemas of the written
    tables. A failure rolls back and raises an error (a defect, not an outcome).
 
-After the commit, endpoints of the Draft are notified through the same no-op hook; after `repaired` the host refreshes
-the Draft's endpoints itself. Rows are not revalidated inside the transaction (JSON validation
-of a large table would exceed `TRANSACTION_TIMEOUT`); the fingerprint proves the validated input unchanged. A second run
+After the commit, endpoints of the Draft are notified through the same no-op hook; after a call that wrote a repair
+(`dryRun: false` and a `repaired` table) the host refreshes the Draft's endpoints itself. Rows are not revalidated
+inside the transaction (JSON validation of a large table would exceed `TRANSACTION_TIMEOUT`); the fingerprint proves
+the validated input unchanged. A second run
 plans `alreadyRepaired`; after a commit publishes the repair, `notDamaged`.
 
 ## 7. Ledger backfill and row remediation
@@ -788,7 +790,8 @@ async swap can still rewrite committed rows during the scan.
 
 ### Version 2.4 (2026-11-10)
 
-- §3.5, §6.4, §9: the endpoint hook is the engine's internal no-op that a host cannot replace. A host is not told when
-  an async swap commits; after `repaired` it refreshes the Draft's endpoints itself.
+- §3.5, §6.4, §9: the endpoint hook is the engine's internal no-op, with no supported way to replace it. A host is
+  not told when an async swap commits and refreshes the Draft's endpoints once it sees the swap finished; after a
+  written repair it refreshes them too.
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

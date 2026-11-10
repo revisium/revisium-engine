@@ -144,7 +144,7 @@ export class LimitedDraftApiService {
 ## Adding Events / Notifications
 
 The engine does not emit events. To add event-driven behavior (e.g. cache invalidation, endpoint notifications, webhooks), wrap service calls.
-The engine's internal endpoint hook does nothing in this package and cannot be replaced, so a host refreshes its endpoints after the call returns; what to do after a commit or a revert of Draft changes is in [api.md](api.md#host-integration).
+The engine's internal endpoint hook does nothing in this package and there is no supported way to replace it, so a host refreshes its endpoints itself; [api.md](api.md#host-integration) lists what to do after a partial commit or revert, a ledger backfill or repair, and an async migration swap.
 
 ```typescript
 @Injectable()

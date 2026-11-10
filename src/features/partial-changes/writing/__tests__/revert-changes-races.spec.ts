@@ -129,7 +129,7 @@ describe('revertChanges racing other writers', () => {
       expect(overtaken).toMatchObject({
         status: 'applied',
         applied: { selected: 1, required: 0 },
-        remaining: { units: 1 },
+        draftHasChanges: true,
       });
       await expectDraftData(draft, 'p1', { title: 'one', price: 10 });
       await expectDraftData(draft, 'p2', { title: 'two', price: 2 });

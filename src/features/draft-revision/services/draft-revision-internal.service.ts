@@ -65,7 +65,7 @@ export class DraftRevisionInternalService {
   public async updateHasChanges(
     revisionId: string,
     parentRevisionId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const hasChanges = await this.diffService.hasTableDiffs({
       fromRevisionId: parentRevisionId,
       toRevisionId: revisionId,
@@ -75,6 +75,8 @@ export class DraftRevisionInternalService {
       where: { id: revisionId },
       data: { hasChanges },
     });
+
+    return hasChanges;
   }
 
   public async findRevisionOrThrow(revisionId: string) {

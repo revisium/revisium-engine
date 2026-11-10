@@ -124,6 +124,36 @@ describe('Draft row reads over random Drafts', () => {
   );
 
   it.each(RANDOM_DRAFT_SEEDS)(
+    'covers in a preview that selects the table data of a table the rows its table data counts, all applied (DR-05, AS-88, seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const tables = (await readEveryTable(draft)).filter(
+        (table) => tableDataRowsOf(table) > 0,
+      );
+
+      for (const table of tables) {
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection: { tableData: [table.tableId] },
+        });
+        const covered = preview.coverage.find(
+          ({ tableId, side }) => tableId === table.tableId && !side,
+        );
+
+        expect([table.tableId, covered]).toEqual([
+          table.tableId,
+          expect.objectContaining({
+            rows: tableDataRowsOf(table),
+            appliedRows: tableDataRowsOf(table),
+            partlyAppliedRows: 0,
+          }),
+        ]);
+      }
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it.each(RANDOM_DRAFT_SEEDS)(
     'lists under each row filter exactly the unfiltered items it matches, with their units and links, on every page size (DR-15, DR-16, seed %i)',
     async (seed) => {
       const draft = await givenRandomDraft(kit, seed);

@@ -42,7 +42,7 @@ describe('PartialOperationLog', () => {
         trace.attempted(false);
         trace.attempted(false);
         trace.attempted(true);
-        trace.planned({ ...PLANNED, refusedByLimit: false });
+        trace.planned({ ...PLANNED, planned: true });
 
         return Promise.resolve({ status: 'applied' });
       });
@@ -86,7 +86,7 @@ describe('PartialOperationLog', () => {
       await expect(
         new PartialOperationLog().track('commit', BRANCH, (trace) => {
           trace.attempted(false);
-          trace.planned({ ...PLANNED, refusedByLimit: true });
+          trace.planned({ ...PLANNED, planned: false });
           trace.attempted(false);
 
           return Promise.reject(new OperationTimeoutException(5));
@@ -121,7 +121,7 @@ describe('PartialOperationLog', () => {
       await new PartialOperationLog().track('preview', BRANCH, (trace) => {
         trace.planned({
           ...PLANNED,
-          refusedByLimit: true,
+          planned: false,
           estimate: {
             changedRows: 9,
             mergedRows: 2,

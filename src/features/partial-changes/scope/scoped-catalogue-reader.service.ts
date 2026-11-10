@@ -16,7 +16,6 @@ import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/com
 
 interface ScopeCounts {
   readonly changedRowCount: number;
-  readonly unreadTables: number;
 }
 
 export type ScopedCatalogue =
@@ -67,7 +66,6 @@ export class ScopedCatalogueReader {
       changedRowCount: await this.snapshotReader.countChangedRows(
         scope.affectedTables,
       ),
-      unreadTables: scope.unreadTables,
     };
   }
 

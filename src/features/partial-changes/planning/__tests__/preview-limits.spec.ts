@@ -4,6 +4,8 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
+import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
@@ -29,6 +31,10 @@ const orderSchema = obj({
 });
 
 const titleOfP1: FieldRef = { tableId: PRODUCTS, rowId: 'p1', path: '/title' };
+const CHANGED_ROWS_TOO_LARGE =
+  'The affected tables hold 4 changed rows; the limit for one operation is 3';
+const PER_ROW_WORK_TOO_LARGE =
+  'The operation merges 2 rows that need per-row work (formula fields or file registration); the limit for one operation is 1';
 const priceOf = (rowId: string): FieldRef => ({
   tableId: ORDERS,
   rowId,
@@ -51,7 +57,7 @@ describe('previewChanges refused by a limit', () => {
   });
 
   it.each(OPERATIONS)(
-    'blocks a %s with tooLarge and an empty fingerprint before the catalogue when the affected tables hold more changed rows than the limit',
+    'stops a %s with tooLarge before the catalogue when the affected tables hold more changed rows than the limit, returning no value of the plan (AS-87)',
     async (operation) => {
       const draft = await givenEditedProducts();
 
@@ -62,23 +68,18 @@ describe('previewChanges refused by a limit', () => {
 
       expect(preview).toEqual<PreviewChangesResult>({
         status: 'blocked',
+        planned: false,
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
-        fingerprint: '',
-        counts: { selected: 0, required: 0, remaining: 0 },
-        unreadTables: 0,
+        fingerprint: null,
+        counts: null,
+        coverage: [],
         refusedTables: [],
         required: [],
-        blockers: [
-          {
-            code: 'tooLarge',
-            message:
-              'The affected tables hold 4 changed rows; the limit for one operation is 3',
-          },
-        ],
+        blockers: [{ code: 'tooLarge', message: CHANGED_ROWS_TOO_LARGE }],
         deferred: [],
         sample: [],
-        unmatched: {},
+        unmatched: null,
         estimate: {
           changedRows: 4,
           mergedRows: 0,
@@ -90,7 +91,7 @@ describe('previewChanges refused by a limit', () => {
   );
 
   it.each(OPERATIONS)(
-    'blocks a %s with tooLarge and an empty fingerprint when its merges need more per-row work than the limit',
+    'stops a %s with tooLarge in the closure when its merges need more per-row work than the limit, returning no value of what the closure found (AS-87)',
     async (operation) => {
       const draft = await givenTwoEditedOrders();
 
@@ -99,22 +100,90 @@ describe('previewChanges refused by a limit', () => {
         selection: { fields: [priceOf('o1'), priceOf('o2')] },
       });
 
-      expect(preview).toMatchObject({
+      expect(preview).toEqual<PreviewChangesResult>({
         status: 'blocked',
-        fingerprint: '',
-        counts: { selected: 2, required: 0, remaining: 2 },
-        blockers: [
-          {
-            code: 'tooLarge',
-            message:
-              'The operation merges 2 rows that need per-row work (formula fields or file registration); the limit for one operation is 1',
-          },
-        ],
+        planned: false,
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        fingerprint: null,
+        counts: null,
+        coverage: [],
+        refusedTables: [],
+        required: [],
+        blockers: [{ code: 'tooLarge', message: PER_ROW_WORK_TOO_LARGE }],
         deferred: [],
-        estimate: { changedRows: 2, mergedRows: 2, perRowWorkRows: 2 },
+        sample: [],
+        unmatched: null,
+        estimate: {
+          changedRows: 2,
+          mergedRows: 2,
+          perRowWorkRows: 2,
+          mixedTables: [
+            {
+              tableId: ORDERS,
+              linksCopied: operation === 'commit' ? 2 : 0,
+              linksAdded: 2,
+            },
+          ],
+        },
       });
     },
   );
+
+  it.each(OPERATIONS)(
+    'returns no unmatched selectors of a %s stopped by a limit, though a selector matches nothing (AS-87)',
+    async (operation) => {
+      const draft = await givenEditedProducts();
+
+      const preview = await draft.previewChanges({
+        operation,
+        selection: {
+          fields: [titleOfP1],
+          rows: [{ tableId: PRODUCTS, rowId: 'missing' }],
+        },
+      });
+
+      expect(preview).toMatchObject({
+        status: 'blocked',
+        planned: false,
+        unmatched: null,
+        blockers: [{ code: 'tooLarge' }],
+      });
+    },
+  );
+
+  it('blocks a commit stopped by a limit with planned: false, no required additions and no unmatched selectors (AS-87)', async () => {
+    const draft = await givenTwoEditedOrders();
+
+    const result = await draft.commitChanges({
+      selection: { fields: [priceOf('o1'), priceOf('o2')] },
+    });
+
+    expect(result).toEqual<CommitChangesResult>({
+      status: 'blocked',
+      planned: false,
+      blockers: [{ code: 'tooLarge', message: PER_ROW_WORK_TOO_LARGE }],
+      required: [],
+    });
+  });
+
+  it('blocks a revert stopped by a limit with planned: false, no required additions and no unmatched selectors (AS-87)', async () => {
+    const draft = await givenEditedProducts();
+
+    const result = await draft.revertChanges({
+      selection: {
+        fields: [titleOfP1],
+        rows: [{ tableId: PRODUCTS, rowId: 'missing' }],
+      },
+    });
+
+    expect(result).toEqual<RevertChangesResult>({
+      status: 'blocked',
+      planned: false,
+      blockers: [{ code: 'tooLarge', message: CHANGED_ROWS_TOO_LARGE }],
+      required: [],
+    });
+  });
 
   async function givenEditedProducts(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {

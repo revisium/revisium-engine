@@ -16,7 +16,8 @@ export interface PlannedFacts {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly refusedTables: readonly RefusedTable[];
-  readonly refusedByLimit?: boolean;
+  // False when a limit stopped the plan; a listing page has no plan.
+  readonly planned?: boolean;
   readonly estimate?: PlanEstimate;
 }
 
@@ -68,14 +69,14 @@ export class OperationTrace implements AttemptObserver {
     headRevisionId,
     draftRevisionId,
     refusedTables,
-    refusedByLimit,
+    planned,
     estimate,
   }: PlannedFacts): void {
     this.facts = {
       headRevisionId,
       draftRevisionId,
       refusedTables,
-      refusedByLimit,
+      planned,
       estimate,
     };
   }
@@ -225,16 +226,17 @@ function branchFieldsOf(branch: unknown): BranchFields {
 }
 
 // A listing applies no limit, so it says nothing of one.
-function limitFieldsOf({
-  refusedByLimit,
-  estimate,
-}: PlannedFacts): LimitFields {
-  if (refusedByLimit === undefined) {
+function limitFieldsOf({ planned, estimate }: PlannedFacts): LimitFields {
+  if (planned === undefined) {
     return {};
   }
 
-  if (!refusedByLimit || !estimate) {
-    return { tooLarge: refusedByLimit };
+  if (planned) {
+    return { tooLarge: false };
+  }
+
+  if (!estimate) {
+    return { tooLarge: true };
   }
 
   return { tooLarge: true, estimate: loggedEstimateOf(estimate) };

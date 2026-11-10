@@ -999,7 +999,7 @@ The caller commits the same selection with `"includeRequired": true, "expected":
 **`blocked`: a required unit is excluded.**
 
 ```json
-{ "status": "blocked",
+{ "status": "blocked", "planned": true,
   "blockers": [{ "code": "requiredExcluded", "tableId": "categories", "rowId": "c9",
     "message": "categories/c9 is required but excluded",
     "unit": { "kind": "rowCreate", "tableId": "categories", "rowId": "c9",
@@ -1011,7 +1011,7 @@ The caller commits the same selection with `"includeRequired": true, "expected":
                   "path": "/category", "selector": { "fields": [
                     { "tableId": "products", "rowId": "p1", "path": "/category" }] } } },
                 "because": "products/p1/category references categories/c9, which exists only in the Draft" } }],
-  "required": [] }
+  "required": [], "unmatched": {} }
 ```
 
 **`stale`: a selected field was edited again after the preview.**

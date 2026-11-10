@@ -85,6 +85,10 @@ export function readPlan(
 }
 
 function planViewOf(plan: ChangePlan): PlanView {
+  if (!plan.planned) {
+    throw new Error('A limit stopped the plan');
+  }
+
   const { mergedRows, perRowWorkRows, mixedTables } = plan.estimate;
 
   return {
@@ -101,13 +105,7 @@ function planViewOf(plan: ChangePlan): PlanView {
   };
 }
 
-function plannedTargetOf(
-  planned: PlannedTarget | undefined,
-): Pick<PlanView, 'target'> {
-  if (!planned) {
-    return {};
-  }
-
+function plannedTargetOf(planned: PlannedTarget): Pick<PlanView, 'target'> {
   const { source, assembled } = planned;
   const { snapshot } = source;
 

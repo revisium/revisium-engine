@@ -1,3 +1,4 @@
+import type { PlanCounts } from 'src/features/partial-changes/planning/change-planner';
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
@@ -25,9 +26,11 @@ export interface ApplyResult {
   readonly status: ApplyStatus;
 }
 
-export interface AppliedCounts {
-  readonly applied: { readonly selected: number; readonly required: number };
-  readonly remaining: { readonly units: number; readonly unreadTables: number };
+// What an applied operation wrote, and whether its Draft still differs from Head (the writers recompute it from the
+// table versions, SPEC §6.13 step 7).
+export interface AppliedOutcome {
+  readonly applied: PlanCounts;
+  readonly draftHasChanges: boolean;
 }
 
 export interface ChangesRequireAdditions extends ApplyResult {
@@ -35,12 +38,23 @@ export interface ChangesRequireAdditions extends ApplyResult {
   readonly required: readonly RequiredUnit[];
 }
 
-export interface ChangesBlocked extends ApplyResult {
+export interface PlannedChangesBlocked extends ApplyResult {
   readonly status: 'blocked';
+  readonly planned: true;
   readonly blockers: readonly PlanBlocker[];
   readonly required: readonly RequiredUnit[];
-  readonly unmatched?: UnmatchedSelectors;
+  readonly unmatched: UnmatchedSelectors;
 }
+
+// A limit stopped the plan: no required additions and no unmatched selectors (SPEC §5.4).
+export interface StoppedChangesBlocked extends ApplyResult {
+  readonly status: 'blocked';
+  readonly planned: false;
+  readonly blockers: readonly PlanBlocker[];
+  readonly required: readonly [];
+}
+
+export type ChangesBlocked = PlannedChangesBlocked | StoppedChangesBlocked;
 
 export interface ChangesStale extends ApplyResult {
   readonly status: 'stale';

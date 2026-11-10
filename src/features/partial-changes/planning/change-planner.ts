@@ -18,6 +18,10 @@ import {
   type CatalogueBlocker,
 } from 'src/features/partial-changes/plan/plan-blocker';
 import { assertEveryAppliedTableRead } from 'src/features/partial-changes/planning/applied-tables-read';
+import {
+  coverageOf,
+  type TableCoverage,
+} from 'src/features/partial-changes/planning/plan-coverage';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
 import {
   type PlanBlocker,
@@ -66,59 +70,64 @@ export interface PlanRequest {
 export interface PlanCounts {
   readonly selected: number;
   readonly required: number;
-  readonly remaining: number;
 }
 
 export interface PlannedTarget extends AppliedTarget {
   readonly source: AssemblySource;
 }
 
-export interface ChangePlan {
+interface PlanBase {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
-  readonly refusedByLimit: boolean;
+  readonly refusedTables: readonly RefusedTable[];
+  readonly blockers: readonly PlanBlocker[];
+  readonly estimate: PlanEstimate;
+}
+
+// A plan that ran to its end.
+export interface CompletePlan extends PlanBase {
+  readonly planned: true;
   readonly fingerprint: string;
   readonly appliedUnits: readonly CatalogueUnit[];
   readonly counts: PlanCounts;
-  readonly unreadTables: number;
-  readonly refusedTables: readonly RefusedTable[];
+  readonly coverage: readonly TableCoverage[];
   readonly required: readonly RequiredUnit[];
-  readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly DeferredRow[];
   readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
-  readonly estimate: PlanEstimate;
-  readonly target?: PlannedTarget;
+  readonly target: PlannedTarget;
 }
+
+// A plan a limit stopped (SPEC §5.3): what the closure found before the stop is not the plan, so it has no value of
+// one; its blockers are the tooLarge ones and its estimate is what was measured up to the stop.
+export interface StoppedPlan extends PlanBase {
+  readonly planned: false;
+}
+
+export type ChangePlan = CompletePlan | StoppedPlan;
 
 type CatalogueRead = Extract<ScopedCatalogue, { kind: 'catalogue' }>;
 
 type CatalogueRefused = Extract<ScopedCatalogue, { kind: 'tooLarge' }>;
 
+type ClosedResult = Extract<DependencyClosureResult, { kind: 'closed' }>;
+
 interface ValidatedClosure {
   readonly fingerprint: string;
   readonly blockers: readonly CatalogueBlocker[];
-  readonly target?: PlannedTarget;
+  readonly target: PlannedTarget;
 }
 
 interface ClosedSelection {
   readonly source: ClosureSource;
-  readonly closure: DependencyClosureResult;
+  readonly closure: ClosedResult;
 }
 
 interface PlanParts {
   readonly source: ClosureSource;
-  readonly unreadTables: number;
-  readonly closure: DependencyClosureResult;
+  readonly closure: ClosedResult;
   readonly validated: ValidatedClosure;
 }
-
-const REFUSED_FINGERPRINT = '';
-
-const REFUSED_BY_LIMIT: ValidatedClosure = {
-  fingerprint: REFUSED_FINGERPRINT,
-  blockers: [],
-};
 
 @Injectable()
 export class ChangePlanner {
@@ -152,7 +161,7 @@ export class ChangePlanner {
     );
 
     if (scoped.kind === 'tooLarge') {
-      return planRefusedBeforeCatalogue(request.compared, scoped);
+      return planStoppedBeforeCatalogue(request.compared, scoped);
     }
 
     await deadline.checkpoint();
@@ -166,18 +175,17 @@ export class ChangePlanner {
 
     assertEveryAppliedTableRead(source, closure.applied);
 
+    if (closure.kind === 'tooLarge') {
+      return planStoppedInClosure(source, closure);
+    }
+
     const validated = await this.validateAndFingerprint(
       request,
       { source, closure },
       deadline,
     );
 
-    return planOf({
-      source,
-      unreadTables: scoped.unreadTables,
-      closure,
-      validated,
-    });
+    return planOf({ source, closure, validated });
   }
 
   private async closureSourceOf(
@@ -201,10 +209,6 @@ export class ChangePlanner {
     { source, closure }: ClosedSelection,
     deadline: DeadlineHandle,
   ): Promise<ValidatedClosure> {
-    if (closure.kind === 'tooLarge') {
-      return REFUSED_BY_LIMIT;
-    }
-
     await deadline.checkpoint();
 
     const target: PlannedTarget = {
@@ -230,12 +234,7 @@ export class ChangePlanner {
   }
 }
 
-function planOf({
-  source,
-  unreadTables,
-  closure,
-  validated,
-}: PlanParts): ChangePlan {
+function planOf({ source, closure, validated }: PlanParts): CompletePlan {
   const { snapshot, catalogue, headSchema } = source;
   const appliedUnits = catalogue.units.filter(({ key }) =>
     closure.applied.has(key),
@@ -247,13 +246,13 @@ function planOf({
   ]);
 
   return {
+    planned: true,
     headRevisionId: snapshot.headRevisionId,
     draftRevisionId: snapshot.draftRevisionId,
-    refusedByLimit: closure.kind === 'tooLarge',
     fingerprint: validated.fingerprint,
     appliedUnits,
-    counts: countsOf(closure, catalogue.units.length - appliedUnits.length),
-    unreadTables,
+    counts: countsOf(closure),
+    coverage: coverageOf(catalogue, closure.applied),
     refusedTables: headSchema.refusedTables,
     required: closure.required,
     blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),
@@ -265,37 +264,40 @@ function planOf({
   };
 }
 
-function countsOf(
-  { selected, required }: DependencyClosureResult,
-  remaining: number,
-): PlanCounts {
-  return { selected: selected.size, required: required.length, remaining };
+function countsOf({ selected, required }: ClosedResult): PlanCounts {
+  return { selected: selected.size, required: required.length };
 }
 
 function deferredValuesOf({
   target,
 }: ValidatedClosure): readonly DeferredValues[] {
-  return target?.assembled.deferred ?? [];
+  return target.assembled.deferred;
 }
 
-function planRefusedBeforeCatalogue(
-  { snapshot, headSchema }: ComparedSnapshot,
-  { changedRowCount, unreadTables, blocker }: CatalogueRefused,
-): ChangePlan {
+function planStoppedInClosure(
+  { snapshot, catalogue, headSchema }: ClosureSource,
+  { blockers, estimate }: DependencyClosureResult,
+): StoppedPlan {
   return {
+    planned: false,
     headRevisionId: snapshot.headRevisionId,
     draftRevisionId: snapshot.draftRevisionId,
-    refusedByLimit: true,
-    fingerprint: REFUSED_FINGERPRINT,
-    appliedUnits: [],
-    counts: { selected: 0, required: 0, remaining: 0 },
-    unreadTables,
     refusedTables: headSchema.refusedTables,
-    required: [],
+    blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),
+    estimate,
+  };
+}
+
+function planStoppedBeforeCatalogue(
+  { snapshot, headSchema }: ComparedSnapshot,
+  { changedRowCount, blocker }: CatalogueRefused,
+): StoppedPlan {
+  return {
+    planned: false,
+    headRevisionId: snapshot.headRevisionId,
+    draftRevisionId: snapshot.draftRevisionId,
+    refusedTables: headSchema.refusedTables,
     blockers: [blocker],
-    deferred: [],
-    sample: [],
-    unmatched: {},
     estimate: {
       changedRows: changedRowCount,
       mergedRows: 0,

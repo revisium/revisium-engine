@@ -166,6 +166,7 @@ describe('structure units in preview and apply results', () => {
 
       expect(result).toEqual({
         status: 'blocked',
+        planned: true,
         blockers: [
           expect.objectContaining({
             code: 'requiredExcluded',
@@ -173,6 +174,7 @@ describe('structure units in preview and apply results', () => {
           }),
         ],
         required: [],
+        unmatched: {},
       });
     });
   });

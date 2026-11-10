@@ -1,5 +1,6 @@
 import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import type {
+  DraftRevisionRevertToTargetCommandReturnType,
   TableWritePlan,
   TargetWritePlan,
 } from 'src/features/draft-revision/commands/impl';
@@ -7,6 +8,8 @@ import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft
 import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 import { type TableTarget, TablePlans } from './table-plans';
+
+export type RevertResult = DraftRevisionRevertToTargetCommandReturnType;
 
 export class RevertTarget {
   private readonly tablePlans: TablePlans;
@@ -18,11 +21,11 @@ export class RevertTarget {
     this.tablePlans = new TablePlans(kit, draft, 'draft');
   }
 
-  public async revert(...targets: TableTarget[]): Promise<string> {
+  public async revert(...targets: TableTarget[]): Promise<RevertResult> {
     return this.write(await this.plan(...targets));
   }
 
-  public write(plan: TargetWritePlan): Promise<string> {
+  public write(plan: TargetWritePlan): Promise<RevertResult> {
     return this.runner.runWrite(this.draft.branch, () =>
       this.api.revertToTarget(plan),
     );

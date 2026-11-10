@@ -6,6 +6,7 @@ import {
   DraftRevisionCommitToTargetCommandReturnType,
   DraftRevisionRevertToTargetCommand,
   DraftRevisionRevertToTargetCommandData,
+  DraftRevisionRevertToTargetCommandReturnType,
   DraftRowVersionsReplacement,
   TargetWritePlan,
 } from 'src/features/draft-revision/commands/impl';
@@ -16,7 +17,7 @@ export class DraftRevisionTargetApiService {
 
   public revertToTarget(
     data: DraftRevisionRevertToTargetCommandData,
-  ): Promise<string> {
+  ): Promise<DraftRevisionRevertToTargetCommandReturnType> {
     return this.commandBus.execute(
       new DraftRevisionRevertToTargetCommand(data),
     );
@@ -30,14 +31,14 @@ export class DraftRevisionTargetApiService {
     );
   }
 
-  public replaceDraftRowVersions(
+  public async replaceDraftRowVersions(
     replacement: DraftRowVersionsReplacement,
   ): Promise<string> {
-    return this.commandBus.execute(
-      new DraftRevisionRevertToTargetCommand(
-        draftRowVersionsPlanOf(replacement),
-      ),
+    const { draftRevisionId } = await this.revertToTarget(
+      draftRowVersionsPlanOf(replacement),
     );
+
+    return draftRevisionId;
   }
 }
 

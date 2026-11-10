@@ -1,5 +1,5 @@
 import type {
-  AppliedCounts,
+  AppliedOutcome,
   ApplyChangesInput,
   ApplyResult,
   UnappliedChanges,
@@ -14,12 +14,12 @@ export interface RenumberedMigration {
   readonly to: string;
 }
 
-export interface CommittedDraft extends ApplyResult, AppliedCounts {
+export interface CommittedDraft extends ApplyResult, AppliedOutcome {
   readonly status: 'applied';
   readonly previousHeadRevisionId: string;
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
-  readonly renumbered: readonly RenumberedMigration[];
+  readonly renumberedMigrations: readonly RenumberedMigration[];
 }
 
 export type CommitChangesResult = CommittedDraft | UnappliedChanges;

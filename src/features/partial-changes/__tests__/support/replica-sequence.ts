@@ -271,5 +271,5 @@ function renumberedOf(
     return [];
   }
 
-  return result.renumbered;
+  return result.renumberedMigrations;
 }

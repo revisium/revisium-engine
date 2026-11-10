@@ -11,7 +11,6 @@ import type {
 } from 'src/features/partial-changes/selection/selection';
 import {
   type ComparedTable,
-  hasDifferentVersions,
   type TablePair,
   type TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -24,7 +23,6 @@ import {
 
 export interface TableScope {
   readonly affectedTables: readonly ComparedTable[];
-  readonly unreadTables: number;
 }
 
 const NO_HISTORY: TableHistory = { tableIds: [], entries: [] };
@@ -39,11 +37,8 @@ export class ReadScope {
     const affectedTables = tables.filter(({ identity }) =>
       affected.has(identity),
     );
-    const unread = tables.filter(
-      (table) => hasDifferentVersions(table) && !affected.has(table.identity),
-    );
 
-    return { affectedTables, unreadTables: unread.length };
+    return { affectedTables };
   }
 
   private affectedTablesOf(

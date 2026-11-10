@@ -1790,8 +1790,8 @@ the engine's NestJS logger): `log` when it returns, `warn` when it throws. The e
 
 An entry never holds row data, values, selectors or an error message, since a message can quote them. The
 endpoint notification after a commit or revert (the internal hook, a no-op in this package) is outside the entry: a
-failing notification is the caller's error, not the operation's outcome. Logging is best effort: a logger that throws changes neither the result nor the error the
-caller gets.
+failing notification is the caller's error, not the operation's outcome. Logging is best effort: a logger that throws
+changes neither the result nor the error the caller gets.
 
 ## 12. Native prerequisites (stage 0)
 
@@ -2404,7 +2404,7 @@ effective settings are logged at startup; every listing page, preview, commit an
 structure digest is measured; the release gate takes these instead of a re-measurement on production-like hardware.
 
 Host duties (§5.9, §5.10): an unknown project or branch is the native `BadRequestException`, not a not-found error;
-the endpoint hook cannot be provided by a host, so the host moves and refreshes endpoints itself after an applied
+the endpoint hook has no supported replacement, so the host moves and refreshes endpoints itself after an applied
 commit or revert.
 
 Release gate (§12): the scan run on existing deployments is no longer part of it (dropped on 2026-11-08, since no

@@ -218,11 +218,11 @@ in a later statement (`:511-520`), so a crash in between makes recovery rewrite 
 After the commit the worker notifies endpoints for the Draft (as `api-update-table.handler.ts:72`); a notification error
 is logged and does not repeat or fail the swap. The hook is the engine's internal no-op, with no supported way to
 replace it (partial-changes §5.10), so a host is not told when a swap commits: it sees the finished swap through
-`getMigrationStatus` (`null` after success) or when `applyMigrations` returns, and then refreshes the Draft's endpoints
-itself. The swap is idempotent: change and deletion commit together, and a lost acknowledgement leaves no record to
-repeat. **Caller observes:** the Draft ledger gains the `update`, the Draft history
-its entry; the Head and earlier revisions keep their rows; `getMigrationStatus` returns `null` after success, as today;
-a failed re-check leaves `FAILED` with its code.
+`getMigrationStatus` (`null` after success) or when `applyMigrations` returns `applied` for that update (a `failed`
+result can still be followed by a worker's swap), and then refreshes the Draft's endpoints itself. The swap is
+idempotent: change and deletion commit together, and a lost acknowledgement leaves no record to repeat. **Caller
+observes:** the Draft ledger gains the `update`, the Draft history its entry; the Head and earlier revisions keep their
+rows; `getMigrationStatus` returns `null` after success, as today; a failed re-check leaves `FAILED` with its code.
 
 ### 3.6 Cancellation
 

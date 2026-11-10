@@ -908,9 +908,10 @@ list types, and how a typed transport maps the unions:
     as after native `revertChanges`;
   - after a [`repairSchemaLedger`](#repairschemaledger) call with `dryRun: false` that returns a table with the
     outcome `repaired`, refresh the endpoints bound to `draftRevisionId`;
-  - after an async migration swap, refresh the Draft's endpoints once you see the migration finished
-    (`getMigrationStatus` returns `null`, or `applyMigrations` returned): the swap changes the Draft's schema and
-    rows, and nothing tells the host when it commits.
+  - after an async migration swap, refresh the Draft's endpoints once you see it finished: `applyMigrations`
+    returned `applied` for that update, or `getMigrationStatus` returns `null` (after a `failed` result from
+    `applyMigrations`, a worker may still swap later, so poll). The swap changes the Draft's schema and rows, and
+    nothing tells the host when it commits.
 
   A failure there does not undo the operation, which is already committed.
 - **Limits.** Each operation reads only the tables its selection affects (`all: true` reads every table) and refuses

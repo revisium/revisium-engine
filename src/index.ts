@@ -172,6 +172,18 @@ export { DraftTransactionalCommands } from './features/draft/draft.transactional
 // Revision Changes
 export { RevisionChangesModule } from './features/revision-changes/revision-changes.module';
 export { RevisionChangesApiService } from './features/revision-changes/revision-changes-api.service';
+export {
+  ChangeType,
+  JsonPatchOp,
+  MigrationType,
+  RowChangeDetailType,
+  type HistoryPatch,
+  type JsonPatchOperation,
+  type RevisionChangeSummary,
+  type SchemaMigrationDetail,
+  type ViewChange,
+  type ViewsChangeDetail,
+} from './features/revision-changes/types';
 
 // Sub-Schema
 export { SubSchemaModule } from './features/sub-schema/sub-schema.module';
@@ -206,6 +218,171 @@ export {
   BACKFILL_REFUSAL_CODES,
   BACKFILL_STATUSES,
 } from './features/migration/commands/impl/backfill-schema-ledger.command';
+
+// Draft Changes (EngineApiService.changes) — partial-changes-v1 §5.11, draft-reads-v1 §9
+export { PartialChangesModule } from './features/partial-changes/partial-changes.module';
+export { PartialChangesApiService } from './features/partial-changes/partial-changes-api.service';
+export type { ChangesBranch } from './features/partial-changes/snapshot/changes-snapshot';
+export {
+  ROW_COLUMNS,
+  SELECTOR_SIDES,
+  UNIT_KINDS,
+  type RowColumn,
+  type SelectorSide,
+  type Unit,
+  type UnitKind,
+} from './features/partial-changes/catalogue/unit';
+export type {
+  FieldRef,
+  RowRef,
+  Selection,
+  SelectionInput,
+  SelectionItems,
+  TableRef,
+} from './features/partial-changes/selection/selection';
+export type { UnmatchedSelectors } from './features/partial-changes/selection/selection-resolution';
+export type {
+  DescribedUnitRef,
+  ReasonCause,
+  RequiredReason,
+  RequiredUnit,
+  UnitRef,
+} from './features/partial-changes/selection/unit-refs';
+export {
+  STRUCTURE_TABLE_CHANGES,
+  type ChangedField,
+  type ListChangesInput,
+  type ListChangesResult,
+  type ListedUnit,
+  type StructureChange,
+  type StructureTableChange,
+} from './features/partial-changes/queries/impl/list-draft-changes.query';
+export {
+  STRUCTURE_FIELD_CHANGES,
+  type StructureFieldChange,
+} from './features/partial-changes/structure/table-structure';
+export {
+  ANNOTATION_KEYWORDS,
+  type AnnotationKeyword,
+} from './features/partial-changes/structure/normalized-leaf-schema';
+export {
+  CAUSE_ROLES,
+  REASON_SITE_KINDS,
+  REQUIRED_REASON_CODES,
+  type CauseRole,
+  type ReasonSite,
+  type ReasonSiteKind,
+  type ReferencedEntity,
+  type RequiredReasonCode,
+} from './features/partial-changes/plan/reason';
+export {
+  BLOCKER_CODES,
+  type BlockerCode,
+} from './features/partial-changes/plan/plan-blocker';
+export type {
+  DeferredPath,
+  DeferredRow,
+  DeferredValue,
+  PlanBlocker,
+} from './features/partial-changes/planning/plan-refs';
+export type { PlanEstimate } from './features/partial-changes/limits/operation-estimator';
+export type { PlanCounts } from './features/partial-changes/planning/change-planner';
+export type { TableCoverage } from './features/partial-changes/planning/plan-coverage';
+export {
+  REFUSAL_CODES,
+  type RefusalCode,
+  type RefusedTable,
+} from './features/partial-changes/head-schema/head-schema-check';
+export {
+  CHANGE_OPERATIONS,
+  type ChangeOperation,
+} from './features/partial-changes/plan/change-operation';
+export type {
+  PlannedPreview,
+  PreviewBase,
+  PreviewChangesInput,
+  PreviewChangesResult,
+  StoppedPreview,
+} from './features/partial-changes/queries/impl/preview-draft-changes.query';
+export {
+  PREVIEW_STATUSES,
+  type PreviewStatus,
+} from './features/partial-changes/planning/plan-decision';
+export type {
+  CommitChangesInput,
+  CommitChangesResult,
+  CommittedDraft,
+  MigrationRenumbering,
+} from './features/partial-changes/commands/impl/commit-draft-changes.command';
+export type {
+  RevertChangesInput,
+  RevertChangesResult,
+  RevertedDraft,
+} from './features/partial-changes/commands/impl/revert-draft-changes.command';
+export {
+  APPLY_STATUSES,
+  type ApplyStatus,
+  type ChangesBlocked,
+  type ChangesRequireAdditions,
+  type ChangesStale,
+  type NothingToApply,
+  type UnappliedChanges,
+} from './features/partial-changes/commands/impl/apply-changes';
+export {
+  STALE_CHANGES,
+  type StaleChange,
+} from './features/partial-changes/plan/fingerprint';
+export {
+  FIELD_SELECTION_STATES,
+  FOLLOW_REASONS,
+  GOES_WITH_REASONS,
+  ID_EXCHANGE_TERMINATIONS,
+  ROW_SELECTION_STATES,
+  type ComputedSelection,
+  type DraftPageInfo,
+  type DraftReadState,
+  type DraftTableChangesFilters,
+  type FieldSelection,
+  type FieldSelectionState,
+  type FieldUnitSelection,
+  type FollowReason,
+  type GoesWithReason,
+  type GoesWithSelection,
+  type IdExchangeTermination,
+  type RefusedSelection,
+  type RowSelectionState,
+} from './features/partial-changes/queries/impl/draft-reads';
+export {
+  TABLE_SELECTION_STATES,
+  type ContentEqualSelection,
+  type DraftTableChangesInput,
+  type DraftTableItem,
+  type DraftTablePage,
+  type SelectableTableSelection,
+  type TableSelection,
+  type TableSelectionState,
+} from './features/partial-changes/queries/impl/get-draft-table-changes.query';
+export {
+  DRAFT_FIELD_CHANGE_TYPES,
+  type DraftColumnChange,
+  type DraftFieldChange,
+  type DraftFieldChangeType,
+  type DraftRowChangesFilters,
+  type DraftRowChangesInput,
+  type DraftRowItem,
+  type DraftRowPage,
+  type FollowedUnit,
+  type IdExchange,
+  type IdTakeover,
+  type RowSelection,
+} from './features/partial-changes/queries/impl/get-draft-row-changes.query';
+export type {
+  ChangedSharedSchema,
+  DraftChangesSummary,
+  DraftChangesSummaryInput,
+  TransientTable,
+  ViewsOnlyTable,
+} from './features/partial-changes/queries/impl/get-draft-changes-summary.query';
 
 // Draft Command Data Types
 export type { ApiCreateRevisionCommandData } from './features/draft/commands/impl/api-create-revision.command';

@@ -802,21 +802,6 @@ describe('Schema ledger backfill planning', () => {
         'init products',
       ]);
     });
-
-    it.each<BackfillInput>([{ dryRun: false }, { dryRun: null }, {}])(
-      'does not write the backfill yet: %p',
-      async (input) => {
-        const draft = await givenCatalogWithoutLedger();
-        const before = await branchContentsOf(kit, draft);
-
-        await expect(backfillLedger(kit, draft, input)).rejects.toThrow(
-          new BadRequestException(
-            'Writing the schema ledger backfill is not available yet; call it with dryRun: true',
-          ),
-        );
-        expect(await branchContentsOf(kit, draft)).toEqual(before);
-      },
-    );
   });
 
   function givenCatalogWithoutLedger(): Promise<BranchScenario> {

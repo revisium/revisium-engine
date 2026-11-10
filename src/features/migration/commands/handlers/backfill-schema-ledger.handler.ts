@@ -1,6 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
+import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import {
+  type BackfillCommitted,
   type BackfillEntry,
   BackfillSchemaLedgerCommand,
   type SchemaLedgerBackfill,
@@ -10,12 +11,19 @@ import {
   type BackfillRequest,
   backfillRequestOf,
 } from 'src/features/migration/ledger-backfill/backfill-request';
-import { BackfillStateReader } from 'src/features/migration/ledger-backfill/backfill-state-reader';
+import {
+  type BackfillState,
+  BackfillStateReader,
+} from 'src/features/migration/ledger-backfill/backfill-state-reader';
+import { BackfillWriter } from 'src/features/migration/ledger-backfill/backfill-writer';
 import {
   type BackfillPlan,
   LedgerBackfillPlanService,
 } from 'src/features/migration/ledger-backfill/ledger-backfill-plan.service';
+import { StoredBackfillVerification } from 'src/features/migration/ledger-backfill/stored-backfill-verification';
 import type { HeadAndDraft } from 'src/features/share/branch-revisions/branch-revision-reader';
+import { ShareCommands } from 'src/features/share/share.commands';
+import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 
 @CommandHandler(BackfillSchemaLedgerCommand)
@@ -25,8 +33,12 @@ export class BackfillSchemaLedgerHandler implements ICommandHandler<
 > {
   constructor(
     private readonly transactionRunner: OperationTransactionRunner,
+    private readonly writeAdmission: DraftWriteAdmissionService,
     private readonly stateReader: BackfillStateReader,
     private readonly planService: LedgerBackfillPlanService,
+    private readonly writer: BackfillWriter,
+    private readonly verification: StoredBackfillVerification,
+    private readonly shareCommands: ShareCommands,
   ) {}
 
   public async execute({
@@ -34,13 +46,20 @@ export class BackfillSchemaLedgerHandler implements ICommandHandler<
   }: BackfillSchemaLedgerCommand): Promise<SchemaLedgerBackfill> {
     const request = backfillRequestOf(data);
 
-    if (!request.dryRun) {
-      throw new BadRequestException(
-        'Writing the schema ledger backfill is not available yet; call it with dryRun: true',
+    if (request.dryRun) {
+      return this.transactionRunner.runPlanning(() =>
+        this.planBackfill(request),
       );
     }
 
-    return this.transactionRunner.runPlanning(() => this.planBackfill(request));
+    const backfill = await this.transactionRunner.runWrite(
+      request,
+      (deadline) => this.planAndWrite(request, deadline),
+    );
+
+    await this.notifyWhenBackfilled(backfill);
+
+    return backfill;
   }
 
   private async planBackfill(
@@ -49,6 +68,60 @@ export class BackfillSchemaLedgerHandler implements ICommandHandler<
     const state = await this.stateReader.readUnlockedBranch(request);
 
     return backfillResultOf(state, this.planService.plan(state));
+  }
+
+  private async planAndWrite(
+    request: BackfillRequest,
+    deadline: DeadlineHandle,
+  ): Promise<SchemaLedgerBackfill> {
+    await this.writeAdmission.admitBranchWrite(
+      request.projectId,
+      request.branchName,
+    );
+
+    const state = await this.stateReader.readUnlockedBranch(request);
+    const plan = this.planService.plan(state);
+
+    if (plan.status !== 'planned') {
+      return backfillResultOf(state, plan);
+    }
+
+    await deadline.checkpoint();
+
+    return this.writeBackfill(state, plan.migrations, request.comment);
+  }
+
+  private async writeBackfill(
+    state: BackfillState,
+    migrations: readonly BackfillMigration[],
+    comment: string,
+  ): Promise<BackfillCommitted> {
+    const committed = await this.writer.write(state, migrations, comment);
+
+    await this.verification.verify(committed, migrations);
+
+    return {
+      status: 'backfilled',
+      previousHeadRevisionId: committed.previousHeadRevisionId,
+      headRevisionId: committed.headRevisionId,
+      draftRevisionId: committed.draftRevisionId,
+      entries: entriesOf(migrations),
+    };
+  }
+
+  private async notifyWhenBackfilled(
+    backfill: SchemaLedgerBackfill,
+  ): Promise<void> {
+    if (backfill.status !== 'backfilled') {
+      return;
+    }
+
+    await this.shareCommands.notifyEndpoints({
+      revisionId: backfill.headRevisionId,
+    });
+    await this.shareCommands.notifyEndpoints({
+      revisionId: backfill.draftRevisionId,
+    });
   }
 }
 

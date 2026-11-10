@@ -3,18 +3,38 @@ import objectHash from 'object-hash';
 import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import { acceptDamagedCommittedVersions } from 'src/__tests__/fixtures/head-schema-damage';
 import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
+import { createBarrier } from 'src/__tests__/utils/barrier';
 import type { InputJsonValue } from 'src/engine-prisma-types';
+import type { RevisionSide } from 'src/features/draft-revision/commands/impl';
 import type {
   BackfillEntry,
   BackfillSchemaLedgerData,
   SchemaLedgerBackfill,
 } from 'src/features/migration/commands/impl/backfill-schema-ledger.command';
+import { LedgerBackfillPlanService } from 'src/features/migration/ledger-backfill/ledger-backfill-plan.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
+import { ShareCommands } from 'src/features/share/share.commands';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { SystemTablesService } from 'src/features/share/system-tables.service';
 
 export type BackfillInput = Partial<
   Record<keyof BackfillSchemaLedgerData, unknown>
 >;
+
+export interface RetriedBackfill {
+  readonly result: SchemaLedgerBackfill;
+  readonly attempts: number;
+}
+
+export interface EndpointNotification<T> {
+  readonly revisionId: string;
+  readonly seenOutsideTheTransaction: T;
+}
+
+export interface StoredTableVersion {
+  readonly versionId: string;
+  readonly readonly: boolean;
+}
 
 export function backfillLedger(
   kit: BranchScenarioTestKit,
@@ -56,7 +76,7 @@ export function updateEntry(
 }
 
 export function entriesOf(backfill: SchemaLedgerBackfill): BackfillEntry[] {
-  if (backfill.status !== 'planned') {
+  if (backfill.status !== 'planned' && backfill.status !== 'backfilled') {
     throw new Error(`The backfill is ${backfill.status}, not planned`);
   }
 
@@ -169,4 +189,85 @@ async function belowNativeValidation(
   await kit.draftWriteAdmission.runSerializableRevisionWrite(revisionId, () =>
     write(revisionId),
   );
+}
+
+// The native write lands after the backfill planned and before its first write, the migration table in the Draft.
+export async function backfillWhileNativeWriteLands(
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
+  nativeWrite: () => Promise<unknown>,
+): Promise<RetriedBackfill> {
+  const plans = jest.spyOn(kit.module.get(LedgerBackfillPlanService), 'plan');
+  const firstWrite = createBarrier('The first write of the backfill');
+  const systemTables = kit.module.get(SystemTablesService);
+  const ensureSystemTable = systemTables.ensureSystemTable.bind(systemTables);
+  let writes = 0;
+
+  jest
+    .spyOn(systemTables, 'ensureSystemTable')
+    .mockImplementation(async (revisionId, tableId) => {
+      writes += 1;
+
+      if (writes === 1) {
+        await firstWrite.arrive();
+      }
+
+      return ensureSystemTable(revisionId, tableId);
+    });
+
+  const backfilling = backfillLedger(kit, draft);
+  await firstWrite.expectReachedBefore(backfilling);
+
+  try {
+    await nativeWrite();
+  } finally {
+    firstWrite.release();
+  }
+
+  return { result: await backfilling, attempts: plans.mock.calls.length };
+}
+
+export function observeEndpointNotifications<T>(
+  kit: BranchScenarioTestKit,
+  readOutsideTheTransaction: () => Promise<T>,
+): EndpointNotification<T>[] {
+  const notifications: EndpointNotification<T>[] = [];
+
+  jest
+    .spyOn(kit.module.get(ShareCommands), 'notifyEndpoints')
+    .mockImplementation(async ({ revisionId }) => {
+      notifications.push({
+        revisionId,
+        seenOutsideTheTransaction: await readOutsideTheTransaction(),
+      });
+    });
+
+  return notifications;
+}
+
+export async function migrationTableOf(
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
+  side: RevisionSide,
+): Promise<StoredTableVersion | null> {
+  return kit.prisma.table.findFirst({
+    where: {
+      id: SystemTables.Migration,
+      system: true,
+      revisions: { some: { id: await draft.revisionId(side) } },
+    },
+    select: { versionId: true, readonly: true },
+  });
+}
+
+export async function revisionCommentOf(
+  kit: BranchScenarioTestKit,
+  revisionId: string,
+): Promise<string> {
+  const { comment } = await kit.prisma.revision.findUniqueOrThrow({
+    where: { id: revisionId },
+    select: { comment: true },
+  });
+
+  return comment;
 }

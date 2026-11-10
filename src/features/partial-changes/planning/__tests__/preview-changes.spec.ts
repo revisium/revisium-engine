@@ -511,36 +511,42 @@ describe('previewChanges', () => {
       expect(revert).toMatchObject({ status: 'ready', deferred: [] });
     });
 
-    it('lists deferred rows in the listing order of their units', async () => {
-      const draft = await givenProductsWithNewField();
-      const rowIds = ['p6', 'p2', 'p5', 'p3', 'p4'];
-      await draft.createRows(
-        PRODUCTS,
-        Object.fromEntries(
-          rowIds.map((rowId) => [rowId, { title: rowId, color: 'red' }]),
-        ),
-      );
+    it('lists deferred rows in the listing order of their units, across tables', async () => {
+      const draft = await givenTwoTablesWithNewFields();
+      const created = [
+        [PRODUCTS, 'p6'],
+        [CATEGORIES, 'c3'],
+        [PRODUCTS, 'p2'],
+        [CATEGORIES, 'c2'],
+        [PRODUCTS, 'p4'],
+      ] as const;
+      for (const [tableId, rowId] of created) {
+        await draft.createRows(tableId, {
+          [rowId]: { title: rowId, color: 'red' },
+        });
+      }
 
       const preview = await draft.previewChanges({
         operation: 'commit',
-        selection: { rows: rowIds.map((rowId) => rowOf(PRODUCTS, rowId)) },
+        selection: {
+          rows: created.map(([tableId, rowId]) => rowOf(tableId, rowId)),
+        },
       });
       const listing = await draft.listChanges();
+      const keyOf = (unit: { kind: string; tableId?: string }): string =>
+        `${unit.tableId}/${'rowId' in unit ? String(unit.rowId) : ''}`;
 
-      const rowIdOf = (unit: { kind: string }): string =>
-        'rowId' in unit ? String(unit.rowId) : '';
-
-      expect(preview.deferred.map(({ unit }) => rowIdOf(unit))).toEqual(
+      expect(preview.deferred.map(({ unit }) => keyOf(unit))).toEqual(
         listing.units
           .filter(({ kind }) => kind === 'rowCreate')
-          .map((unit) => rowIdOf(unit)),
+          .map((unit) => keyOf(unit)),
       );
-      expect(preview.deferred.map(({ unit }) => rowIdOf(unit))).toEqual([
-        'p2',
-        'p3',
-        'p4',
-        'p5',
-        'p6',
+      expect(preview.deferred.map(({ unit }) => keyOf(unit))).toEqual([
+        'categories/c2',
+        'categories/c3',
+        'products/p2',
+        'products/p4',
+        'products/p6',
       ]);
     });
   });

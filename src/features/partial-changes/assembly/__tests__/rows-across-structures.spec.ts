@@ -346,13 +346,15 @@ describe('TargetAssembler: rows moving between structures', () => {
       .tableOf(PRODUCTS)
       ?.newRows.find(({ id }) => id === 'p3');
 
+    const draftRow = await draft.row('draft', PRODUCTS, 'p3');
+
     expect(written?.data).toEqual({ title: 'three', releasedAt: '' });
     expect(target.deferred).toEqual([
       expect.objectContaining({
         defaulted: [
           {
             path: '/releasedAt',
-            value: written?.publishedAt.toISOString(),
+            value: draftRow.publishedAt.toISOString(),
           },
         ],
         omitted: [],

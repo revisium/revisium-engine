@@ -671,6 +671,39 @@ describe('commitChanges', () => {
       });
     });
 
+    it("writes the publishedAt a preview defers at the Head's published-at field for a created row committed without its structure", async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: obj({
+            title: str(),
+            releasedAt: ref(SystemSchemaIds.RowPublishedAt),
+          }),
+          rows: { p1: { title: 'one', releasedAt: '' } },
+        },
+      });
+      await draft.updateTable(PRODUCTS, [removeField('releasedAt')]);
+      await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
+      const selection = { rows: [rowOf(PRODUCTS, 'p3')] };
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection,
+      });
+
+      await expectApplied(
+        draft.commitChanges({ selection, expected: preview.fingerprint }),
+      );
+
+      const head = await draft.row('head', PRODUCTS, 'p3');
+      expect(preview.deferred).toEqual([
+        expect.objectContaining({
+          defaulted: [
+            { path: '/releasedAt', value: head.publishedAt.toISOString() },
+          ],
+          omitted: [],
+        }),
+      ]);
+    });
+
     it('recomputes the formulas of a merged Head row', async () => {
       const draft = await ChangesScenario.committed(kit, {
         [ORDERS]: {

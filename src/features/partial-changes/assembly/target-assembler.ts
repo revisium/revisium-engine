@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
+import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type {
   RevisionSide,
   RowLinkChanges,
@@ -513,16 +515,27 @@ function deferredValuesOf(
   ];
 }
 
-// The published-at field reads the row's publishedAt column (§3.1); its data leaf keeps ''.
+// The published-at field reads the row's publishedAt column (§3.1); its data leaf keeps ''. A defaulted File is a new
+// one, whose id every planning mints anew: it is shown without it, so that two plans of one Draft agree.
 function writtenValueAt(
   written: MergedRow,
-  { pointer, kind }: SchemaLeaf,
+  { pointer, kind, schema }: SchemaLeaf,
 ): unknown {
   if (kind === 'publishedAt') {
     return written.publishedAt.toISOString();
   }
 
-  return structuredClone(pointer.valueIn(written.data));
+  const value = structuredClone(pointer.valueIn(written.data));
+
+  if (isFileSchema(schema)) {
+    return { ...(value as object), fileId: '' };
+  }
+
+  return value;
+}
+
+function isFileSchema(schema: JsonSchema): boolean {
+  return '$ref' in schema && schema.$ref === SystemSchemaIds.File;
 }
 
 function linkChangesOf(

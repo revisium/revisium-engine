@@ -366,8 +366,8 @@ published-at field, the row's `publishedAt` column, as reads show it; an array o
 computes the value, and the Draft value is left out. Each path is in exactly one of the two lists, which keep the
 code-point order of the changed fields (§5.2: leaves, never an object). A moved field appears in both: its Draft
 pointer is omitted, its Head pointer defaulted. `structure` is the unit that would carry the Draft values; the Draft
-keeps them. A File the commit creates gets its `fileId` when the commit plans it, so the `fileId` a preview shows is not
-the one a later commit writes; every other field of the File is.
+keeps them. A File the commit creates is shown with `fileId: ''`: the commit gives it its id when it writes it, so two
+previews of one Draft agree; every other field of the File is the value written.
 
 **PlanEstimate** (§6.5; an upper bound: a merge that turns out content-equal to one side is still counted):
 
@@ -2150,10 +2150,10 @@ versions unchanged" (§14) holds in every scenario.
   unit as the listing describes it; the `reason` of a `requiredExcluded` blocker carries the same `cause`.
 - AS-86 Deferred values: a created or replaced row committed without its table's structure lists in `defaulted` each
   Head input field with the value the commit writes, equal to the value in the written row (a declared default, a type
-  default after a native schema update, the leaves of a removed object, an array as one value, the `publishedAt` column
-  at the published-at field; a File except its new `fileId`); a field changed in place gets the Head value, never the
-  Draft value; fields the Head schema lacks or computes are in `omitted` as `{ path }`; a moved field is in both; both
-  lists are in code-point order, the rows in listing order; a revert defers nothing.
+  default after a native schema update, the leaves of a removed object, an array as one value, the `publishedAt`
+  column at the published-at field; a File as written but with `fileId: ''`); a field changed in place gets the Head
+  value, never the Draft value; fields the Head schema lacks or computes are in `omitted` as `{ path }`; a moved field
+  is in both; both lists are in code-point order, the rows in listing order; a revert defers nothing.
 - AS-87 Stopped plans: a preview stopped by `maxChangedRows`, and one stopped by a mixed-table or per-row-work limit in
   the closure, return `planned: false`, `fingerprint`, `counts` and `unmatched` as `null`, empty `required`,
   `deferred`, `sample` and `coverage`, the `tooLarge` blockers (with `migrationInProgress` while an async migration
@@ -2362,7 +2362,7 @@ Results (§5.1, §5.3–§5.7, §5.11, §5.12):
   `occupant`.
 - `Deferred` → `DeferredRow` with `defaulted: { path, value }[]` and `omitted: { path }[]` (PoC 1.5–1.6 split
   `paths`; v2.0 adds the values, makes the omitted paths objects, sorts the paths in code-point order and the rows
-  in listing order; the published-at field's value is the `publishedAt` column).
+  in listing order; the published-at field's value is the `publishedAt` column; a new File shows `fileId: ''`).
 - Preview: `planned`; when a limit stopped the plan, `fingerprint`, `counts` and `unmatched` are `null` instead of
   `''`, zeros and `{}`. `counts` drops `remaining`; `unreadTables` is removed; `coverage` (`TableCoverage[]`) is new;
   `sample` holds the first `min(20, selected + required)` applied units.

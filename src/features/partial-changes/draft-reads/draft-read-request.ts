@@ -110,20 +110,22 @@ function cursorOf<Position>(
 }
 
 function tableFiltersOf(filters: unknown): TableFilters {
-  const fields = filterFieldsOf(filters);
-
-  return {
-    changeTypes: changeTypesOf(fields.changeTypes),
-    search: searchOf(fields.search),
-  };
+  return tableFiltersOfFields(filterFieldsOf(filters));
 }
 
 function rowFiltersOf(filters: unknown): RowFilters {
   const fields = filterFieldsOf(filters);
 
   return {
-    ...tableFiltersOf(fields),
+    ...tableFiltersOfFields(fields),
     tableId: tableIdOf(fields.tableId),
+  };
+}
+
+function tableFiltersOfFields(fields: Fields): TableFilters {
+  return {
+    changeTypes: changeTypesOf(fields.changeTypes),
+    search: searchOf(fields.search),
   };
 }
 
@@ -172,6 +174,13 @@ function searchOf(search: unknown): string | undefined {
 
   if (typeof search !== 'string') {
     throw new ListingValidationError('filters.search must be a string');
+  }
+
+  // No id holds it, and a database text parameter cannot.
+  if (search.includes('\u0000')) {
+    throw new ListingValidationError(
+      'filters.search must not contain the NUL character',
+    );
   }
 
   return search;

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { RowFilters } from 'src/features/partial-changes/draft-reads/draft-read-request';
+import type { TableFilters } from 'src/features/partial-changes/draft-reads/draft-read-request';
 import {
   type ReportedRowPairsPage,
   reportedRowPairsPageSql,
@@ -18,7 +18,7 @@ export class ReportedRowPairsReader {
 
   public async readPairsPage(
     rows: TableRows,
-    filters: RowFilters,
+    filters: TableFilters,
     range: RowRange,
   ): Promise<ReportedRowPairsPage> {
     const [page] = await this.transaction.$queryRaw<ReportedRowPairsPage[]>(

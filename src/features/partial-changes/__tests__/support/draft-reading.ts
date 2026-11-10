@@ -100,6 +100,10 @@ export async function readEveryDraftRowPage(
   for (let index = 0; index < MAX_PAGES; index++) {
     const page = await readDraftRowChanges(kit, branch, { ...paging, after });
 
+    if (index > 0 && page.edges.length === 0) {
+      throw new Error('A page that the previous page said follows is empty');
+    }
+
     pages.push(page);
 
     if (!page.pageInfo.hasNextPage) {

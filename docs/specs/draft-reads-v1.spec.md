@@ -35,7 +35,8 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 
 - An optional input given as `null` is treated as absent, at any depth, as in partial-changes-v1 §5.
 - `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of the other read (a table cursor passed
-  to `rowChanges` or the reverse), or a filter of a wrong type → validation error before the snapshot.
+  to `rowChanges` or the reverse), a filter of a wrong type, or a `search` holding the NUL character (no id holds it)
+  → validation error before the snapshot.
 - An unknown project or branch → the native not-found error.
 - `changeTypes` takes the native `ChangeType` values (`ADDED`, `REMOVED`, `MODIFIED`, `RENAMED`,
   `RENAMED_AND_MODIFIED`).
@@ -322,12 +323,14 @@ anti-join of the table's two link sets (a created or removed table reads the row
 - **`rowChanges`** reads the tables in order from the cursor's table (only the filtered tables with `tableId`, and no
   created or removed table whose one change type `changeTypes` leaves out) and stops when the page is full: the query
   of a table returns its page pairs, whether a matching row of the table follows them, and the other reported pairs of
-  the page's row ids that the filters leave out, which the page's catalogue loads (§5.1) and the page does not list. It returns no `totalCount`, so it reads no table before the cursor or after the full page, except when the
-  page ends with the last reported row of its table: then it reads the next tables until one has a reported row, to
-  tell `hasNextPage`. The total of a list comes from the summary (`rowsSummary` per change
-  type, `rowsWithUnits`) or from the table item (`rowsSummary`, `tableData.rows`). A `search` filter, and a
-  `changeTypes` filter with several types, have no total: a `RENAMED_AND_MODIFIED` row counts in two types, so the
-  per-type counts do not add up.
+  the page's row ids that the filters leave out, which the page's catalogue loads (§5.1) and the page does not list.
+  It returns no `totalCount`, so it reads no table before the cursor or after the full page, except when the page ends
+  with the last matching row of its table: then it reads the next tables until one has a matching row, to tell
+  `hasNextPage`. A filtered page that does not fill reads every table from the cursor's table on, one query each,
+  whose cost is that of the unfiltered anti-joins; the operation timeout bounds it. The total of a list comes from the
+  summary (`rowsSummary` per change type, `rowsWithUnits`) or from the table item (`rowsSummary`, `tableData.rows`). A
+  `search` filter, and a `changeTypes` filter with several types, have no total: a `RENAMED_AND_MODIFIED` row counts
+  in two types, so the per-type counts do not add up.
 - **`tableChanges`** reads the row counts of the tables on its page (one query each) and of a renamed table off the
   page only when a `changeTypes` filter needs its change type (§4).
 - **`summary`** reads the row counts of every listed table: the counts per change type and the number of rows with
@@ -511,8 +514,10 @@ Paging, filters, validation, snapshot:
 
 ### Version 1.4 (2026-11-10)
 
-- §8: the pair query of a filtered row page also returns the other pairs of the page's row ids, for its catalogue, and
-  the page reads no created or removed table whose change type `changeTypes` leaves out.
+- §8: the pair query of a filtered row page also returns the other pairs of the page's row ids, for its catalogue; the
+  page reads no created or removed table whose change type `changeTypes` leaves out; a filtered page that does not fill
+  reads every table from the cursor's table on.
+- §1: a `search` holding the NUL character is a validation error.
 - Status: PR 11 (row filters) implemented; the Draft reads are complete.
 
 ### Version 1.3 (2026-11-10)

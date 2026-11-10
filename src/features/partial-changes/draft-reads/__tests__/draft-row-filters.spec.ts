@@ -229,6 +229,62 @@ describe('Draft row filters', () => {
       expect(created?.selection.units).toEqual([replace]);
     });
 
+    it('gives a rename into the id of a deleted row its takeover when a search matches only the rename, by its Head id', async () => {
+      const draft = await givenCommittedProductsAndTags();
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.renameRow(PRODUCTS, 'p2', 'p1');
+      const all = await readFiltered(draft, {});
+
+      const items = await readFiltered(draft, { search: 'p2' });
+
+      expect(items.map(nameOf)).toEqual(['products/p1 RENAMED']);
+      expect(items).toEqual(
+        all.filter(({ changeType }) => changeType === ChangeType.Renamed),
+      );
+    });
+
+    it('gives a filtered rename the id exchange of the unfiltered read, on every page size', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: productSchema,
+          rows: {
+            ka: product('a'),
+            kb: product('b'),
+            kc: product('c'),
+            x1: product('x1'),
+            x2: product('x2'),
+          },
+        },
+      });
+      await draft.renameRowsAtOnce(PRODUCTS, [
+        ['ka', 'kb'],
+        ['kb', 'kc'],
+        ['kc', 'ka'],
+      ]);
+      await draft.renameRow(PRODUCTS, 'x2', 'x3');
+      await draft.renameRow(PRODUCTS, 'x1', 'x2');
+      await draft.updateRow(PRODUCTS, 'x2', product('edited'));
+      const all = await readFiltered(draft, {});
+      const cases: [DraftRowChangesFilters, string[]][] = [
+        [{ changeTypes: [ChangeType.RenamedAndModified] }, ['products/x2']],
+        [{ search: 'kb' }, ['products/kb', 'products/kc']],
+      ];
+
+      for (const [filters, rows] of cases) {
+        const expected = all.filter((item) =>
+          rows.includes(`${item.tableId}/${item.rowId}`),
+        );
+
+        expect(expected.every(({ idExchange }) => idExchange)).toBe(true);
+
+        for (const first of [1, 100]) {
+          expect(
+            rowItemsOf(await draft.readEveryDraftRowPage({ first, filters })),
+          ).toEqual(expected);
+        }
+      }
+    });
+
     it('lists under each filter exactly the items of the unfiltered read that it matches', async () => {
       const draft = await givenAllRowChangeTypes();
       await draft.removeRow(PRODUCTS, 'p5');
@@ -345,6 +401,23 @@ describe('Draft row filters', () => {
       ]);
       expect(linkSetReads).toEqual({ [NOTES]: 0, [PRODUCTS]: 1, [TAGS]: 1 });
     });
+    it('reads every table from the cursor once when a filter leaves the page unfilled', async () => {
+      const draft = await givenCommittedProductsAndTags();
+      await draft.updateRow(PRODUCTS, 'p1', product('edited'));
+      await draft.createTable(NOTES, labelSchema);
+      await draft.createRows(NOTES, { n1: { label: 'new' } });
+      await draft.updateRow(TAGS, 't1', { label: 'edited' });
+
+      const { result, linkSetReads } = await draftReadQueriesDuring(
+        kit,
+        await draft.linkSetsOf([NOTES, PRODUCTS, TAGS]),
+        () =>
+          draft.readDraftRowChanges({ first: 10, filters: { search: 't1' } }),
+      );
+
+      expect(rowItemsOf([result]).map(nameOf)).toEqual(['tags/t1 MODIFIED']);
+      expect(linkSetReads).toEqual({ [NOTES]: 1, [PRODUCTS]: 1, [TAGS]: 1 });
+    });
   });
 
   describe('validation', () => {
@@ -355,6 +428,7 @@ describe('Draft row filters', () => {
       ['change types that are not an array', { changeTypes: 'ADDED' }],
       ['an unknown change type', { changeTypes: ['MOVED'] }],
       ['a search that is not a string', { search: 1 }],
+      ['a search with the NUL character', { search: 'p\u00001' }],
     ])('refuses %s before reading the snapshot', async (_input, filters) => {
       const draft = await givenCommittedProductsAndTags();
       const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');
@@ -457,7 +531,9 @@ function idsOf({
   rowId,
   previousRowId,
 }: DraftRowItem): (string | undefined)[] {
-  return previousRowId === undefined
-    ? [tableId, previousTableId, rowId]
-    : [tableId, previousTableId, rowId, previousRowId];
+  if (previousRowId === undefined) {
+    return [tableId, previousTableId, rowId];
+  }
+
+  return [tableId, previousTableId, rowId, previousRowId];
 }

@@ -1,6 +1,6 @@
 import { join, raw, sql, type Sql } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import type { RowFilters } from 'src/features/partial-changes/draft-reads/draft-read-request';
+import type { TableFilters } from 'src/features/partial-changes/draft-reads/draft-read-request';
 import { changeTypesMatching } from 'src/features/partial-changes/draft-reads/table-filters';
 import {
   ROW_VERSIONS_PAIRED_BY_IDENTITY,
@@ -73,19 +73,20 @@ const PAIR_JSON = raw(`json_build_object(
   'yieldsUnit', p."yieldsUnit"
 )`);
 
-// Of two items with one row id, the row that exists only in Head comes first.
+// Of two items with one row id, the row that exists only in Head comes first. The matching rows are inlined into the
+// page and the look-ahead, so an unfiltered page scans the pairs as it did before the filters.
 export function reportedRowPairsPageSql(
   rows: TableRows,
-  filters: RowFilters,
+  filters: TableFilters,
   { afterRowId, limit }: RowRange,
 ): Sql {
   return sql`
     WITH ${reportedPairsCtes(rows)},
-    listed AS (
-      SELECT * FROM pairs WHERE ${matching(filters)}
+    matching AS NOT MATERIALIZED (
+      SELECT * FROM pairs WHERE ${rowsMatching(filters)}
     ),
     page AS (
-      SELECT * FROM listed WHERE ${rowsAfter(afterRowId)}
+      SELECT * FROM matching WHERE ${rowsAfter(afterRowId)}
       ORDER BY "rowId" COLLATE "C"
       FETCH FIRST ${limit} ROWS WITH TIES
     )
@@ -95,16 +96,33 @@ export function reportedRowPairsPageSql(
         FROM page p
       ) AS "pairs",
       EXISTS (
-        SELECT 1 FROM listed
+        SELECT 1 FROM matching
         WHERE "rowId" COLLATE "C" > (SELECT max("rowId" COLLATE "C") FROM page)
       ) AS "hasMore",
-      (
-        SELECT coalesce(json_agg(${PAIR_JSON}), '[]')
-        FROM pairs p
-        WHERE p."rowId" IN (SELECT "rowId" FROM page)
-          AND p."identity" NOT IN (SELECT "identity" FROM page)
-      ) AS "companions"
+      ${companionsOf(rows, filters)} AS "companions"
   `;
+}
+
+// The pairs with units at the page's row ids that the filters left out. Only a compared table holds two pairs at one row
+// id, and only a filter on rows can leave one of them out.
+function companionsOf(
+  rows: TableRows,
+  { changeTypes, search }: TableFilters,
+): Sql {
+  if (
+    rows.kind === 'oneSided' ||
+    (changeTypes === undefined && search === undefined)
+  ) {
+    return raw(`'[]'::json`);
+  }
+
+  return sql`(
+    SELECT coalesce(json_agg(${PAIR_JSON}), '[]')
+    FROM pairs p
+    WHERE p."yieldsUnit"
+      AND p."rowId" IN (SELECT "rowId" FROM page)
+      AND p."identity" NOT IN (SELECT "identity" FROM page)
+  )`;
 }
 
 export function reportedRowCountsSql(rows: TableRows): Sql {
@@ -209,7 +227,7 @@ function oneSidedChangeType(side: RevisionSide): Sql {
   return sql`${ChangeType.Added}::text`;
 }
 
-function matching({ changeTypes, search }: RowFilters): Sql {
+function rowsMatching({ changeTypes, search }: TableFilters): Sql {
   return sql`${changeTypeMatches(changeTypes)} AND ${searchMatches(search)}`;
 }
 

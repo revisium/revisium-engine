@@ -29,7 +29,8 @@ import { UnitKindCoverage } from '../../__tests__/support/unit-kind-coverage';
 
 const PAGE_SIZES = [1, 2, 7];
 const ALL_ROWS = 5_000;
-const SEARCHED_ROWS = 3;
+const SEARCHED_ROWS = 5;
+const SMALL_PAGE = 2;
 
 interface RowChangeView {
   readonly key: string;
@@ -136,16 +137,13 @@ describe('Draft row reads over random Drafts', () => {
           filters,
           all.filter((item) => matchesRowFilters(item, filters, tables)),
         ]);
-      }
 
-      for (const changeType of Object.values(ChangeType)) {
-        const filters = { changeTypes: [changeType] };
-        const filtered = await readEveryRow(draft, filters);
-
-        for (const first of PAGE_SIZES) {
-          expect(
+        for (const first of pageSizesOf(filters)) {
+          expect([
+            filters,
+            first,
             rowItemsOf(await draft.readEveryDraftRowPage({ first, filters })),
-          ).toEqual(filtered);
+          ]).toEqual([filters, first, filtered]);
         }
       }
     },
@@ -187,25 +185,22 @@ describe('Draft row reads over random Drafts', () => {
   }
 });
 
-// Every change type, none, every id a table item shows or names as previous, and searches over parts of row ids.
+// Every change type, none, every id a table item shows or names as previous, searches by the Draft id in another case
+// and by the Head id of rows across the read, and two filters together.
 function rowFiltersOf(
   tables: readonly DraftTableItem[],
   rows: readonly DraftRowItem[],
 ): DraftRowChangesFilters[] {
-  const tableIds = new Set(
-    tables.flatMap(({ tableId, previousTableId }) =>
-      previousTableId === undefined ? [tableId] : [tableId, previousTableId],
-    ),
-  );
+  const tableIds = new Set(tables.flatMap(tableIdsShownBy));
   const searches = new Set([
     '_',
-    ...rows
-      .slice(0, SEARCHED_ROWS)
-      .flatMap(({ rowId, previousRowId }) => [
-        rowId.slice(1, 3).toUpperCase(),
-        previousRowId?.slice(-2) ?? rowId,
-      ]),
+    '1',
+    ...sampleOf(rows).flatMap(({ rowId, previousRowId }) =>
+      [rowId.toUpperCase(), previousRowId].filter(isDefined),
+    ),
   ]);
+  const [firstSearch] = searches;
+  const [firstTableId] = tableIds;
 
   return [
     ...Object.values(ChangeType).map((changeType) => ({
@@ -214,7 +209,36 @@ function rowFiltersOf(
     { changeTypes: [] },
     ...[...tableIds].map((tableId) => ({ tableId })),
     ...[...searches].map((search) => ({ search })),
+    { changeTypes: [ChangeType.Modified], search: '1' },
+    { tableId: firstTableId, search: firstSearch },
   ];
+}
+
+function tableIdsShownBy({
+  tableId,
+  previousTableId,
+}: DraftTableItem): string[] {
+  return [tableId, previousTableId].filter(isDefined);
+}
+
+// Up to SEARCHED_ROWS rows spread over the read.
+function sampleOf(rows: readonly DraftRowItem[]): DraftRowItem[] {
+  const step = Math.max(Math.floor(rows.length / SEARCHED_ROWS), 1);
+
+  return rows.filter((_, index) => index % step === 0).slice(0, SEARCHED_ROWS);
+}
+
+// A change type filter pages at every page size; the other filters at the smallest that splits most pages.
+function pageSizesOf(filters: DraftRowChangesFilters): readonly number[] {
+  if (filters.changeTypes?.length === 1) {
+    return PAGE_SIZES;
+  }
+
+  return [SMALL_PAGE];
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+  return value !== undefined;
 }
 
 // The row filters of SPEC §7, over the items of an unfiltered read.
@@ -223,13 +247,11 @@ function matchesRowFilters(
   filters: DraftRowChangesFilters,
   tables: readonly DraftTableItem[],
 ): boolean {
-  if (filters.tableId) {
-    const shown = tables.some((table) => table.tableId === filters.tableId);
-    const ofItem = shown ? tableId : previousTableId;
-
-    if (ofItem !== filters.tableId) {
-      return false;
-    }
+  if (
+    filters.tableId &&
+    !isOfTable({ tableId, previousTableId }, filters.tableId, tables)
+  ) {
+    return false;
   }
 
   if (filters.changeTypes) {
@@ -254,6 +276,22 @@ function matchesRowFilters(
   }
 
   return true;
+}
+
+// The rows of the table items that show the id; only when none does, those of the renamed table it was in Head.
+function isOfTable(
+  {
+    tableId,
+    previousTableId,
+  }: Pick<DraftRowItem, 'tableId' | 'previousTableId'>,
+  id: string,
+  tables: readonly DraftTableItem[],
+): boolean {
+  if (tables.some((table) => table.tableId === id)) {
+    return tableId === id;
+  }
+
+  return previousTableId === id;
 }
 
 function distinctUnitsOf(units: readonly UnitRef[]): string[] {

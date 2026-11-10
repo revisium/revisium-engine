@@ -189,8 +189,8 @@ class DependentSteps {
     private readonly reads: ReadonlyMap<string, readonly string[]>,
   ) {}
 
-  // A step the Draft ledger lacks (an altered published migration) is left to
-  // validation.
+  // A step the Draft ledger lacks (a published migration missing from it) is
+  // left to validation.
   public of(ledger: readonly Migration[]): DependentStep[] {
     return ledger
       .filter((migration) => this.draftLedger.includes(migration))

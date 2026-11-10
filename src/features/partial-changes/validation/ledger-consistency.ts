@@ -316,13 +316,20 @@ class LeftOutSlots {
     }
   }
 
+  // A rename taints the referrers of a tainted table at that step, so a
+  // referrer failing there has only the renamed table as its cause.
   private causesOf(step: Migration, slot: ReplayedSlot): Cause[] {
+    const renamed = this.renamedLineageOf(step);
+
+    if (renamed !== undefined && this.slotsByLineage.get(renamed) !== slot) {
+      return this.renamedCauseOf(step, renamed);
+    }
+
     return [
       ...(this.readsByStep.get(step.id) ?? []).flatMap((tableId) =>
         this.readCauseOf(step, tableId),
       ),
       ...this.takenIdCauseOf(step),
-      ...this.renamedCauseOf(step, slot),
     ];
   }
 
@@ -357,21 +364,18 @@ class LeftOutSlots {
     return holder === undefined ? [] : [this.lineageCauseOf(holder)];
   }
 
-  // A rename of a tainted table taints its referrers at that step.
-  private renamedCauseOf(step: Migration, slot: ReplayedSlot): Cause[] {
+  private renamedLineageOf(step: Migration): string | undefined {
     if (step.changeType !== 'rename') {
-      return [];
+      return undefined;
     }
 
-    const renamed = this.timeline.lastChangeBefore(step, step.tableId)?.lineage;
-    const renamedSlot = renamed && this.slotsByLineage.get(renamed);
+    return this.timeline.lastChangeBefore(step, step.tableId)?.lineage;
+  }
 
-    if (
-      !renamed ||
-      !renamedSlot ||
-      renamedSlot === slot ||
-      !this.failedBefore(renamedSlot, step)
-    ) {
+  private renamedCauseOf(step: Migration, renamed: string): Cause[] {
+    const renamedSlot = this.slotsByLineage.get(renamed);
+
+    if (!renamedSlot || !this.failedBefore(renamedSlot, step)) {
       return [];
     }
 

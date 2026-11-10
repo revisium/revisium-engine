@@ -40,6 +40,17 @@ export function nextNativeMigrationId(bounds: MigrationBounds): string {
   return new Date(timestamp).toISOString();
 }
 
+export class NativeIdSequence {
+  constructor(private bounds: MigrationBounds) {}
+
+  public next(): string {
+    const id = nextNativeMigrationId(this.bounds);
+    this.bounds = { id, publishedAt: publishedAtOf(id) };
+
+    return id;
+  }
+}
+
 export function publishedAtOf(migrationId: string): Date {
   return new Date(migrationId);
 }

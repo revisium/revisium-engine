@@ -3,21 +3,10 @@ import type { RenumberedMigration } from 'src/features/migration/queries/impl/pl
 import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
 import {
   type MigrationBounds,
-  nextNativeMigrationId,
+  NativeIdSequence,
   publishedAtOf,
 } from 'src/features/share/ledger/native-migration-id';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-
-export class NativeIdSequence {
-  constructor(private bounds: MigrationBounds) {}
-
-  public next(): string {
-    const id = nextNativeMigrationId(this.bounds);
-    this.bounds = { id, publishedAt: publishedAtOf(id) };
-
-    return id;
-  }
-}
 
 export function lastPublishedBoundsOf(
   published: readonly LedgerEntry[],

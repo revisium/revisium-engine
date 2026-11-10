@@ -26,6 +26,8 @@ import { LedgerRepairPlanService } from 'src/features/migration/ledger-repair/le
 import { RepairFreshness } from 'src/features/migration/ledger-repair/repair-freshness';
 import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
 import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
+import { BackfillStateReader } from 'src/features/migration/ledger-backfill/backfill-state-reader';
+import { LedgerBackfillPlanService } from 'src/features/migration/ledger-backfill/ledger-backfill-plan.service';
 import { BranchPageReader } from 'src/features/migration/ledger-scan/branch-page-reader';
 import { ScanRevisionReader } from 'src/features/migration/ledger-scan/scan-revision-reader';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
@@ -54,6 +56,8 @@ const SERVICES = [
   RepairFreshness,
   RepairWriter,
   StoredLedgerVerification,
+  BackfillStateReader,
+  LedgerBackfillPlanService,
   BranchPageReader,
   ScanRevisionReader,
   ...MIGRATION_QUERY_HANDLERS,

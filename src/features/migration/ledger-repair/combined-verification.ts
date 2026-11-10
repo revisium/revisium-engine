@@ -4,12 +4,9 @@ import type {
   ReplayedLedger,
   ReplayedSlot,
 } from 'src/features/share/ledger-replay/ledger-replay';
+import { NativeIdSequence } from 'src/features/share/ledger/native-migration-id';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
-import {
-  NativeIdSequence,
-  renumberedAfter,
-  withRenumberedIds,
-} from './repair-ids';
+import { renumberedAfter, withRenumberedIds } from './repair-ids';
 import type { RepairLedger } from './repair-ledger';
 import { repairMigrationOf, type RepairPatch } from './repair-patch';
 

@@ -3,6 +3,7 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import type { RefusalCode } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type {
@@ -68,7 +69,7 @@ interface RefusedProducts {
   readonly code: RefusalCode;
   readonly message: string;
   readonly committed: Given;
-  readonly product: (title: string, categoryId: string) => object;
+  readonly product: (title: string, categoryId: string) => InputJsonValue;
 }
 
 const REFUSED_PRODUCTS: RefusedProducts[] = [
@@ -561,6 +562,45 @@ describe('DependencyClosure: references and ids of rows', () => {
         expect(closure.required).toEqual([]);
         expect(closure.blockers).toEqual([
           { code, tableId: PRODUCTS, message },
+        ]);
+      },
+    );
+
+    it.each(
+      REFUSED_PRODUCTS.flatMap((refused) => [
+        { ...refused, otherProducts: 'unchanged', created: {} },
+        {
+          ...refused,
+          otherProducts: 'created in the Draft',
+          created: { p2: refused.product('p2', 'c2') },
+        },
+      ]),
+    )(
+      'blocks a commit as danglingInSource when the referrer left by $damage references the lost id in the Draft too, with its other products $otherProducts',
+      async ({ committed, created }) => {
+        const draft = await committed(kit);
+        await draft.createRows(PRODUCTS, created);
+        await draft.removeReferencedRows(CATEGORIES, ['c1']);
+
+        const closure = await draft.closeDependencies('commit', {
+          rows: [category('c1')],
+        });
+
+        expect(closure.required).toEqual([]);
+        expect(closure.blockers).toEqual([
+          {
+            code: 'danglingInSource',
+            tableId: PRODUCTS,
+            rowId: 'p1',
+            message:
+              'No unit can restore consistency: products/p1 references categories/c1, which the new Head loses',
+            unit: {
+              kind: 'rowDelete',
+              tableId: CATEGORIES,
+              rowId: 'c1',
+              selector: { rows: [category('c1')] },
+            },
+          },
         ]);
       },
     );

@@ -1,3 +1,4 @@
+import { oppositeOf } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
 import type { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 
@@ -24,6 +25,29 @@ export class LostIdReferrers {
     this.reads.set(key, read);
 
     return read;
+  }
+
+  public async isReferencedOnOtherSide(
+    referrer: TargetTable,
+    jsonPath: string,
+    referencedId: string,
+  ): Promise<boolean> {
+    const other = referrer.pair[oppositeOf(referrer.structureSide)];
+
+    if (other === undefined) {
+      return false;
+    }
+
+    if (other.versionId === referrer.version.versionId) {
+      return true;
+    }
+
+    const found = await this.snapshotReader.readFirstReferrers(
+      other.versionId,
+      { jsonPath, rowIds: [referencedId], exceptRows: [] },
+    );
+
+    return found.length > 0;
   }
 
   private async readReferrers(

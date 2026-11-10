@@ -845,10 +845,14 @@ Row checks:
   (`idOccupied`).
 - **Foreign-key values of target rows** (loaded rows of tables with foreign keys) that resolve nowhere in the
   target → the unit that brings the referenced row (`referencedRowMissing`); the referrer's other-side value
-  (`referrerStillReferences`); the structure when the reference sits in a changed field (`structureBoundData`); or
-  `danglingInSource`.
+  (`referrerStillReferences`); the structure when the reference sits in a changed field (`structureBoundData`); the
+  refusal code of the referenced table when it is refused (§6.10); or `danglingInSource`.
 - **Unchanged referrers of ids the target loses**, found in SQL over the referrer tables → the unit that provides a
-  row with that id (`referencedRowMissing`) or `danglingInSource`.
+  row with that id (`referencedRowMissing`) or `danglingInSource`. A refused referrer (§6.10) has no loaded rows, so
+  all its rows are read here. When no unit provides the id, only a change of the refused table could keep the
+  reference, and the plan is blocked with its refusal code; when its other side references the id as well (the same
+  table version, or a row there that still holds the id), the source itself dangles and the blocker stays
+  `danglingInSource`.
 
 **Ledger dependencies.** The structure checks compare the final target only. A pending migration can need, at its own
 step, a table id that only another unit's pending migration provides, while the final schemas are consistent because a
@@ -1609,7 +1613,10 @@ versions unchanged" (§14) holds in every scenario.
   removed and recreated with no `init` after the `remove` (SQL fixture), a lineage broken by an unattributable `rename`
   (SQL fixture), and a table created in the Draft with no pending `init` (SQL fixture) → every partial operation on it
   is `blocked` (`unledgeredTable`) and listing returns it in `refusedTables`; units of other tables apply; exactly
-  `{ all: true }` and native commit and revert it as before. Not unledgered: a table created in the Draft with its
+  `{ all: true }` and native commit and revert it as before. A unit of another table that needs a change of the
+  unledgered table is `blocked` (`unledgeredTable`) too: the deletion of a row its Head references while its Draft
+  references another, the revert of a created row its Draft references, the rename of a table it references. Not
+  unledgered: a table created in the Draft with its
   pending `init` (AS-14), and a Head table recorded as `init A`, `rename A → B`, although no `init` names `B`. A failed
   `rename` taints the new id's slot: that table fails predicate (b) and is refused with `headSchemaInconsistent`.
 

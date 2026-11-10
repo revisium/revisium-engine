@@ -232,14 +232,25 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
 
   it('commits a change of another table next to a content-equal Draft version of the unledgered table and keeps that Draft version (AS-49)', async () => {
     const draft = await givenContentEqualUnledgeredProductsOfEditedCategory();
+    const previousHeadRevisionId = await draft.revisionId('head');
+    const formerDraftRevisionId = await draft.revisionId('draft');
     const headProducts = await draft.tableVersionId('head', PRODUCTS);
     const draftProducts = await draft.tableVersionId('draft', PRODUCTS);
 
     const result = await draft.commitChanges({ selection: titleOfC1 });
 
-    expect(result).toMatchObject({
+    expect(result).toEqual<CommitChangesResult>({
       status: 'applied',
+      previousHeadRevisionId,
+      headRevisionId: formerDraftRevisionId,
+      draftRevisionId: await draft.revisionId('draft'),
+      applied: { selected: 1, required: 0 },
       remaining: { units: 0, unreadTables: 0 },
+      renumbered: [],
+    });
+    await expectRows(draft, 'head', CATEGORIES, {
+      c1: { title: 'uno' },
+      c2: { title: 'two' },
     });
     expect(await draft.tableVersionId('head', PRODUCTS)).toBe(headProducts);
     expect(await draft.tableVersionId('draft', PRODUCTS)).toBe(draftProducts);
@@ -247,14 +258,23 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
 
   it('reverts a change of another table next to a content-equal Draft version of the unledgered table and keeps that Draft version (AS-49)', async () => {
     const draft = await givenContentEqualUnledgeredProductsOfEditedCategory();
+    const headRevisionId = await draft.revisionId('head');
+    const draftRevisionId = await draft.revisionId('draft');
     const headProducts = await draft.tableVersionId('head', PRODUCTS);
     const draftProducts = await draft.tableVersionId('draft', PRODUCTS);
 
     const result = await draft.revertChanges({ selection: titleOfC1 });
 
-    expect(result).toMatchObject({
+    expect(result).toEqual<RevertChangesResult>({
       status: 'applied',
+      headRevisionId,
+      draftRevisionId,
+      applied: { selected: 1, required: 0 },
       remaining: { units: 0, unreadTables: 0 },
+    });
+    await expectRows(draft, 'draft', CATEGORIES, {
+      c1: { title: 'one' },
+      c2: { title: 'two' },
     });
     expect(await draft.tableVersionId('head', PRODUCTS)).toBe(headProducts);
     expect(await draft.tableVersionId('draft', PRODUCTS)).toBe(draftProducts);

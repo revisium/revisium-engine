@@ -14,6 +14,7 @@ import { LostIdReferrers } from 'src/features/partial-changes/closure/lost-id-re
 import { referenceReason } from 'src/features/partial-changes/closure/row-reference';
 import type { ForeignKeyLeaf } from 'src/features/partial-changes/closure/table-schemas';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
+import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
@@ -52,7 +53,7 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
         const rowId = referrers.get(lostId);
 
         if (rowId !== undefined) {
-          findings.push(this.restoreLostId(context, scan, lostId, rowId));
+          findings.push(await this.restoreLostId(context, scan, lostId, rowId));
         }
       }
     }
@@ -89,12 +90,13 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
     return tables.referencedBy(referrer, losing.tableId) === losing;
   }
 
-  private restoreLostId(
+  private async restoreLostId(
     context: CheckContext,
-    { losing, referrer, leaf }: ReferrerScan,
+    scan: ReferrerScan,
     referencedId: string,
     rowId: string,
-  ): Finding {
+  ): Promise<Finding> {
+    const { losing, referrer, leaf } = scan;
     const structure = context.unappliedStructureHolding(referrer, leaf.pointer);
     const { target } = context.names;
     const site = { tableId: referrer.tableId, rowId };
@@ -115,9 +117,13 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
     }
 
     const provider = losing.providerOf(referencedId);
+    const refusal =
+      provider === undefined
+        ? await this.refusalOfReferrerChange(scan, referencedId)
+        : undefined;
 
-    if (provider === undefined && referrer.refusal) {
-      return refusedBy(referrer.refusal);
+    if (refusal) {
+      return refusedBy(refusal);
     }
 
     return requiringOrDangling(
@@ -129,5 +135,22 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
       ),
       losing.unitLosing(referencedId),
     );
+  }
+
+  private async refusalOfReferrerChange(
+    { referrer, leaf }: ReferrerScan,
+    referencedId: string,
+  ): Promise<RefusedTable | undefined> {
+    if (!referrer.refusal) {
+      return undefined;
+    }
+
+    const stillReferenced = await this.referrers.isReferencedOnOtherSide(
+      referrer,
+      leaf.jsonPath,
+      referencedId,
+    );
+
+    return stillReferenced ? undefined : referrer.refusal;
   }
 }

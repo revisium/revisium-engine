@@ -1217,7 +1217,7 @@ describe('draft table changes', () => {
       expect(withNullFilters).toEqual(withNulls);
     });
 
-    it('raises the native not-found error for an unknown branch', async () => {
+    it('raises the native lookup error for an unknown branch', async () => {
       const draft = await givenCommittedTables();
 
       await expect(

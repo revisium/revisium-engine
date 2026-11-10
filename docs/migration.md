@@ -85,7 +85,8 @@ PHASE 5: SWAP (single serializable transaction)
   ├─ migrate the views row through the synchronous views writer: copy-on-write
   └─ delete the record, guarded by SWAPPING and the owner's token
 
-AFTER COMMIT: notify the endpoints of the Draft (a failure is logged; the swap is not repeated)
+AFTER COMMIT: notify the endpoints of the Draft (a failure is logged; the swap is not repeated); the engine's hook
+             is a no-op, so the host refreshes them (api.md#host-integration)
 ```
 
 Every transition is one guarded statement or one transaction: a compare-and-set on the record status and the owner's
@@ -416,7 +417,8 @@ changed before the write. Errors are those of planning: unknown project or branc
    stores a schema history that passes the native history validation, and the replayed Draft ledger reproduces the
    Draft schema of each repaired table and of every Draft table it reproduced before the write. A failure is a defect:
    the transaction rolls back and the call fails.
-6. **Notify** the Draft endpoints after the commit.
+6. **Notify** the Draft endpoints after the commit, through the engine's no-op hook: the host refreshes them
+   ([Host integration](api.md#host-integration)).
 
 A serialization failure retries the transaction from step 2, so of two concurrent repairs one writes and the other
 finds its plan stale. A second run plans `alreadyRepaired`; once a native or `{ all: true }` commit publishes the
@@ -511,7 +513,8 @@ it to administrators. Input types are checked before any transaction; `null` mea
 5. **Verify** in the same attempt: both new revisions link one readonly ledger version, its rows are readonly and are
    exactly the planned entries in id order, and replaying them reproduces every Head schema row. A failure is a
    defect: the attempt rolls back and the call fails.
-6. **Notify** the endpoints of the new Head and the new Draft after the commit.
+6. **Notify** the endpoints of the new Head and the new Draft after the commit, through the engine's no-op hook: the
+   host moves and refreshes them as after a commit ([Host integration](api.md#host-integration)).
 
 Afterwards:
 

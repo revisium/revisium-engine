@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.3 |
+| Version | 2.4 |
 | Status | Accepted |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), delivery stage 0 |
@@ -215,11 +215,14 @@ in a later statement (`:511-520`), so a crash in between makes recovery rewrite 
 5. Migrate the views row through the synchronous views writer with copy-on-write (`update-table.handler.ts:232-291`).
 6. Set `hasChanges`; delete the record, requiring exactly one deleted row with the token.
 
-After the commit the worker notifies endpoints for the Draft (as `api-update-table.handler.ts:70`); a notification error
-is logged and does not repeat or fail the swap. The swap is idempotent: change and deletion commit together, and a lost
-acknowledgement leaves no record to repeat. **Caller observes:** the Draft ledger gains the `update`, the Draft history
-its entry; the Head and earlier revisions keep their rows; `getMigrationStatus` returns `null` after success, as today;
-a failed re-check leaves `FAILED` with its code.
+After the commit the worker notifies endpoints for the Draft (as `api-update-table.handler.ts:72`); a notification error
+is logged and does not repeat or fail the swap. The hook is the engine's internal no-op, with no supported way to
+replace it (partial-changes §5.10), so a host is not told when a swap commits: it sees the finished swap through
+`getMigrationStatus` (`null` after success) or when `applyMigrations` returns `applied` for that update (a `failed`
+result can still be followed by a worker's swap), and then refreshes the Draft's endpoints itself. The swap is
+idempotent: change and deletion commit together, and a lost acknowledgement leaves no record to repeat. **Caller
+observes:** the Draft ledger gains the `update`, the Draft history its entry; the Head and earlier revisions keep their
+rows; `getMigrationStatus` returns `null` after success, as today; a failed re-check leaves `FAILED` with its code.
 
 ### 3.6 Cancellation
 
@@ -503,8 +506,10 @@ One Serializable transaction through the native runner, with the migration-lock 
    Draft history extends its Head history, and replaying the stored ledger reproduces the Draft schemas of the written
    tables. A failure rolls back and raises an error (a defect, not an outcome).
 
-After the commit, endpoints of the Draft are notified. Rows are not revalidated inside the transaction (JSON validation
-of a large table would exceed `TRANSACTION_TIMEOUT`); the fingerprint proves the validated input unchanged. A second run
+After the commit, endpoints of the Draft are notified through the same no-op hook; after a call that wrote a repair
+(`dryRun: false` and a `repaired` table) the host refreshes the Draft's endpoints itself. Rows are not revalidated
+inside the transaction (JSON validation of a large table would exceed `TRANSACTION_TIMEOUT`); the fingerprint proves
+the validated input unchanged. A second run
 plans `alreadyRepaired`; after a commit publishes the repair, `notDamaged`.
 
 ## 7. Ledger backfill and row remediation
@@ -540,7 +545,7 @@ The swap and the repair create Draft versions only and never update a version a 
 | Inline mode runs a recurring sweep; the progress deadline ignores heartbeats; a stalled `SWAPPING` owner is taken over. | Operators | Yes |
 | Imported async updates into a Draft without a migration table fail with `LEDGER_UNAVAILABLE`. | Replica sync tools | Yes |
 | Migrated rows carry file references. `backfillProjectFileBlobs` can relink earlier rows; its dry run reports inferred totals, not missing links. | Storage accounting | Yes |
-| Endpoints of the Draft are notified after an async swap. | Hosts implementing `notifyEndpoints` | Yes |
+| The engine's endpoint hook is called for the Draft after an async swap; it is an internal no-op, so a host does not learn of the swap from it (§3.5). | Hosts serving endpoints | Yes |
 | `abortMigration` guards its deletions and still rejects `SWAPPING`; the shadow table keeps the source's `createdAt`. | Admin callers, metadata readers | No |
 | `applyMigrations` returns `applied` for a large `update` after its swap, with the source id; it drives the migration in-process in every mode and can last minutes. | Replica sync tools | Yes |
 | New facade methods `scanSchemaLedger`, `repairSchemaLedger`; the repair can renumber pending migrations. | Operators, Draft-export consumers | Yes |
@@ -782,5 +787,11 @@ async swap can still rewrite committed rows during the scan.
   async-migration threshold, so no async-migration damage exists); the scan and the repair stay available to hosts.
 - Overview, §5.3, §6.2, §7: nothing waits for the scan results any more. The ledger backfill is specified; a row
   remediation is designed only if a host's scan finds `rowsNeedMigration` tables.
+
+### Version 2.4 (2026-11-10)
+
+- §3.5, §6.4, §9: the endpoint hook is the engine's internal no-op, with no supported way to replace it. A host is
+  not told when an async swap commits and refreshes the Draft's endpoints once it sees the swap finished; after a
+  written repair it refreshes them too.
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

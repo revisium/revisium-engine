@@ -1,6 +1,8 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { type Barrier, createBarrier } from 'src/__tests__/utils/barrier';
+import { DraftRowItems } from 'src/features/partial-changes/draft-reads/draft-row-items';
 import { DraftTableItems } from 'src/features/partial-changes/draft-reads/draft-table-items';
+import { ReportedRowPairsReader } from 'src/features/partial-changes/draft-reads/reported-row-pairs-reader';
 import { ReportedRowCountsReader } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 
 // The table page waits at its barrier once it has read its snapshot and listed its tables, before their details.
@@ -18,6 +20,50 @@ export function readTablePageWhileDraftChanges<T>(
       await barrier.arrive();
 
       return edgesOf(page, tables);
+    });
+
+  return readWhileHeld(barrier, hold, read, edit);
+}
+
+// The row page waits at its barrier once it has read the pairs of its rows, before their versions and units.
+export function readRowPageWhileDraftChanges<T>(
+  kit: PartialChangesTestKit,
+  read: () => Promise<T>,
+  edit: () => Promise<unknown>,
+): Promise<T> {
+  const items = kit.module.get(DraftRowItems);
+  const edgesOf = items.edgesOf.bind(items);
+  const barrier = createBarrier('A Draft row page');
+  const hold = jest
+    .spyOn(items, 'edgesOf')
+    .mockImplementation(async (page, compared) => {
+      await barrier.arrive();
+
+      return edgesOf(page, compared);
+    });
+
+  return readWhileHeld(barrier, hold, read, edit);
+}
+
+// The row page waits at its barrier once it has read its snapshot and listed its tables, before its first pair query.
+export function readRowPageBeforeItsPairs<T>(
+  kit: PartialChangesTestKit,
+  read: () => Promise<T>,
+  edit: () => Promise<unknown>,
+): Promise<T> {
+  const reader = kit.module.get(ReportedRowPairsReader);
+  const readPairsPage = reader.readPairsPage.bind(reader);
+  const barrier = createBarrier('A Draft row page before its pairs');
+  let held = false;
+  const hold = jest
+    .spyOn(reader, 'readPairsPage')
+    .mockImplementation(async (rows, range) => {
+      if (!held) {
+        held = true;
+        await barrier.arrive();
+      }
+
+      return readPairsPage(rows, range);
     });
 
   return readWhileHeld(barrier, hold, read, edit);

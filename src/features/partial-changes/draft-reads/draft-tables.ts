@@ -9,7 +9,7 @@ import {
   ReportedRowCountsReader,
 } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 import type { TableRows } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
-import { TableCatalogue } from 'src/features/partial-changes/draft-reads/table-catalogue';
+import { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
 import {
   hasChangeTypeAmong,
   hasIdContaining,
@@ -61,7 +61,7 @@ export class DraftTablesReader {
 
     return new DraftTables(
       compared,
-      new TableCatalogue(compared),
+      () => DraftCatalogue.tableLevel(compared),
       this.countsReader,
     );
   }
@@ -72,13 +72,21 @@ export class DraftTables {
   public readonly listed: readonly DraftTable[];
 
   private readonly rowCounts = new Map<string, Promise<ReportedRowCounts>>();
+  private tableCatalogue?: DraftCatalogue;
 
   constructor(
     public readonly compared: ComparedSnapshot,
-    public readonly catalogue: TableCatalogue,
+    private readonly buildCatalogue: () => DraftCatalogue,
     private readonly countsReader: ReportedRowCountsReader,
   ) {
     this.listed = listedTablesOf(compared);
+  }
+
+  // The table-level catalogue, built on first use: a row page builds its own with the changed rows of the page.
+  public get catalogue(): DraftCatalogue {
+    this.tableCatalogue ??= this.buildCatalogue();
+
+    return this.tableCatalogue;
   }
 
   public get readState(): DraftReadState {

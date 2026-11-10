@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import type { Row } from 'src/engine-prisma-types';
-import { previousTableIdOf } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import { encodeTableCursor } from 'src/features/partial-changes/draft-reads/draft-cursor';
 import type {
   DraftTable,
   DraftTables,
 } from 'src/features/partial-changes/draft-reads/draft-tables';
+import { tableIdsOf } from 'src/features/partial-changes/draft-reads/table-ids';
 import type { ReportedRowCounts } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
-import type { TableCatalogue } from 'src/features/partial-changes/draft-reads/table-catalogue';
+import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
 import type { DraftEdge } from 'src/features/partial-changes/queries/impl/draft-reads';
 import type {
   DraftTableItem,
@@ -16,10 +16,6 @@ import type {
   TableSelection,
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
-import {
-  publicTableIdOf,
-  type TablePair,
-} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { pendingEntriesOf } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SchemaImpactService } from 'src/features/revision-changes/services/schema-impact.service';
 import { ViewsComparisonService } from 'src/features/revision-changes/services/views-comparison.service';
@@ -86,7 +82,7 @@ export class DraftTableItems {
 
   private viewsChangesOf(
     { pair }: DraftTable,
-    catalogue: TableCatalogue,
+    catalogue: DraftCatalogue,
   ): ViewsChangeDetail {
     const views = catalogue.viewsRowsOf(pair);
 
@@ -100,7 +96,7 @@ export class DraftTableItems {
 export function tableSelectionOf(
   table: DraftTable,
   counts: ReportedRowCounts,
-  catalogue: TableCatalogue,
+  catalogue: DraftCatalogue,
 ): TableSelection {
   const refusal = catalogue.refusalOf(table.pair);
 
@@ -136,7 +132,7 @@ export function tableSelectionOf(
 export function tableDataRowsOf(
   table: DraftTable,
   counts: ReportedRowCounts,
-  catalogue: TableCatalogue,
+  catalogue: DraftCatalogue,
 ): number {
   if (catalogue.refusalOf(table.pair)) {
     return 0;
@@ -155,19 +151,6 @@ function tableDataOf(
   }
 
   return { selector: { tableData: [pair.draft.id] }, rows: rowsWithUnits };
-}
-
-function tableIdsOf(
-  pair: TablePair,
-): Pick<DraftTableItem, 'tableId' | 'previousTableId'> {
-  const tableId = publicTableIdOf(pair);
-  const previousTableId = previousTableIdOf(pair);
-
-  if (previousTableId === undefined) {
-    return { tableId };
-  }
-
-  return { tableId, previousTableId };
 }
 
 function rowsSummaryOf({

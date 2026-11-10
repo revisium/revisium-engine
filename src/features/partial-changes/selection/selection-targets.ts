@@ -69,9 +69,14 @@ export class SelectionTargets {
   }
 
   public refusalsOfStructure(table: TablePair): RefusedTable[] {
-    return (this.recreations.get(table.identity) ?? [table]).flatMap((member) =>
+    return this.recreationOf(table).flatMap((member) =>
       this.refusalsOfTable(member),
     );
+  }
+
+  // The tables one structure unit holds: both tables of a replaced id, else the table alone.
+  public recreationOf(table: TablePair): readonly TablePair[] {
+    return this.recreations.get(table.identity) ?? [table];
   }
 
   public structureOf(table: TablePair): TableStructure {

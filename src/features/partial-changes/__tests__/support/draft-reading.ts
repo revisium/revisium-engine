@@ -6,10 +6,18 @@ import type {
   DraftChangesSummaryInput,
 } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import type {
+  DraftRowChangesInput,
+  DraftRowItem,
+  DraftRowPage,
+  RowSelection,
+} from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import type {
   DraftTableChangesInput,
   DraftTableItem,
   DraftTablePage,
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
+import type { FieldSelection } from 'src/features/partial-changes/queries/impl/draft-reads';
+import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { GetRevisionChangesHandler } from 'src/features/revision-changes/queries/handlers/get-revision-changes.handler';
 import { GetRowChangesHandler } from 'src/features/revision-changes/queries/handlers/get-row-changes.handler';
@@ -17,6 +25,7 @@ import { GetTableChangesHandler } from 'src/features/revision-changes/queries/ha
 import { RevisionChangesApiService } from 'src/features/revision-changes/revision-changes-api.service';
 import type {
   RevisionChanges,
+  RowChange,
   TableChange,
   TableChangesFilters,
 } from 'src/features/revision-changes/types';
@@ -25,6 +34,8 @@ import type { RevisionSide } from './snapshot-reading';
 
 export type DraftTableOptions = Omit<DraftTableChangesInput, 'branch'>;
 export type DraftTablePaging = Omit<DraftTableOptions, 'after'>;
+export type DraftRowOptions = Omit<DraftRowChangesInput, 'branch'>;
+export type DraftRowPaging = Omit<DraftRowOptions, 'after'>;
 export type DraftSummaryOptions = Omit<DraftChangesSummaryInput, 'branch'>;
 export type NativeTableFilters = Pick<
   TableChangesFilters,
@@ -68,6 +79,41 @@ export function readDraftTableChanges(
   options: DraftTableOptions,
 ): Promise<DraftTablePage> {
   return kit.partialChangesApi.draftTableChanges({ ...options, branch });
+}
+
+export function readDraftRowChanges(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  options: DraftRowOptions,
+): Promise<DraftRowPage> {
+  return kit.partialChangesApi.draftRowChanges({ ...options, branch });
+}
+
+export async function readEveryDraftRowPage(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  paging: DraftRowPaging,
+): Promise<DraftRowPage[]> {
+  const pages: DraftRowPage[] = [];
+  let after: string | null = null;
+
+  for (let index = 0; index < MAX_PAGES; index++) {
+    const page = await readDraftRowChanges(kit, branch, { ...paging, after });
+
+    pages.push(page);
+
+    if (!page.pageInfo.hasNextPage) {
+      return pages;
+    }
+
+    after = page.pageInfo.endCursor;
+  }
+
+  throw new Error(`The Draft rows did not end within ${MAX_PAGES} pages`);
+}
+
+export function rowItemsOf(pages: readonly DraftRowPage[]): DraftRowItem[] {
+  return pages.flatMap(({ edges }) => edges.map(({ node }) => node));
 }
 
 export function readDraftChangesSummary(
@@ -118,6 +164,48 @@ export async function readNativeTableChanges(
   const page = await kit.module
     .get(RevisionChangesApiService)
     .tableChanges({ ...comparison, filters, first: NATIVE_PAGE_SIZE });
+
+  return page.edges.map(({ node }) => node);
+}
+
+export interface DraftReads {
+  readonly tables: readonly DraftTableItem[];
+  readonly rows: readonly DraftRowItem[];
+  readonly summary: DraftChangesSummary;
+}
+
+// Every unit a client reaches from the three reads: table selections, summary items, and row, field and column selections.
+export function unitsReachableFrom({
+  tables,
+  rows,
+  summary,
+}: DraftReads): UnitRef[] {
+  return [
+    ...tables.flatMap(({ selection }) =>
+      selection.state === 'selectable'
+        ? [selection.structure, selection.views].filter(isUnitRef)
+        : [],
+    ),
+    ...summary.sharedSchemas.map(({ unit }) => unit),
+    ...summary.transientTables.map(({ structure }) => structure),
+    ...summary.viewsOnlyTables.map(({ views }) => views),
+    ...rows.flatMap(({ selection, fields, columns }) => [
+      ...selection.units,
+      ...unitsOfRowSelection(selection),
+      ...[...fields, ...columns].flatMap((change) =>
+        unitOfFieldSelection(change.selection),
+      ),
+    ]),
+  ];
+}
+
+export async function readNativeRowChanges(
+  kit: PartialChangesTestKit,
+  comparison: NativeComparison,
+): Promise<RowChange[]> {
+  const page = await kit.module
+    .get(RevisionChangesApiService)
+    .rowChanges({ ...comparison, first: NATIVE_PAGE_SIZE });
 
   return page.edges.map(({ node }) => node);
 }
@@ -181,6 +269,30 @@ export async function draftReadQueriesDuring<T>(
   } finally {
     spies.forEach((spy) => spy.mockRestore());
   }
+}
+
+function unitsOfRowSelection(selection: RowSelection): UnitRef[] {
+  if (selection.state === 'goesWith') {
+    return [selection.unit];
+  }
+
+  if (selection.state === 'selectable' && selection.structure) {
+    return [selection.structure];
+  }
+
+  return [];
+}
+
+function unitOfFieldSelection(selection: FieldSelection): UnitRef[] {
+  if (selection.state === 'unit' || selection.state === 'goesWith') {
+    return [selection.unit];
+  }
+
+  return [];
+}
+
+function isUnitRef(unit: UnitRef | undefined): unit is UnitRef {
+  return unit !== undefined;
 }
 
 function recordingRawQueries(

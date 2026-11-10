@@ -4,8 +4,8 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.1 |
-| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PRs 9–11, the row reads, are pending. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold |
+| Version | 1.2 |
+| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages over the unfiltered list, is implemented; PR 10 (§5.3–§5.5: `idTakeover`, `idExchange`, `follows`) and PR 11 (the row `filters` of §1 and §7) are pending. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
@@ -179,7 +179,7 @@ formula values of the page's rows are computed), in native order, each as one en
 | --- | --- |
 | `path` | JSON Pointer of the changed value: a field, an array element (`/tags/1`), or the root `''`. |
 | `changeType` | `FIELD_ADDED`, `FIELD_REMOVED` or `FIELD_MODIFIED`: the values of the native `RowChangeDetailType` that the value diff produces. |
-| `oldValue`, `newValue` | The Head and the Draft value. A side without the value has `null`: `oldValue` of `FIELD_ADDED`, `newValue` of `FIELD_REMOVED`. The change type tells a missing value from a JSON `null`. |
+| `oldValue`, `newValue` | The Head and the Draft value, as the native read computes them: the formula computation of the page's rows also gives a stored `null` of a typed field that type's value. A side without the value has `null`: `oldValue` of `FIELD_ADDED`, `newValue` of `FIELD_REMOVED`. |
 | `selection` | The result of the field selector at `path` (partial-changes-v1 §4.3), resolved by the selection normalisation itself (below). |
 | `follows` | The rename whose cascade rewrote this reference (§5.5). |
 
@@ -198,7 +198,7 @@ formula values of the page's rows are computed), in native order, each as one en
 
 | Selector result | `selection` |
 | --- | --- |
-| `notSelectable` (a formula or system value) | `{ state: 'computed' }` |
+| `notSelectable` (a formula or system value), or no unit while the stored values at `path` are equal (a computed value inside an array or File value, which is atomic) | `{ state: 'computed' }` |
 | requires the row's creation, deletion or replace unit | `goesWith`, reason `rowExistence` |
 | requires the structure unit | `goesWith`, reason `tableExistence` for a created, removed or replaced table, else `structureBound` |
 | selects a field unit, or requires the unit of the whole array or File value | `{ state: 'unit', unit }` |
@@ -319,8 +319,10 @@ A call costs the compared snapshot, which every listing page reads, and one quer
 anti-join of the table's two link sets (a created or removed table reads the rows of its one version):
 
 - **`rowChanges`** reads the tables in order from the cursor's table (only the filtered tables with `tableId`) and
-  stops when the page is full: the query of a table returns its page pairs. It returns no `totalCount`, so it reads no
-  table before the cursor or after the full page. The total of a list comes from the summary (`rowsSummary` per change
+  stops when the page is full: the query of a table returns its page pairs and whether a row of the table follows
+  them. It returns no `totalCount`, so it reads no table before the cursor or after the full page, except when the
+  page ends with the last reported row of its table: then it reads the next tables until one has a reported row, to
+  tell `hasNextPage`. The total of a list comes from the summary (`rowsSummary` per change
   type, `rowsWithUnits`) or from the table item (`rowsSummary`, `tableData.rows`). A `search` filter, and a
   `changeTypes` filter with several types, have no total: a `RENAMED_AND_MODIFIED` row counts in two types, so the
   per-type counts do not add up.
@@ -476,8 +478,8 @@ Items:
 - DR-11 A `contentEqual` table and a `computed` row; a refused table's items, rows and fields are `refused` with its
   code; rows of a created, removed or replaced table go with the structure (`tableExistence`).
 - DR-12 Field changes: paths are JSON Pointers (a nested field `/dims/width`, an array element `/tags/1`, which
-  selects the array's unit); an added field has `oldValue: null`, a removed one `newValue: null`, and a field set to
-  `null` is `FIELD_MODIFIED` with `newValue: null`; a created row has one root entry `''`, `FIELD_ADDED` with the whole
+  selects the array's unit); an added field or element has `oldValue: null`, a removed one `newValue: null`, and a value
+  is the one the native read computes; a created row has one root entry `''`, `FIELD_ADDED` with the whole
   data, and a removed row one `FIELD_REMOVED`, both going with the row (`rowExistence`); a field moved by a pending `move` reads as removed and added, both `structureBound`; a formula
   field is `computed`; a value of a changed field goes with the structure (`structureBound`).
 - DR-13 Columns: a `meta` and a `schemaHash` difference under an unchanged structure select the `rowColumns` unit; a
@@ -504,6 +506,15 @@ Paging, filters, validation, snapshot:
 - DR-20 `null` for every optional input is treated as absent; an unknown branch is the native not-found error.
 
 ## Changelog
+
+### Version 1.2 (2026-11-10)
+
+- §5.2, DR-12: values are those the native read computes, which gives a stored `null` of a typed field that type's
+  value, so DR-12 no longer asks for a field set to `null`.
+- §8: a row page whose last item ends its table reads the next tables until one has a reported row, to tell
+  `hasNextPage`.
+- §5.2: a field change that matches no unit while the stored values at its path are equal is `computed`: a formula or
+  system value inside an atomic array or File value changes only in the computation.
 
 ### Version 1.1 (2026-11-10)
 

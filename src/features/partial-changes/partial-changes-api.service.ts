@@ -16,6 +16,11 @@ import {
   GetDraftChangesSummaryQuery,
 } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import {
+  type DraftRowChangesInput,
+  type DraftRowPage,
+  GetDraftRowChangesQuery,
+} from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import {
   type DraftTableChangesInput,
   type DraftTablePage,
   GetDraftTableChangesQuery,
@@ -60,6 +65,10 @@ export class PartialChangesApiService {
     data: DraftTableChangesInput,
   ): Promise<DraftTablePage> {
     return this.queryBus.execute(new GetDraftTableChangesQuery(data));
+  }
+
+  public draftRowChanges(data: DraftRowChangesInput): Promise<DraftRowPage> {
+    return this.queryBus.execute(new GetDraftRowChangesQuery(data));
   }
 
   public draftChangesSummary(

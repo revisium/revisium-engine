@@ -1,9 +1,12 @@
 import {
+  decodeRowCursor,
   decodeTableCursor,
+  type RowPosition,
   type TablePosition,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { DraftChangesSummaryInput } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
+import type { DraftRowChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTableChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { ChangeType } from 'src/features/revision-changes/types';
@@ -18,6 +21,12 @@ export interface DraftTableChangesRequest {
   readonly first: number;
   readonly after?: TablePosition;
   readonly filters: TableFilters;
+}
+
+export interface DraftRowChangesRequest {
+  readonly branch: ChangesBranch;
+  readonly first: number;
+  readonly after?: RowPosition;
 }
 
 export interface DraftChangesSummaryRequest {
@@ -39,8 +48,20 @@ export function tableChangesRequestOf({
   return {
     branch,
     first: pageSizeOf(first),
-    after: tablePositionOf(after),
+    after: cursorOf(after, decodeTableCursor),
     filters: tableFiltersOf(filters),
+  };
+}
+
+export function rowChangesRequestOf({
+  branch,
+  first,
+  after,
+}: DraftRowChangesInput): DraftRowChangesRequest {
+  return {
+    branch,
+    first: pageSizeOf(first),
+    after: cursorOf(after, decodeRowCursor),
   };
 }
 
@@ -66,7 +87,10 @@ function pageSizeOf(first: unknown): number {
   return first;
 }
 
-function tablePositionOf(after: unknown): TablePosition | undefined {
+function cursorOf<Position>(
+  after: unknown,
+  decode: (cursor: string) => Position,
+): Position | undefined {
   if (after === undefined || after === null) {
     return undefined;
   }
@@ -75,7 +99,7 @@ function tablePositionOf(after: unknown): TablePosition | undefined {
     throw new ListingValidationError('after must be a string');
   }
 
-  return decodeTableCursor(after);
+  return decode(after);
 }
 
 function tableFiltersOf(filters: unknown): TableFilters {

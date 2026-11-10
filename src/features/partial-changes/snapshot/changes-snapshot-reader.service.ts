@@ -119,6 +119,16 @@ export class ChangesSnapshotReader {
     return this.withRowVersions(pairs);
   }
 
+  public async readRowVersions(
+    versionIds: readonly string[],
+  ): Promise<ReadonlyMap<string, Row>> {
+    const rows = await this.transaction.$queryRaw<Row[]>(sql`
+      SELECT * FROM "Row" WHERE "versionId" = ANY(${[...versionIds]}::text[])
+    `);
+
+    return new Map(rows.map((row) => [row.versionId, row]));
+  }
+
   public async readExistingRowIds(
     tableVersionId: string,
     rowIds: readonly string[],
@@ -237,16 +247,6 @@ export class ChangesSnapshotReader {
       head: versionOf(versions, pair.headVersionId),
       draft: versionOf(versions, pair.draftVersionId),
     }));
-  }
-
-  private async readRowVersions(
-    versionIds: string[],
-  ): Promise<ReadonlyMap<string, Row>> {
-    const rows = await this.transaction.$queryRaw<Row[]>(sql`
-      SELECT * FROM "Row" WHERE "versionId" = ANY(${versionIds}::text[])
-    `);
-
-    return new Map(rows.map((row) => [row.versionId, row]));
   }
 
   private async readHeadAndDraftTables({

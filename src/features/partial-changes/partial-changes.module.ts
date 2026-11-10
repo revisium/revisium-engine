@@ -6,10 +6,13 @@ import { RowMerger } from 'src/features/partial-changes/assembly/row-merger';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import { DraftChangesSummaryReader } from 'src/features/partial-changes/draft-reads/draft-changes-summary';
+import { DraftRowItems } from 'src/features/partial-changes/draft-reads/draft-row-items';
+import { DraftRowPages } from 'src/features/partial-changes/draft-reads/draft-row-pages';
 import { DraftTableItems } from 'src/features/partial-changes/draft-reads/draft-table-items';
 import { DraftTablePages } from 'src/features/partial-changes/draft-reads/draft-table-pages';
 import { DraftTablesReader } from 'src/features/partial-changes/draft-reads/draft-tables';
 import { ReportedRowCountsReader } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
+import { ReportedRowPairsReader } from 'src/features/partial-changes/draft-reads/reported-row-pairs-reader';
 import type { TargetCheck } from 'src/features/partial-changes/closure/check-context';
 import {
   TARGET_CHECKS,
@@ -71,6 +74,9 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     DraftTablesReader,
     DraftTableItems,
     DraftTablePages,
+    ReportedRowPairsReader,
+    DraftRowItems,
+    DraftRowPages,
     DraftChangesSummaryReader,
     PartialChangesApiService,
     ...PARTIAL_CHANGES_QUERY_HANDLERS,

@@ -43,6 +43,7 @@ const mappers = [TableChangeMapper, RowChangeMapper];
   ],
   exports: [
     RevisionChangesApiService,
+    RowDiffService,
     SchemaImpactService,
     ViewsComparisonService,
   ],

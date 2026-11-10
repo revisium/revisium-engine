@@ -1,6 +1,8 @@
 import {
   compareTablePositions,
+  decodeRowCursor,
   decodeTableCursor,
+  encodeRowCursor,
   encodeTableCursor,
   type TablePosition,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
@@ -35,4 +37,37 @@ describe('Draft table cursor', () => {
       expect(() => decodeTableCursor(cursor)).toThrow(ListingValidationError);
     },
   );
+
+  it('refuses the cursor of a row page', () => {
+    const cursor = encodeRowCursor({
+      table: { tableId: 'notes', headOnly: false },
+      rowId: 'n1',
+    });
+
+    expect(() => decodeTableCursor(cursor)).toThrow(ListingValidationError);
+  });
+});
+
+describe('Draft row cursor', () => {
+  it('decodes the position it encodes', () => {
+    const position = {
+      table: { tableId: 'notes', headOnly: true },
+      rowId: 'n/1',
+    };
+
+    expect(decodeRowCursor(encodeRowCursor(position))).toEqual(position);
+  });
+
+  it.each(['', 'not a cursor', 'eyJ2Ijo', '10'])(
+    'refuses the malformed cursor %p',
+    (cursor) => {
+      expect(() => decodeRowCursor(cursor)).toThrow(ListingValidationError);
+    },
+  );
+
+  it('refuses the cursor of a table page', () => {
+    const cursor = encodeTableCursor({ tableId: 'notes', headOnly: false });
+
+    expect(() => decodeRowCursor(cursor)).toThrow(ListingValidationError);
+  });
 });

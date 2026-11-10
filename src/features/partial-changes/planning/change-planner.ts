@@ -1,8 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  AssemblySource,
-  DeferredValues,
-} from 'src/features/partial-changes/assembly/target-assembler';
+import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import {
   type ClosureSource,
@@ -111,6 +108,8 @@ type CatalogueRead = Extract<ScopedCatalogue, { kind: 'catalogue' }>;
 type CatalogueRefused = Extract<ScopedCatalogue, { kind: 'tooLarge' }>;
 
 type ClosedResult = Extract<DependencyClosureResult, { kind: 'closed' }>;
+
+type StoppedClosure = Extract<DependencyClosureResult, { kind: 'tooLarge' }>;
 
 interface ValidatedClosure {
   readonly fingerprint: string;
@@ -256,7 +255,7 @@ function planOf({ source, closure, validated }: PlanParts): CompletePlan {
     refusedTables: headSchema.refusedTables,
     required: closure.required,
     blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),
-    deferred: deferredRowsOf(catalogue, deferredValuesOf(validated)),
+    deferred: deferredRowsOf(catalogue, validated.target.assembled.deferred),
     sample: sampleOf(catalogue, appliedUnits),
     unmatched: closure.unmatched,
     estimate: closure.estimate,
@@ -268,22 +267,19 @@ function countsOf({ selected, required }: ClosedResult): PlanCounts {
   return { selected: selected.size, required: required.length };
 }
 
-function deferredValuesOf({
-  target,
-}: ValidatedClosure): readonly DeferredValues[] {
-  return target.assembled.deferred;
-}
-
+// The closure also carries the blockers of the selection it resolved; a stopped plan returns only the limit's.
 function planStoppedInClosure(
   { snapshot, catalogue, headSchema }: ClosureSource,
-  { blockers, estimate }: DependencyClosureResult,
+  { blockers, estimate }: StoppedClosure,
 ): StoppedPlan {
   return {
     planned: false,
     headRevisionId: snapshot.headRevisionId,
     draftRevisionId: snapshot.draftRevisionId,
     refusedTables: headSchema.refusedTables,
-    blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),
+    blockers: blockers
+      .filter(({ code }) => code === 'tooLarge')
+      .map((blocker) => blockerRefOf(catalogue, blocker)),
     estimate,
   };
 }

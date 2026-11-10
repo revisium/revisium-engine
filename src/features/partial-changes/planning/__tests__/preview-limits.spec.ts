@@ -12,18 +12,25 @@ import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const MAX_CHANGED_ROWS = 3;
 const MAX_PER_ROW_WORK = 1;
+const MAX_MIXED_TABLE_LINKS = 3;
 const LIMITED_WORK = {
   PARTIAL_CHANGES_MAX_CHANGED_ROWS: String(MAX_CHANGED_ROWS),
   PARTIAL_CHANGES_MAX_PER_ROW_WORK: String(MAX_PER_ROW_WORK),
+  PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS: String(MAX_MIXED_TABLE_LINKS),
 };
 
 const PRODUCTS = 'products';
 const ORDERS = 'orders';
+const NOTES = 'notes';
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
 const PRODUCT_IDS = ['p1', 'p2', 'p3', 'p4'];
 const ORDER_IDS = ['o1', 'o2'];
 
 const productSchema = obj({ title: str() });
+const noteSchema = obj({
+  title: str(),
+  product: str({ foreignKey: PRODUCTS }),
+});
 const orderSchema = obj({
   price: num(),
   quantity: num(),
@@ -35,6 +42,9 @@ const CHANGED_ROWS_TOO_LARGE =
   'The affected tables hold 4 changed rows; the limit for one operation is 3';
 const PER_ROW_WORK_TOO_LARGE =
   'The operation merges 2 rows that need per-row work (formula fields or file registration); the limit for one operation is 1';
+const PRODUCT_LINKS_TOO_LARGE =
+  'Assembling products copies up to 4 row links; the limit for one table is 3';
+const missingOrder = { rows: [{ tableId: ORDERS, rowId: 'missing' }] };
 const priceOf = (rowId: string): FieldRef => ({
   tableId: ORDERS,
   rowId,
@@ -152,11 +162,81 @@ describe('previewChanges refused by a limit', () => {
     },
   );
 
+  it.each(OPERATIONS)(
+    'returns of a %s stopped in the closure only the tooLarge blockers, not the blocker of a selector that matches nothing (AS-87)',
+    async (operation) => {
+      const draft = await givenTwoEditedOrders();
+
+      const preview = await draft.previewChanges({
+        operation,
+        selection: { fields: [priceOf('o1'), priceOf('o2')], ...missingOrder },
+      });
+
+      expect(preview).toMatchObject({
+        status: 'blocked',
+        planned: false,
+        unmatched: null,
+        blockers: [{ code: 'tooLarge', message: PER_ROW_WORK_TOO_LARGE }],
+      });
+      expect(preview.blockers).toHaveLength(1);
+    },
+  );
+
+  it('stops a commit with tooLarge when a required addition makes a table mixed beyond the link limit, returning neither the addition nor the closure found before the stop (AS-87)', async () => {
+    const draft = await givenNoteOfCreatedProductNextToAnEditedOne();
+
+    const preview = await draft.previewChanges({
+      operation: 'commit',
+      selection: {
+        fields: [{ tableId: NOTES, rowId: 'n1', path: '/product' }],
+      },
+    });
+    const result = await draft.commitChanges({
+      selection: {
+        fields: [{ tableId: NOTES, rowId: 'n1', path: '/product' }],
+      },
+    });
+
+    expect(preview).toMatchObject({
+      status: 'blocked',
+      planned: false,
+      fingerprint: null,
+      counts: null,
+      coverage: [],
+      required: [],
+      deferred: [],
+      sample: [],
+      unmatched: null,
+      blockers: [
+        {
+          code: 'tooLarge',
+          tableId: PRODUCTS,
+          message: PRODUCT_LINKS_TOO_LARGE,
+        },
+      ],
+    });
+    expect(preview.estimate.mixedTables).toContainEqual(
+      expect.objectContaining({ tableId: PRODUCTS, linksCopied: 4 }),
+    );
+    expect(result).toEqual<CommitChangesResult>({
+      status: 'blocked',
+      planned: false,
+      blockers: [
+        {
+          code: 'tooLarge',
+          tableId: PRODUCTS,
+          message: PRODUCT_LINKS_TOO_LARGE,
+        },
+      ],
+      required: [],
+    });
+  });
+
   it('blocks a commit stopped by a limit with planned: false, no required additions and no unmatched selectors (AS-87)', async () => {
     const draft = await givenTwoEditedOrders();
 
     const result = await draft.commitChanges({
-      selection: { fields: [priceOf('o1'), priceOf('o2')] },
+      selection: { fields: [priceOf('o1'), priceOf('o2')], ...missingOrder },
     });
 
     expect(result).toEqual<CommitChangesResult>({
@@ -196,6 +276,24 @@ describe('previewChanges refused by a limit', () => {
     for (const rowId of PRODUCT_IDS) {
       await draft.updateRow(PRODUCTS, rowId, { title: `edited ${rowId}` });
     }
+
+    return draft;
+  }
+
+  async function givenNoteOfCreatedProductNextToAnEditedOne(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: rowsOf(PRODUCT_IDS, () => ({ title: 'one' })),
+      },
+      [NOTES]: {
+        schema: noteSchema,
+        rows: { n1: { title: 'one', product: 'p1' } },
+      },
+    });
+    await draft.createRows(PRODUCTS, { p9: { title: 'nine' } });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno' });
+    await draft.updateRow(NOTES, 'n1', { title: 'one', product: 'p9' });
 
     return draft;
   }

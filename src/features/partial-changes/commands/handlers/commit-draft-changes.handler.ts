@@ -5,7 +5,7 @@ import {
   type CommitChangesResult,
   CommitDraftChangesCommand,
   type CommittedDraft,
-  type RenumberedMigration,
+  type MigrationRenumbering,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
 import type { CompletePlan } from 'src/features/partial-changes/planning/change-planner';
@@ -93,7 +93,7 @@ export class CommitDraftChangesHandler implements ICommandHandler<
 
 function renumberedMigrationsOf({
   renumbered,
-}: LedgerPlan): RenumberedMigration[] {
+}: LedgerPlan): MigrationRenumbering[] {
   return renumbered.map(({ source, row }) => ({
     from: source.migration.id,
     to: row.id,

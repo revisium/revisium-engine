@@ -27,7 +27,7 @@ export interface ApplyResult {
 }
 
 // What an applied operation wrote, and whether its Draft still differs from Head (the writers recompute it from the
-// table versions, SPEC §6.13 step 7).
+// table versions, SPEC §6.13 step 7 and §6.14 step 7).
 export interface AppliedOutcome {
   readonly applied: PlanCounts;
   readonly draftHasChanges: boolean;

@@ -487,18 +487,18 @@ it to administrators. Input types are checked before any transaction; `null` mea
 | Refusal | When | What to do |
 | --- | --- | --- |
 | `draftStructureChanged` | The Draft creates, removes or renames a user table, changes a schema row (data or history, even if changed back), or links a migration table the Head does not. | Commit or revert those changes natively (a Draft migration table only by a revert), then run again. |
-| `schemaNotReproducible` | A Head schema fails the current rules (table id, meta-schema, `$ref`, field names, formulas), a Head table has no schema row, a foreign key names a table outside the Head, or no table of a foreign-key cycle survives the split below. | Fix the schema natively and commit, then run again. For a cycle: a native `updateTable` of one table of each named cycle (it also resets that table's non-empty `default` values, so check them first), or remove one foreign key of the cycle. |
+| `schemaNotReproducible` | A Head schema fails the current rules (table id, meta-schema, `$ref`, field names, formulas), a Head table has no schema row, a foreign key names a table that is not a Head user table, or no table of a foreign-key cycle survives the split below. | Fix the schema natively and commit, then run again. For a cycle: a native `updateTable` of one table of each named cycle (it also resets that table's non-empty `default` values, so check them first), or remove one foreign key of the cycle. |
 
 1. **Dry run.** One `READ ONLY` RepeatableRead snapshot without the branch write fence; it fails with
    `MIGRATION_LOCKED` while an async migration is active in the Draft.
 2. **Run.** Each Serializable attempt admits the write as a partial commit does (the branch write fence shared, then
    the migration-lock check), reads the Head and Draft, plans and writes; a serialization failure starts the next
-   attempt from the read. After 2 consecutive failures each further attempt holds the fence exclusively. The attempt
+   attempt again. After 2 consecutive failures each further attempt holds the fence exclusively. The attempt
    cap and the timeout are those of partial operations (`PARTIAL_CHANGES_MAX_ATTEMPTS`,
    `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`).
 3. **Plan.** The Head user tables, in foreign-key order (nested objects and array items included, self-references
    ignored): repeatedly the smallest table id (code-point order) whose targets are all planned gets an `init` with its
-   Head schema. When only cycles remain, the smallest cycle member whose schema survives the split gets an `init`
+   Head schema. When no remaining table is ready, the smallest cycle member whose schema survives the split gets an `init`
    without the foreign keys to unplanned tables, and an `update` with one `replace` patch per stripped subschema
    restores them after every `init`. A table survives the split when the native patch rebuild of the schema equals the
    Head schema: that rebuild sorts `required`, drops `readOnly: false`, `deprecated: false` and `description: ""`, and
@@ -517,7 +517,8 @@ Afterwards:
 
 - The scan reports no `noMigrationTable` finding with role `head` or `draft`; the revisions before the backfill keep
   theirs with role `history`, because history is not rewritten. A branch still to backfill has such findings with role
-  `head`.
+  `head`, except a Head without user tables: it has no finding, yet still needs the run (it returns `backfilled` with
+  `entries: []`), because without it tables created later are not recorded.
 - Row diagnostics now run for the backfilled tables: a row whose `schemaHash` is not the table's schema hash (written
   under an earlier schema, or `''` from the low-level row API) is reported as `rowSchemaHashMismatch` with
   `unknownHash`. It refuses no partial operation.
@@ -727,9 +728,14 @@ src/features/migration/
                                    their schema histories for planning, writing and verification
   ledger-scan/                     Detection scan: request and cursor, branch pages, revision reader, per-call caches,
                                    schema checks and finding classification per role
+  ledger-backfill/                 Backfill: request, state reader, Draft structure check, Head schemas, order and
+                                   foreign-key split, entries; LedgerBackfillPlanService plans without I/O;
+                                   BackfillWriter writes the migration table and commits it alone;
+                                   StoredBackfillVerification checks the new Head and Draft
   migration-payload.ts             Payload envelope encoder and decoder
   commands/                        StartAsyncMigration (admission, validation, record, trigger), AbortMigration,
-                                   RepairSchemaLedger (plan, admitted write, notification)
+                                   RepairSchemaLedger (plan, admitted write, notification), BackfillSchemaLedger
+                                   (dry-run plan, or admitted plan-and-write with verification, then notification)
   queries/                         GetMigrationStatus, GetActiveMigrations, PlanSchemaLedgerRepair, ScanSchemaLedger
 ```
 

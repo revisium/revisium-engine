@@ -877,12 +877,14 @@ Returns: `{ tables: number, rows: number }` — counts of deleted entities
 ## Schema Ledger
 
 Maintenance operations on the schema migration ledger (the rows of `revisium_migration_table`). The host exposes them
-to administrators; the engine has no permission layer. How they work: [migration.md](migration.md).
+to administrators; the engine has no permission layer. How they work: [migration.md](migration.md). The result types
+named below (`SchemaLedgerFinding`, `SchemaLedgerScanStats`, `TableRepair`, `RenumberedMigration`) are not exported;
+their fields are described there. The code lists are exported.
 
 ### scanSchemaLedger
 
 ```typescript
-engine.scanSchemaLedger({
+engine.scanSchemaLedger({ // the argument is optional
   projectId?: string | null;
   branchName?: string | null; // requires projectId
   cursor?: string | null;
@@ -897,7 +899,7 @@ engine.scanSchemaLedger({
 
 Reports, read-only, where a revision's ledger does not reproduce its schema rows: one branch, the branches of a
 project, or every branch, paged by branch. Codes: `FINDING_CODES`, `FINDING_ROLES`, `UNLEDGERED_REASONS`,
-`DAMAGE_SHAPES`, `DAMAGED_TABLE_REPAIRS`, `ROW_HASH_REASONS`. See
+`DAMAGE_SHAPES`, `DAMAGED_TABLE_REPAIRS`, `ROW_HASH_REASONS`, `ROW_DIAGNOSTICS`. See
 [How does the schema ledger scan report damage?](migration.md#how-does-the-schema-ledger-scan-report-damage)
 
 ### repairSchemaLedger
@@ -963,10 +965,13 @@ Gives a branch whose Head has no migration table (projects created before core v
 whose only change is a migration table with an `init` for every Head user table, plus `update` entries that close
 foreign-key cycles. The new Draft keeps the Draft's changes and links the same migration table. Partial commit and
 revert stop refusing the branch's tables, and native writers record schema changes from then on. `dryRun: true`
-returns `planned` and writes nothing; its ids are provisional. A branch that has a migration table gets `notNeeded`,
-so a repeated call is safe. Codes: `BACKFILL_STATUSES`, `BACKFILL_REFUSAL_CODES`. Errors: unknown project or branch,
-`MIGRATION_LOCKED` (423) while an async migration is active, `BRANCH_WRITE_FENCED` (423), `OPERATION_TIMEOUT` (408).
+returns `planned` and writes nothing; its ids are provisional. A branch whose Head has a migration table gets
+`notNeeded`, so a repeated call is safe. Codes: `BACKFILL_STATUSES`, `BACKFILL_REFUSAL_CODES`. Errors: a validation
+error for wrong input types (before any transaction), unknown project or branch, `MIGRATION_LOCKED` (423) while an
+async migration is active (a dry run too), `BRANCH_WRITE_FENCED` (423, a run only), `OPERATION_TIMEOUT` (408).
 See [How is a missing schema ledger backfilled?](migration.md#how-is-a-missing-schema-ledger-backfilled)
+
+---
 
 ## Migrations (Async Row Migration)
 

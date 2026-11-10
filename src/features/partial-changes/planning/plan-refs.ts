@@ -1,4 +1,8 @@
-import type { DeferredValues } from 'src/features/partial-changes/assembly/target-assembler';
+import type {
+  DeferredPath,
+  DeferredValue,
+  DeferredValues,
+} from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
@@ -15,9 +19,12 @@ export type PlanBlocker = Omit<CatalogueBlocker, 'unitKey' | 'reason'> & {
   readonly reason?: RequiredReason;
 };
 
-export interface Deferred {
+export type { DeferredPath, DeferredValue };
+
+export interface DeferredRow {
   readonly unit: DescribedUnitRef;
-  readonly paths: readonly string[];
+  readonly defaulted: readonly DeferredValue[];
+  readonly omitted: readonly DeferredPath[];
   readonly structure: DescribedUnitRef;
 }
 
@@ -38,11 +45,12 @@ export function blockerRefOf(
 
 export function deferredRefOf(
   catalogue: ChangeCatalogue,
-  { unitKey, paths, structureKey }: DeferredValues,
-): Deferred {
+  { unitKey, defaulted, omitted, structureKey }: DeferredValues,
+): DeferredRow {
   return {
     unit: describedUnitRefOfKey(catalogue, unitKey),
-    paths,
+    defaulted,
+    omitted,
     structure: describedUnitRefOfKey(catalogue, structureKey),
   };
 }

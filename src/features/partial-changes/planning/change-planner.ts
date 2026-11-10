@@ -22,7 +22,7 @@ import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fing
 import {
   type PlanBlocker,
   blockerRefOf,
-  type Deferred,
+  type DeferredRow,
   deferredRefOf,
   sampleOf,
 } from 'src/features/partial-changes/planning/plan-refs';
@@ -84,7 +84,7 @@ export interface ChangePlan {
   readonly refusedTables: readonly RefusedTable[];
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly PlanBlocker[];
-  readonly deferred: readonly Deferred[];
+  readonly deferred: readonly DeferredRow[];
   readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
   readonly estimate: PlanEstimate;

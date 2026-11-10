@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 2.0 |
-| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PRs 5–7 and 12 are pending |
+| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#PR5); PRs 6, 7 and 12 are pending |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
@@ -360,7 +360,8 @@ invalid row for `invalidRow`.
 DescribedUnitRef }`: a created or replaced row committed without its table's structure. Its deferred paths are the changed input fields
 of the row's table (§3.3), Draft and Head pointers. The Head schema the commit writes the row against decides what
 happens to each: `defaulted` are the paths where it has an input field, `{ path; value }` with the value the commit
-writes there, taken from the assembled row (the Head default, a type default after a native schema update); `omitted`
+writes there, taken from the assembled row (the Head default, a type default after a native schema update; a File
+the commit creates gets a `fileId` of its own when the commit plans again, so only that field can differ); `omitted`
 (`{ path }`, objects so that a reason can be added without a breaking change) are the others, where it has no field or computes the value, and the Draft value is left out. Each path is in exactly
 one of the two lists, which keep the order of the changed fields. A moved field appears in both: its Draft pointer is
 omitted, its Head pointer defaulted. `structure` is the unit that would carry the Draft values; the Draft keeps them.

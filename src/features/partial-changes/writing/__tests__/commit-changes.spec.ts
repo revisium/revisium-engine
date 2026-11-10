@@ -625,7 +625,10 @@ describe('commitChanges', () => {
       });
 
       expect(preview.deferred).toEqual([
-        expect.objectContaining({ paths: ['/price'] }),
+        expect.objectContaining({
+          defaulted: [{ path: '/price', value: 0 }],
+          omitted: [],
+        }),
       ]);
       expect(result).toMatchObject({ status: 'applied' });
       await expectRow(draft, 'head', PRODUCTS, 'p3', {

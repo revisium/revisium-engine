@@ -498,7 +498,8 @@ describe('previewChanges', () => {
               rowId: 'p2',
               selector: selection,
             },
-            paths: ['/color'],
+            defaulted: [],
+            omitted: [{ path: '/color' }],
             structure: {
               kind: 'structure',
               tableId: PRODUCTS,

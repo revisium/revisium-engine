@@ -84,9 +84,19 @@ export interface TablePlan extends RowLinkChanges {
   readonly rows: readonly TargetRow[];
 }
 
+export interface DeferredValue {
+  readonly path: string;
+  readonly value: unknown;
+}
+
+export interface DeferredPath {
+  readonly path: string;
+}
+
 export interface DeferredValues {
   readonly unitKey: string;
-  readonly paths: readonly string[];
+  readonly defaulted: readonly DeferredValue[];
+  readonly omitted: readonly DeferredPath[];
   readonly structureKey: string;
 }
 
@@ -243,7 +253,8 @@ class ReadTableAssembly {
 
   public async assemble(): Promise<AssembledTable> {
     const { pair } = this.table;
-    const rows = await this.targetRows();
+    const newVersions = await this.newVersions();
+    const rows = this.targetRowsOf(newVersions);
     const outcome = this.rules.tableOutcomeOf(rows);
 
     return {
@@ -258,13 +269,13 @@ class ReadTableAssembly {
         rows,
       },
       blockers: this.unrecordedStructureBlockers(),
-      deferred: this.deferredValues(),
+      deferred: this.deferredValues(newVersions),
     };
   }
 
-  private async targetRows(): Promise<TargetRow[]> {
-    const newVersions = await this.newVersions();
-
+  private targetRowsOf(
+    newVersions: ReadonlyMap<string, MergedRow>,
+  ): TargetRow[] {
     return this.decided.map(({ row: { pair }, outcome }) =>
       targetRowOf(pair, outcome, newVersions.get(pair.identity), this.rules),
     );
@@ -334,17 +345,26 @@ class ReadTableAssembly {
     );
   }
 
-  private deferredValues(): DeferredValues[] {
+  // A row moved into the Head structure has the value the commit writes at each deferred pointer the Head schema
+  // keeps as an input field; its version is the row assembled by mapIntoHeadStructure.
+  private deferredValues(
+    newVersions: ReadonlyMap<string, MergedRow>,
+  ): DeferredValues[] {
     const structureKey = this.table.units.structure;
 
     if (!this.commitsWithoutStructure() || structureKey === undefined) {
       return [];
     }
 
-    const paths = changedFieldsOf(this.table);
+    const pointers = deferredPointersOf(this.table);
 
     return this.rowsMoving().flatMap(({ row }) =>
-      deferredValuesOf(row, paths, structureKey),
+      deferredValuesOf(
+        row,
+        newVersions.get(row.pair.identity),
+        pointers,
+        structureKey,
+      ),
     );
   }
 
@@ -423,17 +443,25 @@ function collapsedRowOf(
   return { pair, kind: 'merge', merged: newVersion };
 }
 
-function changedFieldsOf({ pair, structure }: ReadTable): string[] {
-  const schemas = [
-    SchemaLeaves.of(versionOn(pair, 'head').schema),
-    SchemaLeaves.of(versionOn(pair, 'draft').schema),
-  ];
+interface DeferredPointers {
+  readonly defaulted: readonly JsonPointer[];
+  readonly omitted: readonly JsonPointer[];
+}
 
-  return structure.changedPointers
-    .filter((pointer) =>
-      schemas.some((leaves) => hasInputLeafAt(leaves, pointer)),
-    )
-    .map((pointer) => pointer.toString());
+// The changed input fields of either side, in the order of the changed fields: the Head schema keeps an input field
+// at a defaulted pointer, and has none or computes the value at an omitted one.
+function deferredPointersOf({ pair, structure }: ReadTable): DeferredPointers {
+  const head = SchemaLeaves.of(versionOn(pair, 'head').schema);
+  const draft = SchemaLeaves.of(versionOn(pair, 'draft').schema);
+  const changed = structure.changedPointers.filter(
+    (pointer) =>
+      hasInputLeafAt(head, pointer) || hasInputLeafAt(draft, pointer),
+  );
+
+  return {
+    defaulted: changed.filter((pointer) => hasInputLeafAt(head, pointer)),
+    omitted: changed.filter((pointer) => !hasInputLeafAt(head, pointer)),
+  };
 }
 
 function hasInputLeafAt(leaves: SchemaLeaves, pointer: JsonPointer): boolean {
@@ -444,14 +472,29 @@ function hasInputLeafAt(leaves: SchemaLeaves, pointer: JsonPointer): boolean {
 
 function deferredValuesOf(
   { existence }: CatalogueRow,
-  paths: readonly string[],
+  written: MergedRow | undefined,
+  { defaulted, omitted }: DeferredPointers,
   structureKey: string,
 ): DeferredValues[] {
-  if (existence === undefined || paths.length === 0) {
+  if (
+    existence === undefined ||
+    written === undefined ||
+    defaulted.length + omitted.length === 0
+  ) {
     return [];
   }
 
-  return [{ unitKey: existence, paths, structureKey }];
+  return [
+    {
+      unitKey: existence,
+      defaulted: defaulted.map((pointer) => ({
+        path: pointer.toString(),
+        value: structuredClone(pointer.valueIn(written.data)),
+      })),
+      omitted: omitted.map((pointer) => ({ path: pointer.toString() })),
+      structureKey,
+    },
+  ];
 }
 
 function linkChangesOf(

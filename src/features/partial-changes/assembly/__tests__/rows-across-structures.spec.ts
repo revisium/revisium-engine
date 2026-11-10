@@ -6,7 +6,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
-import type { JsonPatch } from '@revisium/schema-toolkit/types';
+import type { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
   addField,
@@ -18,7 +18,11 @@ import {
   completeAsyncMigrationInPlace,
   recordLedgerRepair,
 } from 'src/__tests__/fixtures/head-schema-damage';
+import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+import { SystemTables } from 'src/features/share/system-tables.consts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
+import type { TargetView } from '../../__tests__/support/target-assembling';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 
 const PRODUCTS = 'products';
@@ -78,7 +82,8 @@ describe('TargetAssembler: rows moving between structures', () => {
     expect(target.deferred).toEqual([
       {
         unit: { kind: 'rowCreate', tableId: PRODUCTS, rowId: 'p3' },
-        paths: ['/color'],
+        defaulted: [],
+        omitted: [{ path: '/color' }],
         structure: { kind: 'structure', tableId: PRODUCTS },
       },
     ]);
@@ -88,23 +93,26 @@ describe('TargetAssembler: rows moving between structures', () => {
     change: string;
     patches: JsonPatch[];
     created: InputJsonValue;
-    paths: string[];
+    defaulted: { path: string; value: unknown }[];
+    omitted: { path: string }[];
   }>([
     {
       change: 'a removed field',
       patches: [removeField('price')],
       created: { title: 'three' },
-      paths: ['/price'],
+      defaulted: [{ path: '/price', value: 0 }],
+      omitted: [],
     },
     {
       change: 'a renamed field',
       patches: [moveField('title', 'name')],
       created: { price: 30, name: 'three' },
-      paths: ['/name', '/title'],
+      defaulted: [{ path: '/title', value: '' }],
+      omitted: [{ path: '/name' }],
     },
   ])(
     'defers $change of a created row committed without its structure',
-    async ({ patches, created, paths }) => {
+    async ({ patches, created, defaulted, omitted }) => {
       const draft = await givenProductsWithCreatedRowAfter(patches, created);
 
       const target = await draft.assembleTarget('commit', {
@@ -114,12 +122,91 @@ describe('TargetAssembler: rows moving between structures', () => {
       expect(target.deferred).toEqual([
         {
           unit: { kind: 'rowCreate', tableId: PRODUCTS, rowId: 'p3' },
-          paths,
+          defaulted,
+          omitted,
           structure: { kind: 'structure', tableId: PRODUCTS },
         },
       ]);
+      expectDefaultedAsWritten(target, 'p3');
     },
   );
+
+  it('defers the declared Head default of a field the Draft removed, as the value the commit writes', async () => {
+    const draft = await givenProductsWithCreatedRowAfter(
+      [removeField('price')],
+      { title: 'three' },
+      obj({ title: str(), price: num({ default: 7 }) }),
+    );
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p3')],
+    });
+
+    expect(target.deferred).toEqual([
+      expect.objectContaining({
+        defaulted: [{ path: '/price', value: 7 }],
+        omitted: [],
+      }),
+    ]);
+    expectDefaultedAsWritten(target, 'p3');
+  });
+
+  it('defers the default a native schema update left in the Head schema, as the value the commit writes', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: obj({ title: str(), price: num({ default: 7 }) }),
+        rows: { p1: { title: 'one', price: 10 } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [addField('color', str())]);
+    await draft.commit();
+    const headDefault = await priceDefaultIn(draft, 'head');
+    await draft.updateTable(PRODUCTS, [removeField('price')]);
+    await draft.createRows(PRODUCTS, { p3: { title: 'three', color: 'red' } });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p3')],
+    });
+
+    expect(target.deferred).toEqual([
+      expect.objectContaining({
+        defaulted: [{ path: '/price', value: headDefault ?? 0 }],
+      }),
+    ]);
+    expectDefaultedAsWritten(target, 'p3');
+  });
+
+  it('omits a field the Head schema computes and the Draft made an input field', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [ORDERS]: {
+        schema: orderSchema,
+        rows: { o1: { price: 2, quantity: 3, total: 0 } },
+      },
+    });
+    await draft.updateTable(ORDERS, [replaceField('total', num())]);
+    await draft.createRows(ORDERS, {
+      o3: { price: 4, quantity: 5, total: 1 },
+    });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [order('o3')],
+    });
+
+    expect(target.deferred).toEqual([
+      {
+        unit: { kind: 'rowCreate', tableId: ORDERS, rowId: 'o3' },
+        defaulted: [],
+        omitted: [{ path: '/total' }],
+        structure: { kind: 'structure', tableId: ORDERS },
+      },
+    ]);
+    expect(target.tableOf(ORDERS)?.newRows).toEqual([
+      expect.objectContaining({
+        id: 'o3',
+        data: { price: 4, quantity: 5, total: 20 },
+      }),
+    ]);
+  });
 
   it('defers no computed field of a created row committed without its structure', async () => {
     const draft = await givenProductsWithCreatedRowAfter(
@@ -333,13 +420,36 @@ describe('TargetAssembler: rows moving between structures', () => {
     return draft;
   }
 
+  function expectDefaultedAsWritten(target: TargetView, rowId: string): void {
+    const defaulted = target.deferred.flatMap(({ defaulted }) => defaulted);
+    const written = target
+      .tableOf(PRODUCTS)
+      ?.newRows.find(({ id }) => id === rowId);
+
+    expect(defaulted.length).toBeGreaterThan(0);
+    for (const { path, value } of defaulted) {
+      expect(JsonPointer.parse(path).valueIn(written?.data)).toEqual(value);
+    }
+  }
+
+  async function priceDefaultIn(
+    draft: ChangesScenario,
+    side: RevisionSide,
+  ): Promise<unknown> {
+    const { data } = await draft.row(side, SystemTables.Schema, PRODUCTS);
+
+    return (data as { properties: { price: { default?: unknown } } }).properties
+      .price.default;
+  }
+
   async function givenProductsWithCreatedRowAfter(
     patches: JsonPatch[],
     created: InputJsonValue,
+    schema: JsonSchema = productSchema,
   ): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: {
-        schema: productSchema,
+        schema,
         rows: { p1: { title: 'one', price: 10 } },
       },
     });

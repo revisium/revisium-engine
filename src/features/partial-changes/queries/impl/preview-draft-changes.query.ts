@@ -5,7 +5,7 @@ import type { PlanCounts } from 'src/features/partial-changes/planning/change-pl
 import type { PreviewStatus } from 'src/features/partial-changes/planning/plan-decision';
 import type {
   PlanBlocker,
-  Deferred,
+  DeferredRow,
 } from 'src/features/partial-changes/planning/plan-refs';
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
@@ -32,7 +32,7 @@ export interface PreviewChangesResult {
   readonly refusedTables: readonly RefusedTable[];
   readonly required: readonly RequiredUnit[];
   readonly blockers: readonly PlanBlocker[];
-  readonly deferred: readonly Deferred[];
+  readonly deferred: readonly DeferredRow[];
   readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
   readonly estimate: PlanEstimate;

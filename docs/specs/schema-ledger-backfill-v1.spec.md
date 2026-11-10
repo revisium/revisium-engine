@@ -263,7 +263,10 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 - BF-09 A Draft writer racing the backfill, with the result of one order. Writer first: a row change is carried into
   the new Draft and not into the new Head, and the Head ledger is as in BF-01; a `createTable` makes the backfill
   `refused` (`draftStructureChanged`). Backfill first: the writer fails as it does after a native commit, because its
-  revision is no longer the Draft.
+  revision is no longer the Draft. A writer whose transaction began before the backfill committed gets one of the two:
+  one that copies a table version into the Draft fails as after a native commit; one that edits a Draft-owned version
+  in place is ordered first and its change lands in the new Draft, because the backfill neither reads nor locks that
+  version (a native commit locks it, so there that writer fails too).
 - BF-10 A failure injected after the writes → nothing persists and no endpoint is notified.
 - BF-11 A fresh Head-synced replica (`src/__tests__/fixtures/ledger-replicas.ts`) after the backfill reproduces the Head
   schemas and stored ledger, including a split cycle.
@@ -307,6 +310,7 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 ### Version 1.2 (2026-11-10)
 
 - §3 step 7 lists what the run reads back and checks, and how a failed check is reported (§9 PR 3).
+- BF-09 says which order a writer gets whose transaction began before the backfill committed.
 
 ### Version 1.1 (2026-11-10)
 

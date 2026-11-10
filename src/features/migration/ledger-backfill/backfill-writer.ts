@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import type {
   CommitTableWritePlan,
+  DraftRevisionCommitToTargetCommandReturnType,
   DraftRevisionCreateRowsRowData,
 } from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
-import type { HeadAndDraft } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { publishedAtOf } from 'src/features/share/ledger/native-migration-id';
 import { SystemTables } from 'src/features/share/system-tables.consts';
@@ -14,9 +14,7 @@ import { SystemTablesService } from 'src/features/share/system-tables.service';
 import type { BackfillMigration } from './backfill-migrations';
 import type { BackfillState } from './backfill-state-reader';
 
-export interface CommittedBackfill extends HeadAndDraft {
-  readonly previousHeadRevisionId: string;
-}
+export type CommittedBackfill = DraftRevisionCommitToTargetCommandReturnType;
 
 @Injectable()
 export class BackfillWriter {
@@ -34,26 +32,24 @@ export class BackfillWriter {
     migrations: readonly BackfillMigration[],
     comment: string,
   ): Promise<CommittedBackfill> {
-    const { versionId } = await this.systemTables.ensureSystemTable(
+    await this.systemTables.ensureSystemTable(
       draftRevisionId,
       SystemTables.Migration,
     );
 
-    await this.draftRevisionApi.createRows({
+    const { tableVersionId } = await this.draftRevisionApi.createRows({
       revisionId: draftRevisionId,
       tableId: SystemTables.Migration,
       rows: migrations.map((migration) => this.migrationRowOf(migration)),
     });
 
-    const committed = await this.targetApi.commitToTarget({
+    return this.targetApi.commitToTarget({
       branchId,
       headRevisionId,
       draftRevisionId,
       comment,
-      tables: [migrationTableCommitOf(versionId)],
+      tables: [migrationTableCommitOf(tableVersionId)],
     });
-
-    return { branchId, ...committed };
   }
 
   private migrationRowOf(

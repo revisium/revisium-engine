@@ -58,14 +58,20 @@ export class StoredBackfillVerification {
       SystemTables.Migration,
     ]);
 
-    if (!holdsExactly(stored[SystemTables.Migration].rows, migrations)) {
+    const ledgerRows = stored[SystemTables.Migration].rows;
+
+    if (!ledgerRows.every(({ readonly }) => readonly)) {
+      return 'has mutable rows in the new Head';
+    }
+
+    if (!holdsExactly(ledgerRows, migrations)) {
       return 'does not hold exactly the planned entries under ascending ids';
     }
 
     const unreproduced = this.unreproducedHeadTable(
       headTables,
       stored[SystemTables.Schema].rows,
-      stored[SystemTables.Migration].rows,
+      ledgerRows,
     );
 
     if (unreproduced !== undefined) {
@@ -98,6 +104,7 @@ export class StoredBackfillVerification {
   }
 }
 
+// Stored rows sorted by id equal the planned entries in plan order, so the planned ids ascend as stored.
 function holdsExactly(
   rows: readonly Row[],
   migrations: readonly BackfillMigration[],
@@ -106,7 +113,6 @@ function holdsExactly(
 
   return (
     stored.length === migrations.length &&
-    hasAscendingIds(migrations) &&
     migrations.every((migration, index) =>
       isStoredAs(stored[index]?.row, migration),
     )
@@ -119,16 +125,7 @@ function isStoredAs(
 ): boolean {
   return (
     row !== undefined &&
-    row.readonly &&
     row.id === migration.id &&
     deepEqual(row.data, migration)
   );
-}
-
-function hasAscendingIds(migrations: readonly BackfillMigration[]): boolean {
-  return migrations.every(({ id }, index) => {
-    const previous = migrations[index - 1];
-
-    return previous === undefined || compareCodePoints(previous.id, id) < 0;
-  });
 }

@@ -5,6 +5,7 @@ import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import { HeadSyncedReplica } from 'src/__tests__/fixtures/ledger-replicas';
+import { createBarrier } from 'src/__tests__/utils/barrier';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import {
   describedLedgerOf,
@@ -17,14 +18,20 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { SchemaLedgerBackfill } from 'src/features/migration/commands/impl/backfill-schema-ledger.command';
 import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
+import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { LedgerBackfillPlanService } from 'src/features/migration/ledger-backfill/ledger-backfill-plan.service';
 import { queueWriteBehindBranchFence } from 'src/features/draft/commands/handlers/__tests__/support/branch-write-fence';
-import { AssembledVersionWriter } from 'src/features/draft-revision/services';
+import {
+  AssembledVersionWriter,
+  DraftFollowsHead,
+} from 'src/features/draft-revision/services';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import { publishedAtOf } from 'src/features/share/ledger/native-migration-id';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import type { TableViewsData } from 'src/features/views/types';
 import {
+  atClock,
   backfillLedger,
   backfillWhileNativeWriteLands,
   commitHeadSchema,
@@ -62,10 +69,17 @@ const BOOKS = 'books';
 const OTHER_BRANCH = 'other';
 const LATER_BRANCH = 'later';
 const DEFAULT_COMMENT = 'Backfill the schema ledger';
+const BEYOND_THE_PLAN = '2999-01-01T00:00:00.000Z';
 
 const authorSchema = obj({ name: str() });
 const bookSchema = obj({ author: str({ foreignKey: AUTHORS }), title: str() });
 const addNote = [addField('note', str())];
+const NAME_SCHEMA = 'name';
+const categoryViews: TableViewsData = {
+  version: 1,
+  defaultViewId: 'default',
+  views: [{ id: 'default', name: 'Default' }],
+};
 
 describe('Schema ledger backfill', () => {
   let kit: PartialChangesTestKit;
@@ -89,6 +103,8 @@ describe('Schema ledger backfill', () => {
       const before = await revisionsOf(draft);
       const headRows = await rowDataOf(draft, 'head', CATEGORIES, PRODUCTS);
       const draftRows = await rowDataOf(draft, 'draft', CATEGORIES, PRODUCTS);
+      const headLinks = await draft.linkedTableVersionIds('head');
+      const draftLinks = await draft.linkedTableVersionIds('draft');
 
       const backfill = await backfillLedger(kit, draft);
 
@@ -114,6 +130,13 @@ describe('Schema ledger backfill', () => {
       expect(await migrationTableOf(kit, draft, 'draft')).toEqual(headLedger);
       const ledgerRows = await draft.rows('head', SystemTables.Migration);
       expect(ledgerRows.map(({ readonly }) => readonly)).toEqual([true, true]);
+      expect(new Set(await draft.linkedTableVersionIds('head'))).toEqual(
+        new Set([...headLinks, headLedger?.versionId]),
+      );
+      expect(new Set(await draft.linkedTableVersionIds('draft'))).toEqual(
+        new Set([...draftLinks, headLedger?.versionId]),
+      );
+      expect(await draft.hasChanges()).toBe(true);
       expect(await rowDataOf(draft, 'head', CATEGORIES, PRODUCTS)).toEqual(
         headRows,
       );
@@ -160,6 +183,39 @@ describe('Schema ledger backfill', () => {
           meta: {},
         })),
       );
+    });
+
+    it('leaves a Draft without changes linking the same table versions as the new Head', async () => {
+      const draft = await givenCatalogWithoutLedger();
+
+      await backfillLedger(kit, draft);
+
+      expect(await draft.hasChanges()).toBe(false);
+      expect(new Set(await draft.linkedTableVersionIds('draft'))).toEqual(
+        new Set(await draft.linkedTableVersionIds('head')),
+      );
+    });
+
+    it('keeps a views change and a shared schema change in the new Draft and out of the new Head', async () => {
+      const draft = await givenCatalogWithoutLedger();
+      await draft.updateViews(CATEGORIES, categoryViews);
+      await draft.createSharedSchema(NAME_SCHEMA, str());
+      const headLinks = await draft.linkedTableVersionIds('head');
+      const draftLinks = await draft.linkedTableVersionIds('draft');
+
+      await backfillLedger(kit, draft);
+
+      const ledger = await migrationTableOf(kit, draft, 'head');
+      expect(new Set(await draft.linkedTableVersionIds('head'))).toEqual(
+        new Set([...headLinks, ledger?.versionId]),
+      );
+      expect(new Set(await draft.linkedTableVersionIds('draft'))).toEqual(
+        new Set([...draftLinks, ledger?.versionId]),
+      );
+      expect(await draft.hasTable('head', SystemTables.SharedSchemas)).toBe(
+        false,
+      );
+      expect(await draft.hasChanges()).toBe(true);
     });
 
     it('BF-03 BF-11 writes a split cycle that a fresh Head-synced replica applies, reproducing the Head schemas and the stored ledger', async () => {
@@ -294,16 +350,21 @@ describe('Schema ledger backfill', () => {
       const draft = await givenCatalogWithoutLedger();
       const planned = await planBackfill(kit, draft);
 
-      const backfill = await backfillLedger(kit, draft);
+      const backfill = await atClock('2031-05-01T00:00:00.000Z', () =>
+        backfillLedger(kit, draft),
+      );
 
       expectBackfilled(backfill);
       expect(withoutIds(backfill.entries)).toEqual(
         withoutIds(entriesOf(planned)),
       );
-      expect(await ledgerIdsOf(draft, 'head')).toEqual(
-        backfill.entries.map(({ id }) => id),
+      expect(await ledgerIdsOf(draft, 'head')).toEqual([
+        '2031-05-01T00:00:00.000Z',
+        '2031-05-01T00:00:00.001Z',
+      ]);
+      expect(backfill.entries.map(({ id }) => id)).toEqual(
+        await ledgerIdsOf(draft, 'head'),
       );
-      expectStrictlyAscending(backfill.entries.map(({ id }) => id));
     });
   });
 
@@ -321,6 +382,39 @@ describe('Schema ledger backfill', () => {
       );
       expect(await branchContentsOf(kit, draft)).toEqual(before);
       expect(notifications).toEqual([]);
+    });
+
+    it('BF-10 rolls back and raises when a row beyond the planned entries is stored', async () => {
+      const draft = await givenCatalogWithoutLedger();
+      const before = await branchContentsOf(kit, draft);
+      storeAnEntryBeyondThePlan();
+
+      await expect(backfillLedger(kit, draft)).rejects.toThrow(
+        'The backfilled ledger does not hold exactly the planned entries under ascending ids',
+      );
+      expect(await branchContentsOf(kit, draft)).toEqual(before);
+    });
+
+    it('BF-10 rolls back and raises when a stored row stays mutable in the new Head', async () => {
+      const draft = await givenCatalogWithoutLedger();
+      const before = await branchContentsOf(kit, draft);
+      unlockLedgerRowsAfterLockingThem();
+
+      await expect(backfillLedger(kit, draft)).rejects.toThrow(
+        'The backfilled ledger has mutable rows in the new Head',
+      );
+      expect(await branchContentsOf(kit, draft)).toEqual(before);
+    });
+
+    it('BF-10 rolls back and raises when the new Draft does not link the migration table of the new Head', async () => {
+      const draft = await givenCatalogWithoutLedger();
+      const before = await branchContentsOf(kit, draft);
+      leaveLedgerOutOfTheNextDraft();
+
+      await expect(backfillLedger(kit, draft)).rejects.toThrow(
+        'The backfilled ledger is not one table version that the new Head and the new Draft link',
+      );
+      expect(await branchContentsOf(kit, draft)).toEqual(before);
     });
 
     it('BF-10 rolls back and raises when the stored ledger does not reproduce a Head schema', async () => {
@@ -352,6 +446,29 @@ describe('Schema ledger backfill', () => {
     it('BF-09 keeps a row change that lands after the backfill planned in the new Draft and out of the new Head', async () => {
       const draft = await givenCatalogWithoutLedger();
 
+      const { result, attempts } = await backfillWhileNativeWriteLands(
+        kit,
+        draft,
+        () => draft.updateRow(CATEGORIES, 'c1', { title: 'landed' }),
+      );
+
+      expect(result).toMatchObject({ status: 'backfilled' });
+      expect(attempts).toBe(2);
+      expect((await draft.row('draft', CATEGORIES, 'c1')).data).toEqual({
+        title: 'landed',
+      });
+      expect((await draft.row('head', CATEGORIES, 'c1')).data).toEqual({
+        title: 'first',
+      });
+      expect(await describedLedgerOf(draft, 'head')).toEqual([
+        `init ${CATEGORIES}`,
+        `init ${PRODUCTS}`,
+      ]);
+    });
+
+    it('BF-09 keeps a row change written in place after the backfill planned in the new Draft and out of the new Head', async () => {
+      const draft = await givenCatalogWithEditedRows();
+
       const { result } = await backfillWhileNativeWriteLands(kit, draft, () =>
         draft.updateRow(CATEGORIES, 'c1', { title: 'landed' }),
       );
@@ -363,10 +480,6 @@ describe('Schema ledger backfill', () => {
       expect((await draft.row('head', CATEGORIES, 'c1')).data).toEqual({
         title: 'first',
       });
-      expect(await describedLedgerOf(draft, 'head')).toEqual([
-        `init ${CATEGORIES}`,
-        `init ${PRODUCTS}`,
-      ]);
     });
 
     it('BF-09 re-plans and refuses when a table created after the backfill planned changes the Draft structure', async () => {
@@ -386,7 +499,46 @@ describe('Schema ledger backfill', () => {
       expect(await migrationTableOf(kit, draft, 'draft')).toBeNull();
     });
 
-    it('BF-09 lets a writer of the former Draft fail as it fails after a native commit', async () => {
+    it('BF-09 fails a native write that began before the backfill committed and copies a table version, as it fails when a native commit overtakes it', async () => {
+      const backfilled = await givenCatalogWithoutLedger();
+      const committed = await givenCatalogWithoutLedger();
+      await committed.removeRow(PRODUCTS, 'p2');
+
+      const afterBackfill = await nativeWriteOvertakenBy(backfilled, () =>
+        backfillLedger(kit, backfilled),
+      );
+      const afterCommit = await nativeWriteOvertakenBy(committed, () =>
+        committed.commit(),
+      );
+
+      expect(afterCommit).toBe('The revision is not a draft');
+      expect(afterBackfill).toBe(afterCommit);
+      expect((await backfilled.row('draft', CATEGORIES, 'c1')).data).toEqual({
+        title: 'first',
+      });
+    });
+
+    it('BF-09 serializes a native write that began before the backfill committed and edits a Draft version in place as the first one: it lands in the new Draft', async () => {
+      const draft = await givenCatalogWithEditedRows();
+
+      const outcome = await nativeWriteOvertakenBy(draft, () =>
+        backfillLedger(kit, draft),
+      );
+
+      expect(outcome).toBe('written');
+      expect((await draft.row('draft', CATEGORIES, 'c1')).data).toEqual({
+        title: 'late',
+      });
+      expect((await draft.row('head', CATEGORIES, 'c1')).data).toEqual({
+        title: 'first',
+      });
+      expect(await describedLedgerOf(draft, 'head')).toEqual([
+        `init ${CATEGORIES}`,
+        `init ${PRODUCTS}`,
+      ]);
+    });
+
+    it('BF-09 refuses a later write to the former Draft as it refuses one after a native commit', async () => {
       const backfilled = await givenCatalogWithoutLedger();
       const committed = await givenCatalogWithoutLedger();
       const formerDrafts = {
@@ -454,15 +606,18 @@ describe('Schema ledger backfill', () => {
     it('BF-13 leaves other branches as they were: a branch from a revision before the backfill gets its own, a branch from the new Head needs none', async () => {
       const draft = await givenCatalogWithoutLedger();
       await createBranchFromHead(kit, draft, OTHER_BRANCH);
-      const other = await planOtherBranch(draft);
+      const other = await otherBranchOf(draft);
+      await kit.draftApi.apiUpdateRow({
+        revisionId: other.draftRevisionId,
+        tableId: CATEGORIES,
+        rowId: 'c1',
+        data: { title: 'other' },
+      });
+      const otherContents = await branchContentsOf(kit, other);
 
       await backfillLedger(kit, draft);
 
-      const planned = await planOtherBranch(draft);
-      expect({ ...planned, entries: withoutIds(entriesOf(planned)) }).toEqual({
-        ...other,
-        entries: withoutIds(entriesOf(other)),
-      });
+      expect(await branchContentsOf(kit, other)).toEqual(otherContents);
       await expect(
         backfillLedger(kit, draft, { branchName: OTHER_BRANCH }),
       ).resolves.toMatchObject({ status: 'backfilled' });
@@ -610,13 +765,58 @@ describe('Schema ledger backfill', () => {
     return draft;
   }
 
-  function planOtherBranch(
+  async function otherBranchOf(
     draft: BranchScenario,
-  ): Promise<SchemaLedgerBackfill> {
-    return backfillLedger(kit, draft, {
-      branchName: OTHER_BRANCH,
-      dryRun: true,
+  ): Promise<{ branchId: string; draftRevisionId: string }> {
+    const { id: branchId } = await kit.prisma.branch.findFirstOrThrow({
+      where: { projectId: draft.branch.projectId, name: OTHER_BRANCH },
+      select: { id: true },
     });
+    const { id: draftRevisionId } = await kit.prisma.revision.findFirstOrThrow({
+      where: { branchId, isDraft: true },
+      select: { id: true },
+    });
+
+    return { branchId, draftRevisionId };
+  }
+
+  async function nativeWriteOvertakenBy(
+    draft: BranchScenario,
+    overtaking: () => Promise<unknown>,
+  ): Promise<string> {
+    const revisionId = await draft.revisionId('draft');
+    const admitted = createBarrier('The native write');
+    const lock = kit.module.get(MigrationLockService);
+    const checkRevisionLock = lock.checkRevisionLock.bind(lock);
+    let checks = 0;
+    const checking = jest
+      .spyOn(lock, 'checkRevisionLock')
+      .mockImplementation(async (lockedRevisionId) => {
+        checks += 1;
+
+        if (checks === 1) {
+          await admitted.arrive();
+        }
+
+        return checkRevisionLock(lockedRevisionId);
+      });
+    const writing = writeTitleOfC1(revisionId).then(
+      () => 'written',
+      (error: Error) => error.message,
+    );
+
+    await admitted.expectReachedBefore(writing);
+
+    try {
+      await overtaking();
+    } finally {
+      admitted.release();
+    }
+
+    const outcome = await writing;
+    checking.mockRestore();
+
+    return outcome;
   }
 
   async function rowDataOf(
@@ -669,6 +869,53 @@ describe('Schema ledger backfill', () => {
               : row,
           ),
         }),
+      );
+  }
+
+  function storeAnEntryBeyondThePlan(): void {
+    const draftRevisionApi = kit.module.get(DraftRevisionApiService);
+    const createRows = draftRevisionApi.createRows.bind(draftRevisionApi);
+
+    jest
+      .spyOn(draftRevisionApi, 'createRows')
+      .mockImplementation(({ rows, ...data }) => {
+        const last = rows.at(-1);
+
+        return createRows({
+          ...data,
+          rows: last
+            ? [...rows, { ...last, rowId: BEYOND_THE_PLAN }]
+            : [...rows],
+        });
+      });
+  }
+
+  function unlockLedgerRowsAfterLockingThem(): void {
+    const versionWriter = kit.module.get(AssembledVersionWriter);
+    const lockLinkedIntoHead =
+      versionWriter.lockLinkedIntoHead.bind(versionWriter);
+
+    jest
+      .spyOn(versionWriter, 'lockLinkedIntoHead')
+      .mockImplementation(async (tableVersionId, headVersionId) => {
+        await lockLinkedIntoHead(tableVersionId, headVersionId);
+        await kit.transactionService.getTransaction().row.updateMany({
+          where: { tables: { some: { versionId: tableVersionId } } },
+          data: { readonly: false },
+        });
+      });
+  }
+
+  function leaveLedgerOutOfTheNextDraft(): void {
+    const draftFollowsHead = kit.module.get(DraftFollowsHead);
+    const versionToLink = draftFollowsHead.versionToLink.bind(draftFollowsHead);
+
+    jest
+      .spyOn(draftFollowsHead, 'versionToLink')
+      .mockImplementation((plan, candidateVersionId, headVersionId) =>
+        plan.identity === SystemTables.Migration
+          ? Promise.resolve(undefined)
+          : versionToLink(plan, candidateVersionId, headVersionId),
       );
   }
 

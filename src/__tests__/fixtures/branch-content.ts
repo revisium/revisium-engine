@@ -39,7 +39,7 @@ export async function branchContentOf(
 
 export function branchContentsOf(
   kit: BranchScenarioTestKit,
-  draft: BranchScenario,
+  draft: Pick<BranchScenario, 'branchId'>,
 ): Promise<RevisionContents[]> {
   return kit.prisma.$queryRaw<RevisionContents[]>(sql`
     SELECT to_jsonb(rev) AS "revision",

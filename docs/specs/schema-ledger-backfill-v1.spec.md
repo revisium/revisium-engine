@@ -265,8 +265,8 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
   `refused` (`draftStructureChanged`). Backfill first: the writer fails as it does after a native commit, because its
   revision is no longer the Draft. A writer whose transaction began before the backfill committed gets one of the two:
   one that copies a table version into the Draft fails as after a native commit; one that edits a Draft-owned version
-  in place is ordered first and its change lands in the new Draft, because the backfill neither reads nor locks that
-  version (a native commit locks it, so there that writer fails too).
+  in place may also be ordered first, because the backfill neither reads nor locks that version (a native commit locks
+  it), and then its change lands in the new Draft. No such write reaches the new Head.
 - BF-10 A failure injected after the writes → nothing persists and no endpoint is notified.
 - BF-11 A fresh Head-synced replica (`src/__tests__/fixtures/ledger-replicas.ts`) after the backfill reproduces the Head
   schemas and stored ledger, including a split cycle.

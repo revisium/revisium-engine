@@ -518,17 +518,21 @@ describe('Schema ledger backfill', () => {
       });
     });
 
-    it('BF-09 serializes a native write that began before the backfill committed and edits a Draft version in place as the first one: it lands in the new Draft', async () => {
+    it('BF-09 orders a native write that began before the backfill committed and edits a Draft version in place either first, into the new Draft, or after, failing; never into the new Head', async () => {
       const draft = await givenCatalogWithEditedRows();
 
       const outcome = await nativeWriteOvertakenBy(draft, () =>
         backfillLedger(kit, draft),
       );
 
-      expect(outcome).toBe('written');
-      expect((await draft.row('draft', CATEGORIES, 'c1')).data).toEqual({
-        title: 'late',
-      });
+      const draftRow = await draft.row('draft', CATEGORIES, 'c1');
+      expect([
+        { outcome: 'written', draftData: { title: 'late' } },
+        {
+          outcome: 'The revision is not a draft',
+          draftData: { title: 'edited' },
+        },
+      ]).toContainEqual({ outcome, draftData: draftRow.data });
       expect((await draft.row('head', CATEGORIES, 'c1')).data).toEqual({
         title: 'first',
       });

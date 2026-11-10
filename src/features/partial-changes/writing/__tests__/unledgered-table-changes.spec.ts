@@ -13,7 +13,7 @@ import { describedLedgerOf } from 'src/__tests__/fixtures/stored-ledger';
 import type { ChangesBlocked } from 'src/features/partial-changes/commands/impl/apply-changes';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
-import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
+import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type {
   FieldRef,
   Selection,
@@ -40,7 +40,7 @@ const titleOf = (tableId: string, rowId: string): FieldRef => ({
 
 const titleOfC1: Selection = { fields: [titleOf(CATEGORIES, 'c1')] };
 
-const unledgered = (tableId: string): Blocker => ({
+const unledgered = (tableId: string): PlanBlocker => ({
   code: 'unledgeredTable',
   tableId,
   message: `${tableId} is refused: it has no intact ledger lineage`,

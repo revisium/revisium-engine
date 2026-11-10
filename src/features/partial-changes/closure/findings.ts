@@ -1,7 +1,7 @@
 import type { AssemblySource } from 'src/features/partial-changes/assembly/target-assembler';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import {
-  type PlanBlocker,
+  type CatalogueBlocker,
   refusalBlocker,
 } from 'src/features/partial-changes/plan/plan-blocker';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
@@ -13,7 +13,7 @@ export type Finding =
       readonly unitKey: string;
       readonly reason: Reason;
     }
-  | { readonly kind: 'blocks'; readonly blocker: PlanBlocker };
+  | { readonly kind: 'blocks'; readonly blocker: CatalogueBlocker };
 
 export type Site = Pick<Reason, 'tableId' | 'rowId' | 'path'>;
 
@@ -23,7 +23,7 @@ export function requiring(unitKey: string, reason: Reason): Finding {
   return { kind: 'requires', unitKey, reason };
 }
 
-export function blocking(blocker: PlanBlocker): Finding {
+export function blocking(blocker: CatalogueBlocker): Finding {
   return { kind: 'blocks', blocker };
 }
 
@@ -47,8 +47,8 @@ export function danglingInSource(
   because: string,
   { tableId, rowId, path }: Site,
   unitKey: string | undefined,
-): PlanBlocker {
-  const blocker: PlanBlocker = {
+): CatalogueBlocker {
+  const blocker: CatalogueBlocker = {
     code: 'danglingInSource',
     tableId,
     rowId,

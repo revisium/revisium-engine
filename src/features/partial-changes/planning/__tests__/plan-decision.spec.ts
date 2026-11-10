@@ -7,7 +7,7 @@ import {
   PREVIEW_STATUSES,
   type PreviewTerms,
 } from 'src/features/partial-changes/planning/plan-decision';
-import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
+import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
 
 const FINGERPRINT = 'fingerprint-of-the-plan';
@@ -150,12 +150,12 @@ const REQUIRED_UNIT: RequiredUnit = {
   },
 };
 
-const LIMIT_BLOCKER: Blocker = {
+const LIMIT_BLOCKER: PlanBlocker = {
   code: 'tooLarge',
   message: 'The affected tables hold too many changed rows',
 };
 
-const BLOCKER: Blocker = {
+const BLOCKER: PlanBlocker = {
   code: 'notSelectable',
   tableId: 'products',
   rowId: 'p1',

@@ -4,7 +4,7 @@ import type { JsonValue } from 'src/engine-prisma-types';
 import type { MergedRow } from 'src/features/partial-changes/assembly/row-merger';
 import type { TargetViews } from 'src/features/partial-changes/assembly/system-target-assembler';
 import type { TablePlan } from 'src/features/partial-changes/assembly/target-assembler';
-import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import {
   type ChangePlan,
@@ -16,7 +16,7 @@ import {
   type PreviewStatus,
 } from 'src/features/partial-changes/planning/plan-decision';
 import type {
-  Blocker,
+  PlanBlocker,
   Deferred,
 } from 'src/features/partial-changes/planning/plan-refs';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
@@ -58,10 +58,10 @@ export interface PlanView {
   readonly applied: readonly AddressedUnit[];
   readonly selected: number;
   readonly required: readonly RequiredUnit[];
-  readonly blockers: readonly Blocker[];
+  readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly Deferred[];
   readonly unmatched: UnmatchedSelectors;
-  readonly estimate: Omit<Estimate, 'changedRows'>;
+  readonly estimate: Omit<PlanEstimate, 'changedRows'>;
   readonly target?: PlannedTargetView;
 }
 

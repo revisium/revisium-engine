@@ -49,13 +49,18 @@ export type PublishedAtOwner =
   | { readonly owner: 'structure' }
   | { readonly owner: 'rowColumns' };
 
-export const FIELD_CHANGES = ['added', 'removed', 'changed', 'moved'] as const;
+export const STRUCTURE_FIELD_CHANGES = [
+  'added',
+  'removed',
+  'changed',
+  'moved',
+] as const;
 
-export type FieldChange = (typeof FIELD_CHANGES)[number];
+export type StructureFieldChange = (typeof STRUCTURE_FIELD_CHANGES)[number];
 
 export interface ChangedLeaf {
   readonly pointer: JsonPointer;
-  readonly change: FieldChange;
+  readonly change: StructureFieldChange;
   readonly from?: JsonPointer;
 }
 
@@ -230,7 +235,7 @@ class LeafComparison {
   private changeOfNewLeaf(
     leaf: SchemaLeaf,
     movedAway: ReadonlySet<string>,
-  ): FieldChange {
+  ): StructureFieldChange {
     if (!this.headLeaves.at(leaf.pointer) || movedAway.has(pointerKey(leaf))) {
       return 'added';
     }

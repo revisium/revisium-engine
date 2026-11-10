@@ -1,13 +1,13 @@
 import type { DeferredValues } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import type { PlanBlocker } from 'src/features/partial-changes/plan/plan-blocker';
+import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
   type DescribedUnitRef,
   describedUnitRefOf,
 } from 'src/features/partial-changes/selection/unit-refs';
 
-export type Blocker = Omit<PlanBlocker, 'unitKey'> & {
+export type PlanBlocker = Omit<CatalogueBlocker, 'unitKey'> & {
   readonly unit?: DescribedUnitRef;
 };
 
@@ -21,8 +21,8 @@ const SAMPLE_SIZE = 20;
 
 export function blockerRefOf(
   catalogue: ChangeCatalogue,
-  { unitKey, ...blocker }: PlanBlocker,
-): Blocker {
+  { unitKey, ...blocker }: CatalogueBlocker,
+): PlanBlocker {
   if (unitKey === undefined) {
     return blocker;
   }

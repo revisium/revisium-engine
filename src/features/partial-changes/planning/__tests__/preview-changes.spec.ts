@@ -5,7 +5,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
+import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type {
   FieldRef,
@@ -78,7 +78,7 @@ const titleOfC1Unit: UnitRef = {
   selector: titleOfC1,
 };
 
-const headSchemaInconsistentCategories: Blocker = {
+const headSchemaInconsistentCategories: PlanBlocker = {
   code: 'headSchemaInconsistent',
   tableId: CATEGORIES,
   message:
@@ -764,7 +764,7 @@ describe('previewChanges', () => {
     it.each<{
       damage: string;
       given: () => Promise<ChangesScenario>;
-      refusal: Blocker;
+      refusal: PlanBlocker;
     }>([
       {
         damage: 'an async migration completed in place and not yet published',
@@ -1231,7 +1231,7 @@ describe('previewChanges', () => {
 interface DanglingDraft {
   readonly holding: string;
   readonly given: () => Promise<ChangesScenario>;
-  readonly blocker: Blocker;
+  readonly blocker: PlanBlocker;
 }
 
 function wholeRowOfC9() {

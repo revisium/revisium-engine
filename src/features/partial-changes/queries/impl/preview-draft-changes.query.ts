@@ -1,10 +1,10 @@
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
-import type { Estimate } from 'src/features/partial-changes/limits/operation-estimator';
+import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type { Counts } from 'src/features/partial-changes/planning/change-planner';
+import type { PlanCounts } from 'src/features/partial-changes/planning/change-planner';
 import type { PreviewStatus } from 'src/features/partial-changes/planning/plan-decision';
 import type {
-  Blocker,
+  PlanBlocker,
   Deferred,
 } from 'src/features/partial-changes/planning/plan-refs';
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
@@ -27,15 +27,15 @@ export interface PreviewChangesResult {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly fingerprint: string;
-  readonly counts: Counts;
+  readonly counts: PlanCounts;
   readonly unreadTables: number;
   readonly refusedTables: readonly RefusedTable[];
   readonly required: readonly RequiredUnit[];
-  readonly blockers: readonly Blocker[];
+  readonly blockers: readonly PlanBlocker[];
   readonly deferred: readonly Deferred[];
   readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
-  readonly estimate: Estimate;
+  readonly estimate: PlanEstimate;
 }
 
 export class PreviewDraftChangesQuery {

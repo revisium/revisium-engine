@@ -10,7 +10,7 @@ import type {
 } from '@revisium/schema-toolkit/types';
 import {
   analyzeTableStructure,
-  type FieldChange,
+  type StructureFieldChange,
   type TableStructure,
 } from 'src/features/partial-changes/structure/table-structure';
 import { refs, update, validator } from 'src/__tests__/fixtures/ledger-steps';
@@ -66,7 +66,7 @@ export function analyzeStructure(scenario: StructureScenario): TableStructure {
 
 export interface DescribedChange {
   readonly pointer: string;
-  readonly change: FieldChange;
+  readonly change: StructureFieldChange;
   readonly from?: string;
 }
 

@@ -3,7 +3,7 @@ import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catal
 import type {
   ChangedField,
   StructureChange,
-  TableChange,
+  StructureTableChange,
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
@@ -12,7 +12,7 @@ import {
 } from 'src/features/partial-changes/structure/table-structure';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
-type WholeTableChange = Exclude<TableChange, 'changed' | 'replaced'>;
+type WholeTableChange = Exclude<StructureTableChange, 'changed' | 'replaced'>;
 
 export function structureChangeOf(
   { tableIdentities }: CatalogueUnit,

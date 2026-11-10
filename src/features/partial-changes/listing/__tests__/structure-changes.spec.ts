@@ -22,9 +22,9 @@ import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import {
   type ChangedField,
   type ListedUnit,
-  TABLE_CHANGES,
+  STRUCTURE_TABLE_CHANGES,
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
-import { FIELD_CHANGES } from 'src/features/partial-changes/structure/table-structure';
+import { STRUCTURE_FIELD_CHANGES } from 'src/features/partial-changes/structure/table-structure';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
@@ -158,12 +158,12 @@ describe('listChanges: structure changes', () => {
       },
     );
 
-    it('covers every value of FIELD_CHANGES', () => {
+    it('covers every value of STRUCTURE_FIELD_CHANGES', () => {
       const changes = fieldCases.flatMap(({ fields }) =>
         fields.map(({ change }) => change),
       );
 
-      expect(new Set(changes)).toEqual(new Set(FIELD_CHANGES));
+      expect(new Set(changes)).toEqual(new Set(STRUCTURE_FIELD_CHANGES));
     });
 
     it.each<{ change: string; updates: JsonPatch[][]; fields: ChangedField[] }>(
@@ -462,12 +462,12 @@ describe('listChanges: structure changes', () => {
       });
     });
 
-    it('covers every value of TABLE_CHANGES', () => {
+    it('covers every value of STRUCTURE_TABLE_CHANGES', () => {
       const changes = tableCases.map(
         ({ listed }) => listed.structureChange?.table,
       );
 
-      expect(new Set(changes)).toEqual(new Set(TABLE_CHANGES));
+      expect(new Set(changes)).toEqual(new Set(STRUCTURE_TABLE_CHANGES));
     });
   });
 

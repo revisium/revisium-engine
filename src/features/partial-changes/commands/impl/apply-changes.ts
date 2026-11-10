@@ -1,4 +1,4 @@
-import type { Blocker } from 'src/features/partial-changes/planning/plan-refs';
+import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
@@ -37,7 +37,7 @@ export interface ChangesRequireAdditions extends ApplyResult {
 
 export interface ChangesBlocked extends ApplyResult {
   readonly status: 'blocked';
-  readonly blockers: readonly Blocker[];
+  readonly blockers: readonly PlanBlocker[];
   readonly required: readonly RequiredUnit[];
   readonly unmatched?: UnmatchedSelectors;
 }

@@ -15,7 +15,7 @@ import {
 import { TableSchemas } from 'src/features/partial-changes/closure/table-schemas';
 import { TARGET_CHECKS } from 'src/features/partial-changes/closure/target-checks';
 import {
-  type Estimate,
+  type PlanEstimate,
   type OperationEstimation,
   OperationEstimator,
 } from 'src/features/partial-changes/limits/operation-estimator';
@@ -25,7 +25,7 @@ import type {
 } from 'src/features/partial-changes/plan/change-operation';
 import {
   distinctBlockers,
-  type PlanBlocker,
+  type CatalogueBlocker,
   requiredExcluded,
 } from 'src/features/partial-changes/plan/plan-blocker';
 import type { Reason } from 'src/features/partial-changes/plan/reason';
@@ -60,8 +60,8 @@ interface ClosureOutcome {
   readonly unmatched: UnmatchedSelectors;
   readonly applied: ReadonlySet<string>;
   readonly required: readonly RequiredUnit[];
-  readonly blockers: readonly PlanBlocker[];
-  readonly estimate: Estimate;
+  readonly blockers: readonly CatalogueBlocker[];
+  readonly estimate: PlanEstimate;
 }
 
 export type DependencyClosureResult =
@@ -199,7 +199,7 @@ class SelectionClosure {
     return !this.resolution.excluded.has(unitKey) && !this.applied.has(unitKey);
   }
 
-  private blockerOf(finding: Finding): PlanBlocker {
+  private blockerOf(finding: Finding): CatalogueBlocker {
     if (finding.kind === 'blocks') {
       return finding.blocker;
     }
@@ -217,8 +217,8 @@ class SelectionClosure {
   }
 
   private outcomeWith(
-    estimate: Estimate,
-    blockers: readonly PlanBlocker[],
+    estimate: PlanEstimate,
+    blockers: readonly CatalogueBlocker[],
   ): ClosureOutcome {
     return {
       selected: this.resolution.selected,

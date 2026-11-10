@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 1.1 |
-| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PRs 9–11, the row reads, are pending. Until ADR-002 PR 2 (views follow the structure) lands, a table item can carry `views` beside `structure` and `structureChange.views` is absent, so §4 `views` and DR-10 hold from PR 2 on |
+| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PRs 9–11, the row reads, are pending. Until ADR-002 PR 2 (views follow the structure) lands, a table item can carry `views` beside `structure` and `structureChange.views` is absent, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold from PR 2 on |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
@@ -73,11 +73,13 @@ A **row** is reported when it exists on one side only, or its `id`, data (`hash`
 `schemaHash` differs, except: a row that differs only in `schemaHash` is reported only in a table whose structure is
 unchanged (in a table whose structure differs, native writers rewrite every row with the new schema hash, and the
 table item already shows the structure). A row that differs only in structure-bound data is reported and goes with
-the structure (§5.1). The row's change type is the native one: `ADDED`, `REMOVED`, `MODIFIED`, `RENAMED` (the id
-alone differs) or `RENAMED_AND_MODIFIED`; a row that differs only in `publishedAt`, `meta` or `schemaHash` is
-`MODIFIED` (or `RENAMED_AND_MODIFIED` with a rename). `schemaHash` takes part in both rules only in a table whose
-structure is unchanged, so a renamed row of a table whose structure differs is `RENAMED` when its data, `publishedAt`
-and `meta` are equal, as in the native diff. Every count of this specification counts reported rows only.
+the structure (§5.1). The row's change type follows the native rule over these columns: `ADDED`, `REMOVED`,
+`MODIFIED`, `RENAMED` (the id alone differs) or `RENAMED_AND_MODIFIED`. The native diff compares `id` and data only,
+so the row columns are where the two depart: a row that differs only in `publishedAt`, `meta` or `schemaHash` is
+`MODIFIED` here and absent there, and a renamed row that also differs in one of them is `RENAMED_AND_MODIFIED` here
+and `RENAMED` there. `schemaHash` takes part in both rules only in a table whose structure is unchanged, so a renamed
+row of a table whose structure differs is `RENAMED` when its data, `publishedAt` and `meta` are equal. Every count of
+this specification counts reported rows only.
 
 ## 4. Table items
 
@@ -438,10 +440,11 @@ Reachability and oracles (properties over random Drafts):
 - DR-02 Every reported table, row, field and column without a unit says why: `goesWith`, `computed`, `contentEqual`
   or `refused`.
 - DR-03 Native oracle: on pages of 1, 2 and 7 rows, the reads list every row change of the native diff of the Draft
-  against its Head with an equal change type, the same field changes (paths as JSON Pointers, values equal), and
-  beside them only rows that differ in `publishedAt`, `meta` or `schemaHash` (§3).
+  against its Head with an equal change type (`RENAMED_AND_MODIFIED` for a renamed row that also differs in a row
+  column, §3), the same field changes (paths as JSON Pointers, values equal), and beside them only rows that differ
+  in `publishedAt`, `meta` or `schemaHash` (§3).
 - DR-04 Table items equal the native table changes in change type and row counts, except a table with only rename
-  migrations and no reported row, which may read `RENAMED`; each item's `schemaMigrations`, replayed from the Draft
+  migrations and no reported row, which may read `RENAMED`, and the row-column differences of §3; each item's `schemaMigrations`, replayed from the Draft
   ledger, take the table from its Head id to its Draft id in ledger order, each pending migration under one item at
   most and the rest forming transient tables (listed in the summary unless the catalogue joins them to the structure
   unit of a table created at their id); `viewsChanges` compare the views under the Head id in Head with those under
@@ -450,7 +453,8 @@ Reachability and oracles (properties over random Drafts):
   unfiltered row read; the summary's `rowsWithUnits` equals their sum; a preview that selects `tableData: [table]` has
   a `coverage` entry with `rows` equal to `tableData.rows` (partial-changes-v1 §5.1), apart from the computed-only
   exception.
-- DR-06 The summary equals the native summary in its counts and change types; each count of `tablesSummary` equals
+- DR-06 The summary equals the native summary in its counts and change types, apart from the row-column differences
+  of §3; each count of `tablesSummary` equals
   the `totalCount` of the table filter of its type, and of `rowsSummary` the number of rows the row filter of its
   type lists.
 
@@ -503,7 +507,9 @@ Paging, filters, validation, snapshot:
 - §7: of two table items with one id, the table that exists only in Head comes first, instead of an order by table
   identity, which is an internal id; so DR-08's `REMOVED` then `ADDED` holds and copies of a project page alike. An
   empty `changeTypes` matches nothing.
-- §3: `schemaHash` does not make a renamed row of a table with a changed structure `RENAMED_AND_MODIFIED`.
+- §3: `schemaHash` does not make a renamed row of a table with a changed structure `RENAMED_AND_MODIFIED`; the row
+  columns are named as where the change types and counts depart from the native diff, and DR-03, DR-04 and DR-06
+  carry that exception.
 - DR-04: transient migrations that the catalogue joins to the structure unit of a table created at their id are in no
   list.
 

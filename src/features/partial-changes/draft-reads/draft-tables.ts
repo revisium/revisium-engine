@@ -104,7 +104,7 @@ export class DraftTables {
 
       if (
         hasIdContaining([draft?.id, head?.id], search) &&
-        (await this.hasChangeTypeAmong(table, changeTypes))
+        (await this.matchesChangeTypes(table, changeTypes))
       ) {
         matching.push(table);
       }
@@ -150,7 +150,7 @@ export class DraftTables {
   }
 
   // A renamed table is RENAMED or RENAMED_AND_MODIFIED, so its row counts are read only when the filter tells them apart.
-  private async hasChangeTypeAmong(
+  private async matchesChangeTypes(
     table: DraftTable,
     changeTypes: readonly ChangeType[] | undefined,
   ): Promise<boolean> {

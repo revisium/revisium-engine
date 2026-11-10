@@ -753,6 +753,40 @@ describe('draft table changes', () => {
       });
     });
 
+    it('counts a renamed row of a table whose structure changed as renamed only, its new schema hash left out', async () => {
+      const draft = await givenCommittedProductRows();
+      await draft.updateTable(PRODUCTS, [
+        replaceField('title', { ...str(), description: 'Shown in lists' }),
+      ]);
+      await draft.renameRow(PRODUCTS, 'p1', 'p10');
+
+      const [item] = await readTableItems(draft);
+
+      expect(item?.rowsSummary).toEqual({
+        total: 1,
+        added: 0,
+        modified: 0,
+        removed: 0,
+        renamed: 1,
+      });
+    });
+
+    it('counts a renamed row whose schema hash differs under an unchanged structure as renamed and modified', async () => {
+      const draft = await givenCommittedProductRows();
+      await draft.renameRow(PRODUCTS, 'p1', 'p10');
+      await draft.writeRowColumns(PRODUCTS, 'p10', { schemaHash: 'other' });
+
+      const [item] = await readTableItems(draft);
+
+      expect(item?.rowsSummary).toEqual({
+        total: 1,
+        added: 0,
+        modified: 1,
+        removed: 0,
+        renamed: 1,
+      });
+    });
+
     it('counts a row that differs only in its row columns', async () => {
       const draft = await givenCommittedProductRows();
       await draft.writeRowColumns(PRODUCTS, 'p1', {

@@ -305,7 +305,7 @@ describe('draft changes summary', () => {
     });
   });
 
-  describe('filters', () => {
+  describe('filters and input', () => {
     it.each<{ filters: DraftTableChangesFilters; items: string[] }>([
       {
         filters: { changeTypes: [ChangeType.Added] },
@@ -320,6 +320,7 @@ describe('draft changes summary', () => {
         items: [`views ${PRODUCTS}`, `shared ${ADDRESS}`],
       },
       { filters: { changeTypes: [ChangeType.Renamed] }, items: [] },
+      { filters: { changeTypes: [] }, items: [] },
       { filters: { changeTypes: [ChangeType.RenamedAndModified] }, items: [] },
       {
         filters: { changeTypes: [ChangeType.Added, ChangeType.Removed] },

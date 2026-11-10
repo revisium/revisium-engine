@@ -5,9 +5,10 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type {
-  ListedUnit,
-  StructureTableChange,
+import {
+  type ListedUnit,
+  STRUCTURE_TABLE_CHANGES,
+  type StructureTableChange,
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import {
@@ -57,11 +58,14 @@ class TableUnits {
     }
   }
 
-  public isChangedStructure(unit: AddressedUnit): boolean {
-    return (
-      unit.kind === 'structure' &&
-      this.tableChanges.get(keyOf(unit)) === 'changed'
-    );
+  public tableChangeOf(unit: AddressedUnit): StructureTableChange {
+    const change = this.tableChanges.get(keyOf(unit));
+
+    if (change === undefined) {
+      throw new Error(`The listing has no structure unit ${keyOf(unit)}`);
+    }
+
+    return change;
   }
 
   public ownersIn(applied: readonly AddressedUnit[]): AddressedUnit[] {
@@ -76,7 +80,7 @@ class TableUnits {
       return unit.tableId;
     }
 
-    switch (this.tableChanges.get(keyOf(unit))) {
+    switch (this.tableChangeOf(unit)) {
       case 'created':
         return side === 'draft' ? unit.tableId : undefined;
       case 'removed':
@@ -87,7 +91,7 @@ class TableUnits {
         return side === 'head'
           ? (unit.previousTableId ?? unit.tableId)
           : unit.tableId;
-      default:
+      case 'transient':
         return undefined;
     }
   }
@@ -171,14 +175,18 @@ describe('views follow the structure over random Drafts (AS-83)', () => {
   );
 
   it('moves views documents with changed structures, other structures and views units in commits and reverts across its seeds', () => {
-    expect([...moved].sort()).toEqual([
-      'commit structure',
-      'commit structure changed',
-      'commit views',
-      'revert structure',
-      'revert structure changed',
-      'revert views',
-    ]);
+    for (const operation of OPERATIONS) {
+      expect({
+        operation,
+        changed: moved.has(`${operation} structure changed`),
+        other: STRUCTURE_TABLE_CHANGES.some(
+          (change) =>
+            change !== 'changed' &&
+            moved.has(`${operation} structure ${change}`),
+        ),
+        views: moved.has(`${operation} views`),
+      }).toEqual({ operation, changed: true, other: true, views: true });
+    }
   });
 
   async function expectPlannedAsTheirUnitsSay(
@@ -254,11 +262,11 @@ describe('views follow the structure over random Drafts (AS-83)', () => {
       const replaced = documentOf(before[base], units.idOn(base, unit));
 
       if (!deepEqual(taken, replaced)) {
-        moved.add(`${operation} ${unit.kind}`);
-
-        if (units.isChangedStructure(unit)) {
-          moved.add(`${operation} structure changed`);
-        }
+        moved.add(
+          unit.kind === 'structure'
+            ? `${operation} structure ${units.tableChangeOf(unit)}`
+            : `${operation} ${unit.kind}`,
+        );
       }
     }
   }
@@ -290,7 +298,7 @@ function expectNoTableWithBothStructureAndViewsUnits(
 
 function keyOf(unit: AddressedUnit): string {
   if (unit.kind !== 'structure') {
-    return JSON.stringify([unit.kind]);
+    return JSON.stringify([unit.kind, unit]);
   }
 
   return JSON.stringify([

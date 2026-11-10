@@ -5,10 +5,7 @@ import {
   type ChangeCatalogue,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { groupRecreations } from 'src/features/partial-changes/catalogue/public-id-groups';
-import {
-  carriesViewsChange,
-  viewsDiffer,
-} from 'src/features/partial-changes/catalogue/views-units';
+import { carriesViewsChange } from 'src/features/partial-changes/catalogue/views-units';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import {
   type DescribedUnitRef,
@@ -78,9 +75,7 @@ export class TableCatalogue {
 
     return (
       tables.structureOf(table).differsBeyondTableId ||
-      (structure
-        ? carriesViewsChange(structure, tables)
-        : viewsDiffer([table], tables))
+      (structure !== undefined && carriesViewsChange(structure, tables))
     );
   }
 }

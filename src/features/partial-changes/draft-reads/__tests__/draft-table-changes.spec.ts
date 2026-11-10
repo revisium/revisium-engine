@@ -642,6 +642,48 @@ describe('draft table changes', () => {
       expect(item?.selection).not.toHaveProperty('views');
     });
 
+    it('keeps a renamed table with unchanged views RENAMED, its structure carrying no views change', async () => {
+      const draft = await givenCommittedTablesWithViews();
+      await draft.renameTable(ORDERS, PURCHASES);
+
+      expect(selectionsOf(await readTableItems(draft))).toEqual([
+        [
+          PURCHASES,
+          ChangeType.Renamed,
+          {
+            state: 'selectable',
+            structure: describedStructureRef(
+              { table: 'changed', fields: [], views: false },
+              PURCHASES,
+              ORDERS,
+            ),
+          },
+        ],
+      ]);
+    });
+
+    it('gives a replaced id whose two tables hold equal views a structure without a views change, while each item reports its own', async () => {
+      const draft = await givenCommittedTablesWithViews();
+      await draft.removeTable(ORDERS);
+      await draft.createTable(ORDERS, labelSchema);
+      await draft.updateViews(ORDERS, orderViews);
+
+      const items = await readTableItems(draft);
+
+      expect(
+        items.map(({ changeType, selection, viewsChanges }) => [
+          changeType,
+          selection.state === 'selectable'
+            ? selection.structure?.structureChange?.views
+            : undefined,
+          viewsChanges.hasChanges,
+        ]),
+      ).toEqual([
+        [ChangeType.Removed, false, true],
+        [ChangeType.Added, false, true],
+      ]);
+    });
+
     it('says that the structure unit of a table whose views did not change carries no views change', async () => {
       const draft = await givenCommittedTablesWithViews();
       await draft.updateTable(ORDERS, [addField('color', str())]);

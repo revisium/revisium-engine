@@ -102,7 +102,9 @@ history and compare reads look both up by table id and keep doing so. Units comp
 differences of the views and of the default view, as the native mapper does; so a document that differs only
 elsewhere (for example its `version`, the order of its views, or an empty document against none) has a unit or `structureChange.views: true` with
 `viewsChanges.hasChanges: false`, and for a table that is not refused `viewsChanges.hasChanges: true` always comes with
-one of them.
+one of them, except for the two items of a replaced id whose removed and created tables hold equal views documents:
+`viewsChanges` compares each table's own sides, so both report a change, while their one structure unit carries none
+(`structureChange.views: false`).
 
 **Change type of a renamed table.** A native rename writes a new table version, so the native diff reports every
 renamed table as `RENAMED_AND_MODIFIED`. The Draft reads report `RENAMED` when nothing but the table id differs and
@@ -469,7 +471,8 @@ Items:
 - DR-10 A table whose structure changed has no `views` in its selection, also when its views were edited, and its
   structure unit says `structureChange.views: true` exactly when its views document differs; a table without a
   structure change and with a views edit has `views`; a views-only table appears only in the summary; whenever
-  `viewsChanges.hasChanges` is true, the table has a views unit or `structureChange.views: true`.
+  `viewsChanges.hasChanges` is true, the table has a views unit or `structureChange.views: true`, except a replaced id
+  whose two tables hold equal views documents (§4).
 - DR-11 A `contentEqual` table and a `computed` row; a refused table's items, rows and fields are `refused` with its
   code; rows of a created, removed or replaced table go with the structure (`tableExistence`).
 - DR-12 Field changes: paths are JSON Pointers (a nested field `/dims/width`, an array element `/tags/1`, which

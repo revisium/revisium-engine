@@ -64,7 +64,7 @@ async-migration copy batches do not run Serializable (§12).
 | [REQ-001.BR-002] S5 | A set prepared in advance and published at a chosen moment. | The layer above keeps a selection and applies it at the chosen moment with preview and `expected`. |
 | [REQ-001.BR-003] | Commit or revert a selected part of the Draft; everything else stays in the Draft. | Every Draft difference belongs to a unit (§3.1); only applied units change the target; a table is relinked only when the content check finds it equal (§6.7). |
 | [REQ-001.BR-004] | Every committed revision (and the Draft after a revert) is consistent; a breaking selection is explained with what to add or remove; an environment syncing through migration export accepts every partial commit and every later commit. | Dependency closure (§6.6), validation (§6.9), the Head schema check (§6.10), ledger and replicas (§10), reasons and blockers with exact selectors (§5.1, §5.7, §5.8). |
-| [REQ-001.BR-005] | Whole-Draft commit and revert work as before. | Native operations unchanged; exactly `{ all: true }` equals native commit and revert, also on a damaged project (§6.10, §13.5), except that its commit refuses Draft damage it would publish: `unrecordedStructureChange` and `invalidViews` (§6.9). |
+| [REQ-001.BR-005] | Whole-Draft commit and revert work as before. | Native operations unchanged; exactly `{ all: true }` equals native commit and revert, also on a damaged project (§6.10, §13.5), except for the inconsistency it would introduce that §6.10 item 4 lists. |
 | [REQ-001.BR-007] | A data edit is one field; creating or deleting a row is the whole row; all structure changes of a table are one unit with the values of new or changed fields; a new table is committed whole. | Unit model (§3). |
 | [REQ-001.BR-009] | An engine primitive; change sets, scheduling and UI are a layer above. | Engine operations only; selections are passed in. |
 
@@ -1340,7 +1340,8 @@ Head structure), and §6.9 step 1 applies to commits only.
    published as native would publish it, or the schema replayed from the Head ledger, so a repaired Draft can be
    published; if neither matches, the operation is refused with `unrecordedStructureChange`. It still refuses
    inconsistency it would introduce itself (`danglingInSource`, AS-36; `unrecordedStructureChange`, AS-46;
-   `ledgerInconsistent`, AS-48), but it does not police damage the Head already has.
+   `ledgerInconsistent`, AS-48) and, in a commit, a Draft views document invalid for a structure or views change it
+   publishes (`invalidViews`, §6.9 step 5, AS-83); otherwise it does not police damage the Head already has.
 
 Tables that are not refused are not affected, so units of other tables still apply.
 
@@ -2059,8 +2060,9 @@ versions unchanged" (§14) holds in every scenario.
 - AS-83 No views combination is checked or migrated: over random Drafts with views edits and schema changes, every
   commit and revert writes the views document of the structure side (or of the views unit's side) unchanged; a Draft
   views document invalid for its own structure (SQL fixture) blocks a commit of its structure or views unit with
-  `invalidViews` and nothing is written, while a commit of other units, a revert, and invalid Head views copied into
-  the Draft unchanged block nothing.
+  `invalidViews`, also with exactly `{ all: true }`, and nothing is written; a commit of other units and a revert
+  block nothing, and invalid Head views copied into the Draft unchanged block nothing under an unchanged structure but
+  block a commit of a structure that changes.
 - AS-84 Reason sites: each code arises at the site kinds of §5.7 with the listed fields: `referencedRowMissing` at a
   `row` site with the referring field as `path` and `references` of kind `row` (the referenced table as units address
   it, the id the reference holds), also for a reference that a structure brings wholesale and for an unchanged

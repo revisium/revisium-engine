@@ -31,7 +31,7 @@ export function carriesViewsChange(
 
 // The views document under the Head id in Head against the one under the Draft id in Draft; a side without the table
 // or without a views row has none (§5.2).
-export function viewsDiffer(
+function viewsDiffer(
   pairs: readonly TablePair[],
   tables: CatalogueTables,
 ): boolean {

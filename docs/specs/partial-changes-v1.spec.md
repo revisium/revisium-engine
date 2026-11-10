@@ -1701,10 +1701,10 @@ migration could be neither published nor reverted.
 ## 11. Limits and configuration
 
 The defaults are **conservative**: each keeps the cost it bounds at about 20 s or less on the PoC sandbox (runs there
-varied up to ±2×), far above today's production sizes, where no table holds 1,000 rows. No measurement on production-like hardware gates
-the release. A host raises a limit through its environment once the operation logs (§11.1) show what operations
-really cost. The PoC sandbox (2 CPU, 4 GB) measured at 100k changed rows (cases as named in the
-[research summary](../research/partial-changes-poc-v2.md)):
+varied up to ±2×), far above today's production sizes, where no table holds 1,000 rows. No measurement on
+production-like hardware gates the release. A host raises a limit through its environment once the operation logs
+(§11.1) show what operations really cost. The PoC sandbox (2 CPU, 4 GB) measured at 100k changed rows (cases as named
+in the [research summary](../research/partial-changes-poc-v2.md)):
 
 | Measure | Value | Cases |
 | --- | --- | --- |
@@ -1743,8 +1743,8 @@ Where the defaults come from, scaled linearly from the measurements above:
 
 The engine reads every setting from its environment once, at startup. A value that is not a whole decimal integer
 (such as `1e5`, `100_000` or `2000abc`), is below 1, or is above the largest safe integer keeps the default and logs a
-warning (the timeout is also bounded by what a Node timer accepts, about 24.8 days); the effective values are
-logged once (`Partial changes limits: …`, `Partial operation settings: …`), each that differs from its default with the
+warning (the timeout is also bounded by what a Node timer accepts, about 24.8 days); the effective values are logged
+once (`Partial changes limits: …`, `Partial operation settings: …`), each that differs from its default with the
 variable it came from.
 
 `all: true` reads every table, so a Draft above `maxChangedRows` can be committed whole only natively.

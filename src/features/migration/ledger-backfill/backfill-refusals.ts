@@ -1,4 +1,5 @@
 import type { BackfillRefusal } from 'src/features/migration/commands/impl/backfill-schema-ledger.command';
+import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableFailure } from './head-table-schemas';
 
 export function draftStructureChanged(
@@ -10,6 +11,16 @@ export function draftStructureChanged(
     message:
       `The Draft changes the structure of ${quoted(tableIds)} without a ledger; ` +
       'commit or revert those changes natively, then run again',
+  };
+}
+
+export function draftMigrationTable(): BackfillRefusal {
+  return {
+    code: 'draftStructureChanged',
+    tableIds: [SystemTables.Migration],
+    message:
+      'The Draft has a migration table that the Head does not have; ' +
+      'revert the Draft natively, then run again',
   };
 }
 

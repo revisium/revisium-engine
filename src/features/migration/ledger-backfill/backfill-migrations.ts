@@ -3,11 +3,7 @@ import type {
   UpdateMigration,
 } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
-import {
-  type MigrationBounds,
-  nextNativeMigrationId,
-  publishedAtOf,
-} from 'src/features/share/ledger/native-migration-id';
+import { NativeIdSequence } from 'src/features/share/ledger/native-migration-id';
 import type { OrderedLedger } from './backfill-order';
 
 export type BackfillMigration = InitMigration | UpdateMigration;
@@ -16,7 +12,7 @@ export function backfillMigrationsOf({
   inits,
   updates,
 }: OrderedLedger): BackfillMigration[] {
-  const ids = new MigrationIdSequence();
+  const ids = new NativeIdSequence({ id: null, publishedAt: null });
 
   return [
     ...inits.map(
@@ -38,23 +34,4 @@ export function backfillMigrationsOf({
       }),
     ),
   ];
-}
-
-class MigrationIdSequence {
-  private previous: string | null = null;
-
-  public next(): string {
-    const id = nextNativeMigrationId(this.bounds());
-    this.previous = id;
-
-    return id;
-  }
-
-  private bounds(): MigrationBounds {
-    if (this.previous === null) {
-      return { id: null, publishedAt: null };
-    }
-
-    return { id: this.previous, publishedAt: publishedAtOf(this.previous) };
-  }
 }

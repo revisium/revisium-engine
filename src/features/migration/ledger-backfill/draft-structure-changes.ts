@@ -1,7 +1,6 @@
 import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { Row } from 'src/engine-prisma-types';
 import type { StoredTable } from 'src/features/share/branch-revisions/branch-revision-reader';
-import { SystemTables } from 'src/features/share/system-tables.consts';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import type { BackfillRevision, BackfillState } from './backfill-state-reader';
 
@@ -9,10 +8,6 @@ export function draftStructureChangesOf({
   head,
   draft,
 }: BackfillState): string[] {
-  if (draft.hasMigrationTable) {
-    return [SystemTables.Migration];
-  }
-
   const headTables = tablesByCreatedId(head);
   const draftTables = tablesByCreatedId(draft);
   const changed = new Set<string>();

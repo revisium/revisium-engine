@@ -33,21 +33,21 @@ export interface BackfillRefusal {
   readonly message: string;
 }
 
-interface BackfilledBranch {
+interface BackfillRevisions {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
 }
 
-export interface BackfillNotNeeded extends BackfilledBranch {
+export interface BackfillNotNeeded extends BackfillRevisions {
   readonly status: 'notNeeded';
 }
 
-export interface BackfillPlanned extends BackfilledBranch {
+export interface BackfillPlanned extends BackfillRevisions {
   readonly status: 'planned';
   readonly entries: readonly BackfillEntry[];
 }
 
-export interface BackfillRefused extends BackfilledBranch {
+export interface BackfillRefused extends BackfillRevisions {
   readonly status: 'refused';
   readonly refusal: BackfillRefusal;
 }

@@ -38,9 +38,7 @@ export function headTableSchemasOf(
         head.schemaRows.get(tableId),
         rules,
       );
-      const references = rules
-        .foreignKeysOf(schema)
-        .filter((target) => target !== tableId && headTableIds.has(target));
+      const references = referencesOf(tableId, schema, headTableIds, rules);
 
       tables.push({ tableId, schema, references });
     } catch (error) {
@@ -56,14 +54,14 @@ function validSchemaOf(
   schemaRow: Row | undefined,
   rules: NativeSchemaRules,
 ): JsonSchema {
-  if (!schemaRow) {
-    throw new Error('it has no schema row');
-  }
-
   const tableIdError = findTableIdError(tableId);
 
   if (tableIdError) {
     throw new Error(tableIdError);
+  }
+
+  if (!schemaRow) {
+    throw new Error('it has no schema row');
   }
 
   const { schema } = schemaRowOf(schemaRow);
@@ -71,6 +69,26 @@ function validSchemaOf(
   rules.ensureValidFieldNames([schema]);
 
   return schema;
+}
+
+function referencesOf(
+  tableId: string,
+  schema: JsonSchema,
+  headTableIds: ReadonlySet<string>,
+  rules: NativeSchemaRules,
+): string[] {
+  const references = rules
+    .foreignKeysOf(schema)
+    .filter((target) => target !== tableId);
+  const foreignTarget = references.find((target) => !headTableIds.has(target));
+
+  if (foreignTarget !== undefined) {
+    throw new Error(
+      `Foreign key target "${foreignTarget}" is not a table of the Head`,
+    );
+  }
+
+  return references;
 }
 
 function messageOf(error: unknown): string {

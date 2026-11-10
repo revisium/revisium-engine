@@ -31,6 +31,10 @@ export function survivesSplit(
   headSchema: JsonSchema,
   { initSchema, patches }: ForeignKeySplit,
 ): boolean {
+  if (patches.length === 0) {
+    return false;
+  }
+
   try {
     return schemasEqual(rules.patchedSchema(initSchema, patches), headSchema);
   } catch {

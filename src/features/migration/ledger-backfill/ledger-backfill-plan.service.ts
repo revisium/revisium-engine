@@ -13,6 +13,7 @@ import {
   backfillMigrationsOf,
 } from './backfill-migrations';
 import {
+  draftMigrationTable,
   draftStructureChanged,
   unreproducibleSchemas,
   unsplittableCycles,
@@ -44,6 +45,10 @@ export class LedgerBackfillPlanService {
   public plan(state: BackfillState): BackfillPlan {
     if (state.head.hasMigrationTable) {
       return { status: 'notNeeded' };
+    }
+
+    if (state.draft.hasMigrationTable) {
+      return refusedBy(draftMigrationTable());
     }
 
     const draftChanges = draftStructureChangesOf(state);

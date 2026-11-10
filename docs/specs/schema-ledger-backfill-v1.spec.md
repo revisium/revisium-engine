@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Accepted |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
@@ -77,8 +77,8 @@ they come from the clock (§3 step 3), so a later run writes the same entries un
 
 | Refusal `code` | When | What the caller does |
 | --- | --- | --- |
-| `draftStructureChanged` | The Draft creates, removes or renames a user table; a user table's Draft schema row differs from Head in `data` or in its history (`meta`); or the Draft links a migration table that the Head does not. Those changes were made without a ledger, so no pending entry could explain them. `tableIds`: the tables concerned (Draft id, else Head id, as partial-changes blockers name them), or `revisium_migration_table`. | Commit or revert the changes natively, then run again. |
-| `schemaNotReproducible` | The planned ledger cannot reproduce every Head schema (§3 steps 3–4): a foreign key names a table that does not exist, a Head user table has no schema row, a Head table id or schema fails the current rules (table id, meta-schema, `$ref`, field names, formulas), or no table of a foreign-key cycle survives the split. `tableIds`: the failing tables; for a cycle, its tables. | Fix the schemas natively and commit, then run again. For a cycle: a native `updateTable` of one table of each named cycle stores its whole schema in the form the replay produces (`SchemaTable.getSchema`, `draft/commands/handlers/update-table.handler.ts:94-128`). That form also resets every `default` of the table to `''`, `0` or `false`, so the operator checks the defaults first; another remedy is to remove one foreign key of the cycle. |
+| `draftStructureChanged` | The Draft creates, removes or renames a user table; a user table's Draft schema row differs from Head in `data` or in its history (`meta`); or the Draft links a migration table that the Head does not. Those changes were made without a ledger, so no pending entry could explain them. `tableIds`: the tables concerned (Draft id, else Head id, as partial-changes blockers name them), or `revisium_migration_table`. | Commit or revert the changes natively, then run again. A Draft migration table is only reverted: committing it would give the Head an empty ledger, and every table would stay unledgered (§1, out of scope). |
+| `schemaNotReproducible` | The planned ledger cannot reproduce every Head schema (§3 steps 3–4): a foreign key names a table that is not a Head user table, a Head user table has no schema row, a Head table id or schema fails the current rules (table id, meta-schema, `$ref`, field names, formulas), or no table of a foreign-key cycle survives the split. `tableIds`: the failing tables; for a cycle, its tables. | Fix the schemas natively and commit, then run again. For a cycle: a native `updateTable` of one table of each named cycle stores its whole schema in the form the replay produces (`SchemaTable.getSchema`, `draft/commands/handlers/update-table.handler.ts:94-128`). That form also resets every `default` of the table to `''`, `0` or `false`, so the operator checks the defaults first; another remedy is to remove one foreign key of the cycle. |
 
 Errors as the partial operations:
 
@@ -113,8 +113,9 @@ exclusive holder (partial-changes §8.4). The attempt cap and timeout are those 
      → `refused` with `schemaNotReproducible`. The toolkit calls below throw on such schemas (an unknown `$ref`, a
      `required` name without a property); any error they raise for a table also refuses it this way.
    - *References* of a table: the foreign-key targets of its Head schema as the replay reads them
-     (`NativeSchemaRules.foreignKeysOf`: nested objects and array `items` included), minus the table itself and minus
-     targets that are not Head user tables. A missing target stays in the schema, and step 4 refuses the table.
+     (`NativeSchemaRules.foreignKeysOf`: nested objects and array `items` included), minus the table itself. A target
+     that is not a Head user table (missing, or a system table) refuses the table in this pass, so the tables that
+     reference it are not named.
    - *Order.* Repeat until every table is emitted; *remaining* means not emitted yet:
      1. If some remaining table has every reference emitted, emit the one with the smallest id (code-point order) as an
         `init` with its Head schema row `data` as `schema`.
@@ -248,11 +249,13 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 - BF-04 `dryRun` → `planned`, and branch contents are byte-identical before and after. A later run on the unchanged
   branch → `backfilled` with entries equal in `changeType`, `tableId`, `hash` and order; the ids may differ.
 - BF-05 A second run → `notNeeded`; a branch that always had a ledger → `notNeeded`.
-- BF-06 The Draft creates, removes or renames a table, changes a schema, changes a schema and changes it back, or links
-  a migration table → `refused` with `draftStructureChanged` and the tables; nothing is written.
-- BF-07 A Head schema whose foreign key names a missing table, a Head user table without a schema row, or a Head
-  schema the current rules reject (an invalid field name or formula, a `required` name without a property, an unknown
-  `$ref`) → `refused` with `schemaNotReproducible` and the table, never an uncaught error; nothing is written.
+- BF-06 The Draft creates, removes or renames a table, removes a table and creates another under its id, changes a
+  schema, changes a schema and changes it back, or links a migration table → `refused` with `draftStructureChanged`
+  and the tables; nothing is written. For a migration table the message advises a revert only.
+- BF-07 A Head schema whose foreign key names a missing or a system table, a Head user table without a schema row, an
+  invalid Head table id, or a Head schema the current rules reject (an invalid field name or formula, a `required` name
+  without a property, an unknown `$ref`) → `refused` with `schemaNotReproducible` and the table, never an uncaught
+  error, and the tables that reference it are not named; nothing is written.
 - BF-08 An active async migration on the branch → `MigrationLockedException`, for a run and for a dry run; nothing is
   written.
 - BF-09 A Draft writer racing the backfill, with the result of one order. Writer first: a row change is carried into
@@ -298,6 +301,15 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 | 4 | `docs/api.md` and `docs/migration.md`. | — |
 
 ## Changelog
+
+### Version 1.1 (2026-11-10)
+
+Clarified while implementing the planning (§9 PR 2):
+
+- A foreign key to a table that is not a Head user table refuses the table in the validate-first pass, so the tables
+  that reference it are not named (§3 step 3, BF-07).
+- An entry that fails `validateTableMigrationsSchema` refuses its table (§3 step 4).
+- A Draft migration table is only reverted (§2).
 
 ### Version 1.0 (2026-11-10)
 

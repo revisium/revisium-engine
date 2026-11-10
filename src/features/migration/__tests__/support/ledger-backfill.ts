@@ -1,6 +1,7 @@
 import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
 import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
+import { acceptDamagedCommittedVersions } from 'src/__tests__/fixtures/head-schema-damage';
 import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import type {
@@ -70,6 +71,47 @@ export function withoutIds(
     tableId,
     hash,
   }));
+}
+
+export async function atClock<T>(
+  isoTime: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse(isoTime));
+
+  try {
+    return await action();
+  } finally {
+    clock.mockRestore();
+  }
+}
+
+export async function transactionsStartedDuring(
+  kit: BranchScenarioTestKit,
+  action: () => Promise<unknown>,
+): Promise<number> {
+  const transactions = jest.spyOn(kit.prisma, '$transaction');
+
+  try {
+    await action();
+
+    return transactions.mock.calls.length;
+  } finally {
+    transactions.mockRestore();
+  }
+}
+
+export async function renameHeadTableBelowNativeValidation(
+  kit: BranchScenarioTestKit,
+  draft: BranchScenario,
+  tableId: string,
+  nextTableId: string,
+): Promise<void> {
+  await kit.prisma.table.update({
+    where: { versionId: await draft.tableVersionId('head', tableId) },
+    data: { id: nextTableId },
+  });
+  await acceptDamagedCommittedVersions(kit, draft);
 }
 
 export async function revisionsOf(draft: BranchScenario) {

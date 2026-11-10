@@ -12,7 +12,7 @@ import {
 import objectHash from 'object-hash';
 import type { SchemaRefs } from 'src/features/share/ledger-replay/native-schema-rules';
 import { checkTableSlot } from 'src/features/share/ledger-replay/slot-check';
-import { NativeIdSequence } from './repair-ids';
+import { NativeIdSequence } from 'src/features/share/ledger/native-migration-id';
 import type { RepairLedger } from './repair-ledger';
 
 const SAMPLE_ROW_ID = 'sample';

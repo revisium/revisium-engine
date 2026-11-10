@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 2.0 |
-| Status | Accepted; the API revision of v2.0 is implemented ([ADR-002] delivery) and `docs/api.md` (PR 13) follows: PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145) |
+| Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#PR13) |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
@@ -1837,12 +1837,11 @@ All rows have landed (statuses in [plan](../plan.md)); [async-row-migration-v2] 
   (`unledgeredTable`, `headSchemaInconsistent`).
 - **No change to table rename** in stage 0: re-hashing the referencing rows would copy every row of every
   referencing table; predicate (a) reports such tables as known false positives instead.
-- **Release gate:** the async migration fix shipped; the forward-only repair tool; the scan run on existing
-  deployments with its results reviewed (damaged tables and history, tainted ledger slots, unledgered tables, the
-  predicate (a) diagnostics with their known false positives, and the host-side check for files possibly lost before
-  the fix, [async-row-migration-v2] §13); the Head schema check
+- **Release gate:** the async migration fix shipped; the forward-only repair tool; the Head schema check
   (`headSchemaInconsistent`, `unledgeredTable`) in partial operations; conservative configurable limits with the
-  operation logs (§11, §11.1) instead of a re-measurement on production-like hardware.
+  operation logs (§11, §11.1) instead of a re-measurement on production-like hardware. The scan run on existing
+  deployments is not part of the gate (dropped on 2026-11-08: no production table has reached the async-migration
+  threshold, so no async-migration damage exists to review); the scan and the repair stay available to hosts.
 
 **Other items.**
 
@@ -2395,6 +2394,9 @@ cap stay; a setting must be a whole decimal integer within bounds (the reader is
 `TRANSACTION_*` settings, which become as strict: `15000ms` or `+15000` now keep the default with a warning); the
 effective settings are logged at startup; every listing page, preview, commit and revert logs one entry (§11.1); the
 structure digest is measured; the release gate takes these instead of a re-measurement on production-like hardware.
+
+Release gate (§12): the scan run on existing deployments is no longer part of it (dropped on 2026-11-08, since no
+production table has reached the async-migration threshold).
 
 Scenarios: AS-10, AS-17, AS-19, AS-45, AS-64 reworded; AS-60c, AS-76 and §13.8 (AS-80 – AS-92) added.
 

@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.2 |
+| Version | 2.3 |
 | Status | Accepted |
-| Date | 2026-11-02 |
+| Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), delivery stage 0 |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-004, REQ-001.BR-005 |
 | Previous version | [async-row-migration-v1]: shadow table, batches, worker modes, statuses and branch lock are kept |
@@ -341,8 +341,8 @@ equality, key order ignored.
 ### 5.2 Operation
 
 A facade method (`src/engine-api.service.ts`, beside `validateProjectFileBytes`) implemented by the `migration` feature.
-The engine has no CLI (`src/main.ts` only starts the application): the host exposes it to administrators, which the
-release gate needs. Read-only; no permission layer in the engine.
+The engine has no CLI (`src/main.ts` only starts the application): the host exposes it to administrators. Read-only;
+no permission layer in the engine.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
@@ -709,7 +709,7 @@ fixtures repeating the old in-place swap, asserted first. Recovery scenarios ass
   The abort's link predicate (§3.6) is defence in depth with no red scenario: once the guarded deletion removed the
   record no swap can link the shadow.
 - **Benchmarks**: async update and replica sync at 100k rows (AM-45); the scan and the repair planner on a
-  production-sized copy, timed for the release gate.
+  production-sized copy, timed before a host runs them on its deployments.
 
 ## 12. Delivery
 
@@ -727,10 +727,10 @@ Landed prerequisites: #85–#93, #119, #128 (Overview). Each PR updates the engi
 | 8 | Repair planner, read-only, including coupling, combined verification and rejection, data and foreign-key row validation and the fingerprint (§6.2–§6.3). | 7, 4 (shared row validation) | AM-55, AM-56, AM-58, AM-60, the planning part of AM-61–AM-63. |
 | 9 | Scan (§5). | 7, 8 | AM-46–AM-49. |
 | 10 | Repair write with shared fence admission, fingerprint re-check and stored-ledger verification (§6.4). | 2, 4, 6, 8 | AM-50–AM-54, AM-57, AM-59, AM-61–AM-63. |
-| 11 | Host exposure of scan and repair (host repositories); deploy PRs 1–6 with old workers stopped; run the scan on every deployment; review, including the host-side storage check (§13); decide §7. | 9, 10 | Findings reviewed; part of the partial-changes release gate. |
+| 11 | Host exposure of scan and repair (host repositories); deploy PRs 1–6 with old workers stopped. The scan run on every deployment and its review were dropped on 2026-11-08 (no production table has reached the async-migration threshold, so no async-migration damage exists); §7 was decided on 2026-11-10 (§13). | 9, 10 | Scan and repair reachable by administrators. |
 
-The production scan runs only after PRs 1–6 are deployed and no old worker runs, because before that an async swap can
-still rewrite committed rows during the scan.
+A host runs the scan on a deployment only after PRs 1–6 are deployed and no old worker runs, because before that an
+async swap can still rewrite committed rows during the scan.
 
 ## 13. Decisions and open questions
 
@@ -739,8 +739,9 @@ still rewrite committed rows during the scan.
    would keep interactive changes but break the next sync of any replica that imported one.
 2. **Projects without a migration table** (§7) — decided on 2026-11-10: they get a ledger
    ([schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)), not an exemption from `unledgeredTable`.
-3. **Files possibly lost before the fix** — decided: a host-side storage check is part of reviewing the scan results
-   before release (§12, PR 11). The loss is an inference from code, not reproduced: migrated rows had no blob links, so
+3. **Files possibly lost before the fix** — decided: a host-side storage check was part of reviewing the scan results
+   before release (§12, PR 11); it was dropped with the scan run on 2026-11-08, since no async migration ran on a
+   production table. The loss is an inference from code, not reproduced: migrated rows had no blob links, so
    blobs referenced only by them could be tombstoned once their Draft-owned source rows were cleaned up, and deleted
    from storage by the host.
 
@@ -771,5 +772,11 @@ still rewrite committed rows during the scan.
 - §5.2, §6.1: the code unions of the scan input and findings and the repair outcomes have one runtime list each, from
   which their types are derived and which the package exports, so a transport builds its enums from the engine
   instead of a hand-kept copy that drifts.
+
+### Version 2.3 (2026-11-10)
+
+- §5.2, §11, §12 (PR 11), §13 (3): the scan run on every deployment, its review and the host-side storage check are no
+  longer part of the partial-changes release gate (dropped on 2026-11-08: no production table has reached the
+  async-migration threshold, so no async-migration damage exists); the scan and the repair stay available to hosts.
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

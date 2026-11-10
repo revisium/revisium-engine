@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-10-31)
+Accepted (2026-10-31). Amended by [ADR-002](ADR-002-draft-reads-and-public-changes-api.md) (2026-11-10): views of a
+table whose structure changed belong to its structure unit, the Draft reads belong to `partial-changes`, and results
+no longer count remaining units; the public API names below follow it.
 
 This ADR replaces [ADR-0021] of the Revisium architecture repository (granular revert, Proposed, never implemented).
 
@@ -118,11 +120,12 @@ previewChanges({ branch, operation: 'commit',
                  selection: { fields: [{ tableId: 'products', rowId: 'p1', path: '/price' }] } })
   → { status: 'ready', fingerprint, required: [], ... }
 commitChanges({ branch, selection, expected: fingerprint, comment: 'prices' })
-  → { status: 'applied', previousHeadRevisionId, headRevisionId, draftRevisionId, renumbered: [] }
+  → { status: 'applied', previousHeadRevisionId, headRevisionId, draftRevisionId, draftHasChanges,
+      renumberedMigrations: [] }
 ```
 
 [REQ-001.BR-007] example: the Draft adds `color` to `products` while editors change prices. `fields` with `/price`
-commits the prices now; `tables: ['products']` commits `color` with its values later. Selecting a `color` value alone
+commits the prices now; `structures: [{ tableId: 'products' }]` commits `color` with its values later. Selecting a `color` value alone
 returns `required` with the structure of `products`, its selector and the reason.
 
 ## Modules and Interactions
@@ -142,7 +145,7 @@ file-usage and migration keep their responsibilities. Callers reach the operatio
 | `file-usage` | File references of new row versions, registered after the relink; project accounting; orphan blobs. |
 | `views` | Migration of a views document through schema history; views validation. |
 | `share` | Schema store and validator, foreign-key extraction, table-version diff for `hasChanges`, endpoint notification hook. |
-| `revision-changes` | Native browsing (`revisionChanges`, `tableChanges`, `rowChanges`) stays for display; it is not the source of selectors. |
+| `revision-changes` | Native browsing (`revisionChanges`, `tableChanges`, `rowChanges`) stays for history and compare; it is not the source of selectors. The Draft reads, which show the Draft with selectors, belong to `partial-changes` (ADR-002). |
 | `infrastructure/database` | Transaction runner (Serializable with the operation's own attempt loop, read-only planning), branch write fence (stage 0), orphan cleanup. |
 
 ```mermaid
@@ -230,7 +233,8 @@ commit a dangling foreign key; A splits structure per [REQ-001.BR-007] and refus
   `stale`, and its row digest costs O(table rows) per plan (unmeasured; measured before release).
 - **The write fence touches every native writer:** each takes the shared lock and waits up to the operation timeout
   while a commit holds it exclusively. Its evidence is one benchmark prototype.
-- Results count remaining units only in the tables read; a full count pages `listChanges`, which has no total.
+- Results do not count the units that stay in the Draft, because an operation reads only its affected tables; the
+  Draft reads count them (ADR-002), and an applied result says whether the Draft still has changes.
 - Remaining pending migrations can change ids; consumers of Draft exports break.
 - Version ids of Draft tables that keep no units can change after an operation; Head versions never change.
   Content-equal versions in unread tables keep `hasChanges = true`.

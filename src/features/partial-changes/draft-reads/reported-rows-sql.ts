@@ -38,8 +38,12 @@ const PAIR_ON_ONE_SIDE = raw(
 );
 
 export function reportedRowCountsSql(rows: TableRows): Sql {
+  if (rows.kind === 'oneSided') {
+    return oneSidedRowCountsSql(rows);
+  }
+
   return sql`
-    WITH ${reportedPairsCtes(rows)}
+    WITH ${comparedPairsCtes(rows.table)}
     SELECT
       count(*)::int AS "total",
       count(*) FILTER (WHERE "changeType" = ${ChangeType.Added})::int AS "added",
@@ -55,20 +59,24 @@ export function reportedRowCountsSql(rows: TableRows): Sql {
   `;
 }
 
+// Every row of a table on one side only is reported, and goes with its structure.
+function oneSidedRowCountsSql({ side, tableVersionId }: OneSidedRows): Sql {
+  const added = side === 'draft' ? raw('count(*)::int') : raw('0');
+  const removed = side === 'head' ? raw('count(*)::int') : raw('0');
+
+  return sql`
+    SELECT count(*)::int AS "total", ${added} AS "added", ${removed} AS "removed",
+           0 AS "renamed", 0 AS "modified", 0 AS "rowsWithUnits"
+    FROM "_RowToTable" WHERE "B" = ${tableVersionId}
+  `;
+}
+
 // Rows count as their row selectors: the deleted and the created row of a replace share their row id and one selector.
 function rowsWithUnitsCount(): Sql {
   return sql`(
     count(*) FILTER (WHERE "yieldsUnit" AND NOT ${PAIR_ON_ONE_SIDE})
     + count(DISTINCT "rowId") FILTER (WHERE "yieldsUnit" AND ${PAIR_ON_ONE_SIDE})
   )::int`;
-}
-
-function reportedPairsCtes(rows: TableRows): Sql {
-  if (rows.kind === 'compared') {
-    return comparedPairsCtes(rows.table);
-  }
-
-  return oneSidedPairsCte(rows);
 }
 
 function comparedPairsCtes(table: ComparedTable): Sql {
@@ -85,40 +93,6 @@ function comparedPairsCtes(table: ComparedTable): Sql {
       WHERE ${ONE_SIDED} OR ${anyDiffers(reportedColumnsOf(structure))}
     )
   `;
-}
-
-function oneSidedPairsCte({ side, tableVersionId }: OneSidedRows): Sql {
-  return sql`
-    pairs AS (
-      SELECT r."id" AS "rowId",
-             ${oneSidedVersionColumns(side)},
-             ${oneSidedChangeType(side)} AS "changeType",
-             FALSE AS "yieldsUnit"
-      FROM "_RowToTable" link
-      JOIN "Row" r ON r."versionId" = link."A"
-      WHERE link."B" = ${tableVersionId}
-    )
-  `;
-}
-
-function oneSidedVersionColumns(side: RevisionSide): Sql {
-  if (side === 'head') {
-    return raw(
-      `r."versionId" AS "headVersionId", NULL::text AS "draftVersionId"`,
-    );
-  }
-
-  return raw(
-    `NULL::text AS "headVersionId", r."versionId" AS "draftVersionId"`,
-  );
-}
-
-function oneSidedChangeType(side: RevisionSide): Sql {
-  if (side === 'head') {
-    return sql`${ChangeType.Removed}::text`;
-  }
-
-  return sql`${ChangeType.Added}::text`;
 }
 
 function changeTypeOf(structure: TableStructure): Sql {

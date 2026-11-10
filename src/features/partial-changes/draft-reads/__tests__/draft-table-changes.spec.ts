@@ -3,7 +3,12 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import { addField } from 'src/__tests__/fixtures/ledger-steps';
+import {
+  addField,
+  removeField,
+  replaceField,
+} from 'src/__tests__/fixtures/ledger-steps';
+import type { RowColumnsEdit } from 'src/__tests__/fixtures/branch-scenario';
 import {
   describeMigration,
   pendingMigrationIds,
@@ -17,6 +22,8 @@ import type {
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import {
   ChangeType,
+  JsonPatchOp,
+  MigrationType,
   type ViewsChangeDetail,
 } from 'src/features/revision-changes/types';
 import type { TableViewsData } from 'src/features/views/types';
@@ -181,6 +188,37 @@ describe('draft table changes', () => {
         ],
       ]);
     });
+
+    it('says both tables of a replaced id of a project without a migration table are replaced and refused', async () => {
+      const draft = await ChangesScenario.committedWithoutLedger(kit, {
+        [TAGS]: { schema: labelSchema, rows: { t1: { label: 'one' } } },
+      });
+      await draft.removeTable(TAGS);
+      await draft.createTable(TAGS, labelSchema);
+
+      const items = await readTableItems(draft);
+      const summary = await draft.readDraftChangesSummary();
+
+      expect(
+        items.map(({ changeType, replaced, selection }) => ({
+          changeType,
+          replaced,
+          selection,
+        })),
+      ).toEqual([
+        {
+          changeType: ChangeType.Removed,
+          replaced: true,
+          selection: { state: 'refused', code: 'unledgeredTable' },
+        },
+        {
+          changeType: ChangeType.Added,
+          replaced: true,
+          selection: { state: 'refused', code: 'unledgeredTable' },
+        },
+      ]);
+      expect(summary.tablesSummary).toMatchObject({ total: 2, replaced: 1 });
+    });
   });
 
   describe('ids', () => {
@@ -206,6 +244,30 @@ describe('draft table changes', () => {
         { tableId: TAGS, changeType: ChangeType.Added },
       ]);
       expect(items.filter((item) => 'previousTableId' in item)).toHaveLength(1);
+    });
+
+    it('lists a removed table before the renamed table that took over its id, neither of them replaced', async () => {
+      const draft = await givenCommittedTables();
+      await draft.removeTable(NOTES);
+      await draft.renameTable(ORDERS, NOTES);
+
+      const pages = await draft.readEveryDraftTablePage({ first: 1 });
+      const items = tableItemsOf(pages);
+
+      expect(items.map(idsOf)).toEqual([
+        { tableId: NOTES, changeType: ChangeType.Removed },
+        {
+          tableId: NOTES,
+          previousTableId: ORDERS,
+          changeType: ChangeType.Renamed,
+        },
+      ]);
+      expect(items.map(({ replaced }) => replaced)).toEqual([false, false]);
+      expect(items[0]?.selection).toMatchObject({
+        structure: {
+          selector: { structures: [{ tableId: NOTES, side: 'head' }] },
+        },
+      });
     });
   });
 
@@ -252,6 +314,43 @@ describe('draft table changes', () => {
         const [item] = await readTableItems(draft);
 
         expect(item?.changeType).toBe(ChangeType.RenamedAndModified);
+      },
+    );
+
+    it.each<{
+      change: string;
+      edit: (draft: ChangesScenario) => Promise<void>;
+    }>([
+      {
+        change: 'a field added and removed again',
+        edit: async (draft) => {
+          await draft.updateTable(PURCHASES, [addField('color', str())]);
+          await draft.updateTable(PURCHASES, [removeField('color')]);
+        },
+      },
+      {
+        change: 'a description',
+        edit: (draft) =>
+          draft.updateTable(PURCHASES, [
+            replaceField('label', { ...str(), description: 'Shown in lists' }),
+          ]),
+      },
+    ])(
+      'reads an empty renamed table with $change as RENAMED_AND_MODIFIED by its structure alone',
+      async ({ edit }) => {
+        const draft = await ChangesScenario.committed(kit, {
+          [ORDERS]: { schema: labelSchema, rows: {} },
+        });
+        await draft.renameTable(ORDERS, PURCHASES);
+        await edit(draft);
+
+        const [item] = await readTableItems(draft);
+
+        expect(item).toMatchObject({
+          tableId: PURCHASES,
+          changeType: ChangeType.RenamedAndModified,
+          rowsSummary: { total: 0 },
+        });
       },
     );
 
@@ -323,38 +422,61 @@ describe('draft table changes', () => {
       },
     );
 
-    it('reads the row counts of a renamed table off the page only to decide its change type', async () => {
+    it.each<{
+      filter: string;
+      changeTypes?: ChangeType[];
+      totalCount: number;
+      reads: Record<string, number>;
+    }>([
+      {
+        filter: 'no filter',
+        totalCount: 3,
+        reads: { [MEMOS]: 1, [PRODUCTS]: 0, [PURCHASES]: 0 },
+      },
+      {
+        filter: 'ADDED, which no renamed table can match',
+        changeTypes: [ChangeType.Added],
+        totalCount: 0,
+        reads: { [MEMOS]: 0, [PRODUCTS]: 0, [PURCHASES]: 0 },
+      },
+      {
+        filter: 'RENAMED, which every renamed table matches',
+        changeTypes: [ChangeType.Renamed],
+        totalCount: 2,
+        reads: { [MEMOS]: 1, [PRODUCTS]: 0, [PURCHASES]: 0 },
+      },
+      {
+        filter: 'MODIFIED, which needs the change type of every renamed table',
+        changeTypes: [ChangeType.Modified],
+        totalCount: 2,
+        reads: { [MEMOS]: 1, [PRODUCTS]: 0, [PURCHASES]: 1 },
+      },
+    ])(
+      'reads with $filter the row counts of the page and of an off-page renamed table only when the filter needs its change type',
+      async ({ changeTypes, totalCount, reads }) => {
+        const draft = await givenModifiedRenamedAndRenamedModifiedTables();
+
+        const { result, linkSetReads } = await draftReadQueriesDuring(
+          kit,
+          await draft.linkSetsOf([MEMOS, PRODUCTS, PURCHASES]),
+          () =>
+            draft.readDraftTableChanges({ first: 1, filters: { changeTypes } }),
+        );
+
+        expect(result.totalCount).toBe(totalCount);
+        expect(linkSetReads).toEqual(reads);
+      },
+    );
+
+    it('matches no table with an empty list of change types', async () => {
       const draft = await givenModifiedRenamedAndRenamedModifiedTables();
 
-      const unfiltered = await draftReadQueriesDuring(
-        kit,
-        await draft.linkSetsOf([MEMOS, PRODUCTS, PURCHASES]),
-        () => draft.readDraftTableChanges({ first: 1 }),
-      );
-      const filtered = await draftReadQueriesDuring(
-        kit,
-        await draft.linkSetsOf([MEMOS, PRODUCTS, PURCHASES]),
-        () =>
-          draft.readDraftTableChanges({
-            first: 1,
-            filters: { changeTypes: [ChangeType.Added] },
-          }),
-      );
+      const page = await draft.readDraftTableChanges({
+        first: 10,
+        filters: { changeTypes: [] },
+      });
 
-      expect(nodesOf(unfiltered.result).map(nameOf)).toEqual([
-        `${NOTES} → ${MEMOS}`,
-      ]);
-      expect(unfiltered.linkSetReads).toEqual({
-        [MEMOS]: 1,
-        [PRODUCTS]: 0,
-        [PURCHASES]: 0,
-      });
-      expect(filtered.result.totalCount).toBe(0);
-      expect(filtered.linkSetReads).toEqual({
-        [MEMOS]: 1,
-        [PRODUCTS]: 0,
-        [PURCHASES]: 1,
-      });
+      expect(page.totalCount).toBe(0);
     });
 
     async function givenModifiedRenamedAndRenamedModifiedTables(): Promise<ChangesScenario> {
@@ -542,6 +664,35 @@ describe('draft table changes', () => {
       },
     );
 
+    it('gives each pending migration in the native detail shape', async () => {
+      const draft = await givenCommittedTables();
+      await draft.renameTable(ORDERS, PURCHASES);
+      await draft.updateTable(PURCHASES, [addField('color', str())]);
+
+      const [item] = await readTableItems(draft);
+
+      expect(item?.schemaMigrations).toEqual([
+        {
+          migrationType: MigrationType.Rename,
+          migrationId: expect.any(String),
+          oldTableId: ORDERS,
+          newTableId: PURCHASES,
+        },
+        {
+          migrationType: MigrationType.Update,
+          migrationId: expect.any(String),
+          patches: [
+            {
+              op: JsonPatchOp.Add,
+              path: '/properties/color',
+              value: str(),
+              from: undefined,
+            },
+          ],
+        },
+      ]);
+    });
+
     it('gives each table of a replaced id its own migrations: the removed table its removal, the created one its creation', async () => {
       const draft = await givenCommittedTables();
       await draft.removeTable(NOTES);
@@ -612,6 +763,30 @@ describe('draft table changes', () => {
 
       expect(item?.rowsSummary).toMatchObject({ total: 1, modified: 1 });
     });
+
+    it.each<{ column: string; columns: RowColumnsEdit }>([
+      {
+        column: 'publishedAt',
+        columns: { publishedAt: '2026-01-01T00:00:00.000Z' },
+      },
+      { column: 'schemaHash', columns: { schemaHash: 'other' } },
+    ])(
+      'counts a row that differs only in $column under an unchanged structure as modified',
+      async ({ columns }) => {
+        const draft = await givenCommittedProductRows();
+        await draft.writeRowColumns(PRODUCTS, 'p1', columns);
+
+        const [item] = await readTableItems(draft);
+
+        expect(item?.rowsSummary).toEqual({
+          total: 1,
+          added: 0,
+          modified: 1,
+          removed: 0,
+          renamed: 0,
+        });
+      },
+    );
 
     it('counts each edited row once in the table data, however many of its fields changed', async () => {
       const draft = await givenCommittedProductRows();

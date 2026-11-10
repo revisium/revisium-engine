@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 1.1 |
-| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PRs 9–11, the row reads, are pending |
+| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PRs 9–11, the row reads, are pending. Until ADR-002 PR 2 (views follow the structure) lands, a table item can carry `views` beside `structure` and `structureChange.views` is absent, so §4 `views` and DR-10 hold from PR 2 on |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
@@ -75,7 +75,9 @@ unchanged (in a table whose structure differs, native writers rewrite every row 
 table item already shows the structure). A row that differs only in structure-bound data is reported and goes with
 the structure (§5.1). The row's change type is the native one: `ADDED`, `REMOVED`, `MODIFIED`, `RENAMED` (the id
 alone differs) or `RENAMED_AND_MODIFIED`; a row that differs only in `publishedAt`, `meta` or `schemaHash` is
-`MODIFIED` (or `RENAMED_AND_MODIFIED` with a rename). Every count of this specification counts reported rows only.
+`MODIFIED` (or `RENAMED_AND_MODIFIED` with a rename). `schemaHash` takes part in both rules only in a table whose
+structure is unchanged, so a renamed row of a table whose structure differs is `RENAMED` when its data, `publishedAt`
+and `meta` are equal, as in the native diff. Every count of this specification counts reported rows only.
 
 ## 4. Table items
 
@@ -276,13 +278,13 @@ Each list is ordered by its id (`sharedSchemaId` or `tableId`) in code-point ord
 
 ## 7. Order, paging and filters
 
-**Order.** Tables by public id (Draft id, else Head id) by code point; of two items with one id, the table that
-exists only in Head comes first, so the two items of a replaced id are adjacent, `REMOVED` then `ADDED`. Rows by their
-table in that order, then by row id (Draft id, else Head id) by code point (`COLLATE "C"`). Of two items with one row
-id, the one whose row exists only in Head comes first: a replaced row's deleted row before the row created at its id,
-and a deleted row before the rename that took over its id. The order does not depend on internal ids, so copies of a
-project list their items in the same order. Within one read state, `(tableId, changeType)` identifies a table item and
-`(tableId, rowId, changeType)` a row item.
+**Order.** Tables by public id (Draft id, else Head id) by code point; of two items with one id, the table that exists
+only in Head comes first: a replaced id's removed table before the table created at its id, and a removed table before
+the renamed table that took over its id. Rows by their table in that order, then by row id (Draft id, else Head id) by
+code point (`COLLATE "C"`). Of two items with one row id, the one whose row exists only in Head comes first: a replaced
+row's deleted row before the row created at its id, and a deleted row before the rename that took over its id. The order
+does not depend on internal ids, so copies of a project list their items in the same order. Within one read state,
+`(tableId, changeType)` identifies a table item and `(tableId, rowId, changeType)` a row item.
 
 **Paging.** Keyset pages: `after` is the `endCursor` of the previous page, an opaque cursor naming the last table, or
 the last table and row id; offset cursors are refused. Every edge carries the cursor of its position; the two items of
@@ -297,7 +299,8 @@ the page. `tableChanges` returns `totalCount`, the number of tables matching its
   replaced id, a created table by its Draft id, a removed table by its Head id, a renamed table by its Draft id. Only
   when no table item shows the id does it select the renamed table whose Head id it is (its rows carry it as
   `previousTableId`); a renamed table's Head id that another table holds now selects that table only.
-- `changeTypes` matches the row's change type; `RENAMED` and `MODIFIED` also match `RENAMED_AND_MODIFIED`.
+- `changeTypes` matches the row's change type; `RENAMED` and `MODIFIED` also match `RENAMED_AND_MODIFIED`. An empty
+  list matches nothing.
 - `search` is a case-insensitive substring of the Head or Draft row id (a plain substring: `_` and `%` are not
   wildcards).
 
@@ -440,8 +443,9 @@ Reachability and oracles (properties over random Drafts):
 - DR-04 Table items equal the native table changes in change type and row counts, except a table with only rename
   migrations and no reported row, which may read `RENAMED`; each item's `schemaMigrations`, replayed from the Draft
   ledger, take the table from its Head id to its Draft id in ledger order, each pending migration under one item at
-  most and the rest forming transient tables; `viewsChanges` compare the views under the Head id in Head with those
-  under the Draft id in Draft.
+  most and the rest forming transient tables (listed in the summary unless the catalogue joins them to the structure
+  unit of a table created at their id); `viewsChanges` compare the views under the Head id in Head with those under
+  the Draft id in Draft.
 - DR-05 `tableData.rows` of every table equals the distinct `selection.row` of its `selectable` items over an
   unfiltered row read; the summary's `rowsWithUnits` equals their sum; a preview that selects `tableData: [table]` has
   a `coverage` entry with `rows` equal to `tableData.rows` (partial-changes-v1 §5.1), apart from the computed-only
@@ -497,7 +501,11 @@ Paging, filters, validation, snapshot:
 ### Version 1.1 (2026-11-10)
 
 - §7: of two table items with one id, the table that exists only in Head comes first, instead of an order by table
-  identity, which is an internal id; so DR-08's `REMOVED` then `ADDED` holds and copies of a project page alike.
+  identity, which is an internal id; so DR-08's `REMOVED` then `ADDED` holds and copies of a project page alike. An
+  empty `changeTypes` matches nothing.
+- §3: `schemaHash` does not make a renamed row of a table with a changed structure `RENAMED_AND_MODIFIED`.
+- DR-04: transient migrations that the catalogue joins to the structure unit of a table created at their id are in no
+  list.
 
 ### Version 1.0 (2026-11-10)
 

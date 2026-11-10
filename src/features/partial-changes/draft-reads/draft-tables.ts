@@ -104,8 +104,7 @@ export class DraftTables {
 
       if (
         hasIdContaining([draft?.id, head?.id], search) &&
-        (changeTypes === undefined ||
-          hasChangeTypeAmong(await this.changeTypeOf(table), changeTypes))
+        (await this.hasChangeTypeAmong(table, changeTypes))
       ) {
         matching.push(table);
       }
@@ -148,6 +147,27 @@ export class DraftTables {
     }
 
     return ChangeType.Renamed;
+  }
+
+  // A renamed table is RENAMED or RENAMED_AND_MODIFIED, so its row counts are read only when the filter tells them apart.
+  private async hasChangeTypeAmong(
+    table: DraftTable,
+    changeTypes: readonly ChangeType[] | undefined,
+  ): Promise<boolean> {
+    const { head, draft } = table.pair;
+
+    if (head && draft && head.id !== draft.id) {
+      const renamed = hasChangeTypeAmong(ChangeType.Renamed, changeTypes);
+
+      if (
+        renamed ===
+        hasChangeTypeAmong(ChangeType.RenamedAndModified, changeTypes)
+      ) {
+        return renamed;
+      }
+    }
+
+    return hasChangeTypeAmong(await this.changeTypeOf(table), changeTypes);
   }
 
   private async changedBeyondTableId(table: DraftTable): Promise<boolean> {

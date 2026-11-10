@@ -10,6 +10,7 @@ import type { DraftChangesSummary } from 'src/features/partial-changes/queries/i
 import { ChangeType } from 'src/features/revision-changes/types';
 import type { TableViewsData } from 'src/features/views/types';
 import { transactionModeOfSnapshotRead } from '../../__tests__/support/change-preview';
+import { readSummaryWhileDraftChanges } from '../../__tests__/support/draft-read-races';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   draftReadQueriesDuring,
@@ -187,6 +188,43 @@ describe('draft changes summary', () => {
         replaced: 0,
       });
     });
+
+    it('counts the tables of each change type as the table filter of that change type lists them', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: { schema: productSchema, rows: { p1: { title: 'one' } } },
+        [NOTES]: { schema: productSchema, rows: { n1: { title: 'one' } } },
+        [GOODS]: { schema: productSchema, rows: { g1: { title: 'one' } } },
+        [SCRATCH]: { schema: productSchema, rows: {} },
+        [ADDRESS]: { schema: productSchema, rows: {} },
+      });
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'edited' });
+      await draft.renameTable(NOTES, PHONE);
+      await draft.renameTable(GOODS, CONTACT);
+      await draft.updateRow(CONTACT, 'g1', { title: 'edited' });
+      await draft.removeTable(SCRATCH);
+      await draft.removeTable(ADDRESS);
+      await draft.createTable(ADDRESS, productSchema);
+      await draft.createTable(TAGS, productSchema);
+
+      const summary = await draft.readDraftChangesSummary();
+      const totals = await tableTotalsByChangeType(draft);
+
+      expect(summary.tablesSummary).toEqual({
+        total: 7,
+        added: 2,
+        modified: 2,
+        removed: 2,
+        renamed: 2,
+        replaced: 1,
+      });
+      expect(totals).toEqual({
+        [ChangeType.Added]: 2,
+        [ChangeType.Modified]: 2,
+        [ChangeType.Removed]: 2,
+        [ChangeType.Renamed]: 2,
+        [ChangeType.RenamedAndModified]: 1,
+      });
+    });
   });
 
   describe('items', () => {
@@ -337,6 +375,26 @@ describe('draft changes summary', () => {
       });
     });
 
+    it('treats null filters as absent', async () => {
+      const draft = await givenEveryKindOfSummaryItem();
+
+      expect(await draft.readDraftChangesSummary({ filters: null })).toEqual(
+        await draft.readDraftChangesSummary(),
+      );
+    });
+
+    it('raises the native not-found error for an unknown branch', async () => {
+      const draft = await givenCommittedProducts();
+
+      await expect(
+        kit.partialChangesApi.draftChangesSummary({
+          branch: { ...draft.branch, branchName: 'missing' },
+        }),
+      ).rejects.toThrow(
+        'A branch with this name does not exist in the project',
+      );
+    });
+
     it.each<[string, Record<string, unknown>]>([
       ['filters that are not an object', { filters: 'all' }],
       ['an unknown change type', { filters: { changeTypes: ['CHANGED'] } }],
@@ -367,6 +425,24 @@ describe('draft changes summary', () => {
       );
 
       expect(mode).toEqual({ readOnly: 'on', isolation: 'repeatable read' });
+    });
+
+    it('describes the snapshot it read when the Draft changes before it counts the rows of its tables', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'edited' });
+      const before = await draft.readDraftChangesSummary();
+
+      const summary = await readSummaryWhileDraftChanges(
+        kit,
+        () => draft.readDraftChangesSummary(),
+        async () => {
+          await draft.createRows(PRODUCTS, { p2: { title: 'two' } });
+          await draft.createTable(TAGS, productSchema);
+        },
+      );
+
+      expect(summary).toEqual(before);
+      expect(await draft.readDraftChangesSummary()).not.toEqual(before);
     });
 
     it('reads the row links of every changed table once, and no native diff', async () => {

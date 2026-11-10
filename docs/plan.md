@@ -10,7 +10,7 @@ Design: Accepted on 2026-10-31.
 | [ADR-001](adr/ADR-001-partial-commit-and-revert.md) | Accepted; amended by ADR-002 |
 | [ADR-002](adr/ADR-002-draft-reads-and-public-changes-api.md) | Accepted (2026-11-10): the public API revision and the Draft reads |
 | [partial-changes-v1](specs/partial-changes-v1.spec.md) | Accepted; v2.0 (the API revision) pending in code |
-| [draft-reads-v1](specs/draft-reads-v1.spec.md) | Accepted; pending in code |
+| [draft-reads-v1](specs/draft-reads-v1.spec.md) | Accepted; the table reads and the summary in code, the row reads pending |
 | [async-row-migration-v2](specs/async-row-migration-v2.spec.md) | Accepted |
 | [schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md) | Accepted |
 | [PoC v2 summary](research/partial-changes-poc-v2.md) | Evidence for ADR-001 |

@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import type { Row } from 'src/engine-prisma-types';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import type {
   DraftChangesSummaryRequest,
   TableFilters,
 } from 'src/features/partial-changes/draft-reads/draft-read-request';
-import { tableSelectionOf } from 'src/features/partial-changes/draft-reads/draft-table-items';
+import { tableDataRowsOf } from 'src/features/partial-changes/draft-reads/draft-table-items';
 import {
   type DraftTables,
   DraftTablesReader,
@@ -37,8 +38,9 @@ type SummaryItems = Pick<
 >;
 
 interface ListedTableCounts {
+  readonly tableId: string;
   readonly changeType: ChangeType;
-  readonly replacedTableId?: string;
+  readonly replaced: boolean;
   readonly rows: ReportedRowCounts;
   readonly rowsWithUnits: number;
 }
@@ -72,16 +74,13 @@ async function listedTableCountsOf(
 
   for (const table of tables.listed) {
     const rows = await tables.rowCountsOf(table);
-    const selection = tableSelectionOf(table, rows, tables.catalogue);
 
     counts.push({
+      tableId: table.position.tableId,
       changeType: await tables.changeTypeOf(table),
-      replacedTableId: tables.catalogue.isReplaced(table.pair)
-        ? table.position.tableId
-        : undefined,
+      replaced: tables.catalogue.isReplaced(table.pair),
       rows,
-      rowsWithUnits:
-        selection.state === 'selectable' ? (selection.tableData?.rows ?? 0) : 0,
+      rowsWithUnits: tableDataRowsOf(table, rows, tables.catalogue),
     });
   }
 
@@ -91,9 +90,7 @@ async function listedTableCountsOf(
 function countsOf(tables: readonly ListedTableCounts[]): SummaryCounts {
   const changeTypes = tables.map(({ changeType }) => changeType);
   const replacedTableIds = new Set(
-    tables.flatMap(({ replacedTableId }) =>
-      replacedTableId === undefined ? [] : [replacedTableId],
-    ),
+    tables.filter(({ replaced }) => replaced).map(({ tableId }) => tableId),
   );
 
   return {
@@ -166,11 +163,14 @@ function itemsMatching(
 
 function sharedSchemasOf(
   tables: DraftTables,
-  rows: RevisionRows,
+  { head, draft }: RevisionRows,
 ): ChangedSharedSchema[] {
+  const headVersions = versionIdsOf(head);
+  const draftVersions = versionIdsOf(draft);
+
   return unitsOfKind(tables, 'sharedSchema').map((unit) => ({
     sharedSchemaId: unit.unit.tableId,
-    changeType: sharedSchemaChangeTypeOf(unit, rows),
+    changeType: sharedSchemaChangeTypeOf(unit, headVersions, draftVersions),
     unit: unitRefOf(unit),
   }));
 }
@@ -210,11 +210,9 @@ function unitsOfKind(tables: DraftTables, kind: UnitKind): CatalogueUnit[] {
 
 function sharedSchemaChangeTypeOf(
   { systemRows }: CatalogueUnit,
-  { head, draft }: RevisionRows,
+  headVersions: ReadonlySet<string>,
+  draftVersions: ReadonlySet<string>,
 ): ChangeType {
-  const headVersions = new Set(head.map(({ versionId }) => versionId));
-  const draftVersions = new Set(draft.map(({ versionId }) => versionId));
-
   if (!systemRows.some(({ versionId }) => headVersions.has(versionId))) {
     return ChangeType.Added;
   }
@@ -224,6 +222,10 @@ function sharedSchemaChangeTypeOf(
   }
 
   return ChangeType.Modified;
+}
+
+function versionIdsOf(rows: readonly Row[]): ReadonlySet<string> {
+  return new Set(rows.map(({ versionId }) => versionId));
 }
 
 function sumOf(values: readonly number[]): number {

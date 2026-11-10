@@ -16,6 +16,10 @@ import type {
   TableSelection,
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
+import {
+  publicTableIdOf,
+  type TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { pendingEntriesOf } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SchemaImpactService } from 'src/features/revision-changes/services/schema-impact.service';
 import { ViewsComparisonService } from 'src/features/revision-changes/services/views-comparison.service';
@@ -57,11 +61,9 @@ export class DraftTableItems {
   ): Promise<DraftTableItem> {
     const { pair } = table;
     const counts = await tables.rowCountsOf(table);
-    const previousTableId = previousTableIdOf(pair);
 
     return {
-      tableId: table.position.tableId,
-      ...(previousTableId === undefined ? {} : { previousTableId }),
+      ...tableIdsOf(pair),
       changeType: await tables.changeTypeOf(table),
       replaced: tables.catalogue.isReplaced(pair),
       rowsSummary: rowsSummaryOf(counts),
@@ -131,6 +133,18 @@ export function tableSelectionOf(
   return selection;
 }
 
+export function tableDataRowsOf(
+  table: DraftTable,
+  counts: ReportedRowCounts,
+  catalogue: TableCatalogue,
+): number {
+  if (catalogue.refusalOf(table.pair)) {
+    return 0;
+  }
+
+  return tableDataOf(table, counts)?.rows ?? 0;
+}
+
 // Rows of a table on one side only go with its structure, so they yield no unit.
 function tableDataOf(
   { pair }: DraftTable,
@@ -141,6 +155,19 @@ function tableDataOf(
   }
 
   return { selector: { tableData: [pair.draft.id] }, rows: rowsWithUnits };
+}
+
+function tableIdsOf(
+  pair: TablePair,
+): Pick<DraftTableItem, 'tableId' | 'previousTableId'> {
+  const tableId = publicTableIdOf(pair);
+  const previousTableId = previousTableIdOf(pair);
+
+  if (previousTableId === undefined) {
+    return { tableId };
+  }
+
+  return { tableId, previousTableId };
 }
 
 function rowsSummaryOf({

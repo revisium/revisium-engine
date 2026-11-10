@@ -196,6 +196,22 @@ describe('PartialOperationLog', () => {
       expect(JSON.stringify(entry)).not.toContain(SECRET_TITLE);
     });
 
+    it('names an error without a code by its name only', async () => {
+      const entries = loggedEntries();
+      const failure = new TypeError(`row ${SECRET_TITLE}`);
+
+      await expect(
+        new PartialOperationLog().track('commit', BRANCH, () =>
+          Promise.reject(failure),
+        ),
+      ).rejects.toBe(failure);
+
+      const [entry] = entries.failed();
+      expect(entry).toMatchObject({ error: 'TypeError' });
+      expect(entry).not.toHaveProperty('errorCode');
+      expect(JSON.stringify(entry)).not.toContain(SECRET_TITLE);
+    });
+
     it('reads no branch from input that is not one', async () => {
       const entries = loggedEntries();
 

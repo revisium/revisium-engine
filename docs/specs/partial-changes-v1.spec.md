@@ -480,9 +480,10 @@ into an array, a File or another schema keyword lies inside the value where it s
   referrers of a renamed table record no patch: an id the schema held before the patch names is read as a Head id, else
   a Draft id, and an id the value names as a Draft id, else a Head id. An id that is neither, such as one between two
   renames of the referenced table, names no table, so that replace is a rewrite; describing it as `changed` is the
-  conservative error, and the values travel with the structure unit either way. A path inside a value rewrites that
-  whole value, so no value moves into or out of an array or File. Annotating a value touches its leaves as rewriting
-  does (§3.3, condition 3).
+  conservative error. An id that an earlier pending replace wrote is still read as a Head id first, so after two
+  referenced tables swapped their ids, a retarget and its return can read `annotated`. The values travel with the
+  structure unit in every case. A path inside a value rewrites that whole value, so no value moves into or out of an
+  array or File. Annotating a value touches its leaves as rewriting does (§3.3, condition 3).
 
 A Draft leaf **comes from** the Head leaf whose value is at its pointer after these patches. Each Draft leaf is
 described as follows:

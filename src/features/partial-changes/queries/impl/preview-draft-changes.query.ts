@@ -23,7 +23,7 @@ export interface PreviewChangesInput {
   readonly includeRequired?: boolean | null;
 }
 
-interface PreviewBase {
+export interface PreviewBase {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly refusedTables: readonly RefusedTable[];

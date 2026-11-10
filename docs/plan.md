@@ -9,8 +9,8 @@ Design: Accepted on 2026-10-31.
 | [REQ-001](requirements/REQ-001-partial-commit-and-revert.md) | Accepted |
 | [ADR-001](adr/ADR-001-partial-commit-and-revert.md) | Accepted; amended by ADR-002 |
 | [ADR-002](adr/ADR-002-draft-reads-and-public-changes-api.md) | Accepted (2026-11-10): the public API revision and the Draft reads |
-| [partial-changes-v1](specs/partial-changes-v1.spec.md) | Accepted; v2.0 (the API revision) pending in code |
-| [draft-reads-v1](specs/draft-reads-v1.spec.md) | Accepted; implemented: the table reads, the summary, the row items, id takeovers, id exchanges, followed renames and row filters (#177, #179, #180, PR 11); on the facade with ADR-002 PR 12 |
+| [partial-changes-v1](specs/partial-changes-v1.spec.md) | Accepted; v2.0 (the API revision) implemented (ADR-002 PRs 1–7 and 12) |
+| [draft-reads-v1](specs/draft-reads-v1.spec.md) | Accepted; implemented: the table reads, the summary, the row items, id takeovers, id exchanges, followed renames and row filters (#177, #179, #180, PR 11); on the facade since ADR-002 PR 12 (#145) |
 | [async-row-migration-v2](specs/async-row-migration-v2.spec.md) | Accepted |
 | [schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md) | Accepted |
 | [PoC v2 summary](research/partial-changes-poc-v2.md) | Evidence for ADR-001 |
@@ -26,7 +26,7 @@ The stages run in the order 0–4; stages 1–3 may be developed in parallel wit
 | 1 | Partial revert, `listChanges`, `previewChanges`, Head schema check | Done (#104, #125, #129, #133) | [SPEC §5.2](specs/partial-changes-v1.spec.md#52-listchanges), [§5.3](specs/partial-changes-v1.spec.md#53-previewchanges), [§5.5](specs/partial-changes-v1.spec.md#55-revertchanges), [§6.10](specs/partial-changes-v1.spec.md#610-checkheadschema), [§6.14](specs/partial-changes-v1.spec.md#614-writerevert) |
 | 2 | Partial commit of data units | Done (#130, #137) | [SPEC §5.4](specs/partial-changes-v1.spec.md#54-commitchanges), [§6.13](specs/partial-changes-v1.spec.md#613-writecommit) |
 | 3 | Partial commit of structure units, ledger renumbering, replica guarantee | Done (#142, #144) | [SPEC §6.8](specs/partial-changes-v1.spec.md#68-planledger), [§10](specs/partial-changes-v1.spec.md#10-migration-history-and-replicas) |
-| 4 | Public API, CLI and MCP | In progress: the API revision and the Draft reads ([ADR-002, Delivery](adr/ADR-002-draft-reads-and-public-changes-api.md#delivery), PRs 1–11; PR 1 done in #175, PR 2 in #178, PR 3 in #181, PR 4 in #184, PR 5 in #185, PR 6 in #186, PR 7 in #187; PR 8, the table reads and the summary, implemented in #177; PR 9, the row items, in #179; PR 10, id takeovers, id exchanges and followed renames, in #180; PR 11, the row filters, implemented), then the engine facade (draft #145, PR 12) | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports), [draft-reads-v1](specs/draft-reads-v1.spec.md) |
+| 4 | Public API, CLI and MCP | In progress: the API revision and the Draft reads ([ADR-002, Delivery](adr/ADR-002-draft-reads-and-public-changes-api.md#delivery), PRs 1–11; PR 1 done in #175, PR 2 in #178, PR 3 in #181, PR 4 in #184, PR 5 in #185, PR 6 in #186, PR 7 in #187; PR 8, the table reads and the summary, implemented in #177; PR 9, the row items, in #179; PR 10, id takeovers, id exchanges and followed renames, in #180; PR 11, the row filters, implemented); PR 12, the engine facade and the package exports, in #145; `docs/api.md` (PR 13) remains | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports), [draft-reads-v1](specs/draft-reads-v1.spec.md) |
 
 ### Stage 0 items
 

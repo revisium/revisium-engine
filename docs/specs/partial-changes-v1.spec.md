@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 2.0 |
-| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12 is pending |
+| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145) |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
@@ -841,7 +841,10 @@ would clash with native diff payloads or read as generic nouns are qualified: th
 `StructureTableChange` and `StructureFieldChange` (native `TableChange`, `RowChange` and `FieldChange` are the native
 diff payloads, and no type of this API reuses those names), the plan's blocker, counts and estimate are `PlanBlocker`,
 `PlanCounts` and `PlanEstimate`, a deferred row is `DeferredRow`, a reason `RequiredReason`, and the selection-state
-variants of the Draft reads end in `Selection` (`GoesWithSelection`, `FieldUnitSelection`, …).
+variants of the Draft reads end in `Selection` (`GoesWithSelection`, `FieldUnitSelection`, …). Each code list is
+exported with the union type derived from it, also where §5.11 spells the union inline (`PreviewStatus`,
+`ApplyStatus`, `ReasonSiteKind`, and `TableSelectionState`, `RowSelectionState` and `FieldSelectionState` of the
+Draft reads).
 
 ### 5.11 TypeScript types
 
@@ -2383,7 +2386,7 @@ Names (§5.10, §5.11): `Branch` → `ChangesBranch`, `Side` → `SelectorSide` 
 `PlanCounts`, `Estimate` → `PlanEstimate`; new lists `REASON_SITE_KINDS`, `STALE_CHANGES`. Transports type every
 engine value and keep one spelling per code (§5.10); the transport contract names the three reads. The facade's
 `changes` namespace also exposes the Draft reads ([draft-reads-v1](draft-reads-v1.spec.md); the PoC's Draft diff,
-1.7).
+1.7). The package exports each code list with its derived union type.
 
 Limits and logs (§9.1, §11, §11.1, §12): the changed-rows, per-row-work and mixed-table-link limits default to 20,000,
 2,000 and 100,000 instead of 100,000, 10,000 and 250,000, with the worst case each keeps; the timeout and the attempt

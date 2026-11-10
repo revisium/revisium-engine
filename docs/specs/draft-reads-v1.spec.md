@@ -4,8 +4,8 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.4 |
-| Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads reach the facade with ADR-002 PR 12 |
+| Version | 1.5 |
+| Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
@@ -434,7 +434,7 @@ type ViewsOnlyTable = { tableId: string; changeType: ChangeType; views: UnitRef 
 `ChangesBranch`, `SelectionItems`, `UnitRef`, `DescribedUnitRef`, `RowColumn`, `RefusedTable` and `RefusalCode` are
 those of partial-changes-v1 §5.11. `ChangeType`, `RevisionChangeSummary`, `SchemaMigrationDetail` and
 `ViewsChangeDetail` are the native diff types, exported under these names; `DraftFieldChangeType` holds the values of
-the native `RowChangeDetailType` that the row value diff produces. Every code
+the native `RowChangeDetailType` that the row value diff produces, and the package exports that enum too. Every code
 union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `GOES_WITH_REASONS`, `FOLLOW_REASONS`,
 `ID_EXCHANGE_TERMINATIONS`.
@@ -511,6 +511,11 @@ Paging, filters, validation, snapshot:
 - DR-20 `null` for every optional input is treated as absent; an unknown branch is the native not-found error.
 
 ## Changelog
+
+### Version 1.5 (2026-11-10)
+
+- §9: the package also exports the native `RowChangeDetailType`, whose values `DraftFieldChangeType` holds.
+- Status: the reads are on the facade (ADR-002 PR 12, #145).
 
 ### Version 1.4 (2026-11-10)
 

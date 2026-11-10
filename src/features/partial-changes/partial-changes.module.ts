@@ -86,5 +86,6 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     ...PARTIAL_CHANGES_QUERY_HANDLERS,
     ...PARTIAL_CHANGES_COMMAND_HANDLERS,
   ],
+  exports: [PartialChangesApiService],
 })
 export class PartialChangesModule {}

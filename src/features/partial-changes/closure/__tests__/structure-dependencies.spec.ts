@@ -34,13 +34,13 @@ const categoryReferrerSchema = obj({
 const structureOf = (tableId: string) => ({
   kind: 'structure',
   tableId,
-  selector: { structures: [{ tableId: tableId }] },
+  selector: { structures: [{ tableId }] },
 });
 const renamedStructureOf = (tableId: string, previousTableId: string) => ({
   kind: 'structure',
   tableId,
   previousTableId,
-  selector: { structures: [{ tableId: tableId }] },
+  selector: { structures: [{ tableId }] },
 });
 const createdRow = ({ tableId, rowId }: RowRef) => ({
   kind: 'rowCreate',

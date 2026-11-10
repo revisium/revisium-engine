@@ -79,7 +79,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
 
   it.each<{ field: string; selection: Selection; units: AddressedUnit[] }>([
     {
-      field: 'tables',
+      field: 'structures',
       selection: { structures: [{ tableId: TAGS }] },
       units: [createdTags],
     },
@@ -104,7 +104,7 @@ describe('SelectionResolver: selection fields and id resolution', () => {
       units: [codeOfP9, metaOfP9, renameOfP1],
     },
     {
-      field: 'renames',
+      field: 'rowRenames',
       selection: { rowRenames: [{ tableId: PRODUCTS, rowId: 'p9' }] },
       units: [renameOfP1],
     },

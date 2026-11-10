@@ -138,7 +138,7 @@ describe('TargetAssembler: reverting structure units', () => {
         const draft = await given();
 
         const target = await draft.assembleTarget('revert', {
-          structures: [{ tableId: tableId }],
+          structures: [{ tableId }],
         });
 
         expect(target.tableOf(tableId)).toEqual({

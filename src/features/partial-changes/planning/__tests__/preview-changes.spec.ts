@@ -1248,6 +1248,6 @@ function structureOf(tableId: string): UnitRef {
   return {
     kind: 'structure',
     tableId,
-    selector: { structures: [{ tableId: tableId }] },
+    selector: { structures: [{ tableId }] },
   };
 }

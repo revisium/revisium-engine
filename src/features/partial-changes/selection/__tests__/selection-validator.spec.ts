@@ -169,6 +169,19 @@ describe('SelectionValidator', () => {
       message: 'selection.exclude.tables is not allowed',
     },
     {
+      error: 'the field renames of version 1 inside exclude',
+      input: {
+        all: true,
+        exclude: { renames: [{ tableId: PRODUCTS, rowId: 'p2' }] },
+      },
+      message: 'selection.exclude.renames is not allowed',
+    },
+    {
+      error: 'a bare table id in structures inside exclude',
+      input: { all: true, exclude: { structures: [PRODUCTS] } },
+      message: 'selection.exclude.structures[0] must be an object',
+    },
+    {
       error: 'all inside exclude',
       input: { exclude: { all: true } },
       message: 'selection.exclude.all is not allowed',

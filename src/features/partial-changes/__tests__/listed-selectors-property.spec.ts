@@ -5,6 +5,7 @@ import {
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
+import { addressedUnitOfListed } from './support/change-listing';
 import type { ChangesScenario } from './support/changes-scenario';
 import { unionOfSelections } from './support/dependency-closing';
 import {
@@ -33,26 +34,19 @@ describe('listed selectors over random Drafts (AS-61, AS-80)', () => {
   });
 
   it.each(RANDOM_DRAFT_SEEDS)(
-    'previews each listed selector as its unit alone and excluded as the whole Draft without it, and their union as { all: true } (seed %i)',
+    'previews each listed selector as its unit alone, excludes exactly its unit from { all: true }, and previews their union as { all: true } (seed %i)',
     async (seed) => {
       const draft = await givenRandomDraft(kit, seed);
       const units = await draft.listEveryUnit();
       coverage.record(units);
 
-      for (const operation of OPERATIONS) {
-        const wholeDraft = await draft.previewChanges({
-          operation,
-          selection: { all: true },
-        });
+      for (const unit of units) {
+        await expectExcludedSelectorToLeaveOutOnlyItsUnit(draft, unit, units);
+      }
 
+      for (const operation of OPERATIONS) {
         for (const unit of units) {
           await expectSelectorToPreviewOnlyItsUnit(draft, operation, unit);
-          await expectExcludedSelectorToLeaveOutOnlyItsUnit(
-            draft,
-            operation,
-            unit,
-            wholeDraft,
-          );
         }
 
         await expectUnionToPreviewAsWholeDraft(draft, operation, units);
@@ -88,24 +82,25 @@ describe('listed selectors over random Drafts (AS-61, AS-80)', () => {
 
   async function expectExcludedSelectorToLeaveOutOnlyItsUnit(
     draft: ChangesScenario,
-    operation: ChangeOperation,
     unit: ListedUnit,
-    wholeDraft: PreviewChangesResult,
+    units: readonly ListedUnit[],
   ): Promise<void> {
-    const preview = await draft.previewChanges({
-      operation,
-      selection: { all: true, exclude: unit.selector },
+    const resolution = await draft.resolveSelection({
+      all: true,
+      exclude: unit.selector,
     });
 
-    expect({ unit, preview: selectionOutcomeOf(preview) }).toEqual({
+    expect({
       unit,
-      preview: {
-        selected: wholeDraft.counts.selected - 1,
-        unmatched: {},
-        notSelectable: [],
-      },
+      selected: resolution.selected.length,
+      excluded: resolution.excluded,
+      unmatched: resolution.unmatched,
+    }).toEqual({
+      unit,
+      selected: units.length - 1,
+      excluded: [addressedUnitOfListed(unit)],
+      unmatched: {},
     });
-    expect(preview.sample).not.toContainEqual(sampledUnitOf(unit));
   }
 
   async function expectUnionToPreviewAsWholeDraft(

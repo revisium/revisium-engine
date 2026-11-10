@@ -11,7 +11,10 @@ import {
 } from 'src/features/partial-changes/catalogue/unit';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
-import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
+import type {
+  DescribedUnitRef,
+  UnitRef,
+} from 'src/features/partial-changes/selection/unit-refs';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { TableViewsData } from 'src/features/views/types';
 import {
@@ -181,6 +184,20 @@ describe('listChanges', () => {
         { structures: [{ tableId: SCRATCH }] },
         { structures: [{ tableId: TAGS }] },
       ]);
+    });
+
+    it('names in a preview sample the units of the listing with exactly the same fields (AS-80)', async () => {
+      const draft = await givenDraftWithEveryUnitKind();
+      const { units } = await draft.listChanges();
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: { all: true },
+      });
+
+      expect(preview.sample).toStrictEqual(
+        units.slice(0, preview.sample.length).map(withoutStructure),
+      );
     });
 
     it('lists selectors that each resolve to exactly their unit, with no required unit, blocker or unmatched selector', async () => {
@@ -520,6 +537,13 @@ function withoutSelector({
   }
 
   return { ...unit, structure: unitFieldsOf(structure) };
+}
+
+function withoutStructure({
+  structure: _structure,
+  ...unit
+}: ListedUnit): DescribedUnitRef {
+  return unit;
 }
 
 function unitFieldsOf({ selector: _selector, ...unit }: UnitRef): SidedUnit {

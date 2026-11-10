@@ -92,7 +92,7 @@ const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
 const structureOf = (tableId: string) => ({
   kind: 'structure',
   tableId,
-  selector: { structures: [{ tableId: tableId }] },
+  selector: { structures: [{ tableId }] },
 });
 
 describe('commitChanges of structure units', () => {

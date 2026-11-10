@@ -119,7 +119,7 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
     const provider = losing.providerOf(referencedId);
     const refusal =
       provider === undefined
-        ? await this.refusalOfReferrerChange(scan, referencedId)
+        ? await this.refusalOfReferrerChange(context, scan, referencedId)
         : undefined;
 
     if (refusal) {
@@ -138,19 +138,22 @@ class UnchangedReferrersOfLostIdsChecking implements TargetChecking {
   }
 
   private async refusalOfReferrerChange(
-    { referrer, leaf }: ReferrerScan,
+    { schemas }: CheckContext,
+    { losing, referrer }: ReferrerScan,
     referencedId: string,
   ): Promise<RefusedTable | undefined> {
     if (!referrer.refusal) {
       return undefined;
     }
 
-    const stillReferenced = await this.referrers.isReferencedOnOtherSide(
+    const referencedOnOtherSide = await this.referrers.otherSideReferencesOf(
       referrer,
-      leaf.jsonPath,
-      referencedId,
+      losing,
+      schemas,
     );
 
-    return stillReferenced ? undefined : referrer.refusal;
+    return referencedOnOtherSide.has(referencedId)
+      ? undefined
+      : referrer.refusal;
   }
 }

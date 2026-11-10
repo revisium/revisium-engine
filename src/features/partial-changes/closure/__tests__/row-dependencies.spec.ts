@@ -12,7 +12,11 @@ import type {
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
-import { addField, replaceField } from 'src/__tests__/fixtures/ledger-steps';
+import {
+  addField,
+  moveField,
+  replaceField,
+} from 'src/__tests__/fixtures/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
 
@@ -71,6 +75,67 @@ interface RefusedProducts {
   readonly committed: Given;
   readonly product: (title: string, categoryId: string) => InputJsonValue;
 }
+
+type ProductOf = RefusedProducts['product'];
+
+interface ReferrerChange {
+  readonly operation: ChangeOperation;
+  readonly lost: string;
+  readonly selection: Selection;
+  readonly edit: (draft: ChangesScenario, product: ProductOf) => Promise<void>;
+}
+
+const REFERRER_CHANGES: ReferrerChange[] = [
+  {
+    operation: 'commit',
+    lost: 'a category deletion while the Draft repoints the referrer',
+    selection: { rows: [category('c1')] },
+    edit: repointProductsAcrossCategories,
+  },
+  {
+    operation: 'revert',
+    lost: 'a category creation that the Draft referrer references',
+    selection: { rows: [category('c3')] },
+    edit: repointProductsAcrossCategories,
+  },
+  {
+    operation: 'commit',
+    lost: 'a category deletion while the Draft drops the foreign key of the referrer',
+    selection: { rows: [category('c1')] },
+    edit: async (draft) => {
+      await draft.updateTable(PRODUCTS, [replaceField('category', str())]);
+      await draft.removeRow(CATEGORIES, 'c1');
+    },
+  },
+  {
+    operation: 'commit',
+    lost: 'a category deletion while the Draft removes the referrer',
+    selection: { rows: [category('c1')] },
+    edit: async (draft) => {
+      await draft.removeTable(PRODUCTS);
+      await draft.removeRow(CATEGORIES, 'c1');
+    },
+  },
+];
+
+interface DanglingReferrer {
+  readonly draft: string;
+  readonly edit: (draft: ChangesScenario, product: ProductOf) => Promise<void>;
+}
+
+const DANGLING_REFERRERS: DanglingReferrer[] = [
+  { draft: 'where the referrer is unchanged', edit: () => Promise.resolve() },
+  {
+    draft: 'next to a product created in the Draft',
+    edit: (draft, product) =>
+      draft.createRows(PRODUCTS, { p2: product('p2', 'c2') }),
+  },
+  {
+    draft: 'under a foreign key the Draft moved to another field',
+    edit: (draft) =>
+      draft.updateTable(PRODUCTS, [moveField('category', 'cat')]),
+  },
+];
 
 const REFUSED_PRODUCTS: RefusedProducts[] = [
   {
@@ -537,25 +602,14 @@ describe('DependencyClosure: references and ids of rows', () => {
 
   describe('a row of a refused table that references an id the target loses', () => {
     it.each(
-      REFUSED_PRODUCTS.flatMap((refused) => [
-        {
-          ...refused,
-          operation: 'commit' as const,
-          selection: { rows: [category('c1')] },
-        },
-        {
-          ...refused,
-          operation: 'revert' as const,
-          selection: { rows: [category('c3')] },
-        },
-      ]),
+      REFUSED_PRODUCTS.flatMap((refused) =>
+        REFERRER_CHANGES.map((change) => ({ ...refused, ...change })),
+      ),
     )(
-      'blocks a $operation with the code of the referrer left by $damage, since only a change of it could keep the reference',
-      async ({ operation, selection, code, message, ...refused }) => {
-        const draft = await givenRefusedProductsRepointedAcrossCategories(
-          kit,
-          refused,
-        );
+      'blocks a $operation of $lost with the code of the referrer left by $damage, since only a change of it could drop the reference',
+      async ({ operation, selection, code, message, edit, ...refused }) => {
+        const draft = await refused.committed(kit);
+        await edit(draft, refused.product);
 
         const closure = await draft.closeDependencies(operation, selection);
 
@@ -567,19 +621,14 @@ describe('DependencyClosure: references and ids of rows', () => {
     );
 
     it.each(
-      REFUSED_PRODUCTS.flatMap((refused) => [
-        { ...refused, otherProducts: 'unchanged', created: {} },
-        {
-          ...refused,
-          otherProducts: 'created in the Draft',
-          created: { p2: refused.product('p2', 'c2') },
-        },
-      ]),
+      REFUSED_PRODUCTS.flatMap((refused) =>
+        DANGLING_REFERRERS.map((dangling) => ({ ...refused, ...dangling })),
+      ),
     )(
-      'blocks a commit as danglingInSource when the referrer left by $damage references the lost id in the Draft too, with its other products $otherProducts',
-      async ({ committed, created }) => {
+      'blocks a commit as danglingInSource when the referrer left by $damage references the lost id in the Draft too, $draft',
+      async ({ committed, product, edit }) => {
         const draft = await committed(kit);
-        await draft.createRows(PRODUCTS, created);
+        await edit(draft, product);
         await draft.removeReferencedRows(CATEGORIES, ['c1']);
 
         const closure = await draft.closeDependencies('commit', {
@@ -604,6 +653,35 @@ describe('DependencyClosure: references and ids of rows', () => {
         ]);
       },
     );
+
+    it('reads the Draft references of a refused referrer once for all its lost ids', async () => {
+      const draft = await committedProductsWithoutInit(kit, {
+        p1: 'c1',
+        p2: 'c2',
+      });
+      await draft.createRows(CATEGORIES, { c3: { title: 'c3' } });
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'p1', category: 'c3' });
+      await draft.updateRow(PRODUCTS, 'p2', { title: 'p2', category: 'c3' });
+      await draft.removeRow(CATEGORIES, 'c1');
+      await draft.removeRow(CATEGORIES, 'c2');
+      const referrerReads = jest.spyOn(
+        kit.snapshotReader,
+        'readFirstReferrers',
+      );
+
+      const closure = await draft.closeDependencies('commit', {
+        rows: [category('c1'), category('c2')],
+      });
+
+      expect(closure.blockers).toEqual([
+        {
+          code: 'unledgeredTable',
+          tableId: PRODUCTS,
+          message: 'products is refused: it has no intact ledger lineage',
+        },
+      ]);
+      expect(referrerReads).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('a row of a table on one side only that references an id the target loses', () => {
@@ -1073,21 +1151,19 @@ async function givenRenameIntoDeletedCategoryId(
   return draft;
 }
 
-async function givenRefusedProductsRepointedAcrossCategories(
-  kit: PartialChangesTestKit,
-  { committed, product }: Pick<RefusedProducts, 'committed' | 'product'>,
-): Promise<ChangesScenario> {
-  const draft = await committed(kit);
+async function repointProductsAcrossCategories(
+  draft: ChangesScenario,
+  product: ProductOf,
+): Promise<void> {
   await draft.updateRow(PRODUCTS, 'p1', product('p1', 'c2'));
   await draft.removeRow(CATEGORIES, 'c1');
   await draft.createRows(CATEGORIES, { c3: { title: 'c3' } });
   await draft.createRows(PRODUCTS, { p2: product('p2', 'c3') });
-
-  return draft;
 }
 
 async function committedProductsWithoutInit(
   kit: PartialChangesTestKit,
+  products: Readonly<Record<string, string>> = { p1: 'c1' },
 ): Promise<ChangesScenario> {
   const draft = await ChangesScenario.committed(kit, {
     [CATEGORIES]: {
@@ -1096,7 +1172,15 @@ async function committedProductsWithoutInit(
     },
   });
   await draft.createTable(PRODUCTS, productSchema);
-  await draft.createRows(PRODUCTS, { p1: { title: 'p1', category: 'c1' } });
+  await draft.createRows(
+    PRODUCTS,
+    Object.fromEntries(
+      Object.entries(products).map(([rowId, categoryId]) => [
+        rowId,
+        { title: rowId, category: categoryId },
+      ]),
+    ),
+  );
   await draft.dropFromDraftLedger('init', PRODUCTS);
   await draft.commit();
 

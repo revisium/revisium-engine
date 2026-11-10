@@ -1,11 +1,20 @@
 import { oppositeOf } from 'src/features/draft-revision/commands/impl/target-write-plan';
+import type {
+  ForeignKeyLeaf,
+  TableSchemas,
+} from 'src/features/partial-changes/closure/table-schemas';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
+import type { TableVersion } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 
 export type ReferrersById = ReadonlyMap<string, string>;
 
 export class LostIdReferrers {
   private readonly reads = new Map<string, Promise<ReferrersById>>();
+  private readonly otherSideReads = new Map<
+    string,
+    Promise<ReadonlySet<string>>
+  >();
 
   constructor(private readonly snapshotReader: ChangesSnapshotReader) {}
 
@@ -27,27 +36,34 @@ export class LostIdReferrers {
     return read;
   }
 
-  public async isReferencedOnOtherSide(
+  public otherSideReferencesOf(
     referrer: TargetTable,
-    jsonPath: string,
-    referencedId: string,
-  ): Promise<boolean> {
-    const other = referrer.pair[oppositeOf(referrer.structureSide)];
+    losing: TargetTable,
+    schemas: TableSchemas,
+  ): Promise<ReadonlySet<string>> {
+    const otherSide = oppositeOf(referrer.structureSide);
+    const other = referrer.pair[otherSide];
+    const losingId = losing.pair[otherSide]?.id;
 
-    if (other === undefined) {
-      return false;
+    if (other === undefined || losingId === undefined) {
+      return Promise.resolve(new Set());
     }
 
-    if (other.versionId === referrer.version.versionId) {
-      return true;
+    const key = JSON.stringify([other.versionId, losingId]);
+    const cached = this.otherSideReads.get(key);
+
+    if (cached) {
+      return cached;
     }
 
-    const found = await this.snapshotReader.readFirstReferrers(
-      other.versionId,
-      { jsonPath, rowIds: [referencedId], exceptRows: [] },
+    const read = this.readReferencedIds(
+      other,
+      schemas.foreignKeyLeavesOf(other, losingId),
+      losing.losableIds(),
     );
+    this.otherSideReads.set(key, read);
 
-    return found.length > 0;
+    return read;
   }
 
   private async readReferrers(
@@ -63,5 +79,26 @@ export class LostIdReferrers {
     return new Map(
       found.map(({ referencedId, rowId }) => [referencedId, rowId]),
     );
+  }
+
+  private async readReferencedIds(
+    version: TableVersion,
+    leaves: readonly ForeignKeyLeaf[],
+    rowIds: readonly string[],
+  ): Promise<ReadonlySet<string>> {
+    const referenced = new Set<string>();
+
+    for (const { jsonPath } of leaves) {
+      const found = await this.snapshotReader.readFirstReferrers(
+        version.versionId,
+        { jsonPath, rowIds, exceptRows: [] },
+      );
+
+      for (const { referencedId } of found) {
+        referenced.add(referencedId);
+      }
+    }
+
+    return referenced;
   }
 }

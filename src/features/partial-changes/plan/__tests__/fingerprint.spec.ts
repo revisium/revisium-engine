@@ -70,7 +70,8 @@ describe('fingerprint (SPEC §9.1)', () => {
       expected: `PCF2.${base64url('[]')}`,
     },
     { malformed: 'no body', expected: 'pcf2.' },
-    { malformed: 'a body that is not base64url', expected: 'pcf3.a+b/c=' },
+    { malformed: 'a body that is not base64url', expected: 'pcf3.a+b/c' },
+    { malformed: 'a padded body of other rules', expected: 'pcf3.AA=' },
     { malformed: 'a padded body', expected: `pcf2.${base64url('[]')}=` },
     {
       malformed: 'a stray last character',

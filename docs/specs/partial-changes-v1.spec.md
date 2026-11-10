@@ -1602,12 +1602,12 @@ Encoding: `pcf2.` followed by the base64url (no padding) of the UTF-8 JSON array
 draftRevisionId, units, content]`, the two digests as lowercase hex. `pcf2` names the version of the fingerprint
 rules; the engine compares the parts one by one. Clients treat the fingerprint as opaque and compare it only for
 equality. An `expected` is read by its prefix, where `n` is one or more decimal digits compared as written (`pcf02.`
-is not `pcf2.`): a fingerprint of these rules is exactly the encoding above of five strings; `pcf<n>.` with another
-`n` and a body of base64url characters is a fingerprint of other rules (a later engine version), whose payload is not
-decoded, and gives `stale` with `changed: ['version']`; anything else is malformed (§5.9), including a `pcf2.` body
-that reads as five strings but is not their exact encoding (padding, a stray last character or stray bits, invalid
-UTF-8, other JSON spacing or escapes) and the bare SHA-256 hex that engines before v2.0 issued. The content part
-covers, for every applied unit, in unit order:
+is not `pcf2.`) and a body has only base64url characters (`A`–`Z`, `a`–`z`, `0`–`9`, `-`, `_`, no padding): a
+fingerprint of these rules is exactly the encoding above of five strings; `pcf<n>.` with another `n` is a fingerprint
+of other rules (a later engine version), whose payload is not decoded, and gives `stale` with
+`changed: ['version']`; anything else is malformed (§5.9), including a `pcf2.` body that reads as five strings but is
+not their exact encoding (a stray last character or stray bits, invalid UTF-8, other JSON spacing or escapes) and
+the bare SHA-256 hex that engines before v2.0 issued. The content part covers, for every applied unit, in unit order:
 
   - row units: per covered row, the Head and Draft row versions as `versionId`, `updatedAt` and the compared columns
     (`id`, `hash`, `schemaHash`, `publishedAt`, `meta`); for a `rowColumns` unit, the columns it owns (§3.4); for a
@@ -2373,8 +2373,8 @@ Results (§5.1, §5.3–§5.7, §5.11, §5.12):
   `blocked` carries `planned`; `stale` carries `changed`, the current ids and `unmatched` (§9.2).
 
 Fingerprint (§9.1, §9.2, §5.9): four parts (operation, revisions, units, content) behind a version prefix, so
-`stale` says which changed (`version` for a fingerprint of other rules); an `expected` the engine cannot decode is a
-validation error. The version digits are compared as written, and a `pcf2.` body must be exactly the engine's encoding
+`stale` says which changed (`version` for a fingerprint of other rules); a malformed `expected` (§5.9) is a validation
+error. The version digits are compared as written, and a `pcf2.` body must be exactly the engine's encoding
 of its five strings.
 
 Names (§5.10, §5.11): `Branch` → `ChangesBranch`, `Side` → `SelectorSide` (`HEAD_QUALIFIERS` → `SELECTOR_SIDES`),

@@ -14,6 +14,7 @@ const personReference = str({ foreignKey: PEOPLE });
 describe('Foreign-key split of a backfilled table', () => {
   const headSchema = obj({
     tags: arr(obj({ book: bookReference })),
+    Zebra: bookReference,
     profile: obj({ book: bookReference, editor: personReference }),
     favourites: arr(bookReference),
     name: str(),
@@ -25,11 +26,17 @@ describe('Foreign-key split of a backfilled table', () => {
     expect(split).toEqual({
       initSchema: obj({
         tags: arr(obj({ book: str() })),
+        Zebra: str(),
         profile: obj({ book: str(), editor: personReference }),
         favourites: arr(str()),
         name: str(),
       }),
       patches: [
+        {
+          op: 'replace',
+          path: '/properties/Zebra',
+          value: bookReference,
+        },
         {
           op: 'replace',
           path: '/properties/favourites/items',

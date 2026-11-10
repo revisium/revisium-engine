@@ -617,11 +617,11 @@ describe('Schema ledger backfill planning', () => {
             draft,
             PRODUCTS,
             obj({
-              category: str({ foreignKey: SystemTables.Views }),
+              category: str({ foreignKey: SystemTables.Schema }),
               code: str(),
             }),
           ),
-        reason: `Foreign key target "${SystemTables.Views}" is not a table of the Head`,
+        reason: `Foreign key target "${SystemTables.Schema}" is not a table of the Head`,
       },
       {
         schema: 'no schema row',

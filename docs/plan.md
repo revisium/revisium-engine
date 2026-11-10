@@ -19,11 +19,11 @@ The stages run in the order 0–4; stages 1–3 may be developed in parallel wit
 
 | Stage | Work | Status | Design |
 | --- | --- | --- | --- |
-| 0 | Native prerequisites | In progress | [SPEC §12](specs/partial-changes-v1.spec.md#12-native-prerequisites-stage-0) |
-| 1 | Partial revert, `listChanges`, `previewChanges`, Head schema check | Not started | [SPEC §5.2](specs/partial-changes-v1.spec.md#52-listchanges), [§5.3](specs/partial-changes-v1.spec.md#53-previewchanges), [§5.5](specs/partial-changes-v1.spec.md#55-revertchanges), [§6.10](specs/partial-changes-v1.spec.md#610-checkheadschema), [§6.14](specs/partial-changes-v1.spec.md#614-writerevert) |
-| 2 | Partial commit of data units | Not started | [SPEC §5.4](specs/partial-changes-v1.spec.md#54-commitchanges), [§6.13](specs/partial-changes-v1.spec.md#613-writecommit) |
-| 3 | Partial commit of structure units, ledger renumbering, replica guarantee | Not started | [SPEC §6.8](specs/partial-changes-v1.spec.md#68-planledger), [§10](specs/partial-changes-v1.spec.md#10-migration-history-and-replicas) |
-| 4 | Public API, CLI and MCP | Not started | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports) |
+| 0 | Native prerequisites | Must items done; one should item and the release gate open | [SPEC §12](specs/partial-changes-v1.spec.md#12-native-prerequisites-stage-0) |
+| 1 | Partial revert, `listChanges`, `previewChanges`, Head schema check | Done (#104, #125, #129, #133) | [SPEC §5.2](specs/partial-changes-v1.spec.md#52-listchanges), [§5.3](specs/partial-changes-v1.spec.md#53-previewchanges), [§5.5](specs/partial-changes-v1.spec.md#55-revertchanges), [§6.10](specs/partial-changes-v1.spec.md#610-checkheadschema), [§6.14](specs/partial-changes-v1.spec.md#614-writerevert) |
+| 2 | Partial commit of data units | Done (#130, #137) | [SPEC §5.4](specs/partial-changes-v1.spec.md#54-commitchanges), [§6.13](specs/partial-changes-v1.spec.md#613-writecommit) |
+| 3 | Partial commit of structure units, ledger renumbering, replica guarantee | Done (#142, #144) | [SPEC §6.8](specs/partial-changes-v1.spec.md#68-planledger), [§10](specs/partial-changes-v1.spec.md#10-migration-history-and-replicas) |
+| 4 | Public API, CLI and MCP | In progress: the engine facade is draft #145 | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports) |
 
 ### Stage 0 items
 
@@ -48,6 +48,8 @@ Each item is delivered by its own pull requests, in this order.
 | Scan run on existing deployments, results reviewed | Gate | Not started |
 
 Acceptance scenarios for every stage: [SPEC §13](specs/partial-changes-v1.spec.md#13-acceptance-scenarios).
+After stages 1–3, an audit of master (2026-11-08) led to #162–#167: input types, database errors in lookups, the
+fingerprint, and tests for AS-36, AS-38, AS-39, AS-41 and AS-54.
 
 ### Release gate
 
@@ -58,4 +60,5 @@ Status: not reached. No partial operation is released before the gate holds:
 
 ### Open questions
 
-Questions 2 and 3 of [SPEC §17](specs/partial-changes-v1.spec.md#17-open-questions) are decided during stage 0.
+Question 2 of [SPEC §17](specs/partial-changes-v1.spec.md#17-open-questions) is still open; question 3 was decided on
+2026-11-01.

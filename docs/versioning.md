@@ -2,9 +2,10 @@
 
 This document describes the internal versioning system of `@revisium/engine`: data model, database schema, invariants, operation rules, and implementation details.
 
-The mechanics below describe the current runtime. Partial commit and revert of
-selected Draft changes are accepted but not implemented yet; see
-[ADR-001](adr/ADR-001-partial-commit-and-revert.md).
+The mechanics below describe the native runtime. Partial commit and revert of
+selected Draft changes are implemented in `src/features/partial-changes` but not
+public yet (the facade and the release gate are pending); see
+[ADR-001](adr/ADR-001-partial-commit-and-revert.md) and [plan](plan.md).
 
 ## Data Model
 

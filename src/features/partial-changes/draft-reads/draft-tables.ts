@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import {
   compareTablePositions,
   type TablePosition,
@@ -51,7 +50,6 @@ const NO_REPORTED_ROWS: ReportedRowCounts = {
 export class DraftTablesReader {
   constructor(
     private readonly comparedSnapshotReader: ComparedSnapshotReader,
-    private readonly headViews: HeadViewsMigration,
     private readonly countsReader: ReportedRowCountsReader,
   ) {}
 
@@ -63,7 +61,7 @@ export class DraftTablesReader {
 
     return new DraftTables(
       compared,
-      new TableCatalogue(compared, this.headViews),
+      new TableCatalogue(compared),
       this.countsReader,
     );
   }

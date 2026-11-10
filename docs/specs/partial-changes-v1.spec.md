@@ -64,7 +64,7 @@ async-migration copy batches do not run Serializable (§12).
 | [REQ-001.BR-002] S5 | A set prepared in advance and published at a chosen moment. | The layer above keeps a selection and applies it at the chosen moment with preview and `expected`. |
 | [REQ-001.BR-003] | Commit or revert a selected part of the Draft; everything else stays in the Draft. | Every Draft difference belongs to a unit (§3.1); only applied units change the target; a table is relinked only when the content check finds it equal (§6.7). |
 | [REQ-001.BR-004] | Every committed revision (and the Draft after a revert) is consistent; a breaking selection is explained with what to add or remove; an environment syncing through migration export accepts every partial commit and every later commit. | Dependency closure (§6.6), validation (§6.9), the Head schema check (§6.10), ledger and replicas (§10), reasons and blockers with exact selectors (§5.1, §5.7, §5.8). |
-| [REQ-001.BR-005] | Whole-Draft commit and revert work as before. | Native operations unchanged; exactly `{ all: true }` equals native commit and revert, also on a damaged project (§6.10, §13.5). |
+| [REQ-001.BR-005] | Whole-Draft commit and revert work as before. | Native operations unchanged; exactly `{ all: true }` equals native commit and revert, also on a damaged project (§6.10, §13.5), except that its commit refuses Draft damage it would publish: `unrecordedStructureChange` and `invalidViews` (§6.9). |
 | [REQ-001.BR-007] | A data edit is one field; creating or deleting a row is the whole row; all structure changes of a table are one unit with the values of new or changed fields; a new table is committed whole. | Unit model (§3). |
 | [REQ-001.BR-009] | An engine primitive; change sets, scheduling and UI are a layer above. | Engine operations only; selections are passed in. |
 
@@ -1269,10 +1269,12 @@ Per user table on both sides, with structure side S and the opposite side O:
    Unledgered tables (§6.10) are left out of the comparison (only exactly `{ all: true }` can apply their units).
 4. Validate every merged row against its target schema → `invalidRow`.
 5. Commit only: validate the Draft views document of every table whose structure or views unit the commit applies
-   against the table's Draft structure, with that unit as the owner → `invalidViews`. Views and structure always come
-   from the same side (§3.6), so a failure is a document that does not fit its own side's structure (native damage),
-   never a combination. A revert restores published Head documents and validates none; a table without an applied
-   structure or views unit keeps its document unvalidated, under exactly `{ all: true }` too.
+   (its shape, view ids and fields against the table's Draft structure), with that unit as the owner →
+   `invalidViews`. Views and structure always come from the same side (§3.6), so a failure is a document that does not
+   fit its own side's structure (native damage), never a combination. A revert restores published Head documents and
+   validates none; a table without an applied structure or views unit keeps its document unvalidated. Exactly
+   `{ all: true }` is validated the same way, so its commit refuses a damaged Draft views document that native commit
+   would publish, also one that Head already holds under a structure the commit changes.
 6. When unique constraints exist ([ADR-0029]): validate uniqueness over the whole target table, not only the written
    rows, because Head and Draft rows that are valid on their own sides can collide when combined.
 

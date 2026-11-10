@@ -1,12 +1,14 @@
-import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { SidedRows } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import {
   buildChangeCatalogue,
   type ChangeCatalogue,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
-import type { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { groupRecreations } from 'src/features/partial-changes/catalogue/public-id-groups';
+import {
+  carriesViewsChange,
+  viewsDiffer,
+} from 'src/features/partial-changes/catalogue/views-units';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import {
   type DescribedUnitRef,
@@ -25,14 +27,11 @@ export class TableCatalogue {
   private readonly catalogue: ChangeCatalogue;
   private readonly recreations = new Map<string, readonly TablePair[]>();
 
-  constructor(
-    private readonly compared: ComparedSnapshot,
-    headViews: HeadViewsMigration,
-  ) {
-    this.catalogue = buildChangeCatalogue(
-      { ...compared, changedRows: NO_CHANGED_ROWS },
-      headViews,
-    );
+  constructor(private readonly compared: ComparedSnapshot) {
+    this.catalogue = buildChangeCatalogue({
+      ...compared,
+      changedRows: NO_CHANGED_ROWS,
+    });
 
     for (const group of groupRecreations(compared.snapshot.tables)) {
       for (const { identity } of group) {
@@ -74,11 +73,14 @@ export class TableCatalogue {
   }
 
   public changedBeyondTableId(table: TablePair): boolean {
-    const views = this.viewsRowsOf(table);
+    const { tables } = this.catalogue;
+    const structure = this.structureOf(table);
 
     return (
-      this.catalogue.tables.structureOf(table).differsBeyondTableId ||
-      !deepEqual(views.head?.data, views.draft?.data)
+      tables.structureOf(table).differsBeyondTableId ||
+      (structure
+        ? carriesViewsChange(structure, tables)
+        : viewsDiffer([table], tables))
     );
   }
 }

@@ -23,8 +23,18 @@ export function carriesViewsChange(
   { tableIdentities }: CatalogueUnit,
   tables: CatalogueTables,
 ): boolean {
-  const pairs = tableIdentities.map((identity) => tables.pairOf(identity));
+  return viewsDiffer(
+    tableIdentities.map((identity) => tables.pairOf(identity)),
+    tables,
+  );
+}
 
+// The views document under the Head id in Head against the one under the Draft id in Draft; a side without the table
+// or without a views row has none (§5.2).
+export function viewsDiffer(
+  pairs: readonly TablePair[],
+  tables: CatalogueTables,
+): boolean {
   return !deepEqual(
     viewsDocumentOn(pairs, 'head', tables),
     viewsDocumentOn(pairs, 'draft', tables),
@@ -32,13 +42,12 @@ export function carriesViewsChange(
 }
 
 function hasViewsUnit(pair: TablePair, tables: CatalogueTables): boolean {
-  if (!pair.head || !pair.draft || tables.structureOf(pair).differs) {
-    return false;
-  }
-
-  const views = tables.viewsRowsOf(pair);
-
-  return !deepEqual(views.head?.data, views.draft?.data);
+  return (
+    pair.head !== undefined &&
+    pair.draft !== undefined &&
+    !tables.structureOf(pair).differs &&
+    viewsDiffer([pair], tables)
+  );
 }
 
 function viewsDocumentOn(

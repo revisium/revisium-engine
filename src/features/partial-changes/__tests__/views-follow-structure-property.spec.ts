@@ -5,7 +5,10 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type {
+  ListedUnit,
+  StructureTableChange,
+} from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import {
   seededRandom,
@@ -13,10 +16,11 @@ import {
 } from 'src/features/share/ledger-replay/__tests__/support/seeded-random';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { AddressedUnit } from './support/catalogue-reading';
+import { addressedUnitOfListed } from './support/change-listing';
 import type { RevertOptions } from './support/change-reverting';
 import type { ChangesScenario } from './support/changes-scenario';
 import { unionOfSelections } from './support/dependency-closing';
-import { type PlanView, readPlan } from './support/plan-reading';
+import { readPlan } from './support/plan-reading';
 import {
   givenRandomDraftTwins,
   RANDOM_DRAFT_SEED_TIMEOUT_MS,
@@ -38,6 +42,87 @@ const OTHER_SIDES: Readonly<Record<RevisionSide, RevisionSide>> = {
 type ViewsDocuments = Readonly<Record<string, JsonValue>>;
 type SidedDocuments = Readonly<Record<RevisionSide, ViewsDocuments>>;
 
+// How each listed table unit exists on the two sides, by its address.
+class TableUnits {
+  private readonly tableChanges = new Map<string, StructureTableChange>();
+
+  constructor(units: readonly ListedUnit[]) {
+    for (const unit of units) {
+      if (unit.structureChange) {
+        this.tableChanges.set(
+          keyOf(addressedUnitOfListed(unit)),
+          unit.structureChange.table,
+        );
+      }
+    }
+  }
+
+  public isChangedStructure(unit: AddressedUnit): boolean {
+    return (
+      unit.kind === 'structure' &&
+      this.tableChanges.get(keyOf(unit)) === 'changed'
+    );
+  }
+
+  public ownersIn(applied: readonly AddressedUnit[]): AddressedUnit[] {
+    return applied.filter(
+      ({ kind }) => kind === 'structure' || kind === 'views',
+    );
+  }
+
+  // The table id a unit's table has on a side, or undefined where the table does not exist.
+  public idOn(side: RevisionSide, unit: AddressedUnit): string | undefined {
+    if (unit.kind === 'views') {
+      return unit.tableId;
+    }
+
+    switch (this.tableChanges.get(keyOf(unit))) {
+      case 'created':
+        return side === 'draft' ? unit.tableId : undefined;
+      case 'removed':
+        return side === 'head' ? unit.tableId : undefined;
+      case 'replaced':
+        return unit.tableId;
+      case 'changed':
+        return side === 'head'
+          ? (unit.previousTableId ?? unit.tableId)
+          : unit.tableId;
+      default:
+        return undefined;
+    }
+  }
+
+  public expectedDocumentsOf(
+    operation: ChangeOperation,
+    before: SidedDocuments,
+    applied: readonly AddressedUnit[],
+  ): ViewsDocuments {
+    const base = BASE_SIDES[operation];
+    const other = OTHER_SIDES[base];
+    const expected: Record<string, JsonValue> = { ...before[base] };
+    const owners = this.ownersIn(applied);
+
+    for (const unit of owners) {
+      const id = this.idOn(base, unit);
+
+      if (id !== undefined) {
+        delete expected[id];
+      }
+    }
+
+    for (const unit of owners) {
+      const id = this.idOn(other, unit);
+      const taken = documentOf(before[other], id);
+
+      if (id !== undefined && taken !== undefined) {
+        expected[id] = taken;
+      }
+    }
+
+    return expected;
+  }
+}
+
 describe('views follow the structure over random Drafts (AS-83)', () => {
   let kit: PartialChangesTestKit;
   const moved = new Set<string>();
@@ -55,50 +140,82 @@ describe('views follow the structure over random Drafts (AS-83)', () => {
   });
 
   it.each(RANDOM_DRAFT_SEEDS)(
-    'takes every views document from the side its table unit takes and writes it unchanged (seed %i)',
+    'plans and writes every views document of the side its table unit takes, unchanged (seed %i)',
     async (seed) => {
       const { draft, twin } = await givenRandomDraftTwins(kit, seed);
-      const units = await draft.listEveryUnit();
+      const listed = await draft.listEveryUnit();
+      const units = new TableUnits(listed);
+      const before = await sidedDocumentsOf(draft);
       const random = seededRandom(seed);
+      expectNoTableWithBothStructureAndViewsUnits(listed);
 
       for (let made = 0; made < PLANNED_SELECTIONS_PER_DRAFT; made += 1) {
-        const selection = randomSelectionOf(units, random);
+        const selection = randomSelectionOf(listed, random);
 
         for (const operation of OPERATIONS) {
-          expectViewsFromTheSidesOfTheirUnits(
+          await expectPlannedAsTheirUnitsSay(
+            draft,
+            units,
+            before,
             operation,
-            await readPlan(kit, draft.branch, operation, selection),
+            selection,
           );
         }
       }
 
-      const selection = viewsSelectionOf(units, random);
-      await expectWrittenAsTheirUnitsSay(draft, 'commit', selection);
-      await expectWrittenAsTheirUnitsSay(twin, 'revert', selection);
+      const selection = viewsSelectionOf(listed, random);
+      await expectWrittenAsTheirUnitsSay(draft, units, 'commit', selection);
+      await expectWrittenAsTheirUnitsSay(twin, units, 'revert', selection);
     },
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
-  it('moves views documents with structure and views units in commits and reverts across its seeds', () => {
+  it('moves views documents with changed structures, other structures and views units in commits and reverts across its seeds', () => {
     expect([...moved].sort()).toEqual([
       'commit structure',
+      'commit structure changed',
       'commit views',
       'revert structure',
+      'revert structure changed',
       'revert views',
     ]);
   });
 
-  async function expectWrittenAsTheirUnitsSay(
+  async function expectPlannedAsTheirUnitsSay(
     draft: ChangesScenario,
+    units: TableUnits,
+    before: SidedDocuments,
     operation: ChangeOperation,
     selection: Selection,
   ): Promise<void> {
     const plan = await readPlan(kit, draft.branch, operation, selection);
-    const before: SidedDocuments = {
-      head: await viewsDocumentsOf(draft, 'head'),
-      draft: await viewsDocumentsOf(draft, 'draft'),
-    };
-    expectViewsFromTheSidesOfTheirUnits(operation, plan);
+
+    if (!plan.target) {
+      return;
+    }
+
+    expect({
+      operation,
+      selection,
+      views: Object.fromEntries(
+        plan.target.views.map(({ tableId, source }) => [tableId, source.data]),
+      ),
+    }).toEqual({
+      operation,
+      selection,
+      views: units.expectedDocumentsOf(operation, before, plan.applied),
+    });
+  }
+
+  async function expectWrittenAsTheirUnitsSay(
+    draft: ChangesScenario,
+    units: TableUnits,
+    operation: ChangeOperation,
+    selection: Selection,
+  ): Promise<void> {
+    const plan = await readPlan(kit, draft.branch, operation, selection);
+    const before = await sidedDocumentsOf(draft);
+    const base = BASE_SIDES[operation];
 
     await expect(
       applyOf(draft, operation, {
@@ -108,16 +225,23 @@ describe('views follow the structure over random Drafts (AS-83)', () => {
       }),
     ).resolves.toMatchObject({ status: 'applied' });
 
-    const expected = expectedDocumentsOf(operation, before, plan.applied);
     expect({
       operation,
       selection,
-      views: await viewsDocumentsOf(draft, BASE_SIDES[operation]),
-    }).toEqual({ operation, selection, views: expected });
-    recordMoves(operation, before, plan.applied);
+      views: await sidedDocumentsOf(draft),
+    }).toEqual({
+      operation,
+      selection,
+      views: {
+        [base]: units.expectedDocumentsOf(operation, before, plan.applied),
+        [OTHER_SIDES[base]]: before[OTHER_SIDES[base]],
+      },
+    });
+    recordMoves(units, operation, before, plan.applied);
   }
 
   function recordMoves(
+    units: TableUnits,
     operation: ChangeOperation,
     before: SidedDocuments,
     applied: readonly AddressedUnit[],
@@ -125,83 +249,55 @@ describe('views follow the structure over random Drafts (AS-83)', () => {
     const base = BASE_SIDES[operation];
     const other = OTHER_SIDES[base];
 
-    for (const unit of ownersIn(applied)) {
-      const taken = documentOf(before[other], idOn(other, unit));
-      const replaced = documentOf(before[base], idOn(base, unit));
+    for (const unit of units.ownersIn(applied)) {
+      const taken = documentOf(before[other], units.idOn(other, unit));
+      const replaced = documentOf(before[base], units.idOn(base, unit));
 
       if (!deepEqual(taken, replaced)) {
         moved.add(`${operation} ${unit.kind}`);
+
+        if (units.isChangedStructure(unit)) {
+          moved.add(`${operation} structure changed`);
+        }
       }
     }
   }
 });
 
-// The views document of a table comes from the side its structure unit, else its views unit, takes; a table
-// without either keeps the base side's document (§3.6, §6.7).
-function expectViewsFromTheSidesOfTheirUnits(
-  operation: ChangeOperation,
-  { applied, target }: PlanView,
+function expectNoTableWithBothStructureAndViewsUnits(
+  units: readonly ListedUnit[],
 ): void {
-  const base = BASE_SIDES[operation];
-  const other = OTHER_SIDES[base];
+  const addressed = units.map(addressedUnitOfListed);
+  const structureTableIds = new Set(
+    addressed.flatMap((unit) => {
+      if (unit.kind !== 'structure') {
+        return [];
+      }
 
-  for (const { tableId, viewsSide } of target?.views ?? []) {
-    const ownedByApplied = ownersIn(applied).some(
-      (unit) => idOn(other, unit) === tableId,
-    );
+      return unit.previousTableId === undefined
+        ? [unit.tableId]
+        : [unit.tableId, unit.previousTableId];
+    }),
+  );
+  const viewsTableIds = addressed.flatMap((unit) =>
+    unit.kind === 'views' ? [unit.tableId] : [],
+  );
 
-    expect({ operation, tableId, viewsSide }).toEqual({
-      operation,
-      tableId,
-      viewsSide: ownedByApplied ? other : base,
-    });
-  }
+  expect(
+    viewsTableIds.filter((tableId) => structureTableIds.has(tableId)),
+  ).toEqual([]);
 }
 
-function expectedDocumentsOf(
-  operation: ChangeOperation,
-  before: SidedDocuments,
-  applied: readonly AddressedUnit[],
-): ViewsDocuments {
-  const base = BASE_SIDES[operation];
-  const other = OTHER_SIDES[base];
-  const expected: Record<string, JsonValue> = { ...before[base] };
-  const owners = ownersIn(applied);
-
-  for (const unit of owners) {
-    const id = idOn(base, unit);
-
-    if (id !== undefined) {
-      delete expected[id];
-    }
+function keyOf(unit: AddressedUnit): string {
+  if (unit.kind !== 'structure') {
+    return JSON.stringify([unit.kind]);
   }
 
-  for (const unit of owners) {
-    const id = idOn(other, unit);
-    const taken = documentOf(before[other], id);
-
-    if (id !== undefined && taken !== undefined) {
-      expected[id] = taken;
-    }
-  }
-
-  return expected;
-}
-
-function ownersIn(applied: readonly AddressedUnit[]): AddressedUnit[] {
-  return applied.filter(({ kind }) => kind === 'structure' || kind === 'views');
-}
-
-// A unit addresses its table by the Draft id, else the Head id; a renamed table keeps its Head id as
-// previousTableId, and a Head table whose id a rename took over is addressed with side: 'head'.
-function idOn(side: RevisionSide, unit: AddressedUnit): string | undefined {
-  if (side === 'head') {
-    return unit.kind === 'structure' && unit.previousTableId !== undefined
-      ? unit.previousTableId
-      : unit.tableId;
-  }
-
-  return unit.side === 'head' ? undefined : unit.tableId;
+  return JSON.stringify([
+    unit.tableId,
+    unit.previousTableId ?? null,
+    unit.side ?? null,
+  ]);
 }
 
 function documentOf(
@@ -209,6 +305,15 @@ function documentOf(
   id: string | undefined,
 ): JsonValue | undefined {
   return id === undefined ? undefined : documents[id];
+}
+
+async function sidedDocumentsOf(
+  draft: ChangesScenario,
+): Promise<SidedDocuments> {
+  return {
+    head: await viewsDocumentsOf(draft, 'head'),
+    draft: await viewsDocumentsOf(draft, 'draft'),
+  };
 }
 
 async function viewsDocumentsOf(
@@ -252,13 +357,18 @@ function randomSelectionOf(
   return selection;
 }
 
-// A structure unit that carries a views change and a views unit, when the Draft lists them, plus random units.
+// A changed structure that carries a views change, another structure that does, and a views unit, when the Draft lists
+// them, plus random units.
 function viewsSelectionOf(
   units: readonly ListedUnit[],
   random: SeededRandom,
 ): Selection {
-  const carryingViews = [
-    units.filter((unit) => unit.structureChange?.views === true),
+  const carryingViews = units.filter(
+    (unit) => unit.structureChange?.views === true,
+  );
+  const owners = [
+    carryingViews.filter((unit) => unit.structureChange?.table === 'changed'),
+    carryingViews.filter((unit) => unit.structureChange?.table !== 'changed'),
     units.filter((unit) => unit.kind === 'views'),
   ]
     .filter((candidates) => candidates.length > 0)
@@ -268,6 +378,6 @@ function viewsSelectionOf(
   );
 
   return unionOfSelections(
-    [...carryingViews, ...others].map(({ selector }) => selector),
+    [...owners, ...others].map(({ selector }) => selector),
   );
 }

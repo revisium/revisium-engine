@@ -22,7 +22,8 @@ This specification fixes async table migrations (the "Async migration fix, detec
 swap writes what the synchronous path writes and deletes the record in one Serializable transaction. `applyMigrations`
 drives the migration it started and observes it on a separate timer, holding nothing while it waits; the source id
 travels in a versioned envelope in the existing `patches` column. The repair records the ledger only and leaves tables
-with invalid Draft rows refused; their remediation, like the ledger backfill, waits for the scan results.
+with invalid Draft rows refused; their remediation waits for the scan results. The ledger backfill for branches without
+a migration table is specified in [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 **Landed since the parent SPEC:** #85 copy-on-write by `INSERT … SELECT`; #86 Serializable views writes; #87 imported-id
 check in the change transaction; #88 no 100-referrer limits; #89 lock check inside every Draft writer's transaction;
@@ -53,7 +54,7 @@ start take the fence shared); #93 the ledger replay; #119 and #128 fence part 2 
 | Copy-on-write, recorded `update` row and history; swap re-checks (partial-changes §12) | §3.5, §3.6 |
 | One per revision in the transaction; synchronous validation; file references | §3.3, §3.4 |
 | Orphan cleanup (landed, #90); `applyMigrations` above the threshold (must) | §3.7; §4 |
-| Detection scan; forward-only repair; ledger backfill and row remediation (decided with the scan results) | §5, §6, §7 |
+| Detection scan; forward-only repair; ledger backfill ([schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)) and row remediation (decided with the scan results) | §5, §6, §7 |
 | REQ-001.BR-004 (a Head-synced replica accepts every commit) | Recorded async updates (§3.5), imported updates with source ids (§4), repaired tables (§6). |
 | REQ-001.BR-005 (whole-Draft operations unchanged) | Native commit and revert are unchanged; every other observable change is in §9. |
 

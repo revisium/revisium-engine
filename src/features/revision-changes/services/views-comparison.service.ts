@@ -69,7 +69,7 @@ export class ViewsComparisonService {
     return viewsRow.data as unknown as TableViewsData;
   }
 
-  private compareViewsData(
+  public compareViewsData(
     fromData: TableViewsData | null,
     toData: TableViewsData | null,
   ): ViewsChangeDetail {

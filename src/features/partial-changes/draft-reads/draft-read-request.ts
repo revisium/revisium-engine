@@ -1,0 +1,128 @@
+import {
+  decodeTableCursor,
+  type TablePosition,
+} from 'src/features/partial-changes/draft-reads/draft-cursor';
+import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
+import type { DraftChangesSummaryInput } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
+import type { DraftTableChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
+import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { ChangeType } from 'src/features/revision-changes/types';
+
+export interface TableFilters {
+  readonly changeTypes?: readonly ChangeType[];
+  readonly search?: string;
+}
+
+export interface DraftTableChangesRequest {
+  readonly branch: ChangesBranch;
+  readonly first: number;
+  readonly after?: TablePosition;
+  readonly filters: TableFilters;
+}
+
+export interface DraftChangesSummaryRequest {
+  readonly branch: ChangesBranch;
+  readonly filters: TableFilters;
+}
+
+type Fields = Readonly<Record<string, unknown>>;
+
+const MAX_PAGE_SIZE = 5_000;
+const CHANGE_TYPES: ReadonlySet<unknown> = new Set(Object.values(ChangeType));
+
+export function tableChangesRequestOf({
+  branch,
+  first,
+  after,
+  filters,
+}: DraftTableChangesInput): DraftTableChangesRequest {
+  return {
+    branch,
+    first: pageSizeOf(first),
+    after: tablePositionOf(after),
+    filters: tableFiltersOf(filters),
+  };
+}
+
+export function summaryRequestOf({
+  branch,
+  filters,
+}: DraftChangesSummaryInput): DraftChangesSummaryRequest {
+  return { branch, filters: tableFiltersOf(filters) };
+}
+
+function pageSizeOf(first: unknown): number {
+  if (
+    typeof first !== 'number' ||
+    !Number.isInteger(first) ||
+    first < 1 ||
+    first > MAX_PAGE_SIZE
+  ) {
+    throw new ListingValidationError(
+      `first must be an integer from 1 to ${MAX_PAGE_SIZE}`,
+    );
+  }
+
+  return first;
+}
+
+function tablePositionOf(after: unknown): TablePosition | undefined {
+  if (after === undefined || after === null) {
+    return undefined;
+  }
+
+  if (typeof after !== 'string') {
+    throw new ListingValidationError('after must be a string');
+  }
+
+  return decodeTableCursor(after);
+}
+
+function tableFiltersOf(filters: unknown): TableFilters {
+  if (filters === undefined || filters === null) {
+    return {};
+  }
+
+  if (!isFields(filters)) {
+    throw new ListingValidationError('filters must be an object');
+  }
+
+  return {
+    changeTypes: changeTypesOf(filters.changeTypes),
+    search: searchOf(filters.search),
+  };
+}
+
+function changeTypesOf(changeTypes: unknown): ChangeType[] | undefined {
+  if (changeTypes === undefined || changeTypes === null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(changeTypes) || !changeTypes.every(isChangeType)) {
+    throw new ListingValidationError(
+      `filters.changeTypes must be an array of ${[...CHANGE_TYPES].join(', ')}`,
+    );
+  }
+
+  return changeTypes;
+}
+
+function searchOf(search: unknown): string | undefined {
+  if (search === undefined || search === null) {
+    return undefined;
+  }
+
+  if (typeof search !== 'string') {
+    throw new ListingValidationError('filters.search must be a string');
+  }
+
+  return search;
+}
+
+function isChangeType(value: unknown): value is ChangeType {
+  return CHANGE_TYPES.has(value);
+}
+
+function isFields(value: unknown): value is Fields {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

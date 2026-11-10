@@ -10,10 +10,16 @@ import type {
   ListedUnit,
 } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
+import type { DraftChangesSummary } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
+import type { DraftTablePage } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type {
+  RevisionChanges,
+  TableChange,
+} from 'src/features/revision-changes/types';
 import {
   type CatalogueView,
   readCatalogue,
@@ -31,6 +37,20 @@ import {
 import { previewChanges, type PreviewOptions } from './change-preview';
 import { revertChanges, type RevertOptions } from './change-reverting';
 import { type ClosureView, readClosedDependencies } from './dependency-closing';
+import {
+  type DraftSummaryOptions,
+  type DraftTableOptions,
+  type DraftTablePaging,
+  linkSetsOf,
+  type NativeComparison,
+  type NativeTableFilters,
+  readDraftChangesSummary,
+  readDraftTableChanges,
+  readEveryDraftTablePage,
+  readNativeSummary,
+  readNativeTableChanges,
+  type TableLinkSets,
+} from './draft-reading';
 import {
   type FileAccounting,
   readFileAccounting,
@@ -150,6 +170,42 @@ export class ChangesScenario extends BranchScenario {
     return listEveryPageWithReads(this.kit, this.branch, options);
   }
 
+  public readDraftTableChanges(
+    options: DraftTableOptions,
+  ): Promise<DraftTablePage> {
+    return readDraftTableChanges(this.kit, this.branch, options);
+  }
+
+  public readEveryDraftTablePage(
+    paging: DraftTablePaging,
+  ): Promise<DraftTablePage[]> {
+    return readEveryDraftTablePage(this.kit, this.branch, paging);
+  }
+
+  public readDraftChangesSummary(
+    options: DraftSummaryOptions = {},
+  ): Promise<DraftChangesSummary> {
+    return readDraftChangesSummary(this.kit, this.branch, options);
+  }
+
+  public async readNativeTableChanges(
+    filters: NativeTableFilters = {},
+  ): Promise<TableChange[]> {
+    return readNativeTableChanges(
+      this.kit,
+      await this.nativeComparison(),
+      filters,
+    );
+  }
+
+  public async readNativeSummary(): Promise<RevisionChanges> {
+    return readNativeSummary(this.kit, await this.nativeComparison());
+  }
+
+  public linkSetsOf(tableIds: readonly string[]): Promise<TableLinkSets[]> {
+    return linkSetsOf(this, tableIds);
+  }
+
   public previewChanges(
     options: PreviewOptions,
   ): Promise<PreviewChangesResult> {
@@ -210,6 +266,13 @@ export class ChangesScenario extends BranchScenario {
 
   public readFileReferences(): Promise<string[]> {
     return readFileReferences(this.kit, this);
+  }
+
+  private async nativeComparison(): Promise<NativeComparison> {
+    return {
+      revisionId: await this.revisionId('draft'),
+      compareWithRevisionId: await this.revisionId('head'),
+    };
   }
 
   public async readDraftRowDigest(tableId: string): Promise<string> {

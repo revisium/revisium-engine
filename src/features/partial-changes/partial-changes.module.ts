@@ -7,6 +7,11 @@ import { SystemTargetAssembler } from 'src/features/partial-changes/assembly/sys
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { HeadViewsMigration } from 'src/features/partial-changes/catalogue/head-views-migration';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
+import { DraftChangesSummaryReader } from 'src/features/partial-changes/draft-reads/draft-changes-summary';
+import { DraftTableItems } from 'src/features/partial-changes/draft-reads/draft-table-items';
+import { DraftTablePages } from 'src/features/partial-changes/draft-reads/draft-table-pages';
+import { DraftTablesReader } from 'src/features/partial-changes/draft-reads/draft-tables';
+import { ReportedRowCountsReader } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 import type { TargetCheck } from 'src/features/partial-changes/closure/check-context';
 import {
   TARGET_CHECKS,
@@ -27,6 +32,7 @@ import { ComparedSnapshotReader } from 'src/features/partial-changes/snapshot/co
 import { TargetValidator } from 'src/features/partial-changes/validation/target-validator';
 import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';
 import { PluginModule } from 'src/features/plugin/plugin.module';
+import { RevisionChangesModule } from 'src/features/revision-changes/revision-changes.module';
 import { ShareModule } from 'src/features/share/share.module';
 import { ViewsModule } from 'src/features/views/views.module';
 import { DatabaseModule } from 'src/infrastructure/database/database.module';
@@ -40,6 +46,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     ViewsModule,
     DraftRevisionModule,
     DraftModule,
+    RevisionChangesModule,
   ],
   providers: [
     ChangesSnapshotReader,
@@ -64,6 +71,11 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     ChangePlanner,
     ChangeApplier,
     UnitListing,
+    ReportedRowCountsReader,
+    DraftTablesReader,
+    DraftTableItems,
+    DraftTablePages,
+    DraftChangesSummaryReader,
     PartialChangesApiService,
     ...PARTIAL_CHANGES_QUERY_HANDLERS,
     ...PARTIAL_CHANGES_COMMAND_HANDLERS,

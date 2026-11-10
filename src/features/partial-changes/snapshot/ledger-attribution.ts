@@ -52,7 +52,14 @@ export function pendingMigrationsOf(
   ledger: LedgerAttribution,
   tableIdentity: string,
 ): Migration[] {
-  return migrationsOf(ledger.tables.get(tableIdentity)?.entries ?? []);
+  return migrationsOf(pendingEntriesOf(ledger, tableIdentity));
+}
+
+export function pendingEntriesOf(
+  ledger: LedgerAttribution,
+  tableIdentity: string,
+): readonly LedgerEntry[] {
+  return ledger.tables.get(tableIdentity)?.entries ?? [];
 }
 
 class PendingAttribution {

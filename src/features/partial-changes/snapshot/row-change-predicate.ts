@@ -49,7 +49,7 @@ function dataDiffers(structure: TableStructure): Sql | undefined {
   return join(leaves.map(leafDiffers), ' OR ');
 }
 
-function columnDiffers(column: ComparedRowColumn): Sql {
+export function columnDiffers(column: ComparedRowColumn): Sql {
   return raw(`h."${column}" IS DISTINCT FROM d."${column}"`);
 }
 

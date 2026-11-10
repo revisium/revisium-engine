@@ -4,8 +4,8 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.0 |
-| Status | Accepted; implementation pending ([ADR-002] delivery, PRs 8–11) |
+| Version | 1.1 |
+| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PRs 9–11, the row reads, are pending |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
@@ -276,12 +276,13 @@ Each list is ordered by its id (`sharedSchemaId` or `tableId`) in code-point ord
 
 ## 7. Order, paging and filters
 
-**Order.** Tables by public id (Draft id, else Head id) by code point, then by table identity, so the two items of a
-replaced id are adjacent. Rows by their table in that order, then by row id (Draft id, else Head id) by code point
-(`COLLATE "C"`). Of two items with one row id, the one whose row exists only in Head comes first: a replaced row's
-deleted row before the row created at its id, and a deleted row before the rename that took over its id. The order
-does not depend on internal ids, so copies of a project list their items in the same order. Within one read state,
-`(tableId, changeType)` identifies a table item and `(tableId, rowId, changeType)` a row item.
+**Order.** Tables by public id (Draft id, else Head id) by code point; of two items with one id, the table that
+exists only in Head comes first, so the two items of a replaced id are adjacent, `REMOVED` then `ADDED`. Rows by their
+table in that order, then by row id (Draft id, else Head id) by code point (`COLLATE "C"`). Of two items with one row
+id, the one whose row exists only in Head comes first: a replaced row's deleted row before the row created at its id,
+and a deleted row before the rename that took over its id. The order does not depend on internal ids, so copies of a
+project list their items in the same order. Within one read state, `(tableId, changeType)` identifies a table item and
+`(tableId, rowId, changeType)` a row item.
 
 **Paging.** Keyset pages: `after` is the `endCursor` of the previous page, an opaque cursor naming the last table, or
 the last table and row id; offset cursors are refused. Every edge carries the cursor of its position; the two items of
@@ -492,6 +493,11 @@ Paging, filters, validation, snapshot:
 - DR-20 `null` for every optional input is treated as absent; an unknown branch is the native not-found error.
 
 ## Changelog
+
+### Version 1.1 (2026-11-10)
+
+- §7: of two table items with one id, the table that exists only in Head comes first, instead of an order by table
+  identity, which is an internal id; so DR-08's `REMOVED` then `ADDED` holds and copies of a project page alike.
 
 ### Version 1.0 (2026-11-10)
 

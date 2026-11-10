@@ -11,6 +11,16 @@ import {
   RevertDraftChangesCommand,
 } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import {
+  type DraftChangesSummary,
+  type DraftChangesSummaryInput,
+  GetDraftChangesSummaryQuery,
+} from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
+import {
+  type DraftTableChangesInput,
+  type DraftTablePage,
+  GetDraftTableChangesQuery,
+} from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
+import {
   type ListChangesInput,
   type ListChangesResult,
   ListDraftChangesQuery,
@@ -44,5 +54,17 @@ export class PartialChangesApiService {
 
   public revertChanges(data: RevertChangesInput): Promise<RevertChangesResult> {
     return this.commandBus.execute(new RevertDraftChangesCommand(data));
+  }
+
+  public draftTableChanges(
+    data: DraftTableChangesInput,
+  ): Promise<DraftTablePage> {
+    return this.queryBus.execute(new GetDraftTableChangesQuery(data));
+  }
+
+  public draftChangesSummary(
+    data: DraftChangesSummaryInput,
+  ): Promise<DraftChangesSummary> {
+    return this.queryBus.execute(new GetDraftChangesSummaryQuery(data));
   }
 }

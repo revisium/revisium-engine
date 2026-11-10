@@ -49,19 +49,21 @@ describe('Draft row reads over random Drafts', () => {
   });
 
   it.each(RANDOM_DRAFT_SEEDS)(
-    'reaches exactly the listed units from the table, row and summary reads (DR-01, seed %i)',
+    'reaches exactly the listed units from the table, row and summary reads, a field or column unit among the units of its row (DR-01, DR-02, seed %i)',
     async (seed) => {
       const draft = await givenRandomDraft(kit, seed);
       const listed = await draft.listEveryUnit();
       coverage.record(listed);
 
+      const rows = await readEveryRow(draft);
       const reachable = unitsReachableFrom({
         tables: await readEveryTable(draft),
-        rows: await readEveryRow(draft),
+        rows,
         summary: await draft.readDraftChangesSummary(),
       });
 
       expect(distinctUnitsOf(reachable)).toEqual(distinctUnitsOf(listed));
+      expect(rows.flatMap(fieldUnitsOutsideTheirRow)).toEqual([]);
     },
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
@@ -76,6 +78,7 @@ describe('Draft row reads over random Drafts', () => {
       const draft = await givenRandomDraft(kit, seed);
       const native = await draft.readNativeRowChanges();
       const all = await readEveryRow(draft);
+      const columns = new ReportedColumns(await readEveryTable(draft));
 
       for (const first of PAGE_SIZES) {
         expect(
@@ -83,12 +86,12 @@ describe('Draft row reads over random Drafts', () => {
         ).toEqual(all);
       }
 
-      expect(nativeViewsOf(all).sort(byKey)).toEqual(
+      expect(nativeViewsOf(all, columns).sort(byKey)).toEqual(
         native.map(viewOfNativeChange).sort(byKey),
       );
-      expect(all.filter((item) => !isNativeChange(item, native))).toEqual(
-        all.filter(differsOnlyInRowColumns),
-      );
+      expect(
+        all.filter((item) => !isNativeChange(item, native, columns)),
+      ).toEqual(all.filter((item) => columns.differsOnlyInThem(item)));
     },
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
@@ -140,12 +143,60 @@ function withoutUndefined(unit: object): object {
   );
 }
 
-// The native diff compares id and data only: a renamed row that also differs in a row column is RENAMED there.
-function nativeViewsOf(items: readonly DraftRowItem[]): RowChangeView[] {
+// The native diff compares id and data only; the reads also compare publishedAt, meta, and schemaHash in a table whose
+// structure is unchanged (SPEC §3).
+class ReportedColumns {
+  private readonly changedStructures: ReadonlySet<string>;
+
+  constructor(tables: readonly DraftTableItem[]) {
+    this.changedStructures = new Set(
+      tables.flatMap(({ tableId, changeType, selection }) =>
+        changeType !== ChangeType.Added &&
+        changeType !== ChangeType.Removed &&
+        selection.state === 'selectable' &&
+        selection.structure
+          ? [tableId]
+          : [],
+      ),
+    );
+  }
+
+  public differsOnlyInThem(item: DraftRowItem): boolean {
+    return (
+      item.changeType === ChangeType.Modified &&
+      item.fields.length === 0 &&
+      this.differsIn(item)
+    );
+  }
+
+  public nativeChangeTypeOf(item: DraftRowItem): ChangeType {
+    if (
+      item.changeType === ChangeType.RenamedAndModified &&
+      item.fields.length === 0 &&
+      this.differsIn(item)
+    ) {
+      return ChangeType.Renamed;
+    }
+
+    return item.changeType;
+  }
+
+  private differsIn({ tableId, columns }: DraftRowItem): boolean {
+    return columns.some(
+      ({ column }) =>
+        column !== 'schemaHash' || !this.changedStructures.has(tableId),
+    );
+  }
+}
+
+function nativeViewsOf(
+  items: readonly DraftRowItem[],
+  columns: ReportedColumns,
+): RowChangeView[] {
   return items
-    .filter((item) => !differsOnlyInRowColumns(item))
+    .filter((item) => !columns.differsOnlyInThem(item))
     .map((item) => ({
-      key: keyOf(item.tableId, item.rowId, nativeChangeTypeOf(item)),
+      key: keyOf(item.tableId, item.rowId, columns.nativeChangeTypeOf(item)),
       fields: item.fields.map(({ path, changeType, oldValue, newValue }) => [
         path,
         changeType,
@@ -155,37 +206,10 @@ function nativeViewsOf(items: readonly DraftRowItem[]): RowChangeView[] {
     }));
 }
 
-function nativeChangeTypeOf({
-  changeType,
-  fields,
-  columns,
-}: DraftRowItem): ChangeType {
-  if (
-    changeType === ChangeType.RenamedAndModified &&
-    fields.length === 0 &&
-    columns.length > 0
-  ) {
-    return ChangeType.Renamed;
-  }
-
-  return changeType;
-}
-
-function differsOnlyInRowColumns({
-  changeType,
-  fields,
-  columns,
-}: DraftRowItem): boolean {
-  return (
-    changeType === ChangeType.Modified &&
-    fields.length === 0 &&
-    columns.length > 0
-  );
-}
-
 function isNativeChange(
   item: DraftRowItem,
   native: readonly RowChange[],
+  columns: ReportedColumns,
 ): boolean {
   return native.some(
     (change) =>
@@ -193,7 +217,25 @@ function isNativeChange(
         tableIdOfNative(change),
         rowIdOfNative(change),
         change.changeType,
-      ) === keyOf(item.tableId, item.rowId, nativeChangeTypeOf(item)),
+      ) === keyOf(item.tableId, item.rowId, columns.nativeChangeTypeOf(item)),
+  );
+}
+
+// A field or column that selects a unit selects one of the units its row lists.
+function fieldUnitsOutsideTheirRow({
+  tableId,
+  rowId,
+  selection,
+  fields,
+  columns,
+}: DraftRowItem): string[] {
+  const rowUnits = new Set(selection.units.map((unit) => JSON.stringify(unit)));
+
+  return [...fields, ...columns].flatMap((change) =>
+    change.selection.state === 'unit' &&
+    !rowUnits.has(JSON.stringify(change.selection.unit))
+      ? [`${tableId}/${rowId}: ${JSON.stringify(change.selection.unit)}`]
+      : [],
   );
 }
 

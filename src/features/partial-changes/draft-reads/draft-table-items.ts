@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type { Row } from 'src/engine-prisma-types';
 import { encodeTableCursor } from 'src/features/partial-changes/draft-reads/draft-cursor';
-import {
-  type DraftTable,
-  type DraftTables,
-  tableIdsOf,
+import type {
+  DraftTable,
+  DraftTables,
 } from 'src/features/partial-changes/draft-reads/draft-tables';
+import { tableIdsOf } from 'src/features/partial-changes/draft-reads/table-ids';
 import type { ReportedRowCounts } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
 import type { DraftEdge } from 'src/features/partial-changes/queries/impl/draft-reads';

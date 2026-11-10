@@ -50,6 +50,10 @@ export class DraftRowItems {
     page: readonly PagedTable[],
     compared: ComparedSnapshot,
   ): Promise<DraftEdge<DraftRowItem>[]> {
+    if (page.length === 0) {
+      return [];
+    }
+
     const versions = await this.snapshotReader.readRowVersions(
       versionIdsOf(page),
     );

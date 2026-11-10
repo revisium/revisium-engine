@@ -9,6 +9,7 @@ import type {
   DraftRowChangesInput,
   DraftRowItem,
   DraftRowPage,
+  RowSelection,
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type {
   DraftTableChangesInput,
@@ -190,6 +191,7 @@ export function unitsReachableFrom({
     ...summary.viewsOnlyTables.map(({ views }) => views),
     ...rows.flatMap(({ selection, fields, columns }) => [
       ...selection.units,
+      ...unitsOfRowSelection(selection),
       ...[...fields, ...columns].flatMap((change) =>
         unitOfFieldSelection(change.selection),
       ),
@@ -267,6 +269,18 @@ export async function draftReadQueriesDuring<T>(
   } finally {
     spies.forEach((spy) => spy.mockRestore());
   }
+}
+
+function unitsOfRowSelection(selection: RowSelection): UnitRef[] {
+  if (selection.state === 'goesWith') {
+    return [selection.unit];
+  }
+
+  if (selection.state === 'selectable' && selection.structure) {
+    return [selection.structure];
+  }
+
+  return [];
 }
 
 function unitOfFieldSelection(selection: FieldSelection): UnitRef[] {

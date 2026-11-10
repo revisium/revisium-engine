@@ -24,6 +24,7 @@ import type {
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
+import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
 const NO_CHANGED_ROWS: ChangedRows = new Map();
 
@@ -112,6 +113,12 @@ export class DraftCatalogue {
     rowIdentity: string,
   ): CatalogueRow | undefined {
     return this.loadedRows.get(identity)?.get(rowIdentity);
+  }
+
+  public isInsideAtomicValue(row: AddressedRow, pointer: JsonPointer): boolean {
+    const leaf = this.targets.leafAtOrAbove(row, pointer);
+
+    return leaf?.kind === 'atomic' && !pointer.isAtOrAbove(leaf.pointer);
   }
 
   public matchField(row: AddressedRow, selector: FieldRef): SelectorMatch {

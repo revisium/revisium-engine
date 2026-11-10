@@ -10,7 +10,7 @@ import { differingColumnsOf } from 'src/features/partial-changes/catalogue/row-d
 import type { RowColumn } from 'src/features/partial-changes/catalogue/unit';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
-import { tableIdsOf } from 'src/features/partial-changes/draft-reads/draft-tables';
+import { tableIdsOf } from 'src/features/partial-changes/draft-reads/table-ids';
 import { pointerOfNativeFieldPath } from 'src/features/partial-changes/draft-reads/native-field-path';
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
@@ -185,7 +185,7 @@ class DraftRow {
 
     const [field] = units;
 
-    if (!field && this.storesEqualValuesAt(pointer)) {
+    if (!field && this.isComputedInsideAtomicValue(pointer)) {
       return COMPUTED;
     }
 
@@ -199,10 +199,13 @@ class DraftRow {
   }
 
   // A value inside an atomic array or File that only the computation changed: the stored values are equal.
-  private storesEqualValuesAt(pointer: JsonPointer): boolean {
+  private isComputedInsideAtomicValue(pointer: JsonPointer): boolean {
     const { head, draft } = this.entry;
 
-    return deepEqual(pointer.valueIn(head?.data), pointer.valueIn(draft?.data));
+    return (
+      this.catalogue.isInsideAtomicValue(this.row, pointer) &&
+      deepEqual(pointer.valueIn(head?.data), pointer.valueIn(draft?.data))
+    );
   }
 
   private unitsMatched({ selected, required }: SelectorMatch): CatalogueUnit[] {

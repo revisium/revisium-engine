@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { previousTableIdOf } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import {
   compareTablePositions,
   type TablePosition,
@@ -16,7 +15,6 @@ import {
   hasIdContaining,
 } from 'src/features/partial-changes/draft-reads/table-filters';
 import type { DraftReadState } from 'src/features/partial-changes/queries/impl/draft-reads';
-import type { DraftTableItem } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import {
   type ChangesBranch,
   type ComparedTable,
@@ -30,8 +28,6 @@ import {
   type ComparisonScope,
 } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import { ChangeType } from 'src/features/revision-changes/types';
-
-export type TableIds = Pick<DraftTableItem, 'tableId' | 'previousTableId'>;
 
 export interface DraftTable {
   readonly pair: TablePair;
@@ -245,15 +241,4 @@ function tableRowsOf(
   }
 
   return undefined;
-}
-
-export function tableIdsOf(pair: TablePair): TableIds {
-  const tableId = publicTableIdOf(pair);
-  const previousTableId = previousTableIdOf(pair);
-
-  if (previousTableId === undefined) {
-    return { tableId };
-  }
-
-  return { tableId, previousTableId };
 }

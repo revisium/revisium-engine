@@ -23,7 +23,7 @@ import {
   type PlanBlocker,
   blockerRefOf,
   type DeferredRow,
-  deferredRefOf,
+  deferredRowsOf,
   sampleOf,
 } from 'src/features/partial-changes/planning/plan-refs';
 import {
@@ -257,9 +257,7 @@ function planOf({
     refusedTables: headSchema.refusedTables,
     required: closure.required,
     blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),
-    deferred: deferredValuesOf(validated).map((deferred) =>
-      deferredRefOf(catalogue, deferred),
-    ),
+    deferred: deferredRowsOf(catalogue, deferredValuesOf(validated)),
     sample: sampleOf(catalogue, appliedUnits),
     unmatched: closure.unmatched,
     estimate: closure.estimate,

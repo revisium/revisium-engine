@@ -5,6 +5,7 @@ import type {
 } from 'src/features/partial-changes/assembly/target-assembler';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
+import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
   type DescribedUnitRef,
@@ -43,7 +44,21 @@ export function blockerRefOf(
   return { ...ref, unit: describedUnitRefOfKey(catalogue, unitKey) };
 }
 
-export function deferredRefOf(
+// In the listing order of their units, as `sample` lists units.
+export function deferredRowsOf(
+  catalogue: ChangeCatalogue,
+  deferred: readonly DeferredValues[],
+): DeferredRow[] {
+  const { lookup } = catalogue;
+
+  return [...deferred]
+    .sort((left, right) =>
+      compareUnits(lookup.unit(left.unitKey), lookup.unit(right.unitKey)),
+    )
+    .map((values) => deferredRowOf(catalogue, values));
+}
+
+function deferredRowOf(
   catalogue: ChangeCatalogue,
   { unitKey, defaulted, omitted, structureKey }: DeferredValues,
 ): DeferredRow {

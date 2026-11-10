@@ -638,6 +638,39 @@ describe('commitChanges', () => {
       await expectRow(draft, 'draft', PRODUCTS, 'p3', { title: 'three' });
     });
 
+    it('writes the declared Head default a preview defers for a created row committed without its structure', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: obj({ title: str(), price: num({ default: 7 }) }),
+          rows: { p1: { title: 'one', price: 1 } },
+        },
+      });
+      await draft.updateTable(PRODUCTS, [removeField('price')]);
+      await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
+      const selection = { rows: [rowOf(PRODUCTS, 'p3')] };
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection,
+      });
+
+      const result = await draft.commitChanges({
+        selection,
+        expected: preview.fingerprint,
+      });
+
+      expect(preview.deferred).toEqual([
+        expect.objectContaining({
+          defaulted: [{ path: '/price', value: 7 }],
+          omitted: [],
+        }),
+      ]);
+      expect(result).toMatchObject({ status: 'applied' });
+      await expectRow(draft, 'head', PRODUCTS, 'p3', {
+        title: 'three',
+        price: 7,
+      });
+    });
+
     it('recomputes the formulas of a merged Head row', async () => {
       const draft = await ChangesScenario.committed(kit, {
         [ORDERS]: {

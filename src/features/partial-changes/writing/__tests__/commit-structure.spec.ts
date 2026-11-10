@@ -259,6 +259,7 @@ describe('commitChanges of structure units', () => {
       const draft = await givenMediaWithAPatchInsideTheCover();
       await draft.createRows(MEDIA, { m2: { title: 'two', cover: emptyFile } });
       await draft.uploadFile(MEDIA, 'm2', 'cover');
+      const draftCover = await coverOf(draft, 'draft', 'm2');
       const selection: Selection = { rows: [rowOf(MEDIA, 'm2')] };
 
       const preview = await draft.previewChanges({
@@ -284,10 +285,14 @@ describe('commitChanges of structure units', () => {
         fileId: expect.stringMatching(/.+/),
       });
       // The commit gives the new File an id of its own; every other File field is the value it writes.
-      expect(preview.deferred[0]?.defaulted[0]?.value).toEqual({
+      const deferredCover = preview.deferred[0]?.defaulted[0]?.value;
+      expect(deferredCover).toEqual({
         ...((await coverOf(draft, 'head', 'm2')) as object),
         fileId: expect.stringMatching(/.+/),
       });
+      expect((deferredCover as { fileId: string }).fileId).not.toBe(
+        (draftCover as { fileId: string }).fileId,
+      );
     });
 
     it('commits the Draft File of a row with the structure that patched inside the File, and leaves the row edits of other fields pending', async () => {

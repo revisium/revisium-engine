@@ -55,7 +55,11 @@ import {
   versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
-import { SchemaLeaves } from 'src/features/partial-changes/structure/schema-leaves';
+import {
+  type SchemaLeaf,
+  SchemaLeaves,
+} from 'src/features/partial-changes/structure/schema-leaves';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface AssemblySource {
   readonly snapshot: ChangesSnapshot;
@@ -444,57 +448,81 @@ function collapsedRowOf(
 }
 
 interface DeferredPointers {
-  readonly defaulted: readonly JsonPointer[];
+  readonly defaulted: readonly SchemaLeaf[];
   readonly omitted: readonly JsonPointer[];
 }
 
-// The changed input fields of either side, in the order of the changed fields: the Head schema keeps an input field
-// at a defaulted pointer, and has none or computes the value at an omitted one.
+// The changed input fields of either side, in code-point order as the structure description lists them: the Head
+// schema keeps an input leaf at a defaulted pointer, and has none or computes the value at an omitted one.
 function deferredPointersOf({ pair, structure }: ReadTable): DeferredPointers {
   const head = SchemaLeaves.of(versionOn(pair, 'head').schema);
   const draft = SchemaLeaves.of(versionOn(pair, 'draft').schema);
-  const changed = structure.changedPointers.filter(
-    (pointer) =>
-      hasInputLeafAt(head, pointer) || hasInputLeafAt(draft, pointer),
-  );
+  const changed = structure.changedPointers
+    .filter(
+      (pointer) =>
+        inputLeafAt(head, pointer) !== undefined ||
+        inputLeafAt(draft, pointer) !== undefined,
+    )
+    .sort((left, right) =>
+      compareCodePoints(left.toString(), right.toString()),
+    );
 
   return {
-    defaulted: changed.filter((pointer) => hasInputLeafAt(head, pointer)),
-    omitted: changed.filter((pointer) => !hasInputLeafAt(head, pointer)),
+    defaulted: changed.flatMap((pointer) => inputLeafAt(head, pointer) ?? []),
+    omitted: changed.filter(
+      (pointer) => inputLeafAt(head, pointer) === undefined,
+    ),
   };
 }
 
-function hasInputLeafAt(leaves: SchemaLeaves, pointer: JsonPointer): boolean {
+function inputLeafAt(
+  leaves: SchemaLeaves,
+  pointer: JsonPointer,
+): SchemaLeaf | undefined {
   const leaf = leaves.at(pointer);
 
-  return leaf !== undefined && leaf.kind !== 'computed';
+  return leaf?.kind === 'computed' ? undefined : leaf;
 }
 
 function deferredValuesOf(
-  { existence }: CatalogueRow,
+  { existence, pair }: CatalogueRow,
   written: MergedRow | undefined,
   { defaulted, omitted }: DeferredPointers,
   structureKey: string,
 ): DeferredValues[] {
-  if (
-    existence === undefined ||
-    written === undefined ||
-    defaulted.length + omitted.length === 0
-  ) {
+  if (existence === undefined || defaulted.length + omitted.length === 0) {
     return [];
+  }
+
+  if (written === undefined) {
+    throw new Error(
+      `Row ${publicIdOrIdentityOf(pair)} was not assembled into the Head structure`,
+    );
   }
 
   return [
     {
       unitKey: existence,
-      defaulted: defaulted.map((pointer) => ({
-        path: pointer.toString(),
-        value: structuredClone(pointer.valueIn(written.data)),
+      defaulted: defaulted.map((leaf) => ({
+        path: leaf.pointer.toString(),
+        value: writtenValueAt(written, leaf),
       })),
       omitted: omitted.map((pointer) => ({ path: pointer.toString() })),
       structureKey,
     },
   ];
+}
+
+// The published-at field reads the row's publishedAt column (§3.1); its data leaf keeps ''.
+function writtenValueAt(
+  written: MergedRow,
+  { pointer, kind }: SchemaLeaf,
+): unknown {
+  if (kind === 'publishedAt') {
+    return written.publishedAt.toISOString();
+  }
+
+  return structuredClone(pointer.valueIn(written.data));
 }
 
 function linkChangesOf(

@@ -1,5 +1,12 @@
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import { num, numFormula, obj, ref, str } from '@revisium/schema-toolkit/mocks';
+import {
+  arr,
+  num,
+  numFormula,
+  obj,
+  ref,
+  str,
+} from '@revisium/schema-toolkit/mocks';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -110,6 +117,13 @@ describe('TargetAssembler: rows moving between structures', () => {
       defaulted: [{ path: '/title', value: '' }],
       omitted: [{ path: '/name' }],
     },
+    {
+      change: 'a field changed in place',
+      patches: [replaceField('price', str())],
+      created: { title: 'three', price: 'expensive' },
+      defaulted: [{ path: '/price', value: 0 }],
+      omitted: [],
+    },
   ])(
     'defers $change of a created row committed without its structure',
     async ({ patches, created, defaulted, omitted }) => {
@@ -127,7 +141,7 @@ describe('TargetAssembler: rows moving between structures', () => {
           structure: { kind: 'structure', tableId: PRODUCTS },
         },
       ]);
-      expectDefaultedAsWritten(target, 'p3');
+      expectDefaultedAsWritten(target, PRODUCTS);
     },
   );
 
@@ -148,7 +162,7 @@ describe('TargetAssembler: rows moving between structures', () => {
         omitted: [],
       }),
     ]);
-    expectDefaultedAsWritten(target, 'p3');
+    expectDefaultedAsWritten(target, PRODUCTS);
   });
 
   it('defers the default a native schema update left in the Head schema, as the value the commit writes', async () => {
@@ -160,7 +174,9 @@ describe('TargetAssembler: rows moving between structures', () => {
     });
     await draft.updateTable(PRODUCTS, [addField('color', str())]);
     await draft.commit();
-    const headDefault = await priceDefaultIn(draft, 'head');
+    // A native schema update stores SchemaTable.getSchema(), which resets every default to its type default
+    // (backlog: schema-toolkit default reset).
+    expect(await priceDefaultIn(draft, 'head')).toBe(0);
     await draft.updateTable(PRODUCTS, [removeField('price')]);
     await draft.createRows(PRODUCTS, { p3: { title: 'three', color: 'red' } });
 
@@ -170,10 +186,11 @@ describe('TargetAssembler: rows moving between structures', () => {
 
     expect(target.deferred).toEqual([
       expect.objectContaining({
-        defaulted: [{ path: '/price', value: headDefault ?? 0 }],
+        defaulted: [{ path: '/price', value: 0 }],
+        omitted: [],
       }),
     ]);
-    expectDefaultedAsWritten(target, 'p3');
+    expectDefaultedAsWritten(target, PRODUCTS);
   });
 
   it('omits a field the Head schema computes and the Draft made an input field', async () => {
@@ -206,6 +223,190 @@ describe('TargetAssembler: rows moving between structures', () => {
         data: { price: 4, quantity: 5, total: 20 },
       }),
     ]);
+  });
+
+  it('defers the leaves of an object the Draft removed, never the object', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: obj({
+          title: str(),
+          address: obj({ zip: str(), city: str({ default: 'Oslo' }) }),
+        }),
+        rows: { p1: { title: 'one', address: { zip: '1', city: 'Bergen' } } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [removeField('address')]);
+    await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p3')],
+    });
+
+    expect(target.deferred).toEqual([
+      expect.objectContaining({
+        defaulted: [
+          { path: '/address/city', value: 'Oslo' },
+          { path: '/address/zip', value: '' },
+        ],
+        omitted: [],
+      }),
+    ]);
+    expectDefaultedAsWritten(target, PRODUCTS);
+  });
+
+  it('defers an array the Draft removed as one value that is detached from the written row', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: obj({ title: str(), tags: arr(str()) }),
+        rows: { p1: { title: 'one', tags: ['a'] } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [removeField('tags')]);
+    await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p3')],
+    });
+    const tags = target.deferred[0]?.defaulted[0];
+    (tags?.value as string[]).push('changed by a caller');
+
+    expect(target.deferred).toEqual([
+      expect.objectContaining({
+        defaulted: [{ path: '/tags', value: ['changed by a caller'] }],
+        omitted: [],
+      }),
+    ]);
+    expect(target.tableOf(PRODUCTS)?.newRows).toEqual([
+      expect.objectContaining({ id: 'p3', data: { title: 'three', tags: [] } }),
+    ]);
+  });
+
+  it("lists each row's deferred paths in code-point order, defaulted and omitted alike", async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: obj({
+          title: str(),
+          z: num({ default: 1 }),
+          aa: num({ default: 2 }),
+        }),
+        rows: { p1: { title: 'one', z: 3, aa: 4 } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [
+      removeField('z'),
+      removeField('aa'),
+      addField('zz', str()),
+      addField('ab', str()),
+    ]);
+    await draft.createRows(PRODUCTS, {
+      p3: { title: 'three', zz: 'x', ab: 'y' },
+      p4: { title: 'four', zz: 'u', ab: 'v' },
+    });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p3'), product('p4')],
+    });
+
+    // The assembler lists rows in table order; the plan sorts them in listing order.
+    expect(
+      [...target.deferred].sort((left, right) =>
+        (left.unit.rowId ?? '').localeCompare(right.unit.rowId ?? ''),
+      ),
+    ).toEqual(
+      ['p3', 'p4'].map((rowId) => ({
+        unit: { kind: 'rowCreate', tableId: PRODUCTS, rowId },
+        defaulted: [
+          { path: '/aa', value: 2 },
+          { path: '/z', value: 1 },
+        ],
+        omitted: [{ path: '/ab' }, { path: '/zz' }],
+        structure: { kind: 'structure', tableId: PRODUCTS },
+      })),
+    );
+    expectDefaultedAsWritten(target, PRODUCTS);
+  });
+
+  it('defers the published-at field the Draft removed with the publishedAt column the commit writes', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: obj({
+          title: str(),
+          releasedAt: ref(SystemSchemaIds.RowPublishedAt),
+        }),
+        rows: { p1: { title: 'one', releasedAt: '' } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [removeField('releasedAt')]);
+    await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p3')],
+    });
+    const written = target
+      .tableOf(PRODUCTS)
+      ?.newRows.find(({ id }) => id === 'p3');
+
+    expect(written?.data).toEqual({ title: 'three', releasedAt: '' });
+    expect(target.deferred).toEqual([
+      expect.objectContaining({
+        defaulted: [
+          {
+            path: '/releasedAt',
+            value: written?.publishedAt.toISOString(),
+          },
+        ],
+        omitted: [],
+      }),
+    ]);
+  });
+
+  it('defers the created half of a replaced row committed without its structure', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', price: 10 } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [removeField('price')]);
+    await draft.removeRow(PRODUCTS, 'p1');
+    await draft.createRows(PRODUCTS, { p1: { title: 'again' } });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p1')],
+    });
+
+    expect(target.deferred).toEqual([
+      {
+        unit: { kind: 'rowReplace', tableId: PRODUCTS, rowId: 'p1' },
+        defaulted: [{ path: '/price', value: 0 }],
+        omitted: [],
+        structure: { kind: 'structure', tableId: PRODUCTS },
+      },
+    ]);
+    expectDefaultedAsWritten(target, PRODUCTS);
+  });
+
+  it('defers nothing in a revert, which restores a Head row into the Draft structure', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: {
+          p1: { title: 'one', price: 10 },
+          p2: { title: 'two', price: 20 },
+        },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [removeField('price')]);
+    await draft.removeRow(PRODUCTS, 'p2');
+
+    const target = await draft.assembleTarget('revert', {
+      rows: [product('p2')],
+    });
+
+    expect(target.tableOf(PRODUCTS)?.newRows).toEqual([
+      expect.objectContaining({ id: 'p2', data: { title: 'two' } }),
+    ]);
+    expect(target.deferred).toEqual([]);
   });
 
   it('defers no computed field of a created row committed without its structure', async () => {
@@ -420,15 +621,20 @@ describe('TargetAssembler: rows moving between structures', () => {
     return draft;
   }
 
-  function expectDefaultedAsWritten(target: TargetView, rowId: string): void {
-    const defaulted = target.deferred.flatMap(({ defaulted }) => defaulted);
-    const written = target
-      .tableOf(PRODUCTS)
-      ?.newRows.find(({ id }) => id === rowId);
+  // Each deferred row's values against its own written row.
+  function expectDefaultedAsWritten(target: TargetView, tableId: string): void {
+    const newRows = target.tableOf(tableId)?.newRows ?? [];
 
-    expect(defaulted.length).toBeGreaterThan(0);
-    for (const { path, value } of defaulted) {
-      expect(JsonPointer.parse(path).valueIn(written?.data)).toEqual(value);
+    expect(target.deferred.some(({ defaulted }) => defaulted.length > 0)).toBe(
+      true,
+    );
+    for (const { unit, defaulted } of target.deferred) {
+      const written = newRows.find(({ id }) => id === unit.rowId);
+
+      expect(written).toBeDefined();
+      for (const { path, value } of defaulted) {
+        expect(JsonPointer.parse(path).valueIn(written?.data)).toEqual(value);
+      }
     }
   }
 

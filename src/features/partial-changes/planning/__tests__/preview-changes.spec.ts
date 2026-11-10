@@ -510,6 +510,39 @@ describe('previewChanges', () => {
       });
       expect(revert).toMatchObject({ status: 'ready', deferred: [] });
     });
+
+    it('lists deferred rows in the listing order of their units', async () => {
+      const draft = await givenProductsWithNewField();
+      const rowIds = ['p6', 'p2', 'p5', 'p3', 'p4'];
+      await draft.createRows(
+        PRODUCTS,
+        Object.fromEntries(
+          rowIds.map((rowId) => [rowId, { title: rowId, color: 'red' }]),
+        ),
+      );
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: { rows: rowIds.map((rowId) => rowOf(PRODUCTS, rowId)) },
+      });
+      const listing = await draft.listChanges();
+
+      const rowIdOf = (unit: { kind: string }): string =>
+        'rowId' in unit ? String(unit.rowId) : '';
+
+      expect(preview.deferred.map(({ unit }) => rowIdOf(unit))).toEqual(
+        listing.units
+          .filter(({ kind }) => kind === 'rowCreate')
+          .map((unit) => rowIdOf(unit)),
+      );
+      expect(preview.deferred.map(({ unit }) => rowIdOf(unit))).toEqual([
+        'p2',
+        'p3',
+        'p4',
+        'p5',
+        'p6',
+      ]);
+    });
   });
 
   describe('structure units', () => {

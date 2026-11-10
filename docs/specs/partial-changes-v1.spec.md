@@ -360,11 +360,14 @@ invalid row for `invalidRow`.
 DescribedUnitRef }`: a created or replaced row committed without its table's structure. Its deferred paths are the changed input fields
 of the row's table (§3.3), Draft and Head pointers. The Head schema the commit writes the row against decides what
 happens to each: `defaulted` are the paths where it has an input field, `{ path; value }` with the value the commit
-writes there, taken from the assembled row (the Head default, a type default after a native schema update; a File
-the commit creates gets a `fileId` of its own when the commit plans again, so only that field can differ); `omitted`
-(`{ path }`, objects so that a reason can be added without a breaking change) are the others, where it has no field or computes the value, and the Draft value is left out. Each path is in exactly
-one of the two lists, which keep the order of the changed fields. A moved field appears in both: its Draft pointer is
-omitted, its Head pointer defaulted. `structure` is the unit that would carry the Draft values; the Draft keeps them.
+writes there, taken from the assembled row (the Head default, a type default after a native schema update; for the
+published-at field, the row's `publishedAt` column, as reads show it; an array or a File is one value); `omitted`
+(`{ path }`, objects so that a reason can be added without a breaking change) are the others, where it has no field or
+computes the value, and the Draft value is left out. Each path is in exactly one of the two lists, which keep the
+code-point order of the changed fields (§5.2: leaves, never an object). A moved field appears in both: its Draft
+pointer is omitted, its Head pointer defaulted. `structure` is the unit that would carry the Draft values; the Draft
+keeps them. A File the commit creates gets its `fileId` when the commit plans it, so the `fileId` a preview shows is not
+the one a later commit writes; every other field of the File is.
 
 **PlanEstimate** (§6.5; an upper bound: a merge that turns out content-equal to one side is still counted):
 
@@ -601,7 +604,7 @@ Output:
 | `refusedTables` | `{ tableId: string; code: 'headSchemaInconsistent' \| 'unledgeredTable' }[]` | Every refused table of the branch (§6.10); empty for exactly `{ all: true }`. Their units are not computed or counted. |
 | `required` | RequiredUnit[] | Every required addition with its reason; empty when not `planned`. |
 | `blockers` | PlanBlocker[] | Every blocker, including `migrationInProgress`; when not `planned`, the `tooLarge` blockers and `migrationInProgress` when an async migration is active. |
-| `deferred` | DeferredRow[] | Commit only; empty when not `planned`. |
+| `deferred` | DeferredRow[] | Commit only, in the listing order of their units; empty when not `planned`. |
 | `sample` | DescribedUnitRef[] | The first `min(20, counts.selected + counts.required)` applied units in listing order (display only; `listChanges` is the complete list); empty when not `planned`. |
 | `unmatched` | UnmatchedSelectors, or `null` when not `planned` | §4.5; an empty object when every selector matched. |
 | `estimate` | PlanEstimate | §5.1, §6.5; limits in §11. When not `planned`, what was measured up to the stop. |
@@ -2145,10 +2148,12 @@ versions unchanged" (§14) holds in every scenario.
   created at `x` and renamed to `y`, another created at `x`, the second committed alone), the `remover` at a ledger
   step (the `notes` / `links` example of §5.7) and the reverted removal as `occupant`; the `cause` of a result names its
   unit as the listing describes it; the `reason` of a `requiredExcluded` blocker carries the same `cause`.
-- AS-86 Deferred values: a created row committed without its table's structure lists in `defaulted` each Head input
-  field with the value the commit writes, equal to the value in the written row (a declared default, and a type default
-  after a native schema update); fields the Head schema lacks or computes are in `omitted` as `{ path }`; a moved field
-  is in both.
+- AS-86 Deferred values: a created or replaced row committed without its table's structure lists in `defaulted` each
+  Head input field with the value the commit writes, equal to the value in the written row (a declared default, a type
+  default after a native schema update, the leaves of a removed object, an array as one value, the `publishedAt` column
+  at the published-at field; a File except its new `fileId`); a field changed in place gets the Head value, never the
+  Draft value; fields the Head schema lacks or computes are in `omitted` as `{ path }`; a moved field is in both; both
+  lists are in code-point order, the rows in listing order; a revert defers nothing.
 - AS-87 Stopped plans: a preview stopped by `maxChangedRows`, and one stopped by a mixed-table or per-row-work limit in
   the closure, return `planned: false`, `fingerprint`, `counts` and `unmatched` as `null`, empty `required`,
   `deferred`, `sample` and `coverage`, the `tooLarge` blockers (with `migrationInProgress` while an async migration
@@ -2356,7 +2361,8 @@ Results (§5.1, §5.3–§5.7, §5.11, §5.12):
   `cause { unit, role }` replaces the PoC's `by` / `byRole` (PoC 1.5–1.6); roles `referrer`, `remover`, `taker`,
   `occupant`.
 - `Deferred` → `DeferredRow` with `defaulted: { path, value }[]` and `omitted: { path }[]` (PoC 1.5–1.6 split
-  `paths`; v2.0 adds the values and makes the omitted paths objects).
+  `paths`; v2.0 adds the values, makes the omitted paths objects, sorts the paths in code-point order and the rows
+  in listing order; the published-at field's value is the `publishedAt` column).
 - Preview: `planned`; when a limit stopped the plan, `fingerprint`, `counts` and `unmatched` are `null` instead of
   `''`, zeros and `{}`. `counts` drops `remaining`; `unreadTables` is removed; `coverage` (`TableCoverage[]`) is new;
   `sample` holds the first `min(20, selected + required)` applied units.

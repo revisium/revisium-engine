@@ -57,13 +57,13 @@ export function readRowPageBeforeItsPairs<T>(
   let held = false;
   const hold = jest
     .spyOn(reader, 'readPairsPage')
-    .mockImplementation(async (rows, range) => {
+    .mockImplementation(async (rows, filters, range) => {
       if (!held) {
         held = true;
         await barrier.arrive();
       }
 
-      return readPairsPage(rows, range);
+      return readPairsPage(rows, filters, range);
     });
 
   return readWhileHeld(barrier, hold, read, edit);

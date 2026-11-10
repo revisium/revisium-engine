@@ -16,6 +16,10 @@ export interface TableFilters {
   readonly search?: string;
 }
 
+export interface RowFilters extends TableFilters {
+  readonly tableId?: string;
+}
+
 export interface DraftTableChangesRequest {
   readonly branch: ChangesBranch;
   readonly first: number;
@@ -27,6 +31,7 @@ export interface DraftRowChangesRequest {
   readonly branch: ChangesBranch;
   readonly first: number;
   readonly after?: RowPosition;
+  readonly filters: RowFilters;
 }
 
 export interface DraftChangesSummaryRequest {
@@ -57,11 +62,13 @@ export function rowChangesRequestOf({
   branch,
   first,
   after,
+  filters,
 }: DraftRowChangesInput): DraftRowChangesRequest {
   return {
     branch,
     first: pageSizeOf(first),
     after: cursorOf(after, decodeRowCursor),
+    filters: rowFiltersOf(filters),
   };
 }
 
@@ -103,6 +110,26 @@ function cursorOf<Position>(
 }
 
 function tableFiltersOf(filters: unknown): TableFilters {
+  return tableFiltersOfFields(filterFieldsOf(filters));
+}
+
+function rowFiltersOf(filters: unknown): RowFilters {
+  const fields = filterFieldsOf(filters);
+
+  return {
+    ...tableFiltersOfFields(fields),
+    tableId: tableIdOf(fields.tableId),
+  };
+}
+
+function tableFiltersOfFields(fields: Fields): TableFilters {
+  return {
+    changeTypes: changeTypesOf(fields.changeTypes),
+    search: searchOf(fields.search),
+  };
+}
+
+function filterFieldsOf(filters: unknown): Fields {
   if (filters === undefined || filters === null) {
     return {};
   }
@@ -111,10 +138,19 @@ function tableFiltersOf(filters: unknown): TableFilters {
     throw new ListingValidationError('filters must be an object');
   }
 
-  return {
-    changeTypes: changeTypesOf(filters.changeTypes),
-    search: searchOf(filters.search),
-  };
+  return filters;
+}
+
+function tableIdOf(tableId: unknown): string | undefined {
+  if (tableId === undefined || tableId === null) {
+    return undefined;
+  }
+
+  if (typeof tableId !== 'string') {
+    throw new ListingValidationError('filters.tableId must be a string');
+  }
+
+  return tableId;
 }
 
 function changeTypesOf(changeTypes: unknown): ChangeType[] | undefined {
@@ -138,6 +174,13 @@ function searchOf(search: unknown): string | undefined {
 
   if (typeof search !== 'string') {
     throw new ListingValidationError('filters.search must be a string');
+  }
+
+  // No id holds it, and a database text parameter cannot.
+  if (search.includes('\u0000')) {
+    throw new ListingValidationError(
+      'filters.search must not contain the NUL character',
+    );
   }
 
   return search;

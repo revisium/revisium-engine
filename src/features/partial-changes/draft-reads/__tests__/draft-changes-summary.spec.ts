@@ -400,6 +400,7 @@ describe('draft changes summary', () => {
       ['filters that are not an object', { filters: 'all' }],
       ['an unknown change type', { filters: { changeTypes: ['CHANGED'] } }],
       ['a search that is not a string', { filters: { search: true } }],
+      ['a search with the NUL character', { filters: { search: 'p\u00001' } }],
     ])('refuses %s before reading the snapshot', async (_input, options) => {
       const draft = await givenCommittedProducts();
       const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');

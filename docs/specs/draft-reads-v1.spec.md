@@ -4,8 +4,8 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.3 |
-| Status | Accepted; in delivery ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters, is implemented; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages over the unfiltered list, is implemented; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5), is implemented; PR 11 (the row `filters` of §1 and §7, with the DR-14 case of a rename filtered out) is pending. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold |
+| Version | 1.4 |
+| Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads reach the facade with ADR-002 PR 12 |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
@@ -35,7 +35,8 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 
 - An optional input given as `null` is treated as absent, at any depth, as in partial-changes-v1 §5.
 - `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of the other read (a table cursor passed
-  to `rowChanges` or the reverse), or a filter of a wrong type → validation error before the snapshot.
+  to `rowChanges` or the reverse), a filter of a wrong type, or a `search` holding the NUL character (no id holds it)
+  → validation error before the snapshot.
 - An unknown project or branch → the native not-found error.
 - `changeTypes` takes the native `ChangeType` values (`ADDED`, `REMOVED`, `MODIFIED`, `RENAMED`,
   `RENAMED_AND_MODIFIED`).
@@ -319,14 +320,17 @@ matching tables only.
 A call costs the compared snapshot, which every listing page reads, and one query per table it needs, over the
 anti-join of the table's two link sets (a created or removed table reads the rows of its one version):
 
-- **`rowChanges`** reads the tables in order from the cursor's table (only the filtered tables with `tableId`) and
-  stops when the page is full: the query of a table returns its page pairs and whether a row of the table follows
-  them. It returns no `totalCount`, so it reads no table before the cursor or after the full page, except when the
-  page ends with the last reported row of its table: then it reads the next tables until one has a reported row, to
-  tell `hasNextPage`. The total of a list comes from the summary (`rowsSummary` per change
-  type, `rowsWithUnits`) or from the table item (`rowsSummary`, `tableData.rows`). A `search` filter, and a
-  `changeTypes` filter with several types, have no total: a `RENAMED_AND_MODIFIED` row counts in two types, so the
-  per-type counts do not add up.
+- **`rowChanges`** reads the tables in order from the cursor's table (only the filtered tables with `tableId`, and no
+  created or removed table whose one change type `changeTypes` leaves out) and stops when the page is full: the query
+  of a table returns its page pairs, whether a matching row of the table follows them, and the other reported pairs of
+  the page's row ids that the filters leave out, which the page's catalogue loads (§5.1) and the page does not list.
+  It returns no `totalCount`, so it reads no table before the cursor or after the full page, except when the page ends
+  with the last matching row of its table: then it reads the next tables until one has a matching row, to tell
+  `hasNextPage`. A filtered page that does not fill reads every table from the cursor's table on, one query each,
+  whose cost is that of the unfiltered anti-joins; the operation timeout bounds it. The total of a list comes from the
+  summary (`rowsSummary` per change type, `rowsWithUnits`) or from the table item (`rowsSummary`, `tableData.rows`). A
+  `search` filter, and a `changeTypes` filter with several types, have no total: a `RENAMED_AND_MODIFIED` row counts
+  in two types, so the per-type counts do not add up.
 - **`tableChanges`** reads the row counts of the tables on its page (one query each) and of a renamed table off the
   page only when a `changeTypes` filter needs its change type (§4).
 - **`summary`** reads the row counts of every listed table: the counts per change type and the number of rows with
@@ -507,6 +511,14 @@ Paging, filters, validation, snapshot:
 - DR-20 `null` for every optional input is treated as absent; an unknown branch is the native not-found error.
 
 ## Changelog
+
+### Version 1.4 (2026-11-10)
+
+- §8: the pair query of a filtered row page also returns the other pairs of the page's row ids, for its catalogue; the
+  page reads no created or removed table whose change type `changeTypes` leaves out; a filtered page that does not fill
+  reads every table from the cursor's table on.
+- §1: a `search` holding the NUL character is a validation error, and a cursor whose row id holds it is malformed.
+- Status: PR 11 (row filters) implemented; the Draft reads are complete.
 
 ### Version 1.3 (2026-11-10)
 

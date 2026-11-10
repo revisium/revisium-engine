@@ -4,6 +4,7 @@ import type {
   DraftEdge,
   DraftPageInfo,
   DraftReadState,
+  DraftTableChangesFilters,
   FieldSelection,
   FollowReason,
   GoesWithSelection,
@@ -18,10 +19,15 @@ import type {
   RowChangeDetailType,
 } from 'src/features/revision-changes/types';
 
+export interface DraftRowChangesFilters extends DraftTableChangesFilters {
+  readonly tableId?: string | null;
+}
+
 export interface DraftRowChangesInput {
   readonly branch: ChangesBranch;
   readonly first: number;
   readonly after?: string | null;
+  readonly filters?: DraftRowChangesFilters | null;
 }
 
 export interface SelectableRowSelection {

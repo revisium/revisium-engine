@@ -12,6 +12,7 @@ import type {
   IdExchange,
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
+import { ChangeType } from 'src/features/revision-changes/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { readRowPageWhileDraftChanges } from '../../__tests__/support/draft-read-races';
 import {
@@ -318,6 +319,37 @@ describe('Draft row renames', () => {
         ['pet2', [ownerFollowingTheRename('pet2')]],
         ['pet3', [ownerFollowingTheRename('pet3')]],
       ]);
+    });
+
+    it('says that a reference rewritten by a rename follows that rename when a filter leaves the rename out', async () => {
+      const draft = await givenCommittedOwnersWithPets();
+      await draft.renameRow(OWNERS, 'o2', 'o2x');
+
+      const byTable = rowItemsOf([
+        await draft.readDraftRowChanges({
+          first: 100,
+          filters: { tableId: PETS },
+        }),
+      ]);
+      const byChangeType = rowItemsOf([
+        await draft.readDraftRowChanges({
+          first: 100,
+          filters: { changeTypes: [ChangeType.Modified] },
+        }),
+      ]);
+
+      for (const items of [byTable, byChangeType]) {
+        expect(
+          items.map(({ tableId, rowId, fields }) => [
+            tableId,
+            rowId,
+            fields.filter(({ path }) => path === '/owner'),
+          ]),
+        ).toEqual([
+          [PETS, 'pet2', [ownerFollowingTheRename('pet2')]],
+          [PETS, 'pet3', [ownerFollowingTheRename('pet3')]],
+        ]);
+      }
     });
 
     it('says that an array element rewritten by a rename follows it, by position', async () => {

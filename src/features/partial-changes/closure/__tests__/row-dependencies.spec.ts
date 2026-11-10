@@ -25,6 +25,8 @@ const KINDS = 'kinds';
 const PRODUCTS = 'products';
 const BRANDS = 'brands';
 const SHELVES = 'shelves';
+const RACKS = 'racks';
+const GOODS = 'goods';
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({
@@ -37,6 +39,11 @@ const plainCategorySchema = obj({ title: str(), category: str() });
 const shelfSchema = obj({
   title: str(),
   categories: arr(str({ foreignKey: CATEGORIES })),
+});
+
+const rackSchema = obj({
+  title: str(),
+  slots: arr(obj({ category: str({ foreignKey: CATEGORIES }) })),
 });
 
 const brandSchema = obj({
@@ -277,6 +284,66 @@ describe('DependencyClosure: references and ids of rows', () => {
           site: referringField(PRODUCTS, 'p1x', '/category'),
           references: referencedCategory('c9'),
           cause: { unit: categoryOfProduct('p1x'), role: 'referrer' },
+        },
+      },
+    ]);
+    expect(closure.blockers).toEqual([]);
+  });
+
+  it('names the referring table by the Draft id a rename that stays out gives it (AS-84)', async () => {
+    const draft = await givenProductMovedToCreatedCategory(kit);
+    await draft.renameTable(PRODUCTS, GOODS);
+    const categoryOfGoods = { ...categoryOf('p1'), tableId: GOODS };
+
+    const closure = await draft.closeDependencies('commit', {
+      fields: [categoryOfGoods],
+    });
+
+    expect(closure.required).toEqual([
+      {
+        unit: categoryRow('rowCreate', 'c9'),
+        reason: {
+          code: 'referencedRowMissing',
+          because:
+            'goods/p1/category references categories/c9, which exists only in the Draft',
+          site: referringField(GOODS, 'p1', '/category'),
+          references: referencedCategory('c9'),
+          cause: {
+            unit: {
+              kind: 'field',
+              ...categoryOfGoods,
+              selector: { fields: [categoryOfGoods] },
+            },
+            role: 'referrer',
+          },
+        },
+      },
+    ]);
+    expect(closure.blockers).toEqual([]);
+  });
+
+  it('places a reference inside an array of objects at the array, which is one field (AS-84)', async () => {
+    const draft = await givenRackOfDeletedCategory(kit);
+    const slotsOfR1 = { tableId: RACKS, rowId: 'r1', path: '/slots' };
+
+    const closure = await draft.closeDependencies('commit', {
+      rows: [category('c1')],
+    });
+
+    expect(closure.required).toEqual([
+      {
+        unit: {
+          kind: 'field',
+          ...slotsOfR1,
+          selector: { fields: [slotsOfR1] },
+        },
+        reason: {
+          code: 'referrerStillReferences',
+          because:
+            'racks/r1/slots references categories/c1, which the new Head no longer contains',
+          site: referringField(RACKS, 'r1', '/slots'),
+          references: referencedCategory('c1'),
+          cause: { unit: categoryRow('rowDelete', 'c1'), role: 'remover' },
         },
       },
     ]);
@@ -1053,6 +1120,30 @@ async function givenProductMovedToCreatedCategory(
   const draft = await givenCatalogue(kit, ['c1'], { p1: 'c1' });
   await draft.createRows(CATEGORIES, { c9: { title: 'c9' } });
   await draft.updateRow(PRODUCTS, 'p1', { title: 'p1', category: 'c9' });
+
+  return draft;
+}
+
+async function givenRackOfDeletedCategory(
+  kit: PartialChangesTestKit,
+): Promise<ChangesScenario> {
+  const draft = await ChangesScenario.committed(kit, {
+    [CATEGORIES]: {
+      schema: categorySchema,
+      rows: { c1: { title: 'c1' }, c2: { title: 'c2' } },
+    },
+    [RACKS]: {
+      schema: rackSchema,
+      rows: {
+        r1: { title: 'r1', slots: [{ category: 'c2' }, { category: 'c1' }] },
+      },
+    },
+  });
+  await draft.updateRow(RACKS, 'r1', {
+    title: 'r1',
+    slots: [{ category: 'c2' }],
+  });
+  await draft.removeRow(CATEGORIES, 'c1');
 
   return draft;
 }

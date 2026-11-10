@@ -14,7 +14,7 @@ import {
   idUnitOf,
   type TargetTable,
 } from 'src/features/partial-changes/closure/target-tables';
-import { causedBy, causeOf } from 'src/features/partial-changes/plan/reason';
+import { withCause, causeOf } from 'src/features/partial-changes/plan/reason';
 import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 @Injectable()
@@ -62,7 +62,7 @@ export class RowIdCollisions implements TargetCheck, TargetChecking {
 
     return requiringOrDangling(
       idUnitOf(row),
-      causedBy(
+      withCause(
         {
           code: 'idOccupied',
           because: `${tableId}/${rowId} would be held by two rows in the ${context.names.target}`,

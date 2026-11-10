@@ -10,7 +10,7 @@ import {
   requiringOrDangling,
 } from 'src/features/partial-changes/closure/findings';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
-import { causedBy, causeOf } from 'src/features/partial-changes/plan/reason';
+import { withCause, causeOf } from 'src/features/partial-changes/plan/reason';
 
 @Injectable()
 export class TableIdCollisions implements TargetCheck, TargetChecking {
@@ -50,7 +50,7 @@ export class TableIdCollisions implements TargetCheck, TargetChecking {
 
     return requiringOrDangling(
       context.structureOf(pair),
-      causedBy(
+      withCause(
         {
           code: 'idOccupied',
           because: `the table id ${tableId} would be held by two tables in the ${context.names.target}`,

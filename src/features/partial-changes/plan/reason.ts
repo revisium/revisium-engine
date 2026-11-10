@@ -93,7 +93,7 @@ export function causeOf(
   return { unitKey, role };
 }
 
-export function causedBy(
+export function withCause(
   reason: CatalogueReason,
   cause: CatalogueCause | undefined,
 ): CatalogueReason {

@@ -681,7 +681,7 @@ Each code arises at fixed kinds of site (§5.1), with `references` set for refer
 | `structureBoundData` (selection) | `selector` | — | no cause |
 | `structureBoundData` (closure) | `row` | the referenced row | `referrer` (an applied unit brings the referring value of a changed field), `remover` (an applied unit takes away the referenced row) |
 | `referencedRowMissing` | `row` | the referenced row | `referrer` (an applied value, row or structure references the row), `remover` (an applied unit takes away the id that an unchanged or kept referrer references) |
-| `referrerStillReferences` | `row`, `schema`, `migration` | the row or table the operation removes | `remover` |
+| `referrerStillReferences` | `row`, `schema`, `migration` | the row or table the reference needs | `remover`; `referrer` at a `row` site when an applied structure brings the referring value of a field it changed |
 | `referencedTableMissing` | `schema`, `migration` | the table | `referrer` |
 | `idOccupied` | `rowId`, `tableId` | — | `taker`; `occupant` only at a pending migration's step whose unit is required |
 
@@ -697,8 +697,8 @@ Each code arises at fixed kinds of site (§5.1), with `references` set for refer
   structure unit.
 - A pending migration's step (§6.6): when the provider is required, the applied structure unit of the step
   (`referrer` or `taker`). When the step's unit is required, the applied unit that changed the id before that step
-  (for a taken id, by placing it or keeping it there: `occupant`; for a referenced id, by removing it or renaming it
-  away: `remover`), found in two steps: (1) the unit of the resulting ledger's last change of the id before the step,
+  (for a taken id, by placing it or keeping it there: `occupant`; for a referenced id, by removing it, renaming it
+  away or placing another table at it: `remover`), found in two steps: (1) the unit of the resulting ledger's last change of the id before the step,
   when that migration belongs to an applied unit (a commit publishes it); otherwise (2) the unit of the Draft
   ledger's last change of the id before the step, when it is an applied unit (a revert takes that migration out, so
   the resulting ledger falls back to an earlier holder). No cause when neither is an applied unit. For example, the Draft creates table `x`, renames it to `y`, and creates another table `x`;
@@ -715,7 +715,7 @@ necessary:
 | Role | Applying the cause | The unit to add |
 | --- | --- | --- |
 | `referrer` | brings into the target, or keeps there, a reference: a row value (its field or existence unit, or the structure that brings the table's rows), a schema, or a pending migration that references a table id | brings what the reference needs (a row, a table, the provider of a table id), or the structure that owns the referring value |
-| `remover` | takes out of the target what a reference still needs: a row or its id (a deletion, a reverted creation, a rename), a table (its removal, reverted creation or rename), or the table id that a pending migration references at its step | brings it back, takes the reference out, or moves the structure that owns the referring value with it |
+| `remover` | takes out of the target what a reference still needs: a row or its id (a deletion, a reverted creation, a rename), a table (its removal, reverted creation or rename), or the table id that a pending migration references at its step (by removing it, renaming it away or placing another table at it) | brings it back, takes the reference out, or moves the structure that owns the referring value with it |
 | `taker` | moves a row or table into an id, or applies a pending migration that takes a table id, that the row, table or migration of the unit to add holds | moves its own row or table out of the id, or vacates the id at that step |
 | `occupant` | keeps a table id held at the step where a pending migration of the unit to add takes it (it restores or keeps the table that holds it) | takes its migration out of that resulting ledger |
 

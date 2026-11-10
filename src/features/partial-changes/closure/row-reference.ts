@@ -10,7 +10,7 @@ import type { TargetTable } from 'src/features/partial-changes/closure/target-ta
 import {
   type CatalogueCause,
   type CatalogueReason,
-  causedBy,
+  withCause,
   type RequiredReasonCode,
 } from 'src/features/partial-changes/plan/reason';
 import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -51,7 +51,7 @@ export function referenceReason(
   const { tableId, rowId, path } = site;
   const referencedTableId = publicTableIdOf(referenced.pair);
 
-  return causedBy(
+  return withCause(
     {
       code,
       because: `${tableId}/${rowId}${path} references ${referencedTableId}/${referencedId}, ${which}`,

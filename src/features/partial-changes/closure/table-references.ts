@@ -13,7 +13,7 @@ import {
 } from 'src/features/partial-changes/closure/findings';
 import type { TargetTable } from 'src/features/partial-changes/closure/target-tables';
 import {
-  causedBy,
+  withCause,
   causeOf,
   positionOf,
   type ReasonSite,
@@ -58,7 +58,7 @@ export class TableReferences implements TargetCheck, TargetChecking {
     if (structure !== undefined && !rules.isApplied(structure)) {
       return requiring(
         structure,
-        causedBy(
+        withCause(
           {
             code: 'referrerStillReferences',
             because: this.brokenReference(
@@ -70,9 +70,11 @@ export class TableReferences implements TargetCheck, TargetChecking {
             site,
             references,
           },
-          causeOf(
-            this.appliedStructureMeantBy(context, referrer, tableId),
-            'remover',
+          context.appliedCause(
+            causeOf(
+              this.structureMeantBy(context, referrer, tableId),
+              'remover',
+            ),
           ),
         ),
       );
@@ -83,7 +85,7 @@ export class TableReferences implements TargetCheck, TargetChecking {
     if (provider !== undefined) {
       return requiring(
         provider,
-        causedBy(
+        withCause(
           {
             code: 'referencedTableMissing',
             because: this.brokenReference(
@@ -147,16 +149,6 @@ export class TableReferences implements TargetCheck, TargetChecking {
     }
 
     return structure;
-  }
-
-  private appliedStructureMeantBy(
-    context: CheckContext,
-    referrer: TargetTable,
-    tableId: string,
-  ): string | undefined {
-    return context.appliedUnitAmong([
-      this.structureMeantBy(context, referrer, tableId),
-    ]);
   }
 
   private structureMeantBy(

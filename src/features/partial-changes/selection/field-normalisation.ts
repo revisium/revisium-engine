@@ -25,12 +25,15 @@ import {
   type SelectorMatch,
   selecting,
 } from 'src/features/partial-changes/selection/selector-match';
+import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import type { SchemaLeaf } from 'src/features/partial-changes/structure/schema-leaves';
 
 export class FieldNormalisation {
   private readonly path: JsonPointer;
   private readonly leaf: SchemaLeaf | undefined;
+  private readonly tableId: string;
+  private readonly rowId: string;
   private readonly address: string;
 
   constructor(
@@ -41,7 +44,9 @@ export class FieldNormalisation {
   ) {
     this.path = JsonPointer.parse(selector.path);
     this.leaf = targets.leafAtOrAbove(row, this.path);
-    this.address = `${selector.tableId}/${selector.rowId}`;
+    this.tableId = publicTableIdOf(row.table);
+    this.rowId = units.publicRowIdOf(row);
+    this.address = `${this.tableId}/${this.rowId}`;
   }
 
   public match(): SelectorMatch {
@@ -132,7 +137,7 @@ export class FieldNormalisation {
       this.units.tableUnitOf('structure', this.row.table),
       this.reason(
         'structureBoundData',
-        `${this.address}${this.selector.path} touches a new or changed field; its values belong to the structure of ${this.selector.tableId}`,
+        `${this.address}${this.selector.path} touches a new or changed field; its values belong to the structure of ${this.tableId}`,
       ),
     );
   }
@@ -145,14 +150,19 @@ export class FieldNormalisation {
       tableId,
       rowId,
       path,
-      message: `${this.address}${path} is a computed value that follows its inputs`,
+      message: `${tableId}/${rowId}${path} is a computed value that follows its inputs`,
     };
   }
 
+  // The selected value by the public ids units carry, at the selector's pointer.
   private reason(code: RequiredReasonCode, because: string): CatalogueReason {
-    const { tableId, rowId, path } = this.selector;
+    const { tableId, rowId } = this;
 
-    return { code, because, site: { kind: 'selector', tableId, rowId, path } };
+    return {
+      code,
+      because,
+      site: { kind: 'selector', tableId, rowId, path: this.selector.path },
+    };
   }
 }
 

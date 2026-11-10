@@ -191,16 +191,24 @@ export class DanglingRowReferences implements TargetCheck, TargetChecking {
     );
   }
 
+  // An applied structure brings every value of a field it changed; a table on
+  // one side only has every field changed.
   private appliedStructureBringing(
     context: CheckContext,
     referrer: TargetTable,
     pointer: JsonPointer,
   ): string | undefined {
-    if (!referrer.isBroughtWholesale() && !referrer.isChangedField(pointer)) {
+    const structure = context.structureOf(referrer.pair);
+
+    if (
+      structure === undefined ||
+      !context.rules.isApplied(structure) ||
+      !referrer.isChangedField(pointer)
+    ) {
       return undefined;
     }
 
-    return context.appliedUnitAmong([context.structureOf(referrer.pair)]);
+    return structure;
   }
 
   private removesReference(

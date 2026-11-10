@@ -25,6 +25,7 @@ const PRODUCTS = 'products';
 const CATEGORIES = 'categories';
 const DOCUMENTS = 'documents';
 const TAGS = 'tags';
+const GOODS = 'goods';
 
 const productSchema = obj({
   code: str(),
@@ -273,6 +274,32 @@ describe('SelectionResolver: normalisation', () => {
       expect(resolution.required).toEqual([required]);
     },
   );
+
+  it('names the selected value by the public ids units carry when the selector names a renamed table and row by their Head ids (AS-84)', async () => {
+    const draft = await givenEditedLabels();
+    await draft.renameRow(PRODUCTS, 'p1', 'p9');
+    await draft.renameTable(PRODUCTS, GOODS);
+
+    const resolution = await draft.resolveSelection({
+      fields: [{ tableId: PRODUCTS, rowId: 'p1', path: '/labels/0' }],
+    });
+
+    expect(resolution.required).toEqual([
+      {
+        unit: { kind: 'field', tableId: GOODS, rowId: 'p9', path: '/labels' },
+        reason: {
+          code: 'atomicValue',
+          because: '/labels/0 is inside the atomic value /labels of goods/p9',
+          site: {
+            kind: 'selector',
+            tableId: GOODS,
+            rowId: 'p9',
+            path: '/labels/0',
+          },
+        },
+      },
+    ]);
+  });
 
   it.each([
     { position: 'at', path: '/size/depth', selected: [] },

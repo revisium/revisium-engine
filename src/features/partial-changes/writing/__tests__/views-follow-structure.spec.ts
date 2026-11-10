@@ -214,6 +214,33 @@ describe('views that follow the structure (AS-82)', () => {
       ]);
     });
 
+    it('requires the rename for views named by the Head id and names the site by the Draft id (AS-84)', async () => {
+      const draft = await givenProductsRenamedWithViewsEdited();
+
+      const preview = await draft.previewChanges({
+        operation: 'commit',
+        selection: { views: [PRODUCTS] },
+      });
+
+      expect(preview).toMatchObject({
+        status: 'required',
+        required: [
+          {
+            unit: {
+              kind: 'structure',
+              tableId: GOODS,
+              previousTableId: PRODUCTS,
+            },
+            reason: {
+              code: 'structureBoundData',
+              because: 'the views of goods change with its structure',
+              site: { kind: 'selector', tableId: GOODS },
+            },
+          },
+        ],
+      });
+    });
+
     it('commits the Draft views under the Draft id with the rename', async () => {
       const draft = await givenProductsRenamedWithViewsEdited();
 

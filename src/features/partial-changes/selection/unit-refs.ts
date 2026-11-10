@@ -86,7 +86,7 @@ export function requiredUnitsOf(
 }
 
 export function requiredReasonOf(
-  { lookup, tables }: ChangeCatalogue,
+  catalogue: ChangeCatalogue,
   { cause, ...reason }: CatalogueReason,
 ): RequiredReason {
   if (cause === undefined) {
@@ -96,10 +96,17 @@ export function requiredReasonOf(
   return {
     ...reason,
     cause: {
-      unit: describedUnitRefOf(lookup.unit(cause.unitKey), tables),
+      unit: describedUnitRefOfKey(catalogue, cause.unitKey),
       role: cause.role,
     },
   };
+}
+
+export function describedUnitRefOfKey(
+  { lookup, tables }: ChangeCatalogue,
+  unitKey: string,
+): DescribedUnitRef {
+  return describedUnitRefOf(lookup.unit(unitKey), tables);
 }
 
 function unitOf(address: UnitAddress): Unit {

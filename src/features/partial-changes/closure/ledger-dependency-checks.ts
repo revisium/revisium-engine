@@ -17,7 +17,7 @@ import {
   type CatalogueCause,
   type CatalogueReason,
   type CauseRole,
-  causedBy,
+  withCause,
   causeOf,
 } from 'src/features/partial-changes/plan/reason';
 import {
@@ -170,7 +170,7 @@ class LedgerDependencyChecking implements TargetChecking {
       return [
         requiring(
           stepUnit,
-          causedBy(
+          withCause(
             reasonForStepUnit(step, role),
             this.changerBefore(step, resulting, rules),
           ),
@@ -187,7 +187,7 @@ class LedgerDependencyChecking implements TargetChecking {
     return [
       requiring(
         provider,
-        causedBy(
+        withCause(
           reasonForProvider(step, role),
           causeOf(stepUnit, stepUnitRoleOf(step)),
         ),

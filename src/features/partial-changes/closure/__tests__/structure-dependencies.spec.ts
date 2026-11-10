@@ -560,6 +560,30 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       expect(closure.blockers).toEqual([]);
     });
 
+    it('names the structure as the cause when it brings a reference that only a deleted row of the base keeps (AS-85)', async () => {
+      const draft = await givenProductsReferencingBrandsInstead(kit);
+      await draft.removeRow(PRODUCTS, 'p1');
+
+      const closure = await draft.closeDependencies('commit', {
+        structures: [{ tableId: PRODUCTS }],
+      });
+
+      expect(closure.required).toEqual([
+        {
+          unit: deletedRow({ tableId: PRODUCTS, rowId: 'p1' }),
+          reason: {
+            code: 'referrerStillReferences',
+            because:
+              'products/p1/category references brands/c1, which the new Head no longer contains',
+            site: referringField(PRODUCTS, 'p1'),
+            references: { kind: 'row', tableId: BRANDS, rowId: 'c1' },
+            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+          },
+        },
+      ]);
+      expect(closure.blockers).toEqual([]);
+    });
+
     it('blocks a created table whose row references a row of neither revision as danglingInSource', async () => {
       const draft = await givenCreatedOfferOfMissingCategory(kit);
 

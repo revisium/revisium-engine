@@ -5,7 +5,10 @@ import type {
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import { PublicIdIndex } from 'src/features/partial-changes/catalogue/public-id-index';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
-import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import {
+  publicIdOrIdentityOf,
+  type TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 const TABLE_UNIT_KINDS: ReadonlySet<UnitKind> = new Set(['structure', 'views']);
 
@@ -55,6 +58,12 @@ export class CatalogueLookup {
 
   public rowLevelUnitsOf({ identity }: TablePair): readonly CatalogueUnit[] {
     return this.rowLevelUnits.get(identity) ?? [];
+  }
+
+  public publicRowIdOf({ table, rowId, side }: AddressedRow): string {
+    const row = this.rows.get(table.identity)?.on(side, rowId);
+
+    return row ? publicIdOrIdentityOf(row.pair) : rowId;
   }
 
   public unitsOfRow({ table, rowId, side }: AddressedRow): CatalogueUnit[] {

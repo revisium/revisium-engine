@@ -81,6 +81,8 @@ import {
   readInPlanningTransaction,
 } from './snapshot-reading';
 
+export type RowIdChange = readonly [rowId: string, nextRowId: string];
+
 export class ChangesScenario extends BranchScenario {
   declare protected readonly kit: PartialChangesTestKit;
 
@@ -109,6 +111,34 @@ export class ChangesScenario extends BranchScenario {
     { branch, branchId }: BranchScenario,
   ): ChangesScenario {
     return new ChangesScenario(kit, branch, branchId);
+  }
+
+  // Renames rows into each other's ids, such as a swap, through temporary ids.
+  public async renameRowsAtOnce(
+    tableId: string,
+    renames: readonly RowIdChange[],
+  ): Promise<void> {
+    for (const [rowId] of renames) {
+      await this.renameRow(tableId, rowId, temporaryIdOf(rowId));
+    }
+
+    for (const [rowId, nextRowId] of renames) {
+      await this.renameRow(tableId, temporaryIdOf(rowId), nextRowId);
+    }
+  }
+
+  // Each row takes the Head id of the next one, and the last row takes lastRowId.
+  public async renameEachRowIntoTheNext(
+    tableId: string,
+    rowIds: readonly string[],
+    lastRowId: string,
+  ): Promise<void> {
+    let nextRowId = lastRowId;
+
+    for (const rowId of [...rowIds].reverse()) {
+      await this.renameRow(tableId, rowId, nextRowId);
+      nextRowId = rowId;
+    }
   }
 
   public async branchFromHead(branchName: string): Promise<ChangesScenario> {
@@ -303,4 +333,8 @@ export class ChangesScenario extends BranchScenario {
       this.kit.snapshotReader.readRowDigest(tableVersionId),
     );
   }
+}
+
+function temporaryIdOf(rowId: string): string {
+  return `${rowId}-renaming`;
 }

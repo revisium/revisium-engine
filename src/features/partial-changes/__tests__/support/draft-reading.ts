@@ -189,13 +189,27 @@ export function unitsReachableFrom({
     ...summary.sharedSchemas.map(({ unit }) => unit),
     ...summary.transientTables.map(({ structure }) => structure),
     ...summary.viewsOnlyTables.map(({ views }) => views),
-    ...rows.flatMap(({ selection, fields, columns }) => [
-      ...selection.units,
-      ...unitsOfRowSelection(selection),
-      ...[...fields, ...columns].flatMap((change) =>
+    ...rows.flatMap((item) => [
+      ...item.selection.units,
+      ...unitsOfRowSelection(item.selection),
+      ...[...item.fields, ...item.columns].flatMap((change) =>
         unitOfFieldSelection(change.selection),
       ),
+      ...linkedUnitsOf(item),
     ]),
+  ];
+}
+
+// The units an item links to: its id takeover and id exchange, and the renames its references follow.
+export function linkedUnitsOf({
+  idTakeover,
+  idExchange,
+  fields,
+}: DraftRowItem): UnitRef[] {
+  return [
+    ...(idTakeover ? [idTakeover.deletion, idTakeover.rename] : []),
+    ...(idExchange?.renames ?? []),
+    ...fields.flatMap(({ follows }) => (follows ? [follows.unit] : [])),
   ];
 }
 

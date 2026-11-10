@@ -8,6 +8,7 @@ import {
   draftRowItemOf,
 } from 'src/features/partial-changes/draft-reads/draft-row';
 import type { DraftTable } from 'src/features/partial-changes/draft-reads/draft-tables';
+import { RowRenamesReader } from 'src/features/partial-changes/draft-reads/row-renames';
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
 import type { HeadSchemaCheck } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { DraftEdge } from 'src/features/partial-changes/queries/impl/draft-reads';
@@ -44,6 +45,7 @@ export class DraftRowItems {
     private readonly snapshotReader: ChangesSnapshotReader,
     private readonly rowDiff: RowDiffService,
     private readonly plugins: PluginService,
+    private readonly renamesReader: RowRenamesReader,
   ) {}
 
   public async edgesOf(
@@ -61,17 +63,27 @@ export class DraftRowItems {
       paged.pairs.map((pair) => pageRowOf(paged, pair, versions)),
     );
     const fieldChanges = await this.fieldChangesOf(rows, compared.snapshot);
+    const entries = rows.map((row, index) => ({
+      row,
+      entry: entryOf(row, fieldChanges[index] ?? []),
+    }));
+    const pageRows = changedRowsOf(rows, compared.headSchema);
+    const renames = await this.renamesReader.readOf(
+      entries.map(({ entry }) => entry),
+      pageRows,
+      compared,
+    );
     const catalogue = DraftCatalogue.withChangedRows(
       compared,
-      changedRowsOf(rows, compared.headSchema),
+      renames.withRenamedRows(pageRows),
     );
 
-    return rows.map((row, index) => ({
+    return entries.map(({ row, entry }) => ({
       cursor: encodeRowCursor({
         table: row.paged.table.position,
         rowId: row.pair.rowId,
       }),
-      node: draftRowItemOf(entryOf(row, fieldChanges[index] ?? []), catalogue),
+      node: draftRowItemOf(entry, catalogue, renames),
     }));
   }
 

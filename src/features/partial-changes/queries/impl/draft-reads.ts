@@ -60,6 +60,19 @@ export const GOES_WITH_REASONS = [
 
 export type GoesWithReason = (typeof GOES_WITH_REASONS)[number];
 
+export const FOLLOW_REASONS = ['referenceRename'] as const;
+
+export type FollowReason = (typeof FOLLOW_REASONS)[number];
+
+export const ID_EXCHANGE_TERMINATIONS = [
+  'cycle',
+  'freeId',
+  'deletedOccupant',
+  'truncated',
+] as const;
+
+export type IdExchangeTermination = (typeof ID_EXCHANGE_TERMINATIONS)[number];
+
 export interface GoesWithSelection {
   readonly state: 'goesWith';
   readonly unit: DescribedUnitRef;

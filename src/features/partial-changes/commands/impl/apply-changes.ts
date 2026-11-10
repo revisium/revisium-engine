@@ -1,3 +1,4 @@
+import type { StaleChange } from 'src/features/partial-changes/plan/fingerprint';
 import type { PlanCounts } from 'src/features/partial-changes/planning/change-planner';
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
@@ -56,8 +57,14 @@ export interface StoppedChangesBlocked extends ApplyResult {
 
 export type ChangesBlocked = PlannedChangesBlocked | StoppedChangesBlocked;
 
+// The current ids and unmatched selectors, so a caller drops the selectors that no longer match before it previews
+// again; no new fingerprint (SPEC §9.2).
 export interface ChangesStale extends ApplyResult {
   readonly status: 'stale';
+  readonly changed: readonly StaleChange[];
+  readonly headRevisionId: string;
+  readonly draftRevisionId: string;
+  readonly unmatched: UnmatchedSelectors;
 }
 
 export interface NothingToApply extends ApplyResult {

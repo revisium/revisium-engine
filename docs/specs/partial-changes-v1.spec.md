@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Version | 2.0 |
-| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PRs 7 and 12 are pending |
+| Status | Accepted; the API revision of v2.0 is in delivery ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12 is pending |
 | Date | 2026-11-10 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
@@ -757,7 +757,7 @@ added (§6.9).
 | --- | --- |
 | `includeRequired: true` without `expected` | Validation error before any transaction. |
 | `includeRequired` other than a boolean, `expected` other than a non-empty string, or `comment` other than a string (`null` in any of them is absent, §5) | Validation error before any transaction. |
-| `expected` that is malformed: no `pcf<n>.` prefix with a base64url body, or a `pcf2.` payload that is not a five-element array of strings (§9.1) | Validation error before any transaction. |
+| `expected` that is malformed: no `pcf<n>.` prefix with a base64url body, or a `pcf2.` body that is not exactly the engine's encoding of five strings (§9.1) | Validation error before any transaction. |
 | A malformed selection: an unknown field (also the pre-v2.0 `tables` and `renames`), a wrong type (`null` in an optional field is absent, §5), an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
 | Invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
 | Unknown project or branch | Not-found error (native). |
@@ -1601,11 +1601,13 @@ An unsigned, opaque string with four parts, so that a `stale` result can say whi
 Encoding: `pcf2.` followed by the base64url (no padding) of the UTF-8 JSON array `[operation, headRevisionId,
 draftRevisionId, units, content]`, the two digests as lowercase hex. `pcf2` names the version of the fingerprint
 rules; the engine compares the parts one by one. Clients treat the fingerprint as opaque and compare it only for
-equality. An `expected` is read by its prefix, where `n` is one or more decimal digits: `pcf2.` followed by a payload
-that decodes to a five-element array of strings is a fingerprint of these rules; `pcf<n>.` with another `n` and a
-base64url body is a fingerprint of other rules (a later engine version), whose payload is not decoded, and gives
-`stale` with `changed: ['version']`; anything else is malformed (§5.9), including the bare SHA-256 hex that engines
-before v2.0 issued. The content part covers, for every applied unit, in unit order:
+equality. An `expected` is read by its prefix, where `n` is one or more decimal digits compared as written (`pcf02.`
+is not `pcf2.`) and a body has only base64url characters (`A`–`Z`, `a`–`z`, `0`–`9`, `-`, `_`, no padding): a
+fingerprint of these rules is exactly the encoding above of five strings; `pcf<n>.` with another `n` is a fingerprint
+of other rules (a later engine version), whose payload is not decoded, and gives `stale` with
+`changed: ['version']`; anything else is malformed (§5.9), including a `pcf2.` body that reads as five strings but is
+not their exact encoding (a stray last character or stray bits, invalid UTF-8, other JSON spacing or escapes) and
+the bare SHA-256 hex that engines before v2.0 issued. The content part covers, for every applied unit, in unit order:
 
   - row units: per covered row, the Head and Draft row versions as `versionId`, `updatedAt` and the compared columns
     (`id`, `hash`, `schemaHash`, `publishedAt`, `meta`); for a `rowColumns` unit, the columns it owns (§3.4); for a
@@ -2176,8 +2178,9 @@ versions unchanged" (§14) holds in every scenario.
   of the other operation → includes `operation`; a well-formed fingerprint of another version → `['version']`; every
   `stale` carries the current ids and `unmatched`, which names a kept selector that no longer matches.
 - AS-91 Fingerprints: equal plans give equal fingerprints across calls and engine instances; a malformed `expected`
-  (no `pcf<n>.` prefix, a body that is not base64url, a `pcf2.` payload that is not a five-element array of strings)
-  → validation error before any transaction; `pcf3.` with any base64url body → `stale`, `changed: ['version']`.
+  (no `pcf<n>.` prefix, a body with other than base64url characters, a `pcf2.` payload that is not a five-element
+  array of strings, a `pcf2.` body that is not exactly the engine's encoding) → validation error before any
+  transaction; `pcf3.` with any body of base64url characters → `stale`, `changed: ['version']`.
 - AS-92 Facade: `changes.list`, `preview`, `commit`, `revert`, `tableChanges`, `rowChanges` and `summary` on the
   engine facade behave as these specifications say, through the package exports (e2e).
 
@@ -2370,8 +2373,9 @@ Results (§5.1, §5.3–§5.7, §5.11, §5.12):
   `blocked` carries `planned`; `stale` carries `changed`, the current ids and `unmatched` (§9.2).
 
 Fingerprint (§9.1, §9.2, §5.9): four parts (operation, revisions, units, content) behind a version prefix, so
-`stale` says which changed (`version` for a fingerprint of other rules); an `expected` the engine cannot decode is a
-validation error.
+`stale` says which changed (`version` for a fingerprint of other rules); a malformed `expected` (§5.9) is a validation
+error. The version digits are compared as written, and a `pcf2.` body must be exactly the engine's encoding
+of its five strings.
 
 Names (§5.10, §5.11): `Branch` → `ChangesBranch`, `Side` → `SelectorSide` (`HEAD_QUALIFIERS` → `SELECTOR_SIDES`),
 `TableChange` → `StructureTableChange` (`TABLE_CHANGES` → `STRUCTURE_TABLE_CHANGES`), `FieldChange` →

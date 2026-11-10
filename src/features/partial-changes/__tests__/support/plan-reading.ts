@@ -6,6 +6,7 @@ import type { TableViews } from 'src/features/partial-changes/assembly/system-ta
 import type { TablePlan } from 'src/features/partial-changes/assembly/target-assembler';
 import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {
   type ChangePlan,
   ChangePlanner,
@@ -93,7 +94,7 @@ function planViewOf(plan: ChangePlan): PlanView {
 
   return {
     status: decidePlanStatus(plan, { includeRequired: false }),
-    fingerprint: plan.fingerprint,
+    fingerprint: encodeFingerprint(plan.fingerprint),
     applied: plan.appliedUnits.map(addressedUnitOf),
     selected: plan.counts.selected,
     required: plan.required,

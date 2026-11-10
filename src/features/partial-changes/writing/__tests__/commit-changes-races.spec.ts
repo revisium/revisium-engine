@@ -174,7 +174,13 @@ describe('commitChanges racing other writers', () => {
         () => draft.commitChanges({ selection: titleOfP1 }),
       );
 
-      expect(overtaken).toEqual<CommitChangesResult>({ status: 'stale' });
+      expect(overtaken).toEqual<CommitChangesResult>({
+        status: 'stale',
+        changed: ['revisions', 'units'],
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: titleOfP1,
+      });
       await expectData(draft, 'head', PRODUCTS, 'p2', {
         title: 'two',
         price: 2,

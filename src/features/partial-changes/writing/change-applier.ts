@@ -7,6 +7,7 @@ import type {
 } from 'src/features/partial-changes/commands/impl/apply-changes';
 import type { OperationTrace } from 'src/features/partial-changes/logging/partial-operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import type { ExpectedFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {
   type ChangePlan,
   ChangePlanner,
@@ -14,6 +15,7 @@ import {
   type StoppedPlan,
 } from 'src/features/partial-changes/planning/change-planner';
 import {
+  changesSincePreview,
   decidePlanStatus,
   type PlanStatus,
 } from 'src/features/partial-changes/planning/plan-decision';
@@ -37,7 +39,7 @@ interface ApplyRequest {
   readonly branch: ChangesBranch;
   readonly selection: Selection;
   readonly includeRequired: boolean;
-  readonly expected?: string;
+  readonly expected?: ExpectedFingerprint;
 }
 
 type RefusalStatus = Exclude<PlanStatus, 'ready'>;
@@ -83,7 +85,7 @@ export class ChangeApplier {
     const status = decidePlanStatus(plan, request);
 
     if (status !== 'ready') {
-      return unappliedChangesOf(plan, status);
+      return unappliedChangesOf(plan, status, request);
     }
 
     await deadline.checkpoint();
@@ -135,6 +137,7 @@ function stoppedByLimit({ blockers }: StoppedPlan): StoppedChangesBlocked {
 function unappliedChangesOf(
   plan: CompletePlan,
   status: RefusalStatus,
+  request: ApplyRequest,
 ): UnappliedChanges {
   switch (status) {
     case 'required':
@@ -148,7 +151,13 @@ function unappliedChangesOf(
         unmatched: plan.unmatched,
       };
     case 'stale':
-      return { status };
+      return {
+        status,
+        changed: changesSincePreview(plan, request),
+        headRevisionId: plan.headRevisionId,
+        draftRevisionId: plan.draftRevisionId,
+        unmatched: plan.unmatched,
+      };
     case 'empty':
       return {
         status,

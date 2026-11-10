@@ -1,6 +1,8 @@
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import type { Fingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {
   type ApplyTerms,
+  changesSincePreview,
   type DecidedPlan,
   decidePlanStatus,
   type PlanStatus,
@@ -11,8 +13,17 @@ import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-ref
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
 import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
 
-const FINGERPRINT = 'fingerprint-of-the-plan';
-const OTHER_FINGERPRINT = 'fingerprint-of-an-earlier-preview';
+const FINGERPRINT: Fingerprint = {
+  operation: 'commit',
+  headRevisionId: 'rev-h1',
+  draftRevisionId: 'rev-d1',
+  units: 'units-of-the-plan',
+  content: 'content-of-the-plan',
+};
+const OTHER_FINGERPRINT: Fingerprint = {
+  ...FINGERPRINT,
+  content: 'content-of-an-earlier-preview',
+};
 
 const PREVIEW: PreviewTerms = { includeRequired: false };
 const PREVIEW_ACCEPTING_REQUIRED: PreviewTerms = { includeRequired: true };
@@ -67,6 +78,12 @@ describe('decidePlanStatus: the status decision of SPEC §5.6 in its order', () 
       decides: 'stale',
     },
     {
+      when: 'expected is of other fingerprint rules',
+      plan: { applied: true },
+      terms: { includeRequired: false, expected: 'otherRules' },
+      decides: 'stale',
+    },
+    {
       when: 'a blocker remains although no unit is applied',
       plan: { blocked: true },
       terms: PREVIEW,
@@ -116,6 +133,14 @@ describe('decidePlanStatus: the status decision of SPEC §5.6 in its order', () 
       expect(decidePlanStatus(decidedPlanOf(plan), terms)).toBe(decides);
     },
   );
+
+  it('says what changed since the preview, and nothing without expected', () => {
+    const plan = { fingerprint: FINGERPRINT };
+
+    expect(changesSincePreview(plan, STALE_EXPECTATION)).toEqual(['content']);
+    expect(changesSincePreview(plan, FRESH_EXPECTATION)).toEqual([]);
+    expect(changesSincePreview(plan, PREVIEW)).toEqual([]);
+  });
 
   it('covers every value of PREVIEW_STATUSES, and stale', () => {
     const statuses = decisions.map(({ decides }) => decides);

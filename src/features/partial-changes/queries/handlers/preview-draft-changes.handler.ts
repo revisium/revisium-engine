@@ -6,6 +6,7 @@ import {
   PartialOperationLog,
 } from 'src/features/partial-changes/logging/partial-operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {
   type ChangePlan,
   ChangePlanner,
@@ -148,7 +149,7 @@ function previewResultOf(
     ...base,
     status,
     planned: true,
-    fingerprint: plan.fingerprint,
+    fingerprint: encodeFingerprint(plan.fingerprint),
     counts: plan.counts,
     coverage: plan.coverage,
     required: plan.required,

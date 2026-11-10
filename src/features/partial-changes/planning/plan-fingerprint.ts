@@ -17,6 +17,7 @@ import {
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import type { AppliedUnits } from 'src/features/partial-changes/plan/change-operation';
+import type { Fingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {
   type ChangesSnapshot,
   type RowPair,
@@ -52,19 +53,21 @@ const NON_ROW_UNIT_KINDS: ReadonlySet<UnitKind> = new Set([
 export class PlanFingerprint {
   constructor(private readonly snapshotReader: ChangesSnapshotReader) {}
 
-  public async fingerprintOf(plan: FingerprintedPlan): Promise<string> {
+  public async fingerprintOf(plan: FingerprintedPlan): Promise<Fingerprint> {
     const coverage = new PlanCoverage(plan);
     const reads: CoveredReads = {
       rowTexts: await this.readRowTexts(coverage.rowVersionIdGroups()),
       rowDigests: await this.readRowDigests(coverage.digestedTableVersions()),
     };
-    const hash = createHash('sha256');
+    const { operation, snapshot } = plan;
 
-    for (const record of coverage.recordsOf(reads)) {
-      hash.update(`${JSON.stringify(record)}\n`);
-    }
-
-    return hash.digest('hex');
+    return {
+      operation,
+      headRevisionId: snapshot.headRevisionId,
+      draftRevisionId: snapshot.draftRevisionId,
+      units: digestOfRecords(coverage.unitKeys()),
+      content: digestOfRecords(coverage.contentRecordsOf(reads)),
+    };
   }
 
   private async readRowTexts(
@@ -138,13 +141,12 @@ class PlanCoverage {
       .flatMap(({ draft }) => (isMutable(draft) ? [draft.versionId] : []));
   }
 
-  public recordsOf(reads: CoveredReads): FingerprintRecord[] {
-    const { operation, snapshot } = this.plan;
+  public unitKeys(): string[] {
+    return this.units.map(({ key }) => key);
+  }
 
-    return [
-      [operation, snapshot.headRevisionId, snapshot.draftRevisionId],
-      ...this.units.map((unit) => this.recordOf(unit, reads)),
-    ];
+  public contentRecordsOf(reads: CoveredReads): FingerprintRecord[] {
+    return this.units.map((unit) => this.recordOf(unit, reads));
   }
 
   private recordOf(
@@ -374,6 +376,16 @@ function textOf(
 
 function digestOf(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function digestOfRecords(records: readonly unknown[]): string {
+  const hash = createHash('sha256');
+
+  for (const record of records) {
+    hash.update(`${JSON.stringify(record)}\n`);
+  }
+
+  return hash.digest('hex');
 }
 
 function isMutable(version: TableVersion | undefined): version is TableVersion {

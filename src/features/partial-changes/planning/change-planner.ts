@@ -9,6 +9,7 @@ import {
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import type { Fingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {
   distinctBlockers,
   ledgerInconsistentBlockerOf,
@@ -84,7 +85,7 @@ interface PlanBase {
 // A plan that ran to its end.
 export interface CompletePlan extends PlanBase {
   readonly planned: true;
-  readonly fingerprint: string;
+  readonly fingerprint: Fingerprint;
   readonly appliedUnits: readonly CatalogueUnit[];
   readonly counts: PlanCounts;
   readonly coverage: readonly TableCoverage[];
@@ -112,7 +113,7 @@ type ClosedResult = Extract<DependencyClosureResult, { kind: 'closed' }>;
 type StoppedClosure = Extract<DependencyClosureResult, { kind: 'tooLarge' }>;
 
 interface ValidatedClosure {
-  readonly fingerprint: string;
+  readonly fingerprint: Fingerprint;
   readonly blockers: readonly CatalogueBlocker[];
   readonly target: PlannedTarget;
 }

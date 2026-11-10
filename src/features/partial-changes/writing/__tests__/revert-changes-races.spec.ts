@@ -166,7 +166,13 @@ describe('revertChanges racing other writers', () => {
         overtaking: { selection: titleOfP1 },
       });
 
-      expect(overtaken).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(overtaken).toEqual<RevertChangesResult>({
+        status: 'stale',
+        changed: ['units'],
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: titleOfP1,
+      });
       await expectDraftData(draft, 'p2', { title: 'dos', price: 2 });
     });
 
@@ -204,7 +210,13 @@ describe('revertChanges racing other writers', () => {
       );
 
       expect(overtaking).toMatchObject({ status: 'applied' });
-      expect(overtaken).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(overtaken).toEqual<RevertChangesResult>({
+        status: 'stale',
+        changed: ['units'],
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: {},
+      });
       expect(await draft.rowIds('draft', PRODUCTS)).toEqual(['p2', 'p9']);
     });
   });

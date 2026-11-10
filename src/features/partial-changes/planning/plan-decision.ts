@@ -1,3 +1,8 @@
+import {
+  type ExpectedFingerprint,
+  type StaleChange,
+  staleChangesOf,
+} from 'src/features/partial-changes/plan/fingerprint';
 import type {
   CompletePlan,
   StoppedPlan,
@@ -34,7 +39,7 @@ export interface PreviewTerms {
 
 export interface ApplyTerms {
   readonly includeRequired: boolean;
-  readonly expected?: string;
+  readonly expected?: ExpectedFingerprint;
 }
 
 export function decidePlanStatus(
@@ -72,15 +77,24 @@ export function decidePlanStatus(
   return 'ready';
 }
 
+// What changed since the preview that expected is the fingerprint of (SPEC §9.2); nothing without expected.
+export function changesSincePreview(
+  { fingerprint }: Pick<CompletePlan, 'fingerprint'>,
+  { expected }: ApplyTerms,
+): StaleChange[] {
+  if (expected === undefined) {
+    return [];
+  }
+
+  return staleChangesOf(expected, fingerprint);
+}
+
 function isEmpty({ appliedUnits, blockers }: DecidedCompletePlan): boolean {
   return appliedUnits.length === 0 && blockers.length === 0;
 }
 
-function isStale(
-  { fingerprint }: DecidedCompletePlan,
-  { expected }: ApplyTerms,
-): boolean {
-  return expected !== undefined && expected !== fingerprint;
+function isStale(plan: DecidedCompletePlan, terms: ApplyTerms): boolean {
+  return changesSincePreview(plan, terms).length > 0;
 }
 
 function isBlocked({ blockers, unmatched }: DecidedCompletePlan): boolean {

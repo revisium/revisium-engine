@@ -201,6 +201,10 @@ describe('revertChanges', () => {
         options: { selection: creationOfC9, expected: 1 },
       },
       {
+        input: 'an expected that is not a fingerprint',
+        options: { selection: creationOfC9, expected: 'other' },
+      },
+      {
         input: 'a malformed selection',
         options: {
           selection: {
@@ -290,7 +294,13 @@ describe('revertChanges', () => {
         expected: preview.fingerprint,
       });
 
-      expect(result).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(result).toEqual<RevertChangesResult>({
+        status: 'stale',
+        changed: ['content'],
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: {},
+      });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
 
@@ -308,7 +318,7 @@ describe('revertChanges', () => {
         expected: preview.fingerprint,
       });
 
-      expect(result).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(result).toMatchObject({ status: 'stale', changed: ['content'] });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
 
@@ -324,7 +334,13 @@ describe('revertChanges', () => {
         expected: commitPreview.fingerprint,
       });
 
-      expect(result).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(result).toEqual<RevertChangesResult>({
+        status: 'stale',
+        changed: ['operation'],
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: {},
+      });
     });
 
     it('is empty with the current revisions when it is repeated, and never reverts twice', async () => {
@@ -372,7 +388,13 @@ describe('revertChanges', () => {
         expected: preview.fingerprint,
       });
 
-      expect(repeat).toEqual<RevertChangesResult>({ status: 'stale' });
+      expect(repeat).toEqual<RevertChangesResult>({
+        status: 'stale',
+        changed: ['units'],
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: {},
+      });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
 
@@ -755,7 +777,7 @@ describe('revertChanges', () => {
         draftDataOf(draft, PRODUCTS, 'p1'),
       );
 
-      await draft.revertChanges({ selection: titleOfP1, expected: 'other' });
+      await draft.revertChanges({ selection: titleOfP1, expected: 'pcf3.AA' });
 
       expect(notifications).toEqual([]);
     });

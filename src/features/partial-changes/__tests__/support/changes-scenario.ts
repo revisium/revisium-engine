@@ -5,6 +5,7 @@ import {
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { BranchApiService } from 'src/features/branch/branch-api.service';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
+import type { Fingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import type {
   ListChangesResult,
   ListedUnit,
@@ -301,7 +302,7 @@ export class ChangesScenario extends BranchScenario {
     operation: ChangeOperation,
     selection: Selection,
     variant?: PlanVariant,
-  ): Promise<string> {
+  ): Promise<Fingerprint> {
     return readPlanFingerprint(
       this.kit,
       this.branch,

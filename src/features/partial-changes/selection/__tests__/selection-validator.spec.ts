@@ -1,4 +1,8 @@
 import {
+  encodeFingerprint,
+  type Fingerprint,
+} from 'src/features/partial-changes/plan/fingerprint';
+import {
   SelectionValidationError,
   validateComment,
   validateOperation,
@@ -7,6 +11,14 @@ import {
 } from 'src/features/partial-changes/selection/selection-validator';
 
 const PRODUCTS = 'products';
+
+const FINGERPRINT: Fingerprint = {
+  operation: 'commit',
+  headRevisionId: 'rev-h1',
+  draftRevisionId: 'rev-d1',
+  units: 'a'.repeat(64),
+  content: 'b'.repeat(64),
+};
 
 describe('SelectionValidator', () => {
   it('accepts a well-formed selection that uses every field', () => {
@@ -252,11 +264,27 @@ describe('SelectionValidator', () => {
   });
 
   it.each([
-    { includeRequired: true, expected: 'fingerprint' },
     { includeRequired: false },
+    { includeRequired: true, expected: encodeFingerprint(FINGERPRINT) },
+    { includeRequired: null, expected: null },
     {},
   ])('accepts required additions acceptance %o', (acceptance) => {
     expect(() => validateRequiredAdditionsAcceptance(acceptance)).not.toThrow();
+  });
+
+  it('reads the parts of an expected fingerprint', () => {
+    expect(
+      validateRequiredAdditionsAcceptance({
+        includeRequired: true,
+        expected: encodeFingerprint(FINGERPRINT),
+      }),
+    ).toEqual({ includeRequired: true, expected: FINGERPRINT });
+  });
+
+  it('accepts an expected fingerprint of other rules, which a stale result names as version', () => {
+    expect(
+      validateRequiredAdditionsAcceptance({ expected: 'pcf3.AA' }),
+    ).toEqual({ includeRequired: false, expected: 'otherRules' });
   });
 
   it.each([
@@ -274,6 +302,23 @@ describe('SelectionValidator', () => {
       error: 'expected given as a number',
       acceptance: { expected: 1 },
       message: 'expected must be a non-empty string',
+    },
+    {
+      error: 'an expected that is not a fingerprint',
+      acceptance: { includeRequired: true, expected: 'fingerprint' },
+      message: 'expected must be a fingerprint',
+    },
+    {
+      error: 'the bare SHA-256 hex of engines before v2.0 as expected',
+      acceptance: { expected: 'a'.repeat(64) },
+      message: 'expected must be a fingerprint',
+    },
+    {
+      error: 'a pcf2 expected whose payload is not five strings',
+      acceptance: {
+        expected: `pcf2.${Buffer.from('["commit"]').toString('base64url')}`,
+      },
+      message: 'expected must be a fingerprint',
     },
   ])(
     'refuses required additions acceptance with $error',

@@ -174,9 +174,14 @@ export { RevisionChangesModule } from './features/revision-changes/revision-chan
 export { RevisionChangesApiService } from './features/revision-changes/revision-changes-api.service';
 export {
   ChangeType,
+  JsonPatchOp,
+  MigrationType,
   RowChangeDetailType,
+  type HistoryPatch,
+  type JsonPatchOperation,
   type RevisionChangeSummary,
   type SchemaMigrationDetail,
+  type ViewChange,
   type ViewsChangeDetail,
 } from './features/revision-changes/types';
 
@@ -215,6 +220,8 @@ export {
 } from './features/migration/commands/impl/backfill-schema-ledger.command';
 
 // Draft Changes (EngineApiService.changes) — partial-changes-v1 §5.11, draft-reads-v1 §9
+export { PartialChangesModule } from './features/partial-changes/partial-changes.module';
+export { PartialChangesApiService } from './features/partial-changes/partial-changes-api.service';
 export type { ChangesBranch } from './features/partial-changes/snapshot/changes-snapshot';
 export {
   ROW_COLUMNS,
@@ -355,18 +362,19 @@ export {
   type TableSelection,
   type TableSelectionState,
 } from './features/partial-changes/queries/impl/get-draft-table-changes.query';
-export type {
-  DraftColumnChange,
-  DraftFieldChange,
-  DraftFieldChangeType,
-  DraftRowChangesFilters,
-  DraftRowChangesInput,
-  DraftRowItem,
-  DraftRowPage,
-  FollowedUnit,
-  IdExchange,
-  IdTakeover,
-  RowSelection,
+export {
+  DRAFT_FIELD_CHANGE_TYPES,
+  type DraftColumnChange,
+  type DraftFieldChange,
+  type DraftFieldChangeType,
+  type DraftRowChangesFilters,
+  type DraftRowChangesInput,
+  type DraftRowItem,
+  type DraftRowPage,
+  type FollowedUnit,
+  type IdExchange,
+  type IdTakeover,
+  type RowSelection,
 } from './features/partial-changes/queries/impl/get-draft-row-changes.query';
 export type {
   ChangedSharedSchema,

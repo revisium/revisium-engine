@@ -12,8 +12,8 @@ interface ExportedName {
   readonly typeOnly: boolean;
 }
 
-const ALL_NAMES = '*';
-
+// Reads the names an entry re-exports from the modules under a prefix. The entry may hold only named re-exports
+// (`export { … } from '…'`), so every exported name is visible here; any other export form is refused.
 export function namesExportedFrom(
   entryPath: string,
   modulePrefix: string,
@@ -22,11 +22,13 @@ export function namesExportedFrom(
     entryPath,
     readFileSync(entryPath, 'utf8'),
     ts.ScriptTarget.Latest,
+    true,
   );
   const names = entry.statements
-    .filter(ts.isExportDeclaration)
+    .filter(isExporting)
+    .map(namedReExportOf)
     .filter((declaration) =>
-      moduleSpecifierOf(declaration).startsWith(modulePrefix),
+      declaration.moduleSpecifier.text.startsWith(modulePrefix),
     )
     .flatMap(exportedNamesOf);
 
@@ -36,24 +38,42 @@ export function namesExportedFrom(
   };
 }
 
-function moduleSpecifierOf(declaration: ts.ExportDeclaration): string {
-  const specifier = declaration.moduleSpecifier;
+type NamedReExport = ts.ExportDeclaration & {
+  readonly moduleSpecifier: ts.StringLiteral;
+  readonly exportClause: ts.NamedExports;
+};
 
-  if (!specifier || !ts.isStringLiteral(specifier)) {
-    return '';
+function isExporting(statement: ts.Statement): boolean {
+  if (ts.isExportDeclaration(statement) || ts.isExportAssignment(statement)) {
+    return true;
   }
 
-  return specifier.text;
+  return (
+    ts.canHaveModifiers(statement) &&
+    (ts.getModifiers(statement) ?? []).some(
+      ({ kind }) => kind === ts.SyntaxKind.ExportKeyword,
+    )
+  );
 }
 
-function exportedNamesOf(declaration: ts.ExportDeclaration): ExportedName[] {
-  const clause = declaration.exportClause;
-
-  if (!clause || !ts.isNamedExports(clause)) {
-    return [{ name: ALL_NAMES, typeOnly: declaration.isTypeOnly }];
+function namedReExportOf(statement: ts.Statement): NamedReExport {
+  if (
+    ts.isExportDeclaration(statement) &&
+    statement.moduleSpecifier !== undefined &&
+    ts.isStringLiteral(statement.moduleSpecifier) &&
+    statement.exportClause !== undefined &&
+    ts.isNamedExports(statement.exportClause)
+  ) {
+    return statement as NamedReExport;
   }
 
-  return clause.elements.map((element) => ({
+  throw new Error(
+    `Only named re-exports can be listed: ${statement.getText()}`,
+  );
+}
+
+function exportedNamesOf(declaration: NamedReExport): ExportedName[] {
+  return declaration.exportClause.elements.map((element) => ({
     name: element.name.text,
     typeOnly: declaration.isTypeOnly || element.isTypeOnly,
   }));

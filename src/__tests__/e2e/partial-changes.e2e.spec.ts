@@ -2,6 +2,7 @@ import { join } from 'path';
 import { BadRequestException } from '@nestjs/common';
 import { num, obj, str } from '@revisium/schema-toolkit/mocks';
 import { namesExportedFrom } from 'src/__tests__/utils/package-exports';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import * as engine from 'src/index';
 import {
   ChangeType,
@@ -148,6 +149,7 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
   ],
   CAUSE_ROLES: ['occupant', 'referrer', 'remover', 'taker'],
   CHANGE_OPERATIONS: ['commit', 'revert'],
+  DRAFT_FIELD_CHANGE_TYPES: ['FIELD_ADDED', 'FIELD_MODIFIED', 'FIELD_REMOVED'],
   FIELD_SELECTION_STATES: ['computed', 'goesWith', 'refused', 'unit'],
   FOLLOW_REASONS: ['referenceRename'],
   GOES_WITH_REASONS: ['rowExistence', 'structureBound', 'tableExistence'],
@@ -203,14 +205,22 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
   ],
 };
 
-// Draft read items carry these native diff types (draft-reads-v1 §9).
+const CHANGES_FEATURE_VALUES = [
+  'PartialChangesApiService',
+  'PartialChangesModule',
+];
+
+// Draft read items carry these native diff types and the types and enums they are built of (draft-reads-v1 §9).
 const NATIVE_DIFF_NAMES = {
   types: [
+    'HistoryPatch',
+    'JsonPatchOperation',
     'RevisionChangeSummary',
     'SchemaMigrationDetail',
+    'ViewChange',
     'ViewsChangeDetail',
   ],
-  values: ['ChangeType', 'RowChangeDetailType'],
+  values: ['ChangeType', 'JsonPatchOp', 'MigrationType', 'RowChangeDetailType'],
 };
 
 const CLASHING_NAMES = [
@@ -222,6 +232,219 @@ const CLASHING_NAMES = [
   'Reason',
   'TableChange',
 ];
+
+// True only when A and B are the same type; mutual assignability would also accept `any`.
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+    ? true
+    : false;
+
+type ListMember<List extends readonly unknown[]> = List[number];
+
+// Compiles only when every check holds, so the TypeScript gate proves AS-81 for the package's own types.
+function unionsEqual<_Checks extends readonly true[]>(): true {
+  return true;
+}
+
+const CODE_UNIONS_EQUAL_THEIR_LISTS = {
+  ANNOTATION_KEYWORDS:
+    unionsEqual<
+      [
+        Equal<
+          engine.AnnotationKeyword,
+          ListMember<typeof engine.ANNOTATION_KEYWORDS>
+        >,
+        Equal<
+          NonNullable<engine.ChangedField['annotations']>[number],
+          engine.AnnotationKeyword
+        >,
+      ]
+    >(),
+  APPLY_STATUSES:
+    unionsEqual<
+      [
+        Equal<engine.ApplyStatus, ListMember<typeof engine.APPLY_STATUSES>>,
+        Equal<engine.CommitChangesResult['status'], engine.ApplyStatus>,
+        Equal<engine.RevertChangesResult['status'], engine.ApplyStatus>,
+      ]
+    >(),
+  BLOCKER_CODES:
+    unionsEqual<
+      [
+        Equal<engine.BlockerCode, ListMember<typeof engine.BLOCKER_CODES>>,
+        Equal<engine.PlanBlocker['code'], engine.BlockerCode>,
+      ]
+    >(),
+  CAUSE_ROLES:
+    unionsEqual<
+      [
+        Equal<engine.CauseRole, ListMember<typeof engine.CAUSE_ROLES>>,
+        Equal<engine.ReasonCause['role'], engine.CauseRole>,
+      ]
+    >(),
+  CHANGE_OPERATIONS:
+    unionsEqual<
+      [
+        Equal<
+          engine.ChangeOperation,
+          ListMember<typeof engine.CHANGE_OPERATIONS>
+        >,
+        Equal<engine.PreviewChangesInput['operation'], engine.ChangeOperation>,
+      ]
+    >(),
+  DRAFT_FIELD_CHANGE_TYPES:
+    unionsEqual<
+      [
+        Equal<
+          engine.DraftFieldChangeType,
+          ListMember<typeof engine.DRAFT_FIELD_CHANGE_TYPES>
+        >,
+        Equal<
+          engine.DraftFieldChange['changeType'],
+          engine.DraftFieldChangeType
+        >,
+      ]
+    >(),
+  FIELD_SELECTION_STATES:
+    unionsEqual<
+      [
+        Equal<
+          engine.FieldSelectionState,
+          ListMember<typeof engine.FIELD_SELECTION_STATES>
+        >,
+        Equal<engine.FieldSelection['state'], engine.FieldSelectionState>,
+      ]
+    >(),
+  FOLLOW_REASONS:
+    unionsEqual<
+      [
+        Equal<engine.FollowReason, ListMember<typeof engine.FOLLOW_REASONS>>,
+        Equal<engine.FollowedUnit['reason'], engine.FollowReason>,
+      ]
+    >(),
+  GOES_WITH_REASONS:
+    unionsEqual<
+      [
+        Equal<
+          engine.GoesWithReason,
+          ListMember<typeof engine.GOES_WITH_REASONS>
+        >,
+        Equal<engine.GoesWithSelection['reason'], engine.GoesWithReason>,
+      ]
+    >(),
+  ID_EXCHANGE_TERMINATIONS:
+    unionsEqual<
+      [
+        Equal<
+          engine.IdExchangeTermination,
+          ListMember<typeof engine.ID_EXCHANGE_TERMINATIONS>
+        >,
+        Equal<engine.IdExchange['termination'], engine.IdExchangeTermination>,
+      ]
+    >(),
+  PREVIEW_STATUSES:
+    unionsEqual<
+      [
+        Equal<engine.PreviewStatus, ListMember<typeof engine.PREVIEW_STATUSES>>,
+        Equal<engine.PreviewChangesResult['status'], engine.PreviewStatus>,
+      ]
+    >(),
+  REASON_SITE_KINDS:
+    unionsEqual<
+      [
+        Equal<
+          engine.ReasonSiteKind,
+          ListMember<typeof engine.REASON_SITE_KINDS>
+        >,
+        Equal<engine.ReasonSite['kind'], engine.ReasonSiteKind>,
+      ]
+    >(),
+  REFUSAL_CODES:
+    unionsEqual<
+      [
+        Equal<engine.RefusalCode, ListMember<typeof engine.REFUSAL_CODES>>,
+        Equal<engine.RefusedTable['code'], engine.RefusalCode>,
+      ]
+    >(),
+  REQUIRED_REASON_CODES:
+    unionsEqual<
+      [
+        Equal<
+          engine.RequiredReasonCode,
+          ListMember<typeof engine.REQUIRED_REASON_CODES>
+        >,
+        Equal<engine.RequiredReason['code'], engine.RequiredReasonCode>,
+      ]
+    >(),
+  ROW_COLUMNS:
+    unionsEqual<
+      [
+        Equal<engine.RowColumn, ListMember<typeof engine.ROW_COLUMNS>>,
+        Equal<engine.DraftColumnChange['column'], engine.RowColumn>,
+      ]
+    >(),
+  ROW_SELECTION_STATES:
+    unionsEqual<
+      [
+        Equal<
+          engine.RowSelectionState,
+          ListMember<typeof engine.ROW_SELECTION_STATES>
+        >,
+        Equal<engine.RowSelection['state'], engine.RowSelectionState>,
+      ]
+    >(),
+  SELECTOR_SIDES:
+    unionsEqual<
+      [
+        Equal<engine.SelectorSide, ListMember<typeof engine.SELECTOR_SIDES>>,
+        Equal<NonNullable<engine.TableRef['side']>, engine.SelectorSide>,
+      ]
+    >(),
+  STALE_CHANGES:
+    unionsEqual<
+      [
+        Equal<engine.StaleChange, ListMember<typeof engine.STALE_CHANGES>>,
+        Equal<engine.ChangesStale['changed'][number], engine.StaleChange>,
+      ]
+    >(),
+  STRUCTURE_FIELD_CHANGES:
+    unionsEqual<
+      [
+        Equal<
+          engine.StructureFieldChange,
+          ListMember<typeof engine.STRUCTURE_FIELD_CHANGES>
+        >,
+        Equal<engine.ChangedField['change'], engine.StructureFieldChange>,
+      ]
+    >(),
+  STRUCTURE_TABLE_CHANGES:
+    unionsEqual<
+      [
+        Equal<
+          engine.StructureTableChange,
+          ListMember<typeof engine.STRUCTURE_TABLE_CHANGES>
+        >,
+        Equal<engine.StructureChange['table'], engine.StructureTableChange>,
+      ]
+    >(),
+  TABLE_SELECTION_STATES:
+    unionsEqual<
+      [
+        Equal<
+          engine.TableSelectionState,
+          ListMember<typeof engine.TABLE_SELECTION_STATES>
+        >,
+        Equal<engine.TableSelection['state'], engine.TableSelectionState>,
+      ]
+    >(),
+  UNIT_KINDS:
+    unionsEqual<
+      [
+        Equal<engine.UnitKind, ListMember<typeof engine.UNIT_KINDS>>,
+        Equal<engine.Unit['kind'], engine.UnitKind>,
+      ]
+    >(),
+};
 
 const CHANGES_OPERATIONS = [
   'commit',
@@ -258,7 +481,9 @@ describe('package exports of the changes API (AS-81)', () => {
   it('exports the types and code lists of the changes API under their SPEC names', () => {
     expect(namesExportedFrom(PACKAGE_ENTRY, PARTIAL_CHANGES_MODULES)).toEqual({
       types: CHANGES_API_TYPES,
-      values: Object.keys(CODE_LISTS),
+      values: [...Object.keys(CODE_LISTS), ...CHANGES_FEATURE_VALUES].sort(
+        compareCodePoints,
+      ),
     });
   });
 
@@ -274,6 +499,12 @@ describe('package exports of the changes API (AS-81)', () => {
     expect(
       [...types, ...values].filter((name) => CLASHING_NAMES.includes(name)),
     ).toEqual([]);
+  });
+
+  it('derives every code union, variant fields included, from its runtime list', () => {
+    expect(Object.keys(CODE_UNIONS_EQUAL_THEIR_LISTS)).toEqual(
+      Object.keys(CODE_LISTS),
+    );
   });
 
   it.each(Object.entries(CODE_LISTS))(

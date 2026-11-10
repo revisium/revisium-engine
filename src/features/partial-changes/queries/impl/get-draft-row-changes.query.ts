@@ -14,8 +14,8 @@ import type {
 import type { SelectionItems } from 'src/features/partial-changes/selection/selection';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type {
-  ChangeType,
+import {
+  type ChangeType,
   RowChangeDetailType,
 } from 'src/features/revision-changes/types';
 
@@ -45,10 +45,13 @@ export type RowSelection = { readonly units: readonly UnitRef[] } & (
 );
 
 // The values of the native RowChangeDetailType that the row value diff produces.
-export type DraftFieldChangeType = Exclude<
-  RowChangeDetailType,
-  RowChangeDetailType.FieldMoved
->;
+export const DRAFT_FIELD_CHANGE_TYPES = [
+  RowChangeDetailType.FieldAdded,
+  RowChangeDetailType.FieldRemoved,
+  RowChangeDetailType.FieldModified,
+] as const;
+
+export type DraftFieldChangeType = (typeof DRAFT_FIELD_CHANGE_TYPES)[number];
 
 // The rename whose cascade rewrote a reference.
 export interface FollowedUnit {

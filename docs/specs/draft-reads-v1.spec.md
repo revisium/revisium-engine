@@ -433,11 +433,12 @@ type ViewsOnlyTable = { tableId: string; changeType: ChangeType; views: UnitRef 
 
 `ChangesBranch`, `SelectionItems`, `UnitRef`, `DescribedUnitRef`, `RowColumn`, `RefusedTable` and `RefusalCode` are
 those of partial-changes-v1 §5.11. `ChangeType`, `RevisionChangeSummary`, `SchemaMigrationDetail` and
-`ViewsChangeDetail` are the native diff types, exported under these names; `DraftFieldChangeType` holds the values of
-the native `RowChangeDetailType` that the row value diff produces, and the package exports that enum too. Every code
-union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
-`TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `GOES_WITH_REASONS`, `FOLLOW_REASONS`,
-`ID_EXCHANGE_TERMINATIONS`.
+`ViewsChangeDetail` are the native diff types, exported under these names together with the types and enums they are
+built of (`MigrationType`, `JsonPatchOp`, `JsonPatchOperation`, `HistoryPatch`, `ViewChange`); `DraftFieldChangeType`
+holds the values of the native `RowChangeDetailType` that the row value diff produces, and the package exports that
+enum too. Every code union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
+`TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `DRAFT_FIELD_CHANGE_TYPES`,
+`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`.
 
 ## 10. Acceptance scenarios
 
@@ -514,7 +515,9 @@ Paging, filters, validation, snapshot:
 
 ### Version 1.5 (2026-11-10)
 
-- §9: the package also exports the native `RowChangeDetailType`, whose values `DraftFieldChangeType` holds.
+- §9: `DraftFieldChangeType` gets its runtime list `DRAFT_FIELD_CHANGE_TYPES` (`FIELD_MOVED` is not among its values);
+  the package also exports the native `RowChangeDetailType` and the types and enums the native diff types are built
+  of.
 - Status: the reads are on the facade (ADR-002 PR 12, #145).
 
 ### Version 1.4 (2026-11-10)

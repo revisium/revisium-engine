@@ -9,6 +9,7 @@ import {
 } from 'src/features/partial-changes/draft-reads/draft-row';
 import type { DraftTable } from 'src/features/partial-changes/draft-reads/draft-tables';
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
+import type { HeadSchemaCheck } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { DraftEdge } from 'src/features/partial-changes/queries/impl/draft-reads';
 import type { DraftRowItem } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type {
@@ -58,7 +59,7 @@ export class DraftRowItems {
     const fieldChanges = await this.fieldChangesOf(rows, compared.snapshot);
     const catalogue = DraftCatalogue.withChangedRows(
       compared,
-      changedRowsOf(rows),
+      changedRowsOf(rows, compared.headSchema),
     );
 
     return rows.map((row, index) => ({
@@ -113,13 +114,21 @@ function entryOf(
   return { table: paged.table.pair, pair, head, draft, fieldChanges };
 }
 
-// The catalogue of a page holds the pairs the listing loads for the page's row ids.
-function changedRowsOf(rows: readonly PageRow[]): ChangedRows {
+// The catalogue of a page holds the pairs the listing loads for the page's row ids; it loads none of a refused table.
+function changedRowsOf(
+  rows: readonly PageRow[],
+  { refusedTablesByIdentity }: HeadSchemaCheck,
+): ChangedRows {
   const changedRows = new Map<string, RowPair[]>();
 
   for (const { paged, pair, head, draft } of rows) {
-    if (paged.table.rows?.kind === 'compared' && pair.yieldsUnit) {
-      const { identity } = paged.table.pair;
+    const { identity } = paged.table.pair;
+
+    if (
+      paged.table.rows?.kind === 'compared' &&
+      pair.yieldsUnit &&
+      !refusedTablesByIdentity.has(identity)
+    ) {
       const pairs = changedRows.get(identity) ?? [];
 
       pairs.push({ identity: pair.identity, head, draft });

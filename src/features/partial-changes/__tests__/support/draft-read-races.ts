@@ -2,6 +2,7 @@ import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-cha
 import { type Barrier, createBarrier } from 'src/__tests__/utils/barrier';
 import { DraftRowItems } from 'src/features/partial-changes/draft-reads/draft-row-items';
 import { DraftTableItems } from 'src/features/partial-changes/draft-reads/draft-table-items';
+import { ReportedRowPairsReader } from 'src/features/partial-changes/draft-reads/reported-row-pairs-reader';
 import { ReportedRowCountsReader } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 
 // The table page waits at its barrier once it has read its snapshot and listed its tables, before their details.
@@ -39,6 +40,30 @@ export function readRowPageWhileDraftChanges<T>(
       await barrier.arrive();
 
       return edgesOf(page, compared);
+    });
+
+  return readWhileHeld(barrier, hold, read, edit);
+}
+
+// The row page waits at its barrier once it has read its snapshot and listed its tables, before its first pair query.
+export function readRowPageBeforeItsPairs<T>(
+  kit: PartialChangesTestKit,
+  read: () => Promise<T>,
+  edit: () => Promise<unknown>,
+): Promise<T> {
+  const reader = kit.module.get(ReportedRowPairsReader);
+  const readPairsPage = reader.readPairsPage.bind(reader);
+  const barrier = createBarrier('A Draft row page before its pairs');
+  let held = false;
+  const hold = jest
+    .spyOn(reader, 'readPairsPage')
+    .mockImplementation(async (rows, range) => {
+      if (!held) {
+        held = true;
+        await barrier.arrive();
+      }
+
+      return readPairsPage(rows, range);
     });
 
   return readWhileHeld(barrier, hold, read, edit);

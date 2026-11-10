@@ -7,6 +7,7 @@ import {
   ref,
   str,
 } from '@revisium/schema-toolkit/mocks';
+import objectHash from 'object-hash';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -17,6 +18,7 @@ import {
   removeField,
   replaceField,
 } from 'src/__tests__/fixtures/ledger-steps';
+import type { InputJsonValue } from 'src/engine-prisma-types';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type {
   DraftFieldChange,
@@ -31,7 +33,10 @@ import {
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { transactionModeOfSnapshotRead } from '../../__tests__/support/change-preview';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
-import { readRowPageWhileDraftChanges } from '../../__tests__/support/draft-read-races';
+import {
+  readRowPageBeforeItsPairs,
+  readRowPageWhileDraftChanges,
+} from '../../__tests__/support/draft-read-races';
 import {
   draftReadQueriesDuring,
   rowItemsOf,
@@ -54,6 +59,8 @@ const ARTICLES = 'articles';
 const DOCUMENTS = 'documents';
 const GOODS = 'goods';
 const BOXES = 'boxes';
+const LOGS = 'logs';
+const LINES = 'lines';
 const RELEASE_DATE = '2030-01-01T00:00:00.000Z';
 const PAGE_SIZES = [1, 2, 7];
 
@@ -67,6 +74,11 @@ const itemSchema = obj({ name: str(), note: str() });
 const labelSchema = obj({ label: str() });
 const titleSchema = obj({ title: str() });
 const boxSchema = obj({ dims: obj({ width: num(), height: num() }) });
+const lineSchema = obj({ parts: arr(obj({ name: str() })) });
+const logSchema = obj({
+  title: str(),
+  entries: arr(obj({ updated: ref(SystemSchemaIds.RowUpdatedAt) })),
+});
 const articleSchema = obj({
   title: str(),
   releasedAt: ref(SystemSchemaIds.RowPublishedAt),
@@ -191,6 +203,53 @@ describe('draft row changes', () => {
       ]);
     });
 
+    it('reads a removed array element with its Head value', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateRow(PRODUCTS, 'p2', product('p2', 2, ['a']));
+
+      const [item] = await readRowItems(draft);
+
+      expect(item?.fields).toEqual([
+        {
+          path: '/tags/1',
+          changeType: RowChangeDetailType.FieldRemoved,
+          oldValue: 'b',
+          newValue: null,
+          selection: {
+            state: 'unit',
+            unit: fieldRef(PRODUCTS, 'p2', '/tags'),
+          },
+        },
+      ]);
+    });
+
+    it('reads an added array element that is an object at its object pointer, selecting the array', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [LINES]: {
+          schema: lineSchema,
+          rows: { l1: { parts: [{ name: 'a' }] } },
+        },
+      });
+      await draft.updateRow(LINES, 'l1', {
+        parts: [{ name: 'a' }, { name: 'b' }],
+      });
+
+      const [item] = await readRowItems(draft);
+
+      expect(item?.fields).toEqual([
+        {
+          path: '/parts/1',
+          changeType: RowChangeDetailType.FieldAdded,
+          oldValue: null,
+          newValue: { name: 'b' },
+          selection: {
+            state: 'unit',
+            unit: fieldRef(LINES, 'l1', '/parts'),
+          },
+        },
+      ]);
+    });
+
     it('reads a nested field at its JSON Pointer', async () => {
       const draft = await ChangesScenario.committed(kit, {
         [BOXES]: {
@@ -298,6 +357,56 @@ describe('draft row changes', () => {
       expect(item?.fields.every(({ path }) => path.startsWith('/image/'))).toBe(
         true,
       );
+    });
+
+    it('marks a system value that changed inside an array whose stored value is unchanged as computed', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [LOGS]: {
+          schema: logSchema,
+          rows: { l1: { title: 'one', entries: [{ updated: '' }] } },
+        },
+      });
+      await draft.updateRow(LOGS, 'l1', {
+        title: 'edited',
+        entries: [{ updated: '' }],
+      });
+
+      const [item] = await readRowItems(draft);
+
+      expect(fieldViewsOf(item)).toEqual([
+        [
+          '/entries/0/updated',
+          RowChangeDetailType.FieldModified,
+          { state: 'computed' },
+        ],
+        [
+          '/title',
+          RowChangeDetailType.FieldModified,
+          { state: 'unit', unit: fieldRef(LOGS, 'l1', '/title') },
+        ],
+      ]);
+    });
+
+    it('takes the units of a row from its stored values, before the formula values are computed', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: { schema: productSchema, rows: { p1: product('') } },
+      });
+      await draft.updateRow(PRODUCTS, 'p1', product('edited'));
+      await rewriteDraftRowData(draft, PRODUCTS, 'p1', {
+        ...product(''),
+        title: null,
+      });
+
+      const [item] = await readRowItems(draft);
+      const title = fieldRef(PRODUCTS, 'p1', '/title');
+
+      expect(item).toMatchObject({
+        fields: [],
+        selection: { state: 'selectable', units: [title] },
+      });
+      expect(await draft.listEveryUnit()).toEqual([
+        expect.objectContaining(title),
+      ]);
     });
 
     it('says a row whose only stored difference is a formula output is computed', async () => {
@@ -556,6 +665,12 @@ describe('draft row changes', () => {
         },
         { tableId: TAGS, rowId: 't1', changeType: ChangeType.Removed },
       ]);
+      expect(rowItemOf(items, 'p1')?.selection).toEqual({
+        state: 'selectable',
+        row: { rows: [{ tableId: GOODS, rowId: 'p1' }] },
+        units: [fieldRef(GOODS, 'p1', '/title')],
+        structure: structureRef(GOODS, PRODUCTS),
+      });
     });
 
     it('gives a renamed row its rename unit under the Draft id', async () => {
@@ -906,6 +1021,9 @@ describe('draft row changes', () => {
       expect(table?.node.selection).toMatchObject({
         tableData: { rows: rowSelectors.size },
       });
+      expect((await draft.readDraftChangesSummary()).rowsWithUnits).toBe(
+        rowSelectors.size,
+      );
     });
   });
 
@@ -1107,6 +1225,87 @@ describe('draft row changes', () => {
       );
     });
 
+    it("reads the tables from the cursor's table on, and past a full page only those up to the first one with a row", async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [ARTICLES]: { schema: titleSchema, rows: { a1: { title: 'one' } } },
+        [TAGS]: { schema: titleSchema, rows: { t1: { title: 'one' } } },
+      });
+      await draft.updateRow(ARTICLES, 'a1', { title: 'edited' });
+      await draft.createTable(BOXES, titleSchema);
+      await draft.createTable(ITEMS, titleSchema);
+      await draft.createRows(ITEMS, { i1: { title: 'one' } });
+      await draft.updateRow(TAGS, 't1', { title: 'edited' });
+      const tables = await draft.linkSetsOf([ARTICLES, BOXES, ITEMS, TAGS]);
+
+      const first = await draftReadQueriesDuring(kit, tables, () =>
+        draft.readDraftRowChanges({ first: 1 }),
+      );
+      const second = await draftReadQueriesDuring(kit, tables, () =>
+        draft.readDraftRowChanges({
+          first: 1,
+          after: first.result.pageInfo.endCursor,
+        }),
+      );
+      const third = await draftReadQueriesDuring(kit, tables, () =>
+        draft.readDraftRowChanges({
+          first: 1,
+          after: second.result.pageInfo.endCursor,
+        }),
+      );
+
+      expect(rowItemsOf([first.result]).map(nameOf)).toEqual([
+        'articles/a1 MODIFIED',
+      ]);
+      expect(first.result.pageInfo.hasNextPage).toBe(true);
+      expect(first.linkSetReads).toEqual({
+        [ARTICLES]: 1,
+        [BOXES]: 1,
+        [ITEMS]: 1,
+        [TAGS]: 0,
+      });
+      expect(rowItemsOf([second.result]).map(nameOf)).toEqual([
+        'items/i1 ADDED',
+      ]);
+      expect(second.result.pageInfo.hasNextPage).toBe(true);
+      expect(second.linkSetReads).toEqual({
+        [ARTICLES]: 1,
+        [BOXES]: 1,
+        [ITEMS]: 1,
+        [TAGS]: 1,
+      });
+      expect(rowItemsOf([third.result]).map(nameOf)).toEqual([
+        'tags/t1 MODIFIED',
+      ]);
+      expect(third.result.pageInfo.hasNextPage).toBe(false);
+      expect(third.linkSetReads).toEqual({
+        [ARTICLES]: 0,
+        [BOXES]: 0,
+        [ITEMS]: 1,
+        [TAGS]: 1,
+      });
+    });
+
+    it('describes the snapshot it listed when the Draft changes its rows and a schema before the first pair query', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateRow(PRODUCTS, 'p1', product('edited'));
+      const before = await draft.readDraftRowChanges({ first: 10 });
+
+      const page = await readRowPageBeforeItsPairs(
+        kit,
+        () => draft.readDraftRowChanges({ first: 10 }),
+        async () => {
+          await draft.updateRow(PRODUCTS, 'p2', product('edited'));
+          await draft.renameRow(PRODUCTS, 'p3', 'p30');
+          await draft.updateTable(PRODUCTS, [addField('color', str())]);
+        },
+      );
+
+      expect(page).toEqual(before);
+      expect(await draft.readDraftRowChanges({ first: 10 })).not.toEqual(
+        before,
+      );
+    });
+
     it('reads the row links of the tables until the page is full, and no native diff', async () => {
       const draft = await givenCommittedProducts();
       await draft.updateRow(PRODUCTS, 'p1', product('edited'));
@@ -1188,6 +1387,21 @@ describe('draft row changes', () => {
     await draft.createRows(TAGS, { t1: { label: 'one' } });
 
     return draft;
+  }
+
+  // Native writes store no null for a string, so the Draft's own row version is rewritten in place.
+  async function rewriteDraftRowData(
+    draft: ChangesScenario,
+    tableId: string,
+    rowId: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const row = await draft.row('draft', tableId, rowId);
+
+    await kit.prisma.row.update({
+      where: { versionId: row.versionId },
+      data: { data: data as InputJsonValue, hash: objectHash(data) },
+    });
   }
 
   async function givenOrderWithOnlyItsFormulaOutputRewritten(): Promise<ChangesScenario> {

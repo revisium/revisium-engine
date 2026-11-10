@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { previousTableIdOf } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import {
   compareTablePositions,
   type TablePosition,
@@ -15,6 +16,7 @@ import {
   hasIdContaining,
 } from 'src/features/partial-changes/draft-reads/table-filters';
 import type { DraftReadState } from 'src/features/partial-changes/queries/impl/draft-reads';
+import type { DraftTableItem } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import {
   type ChangesBranch,
   type ComparedTable,
@@ -28,6 +30,8 @@ import {
   type ComparisonScope,
 } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 import { ChangeType } from 'src/features/revision-changes/types';
+
+export type TableIds = Pick<DraftTableItem, 'tableId' | 'previousTableId'>;
 
 export interface DraftTable {
   readonly pair: TablePair;
@@ -61,7 +65,7 @@ export class DraftTablesReader {
 
     return new DraftTables(
       compared,
-      DraftCatalogue.tableLevel(compared),
+      () => DraftCatalogue.tableLevel(compared),
       this.countsReader,
     );
   }
@@ -72,13 +76,21 @@ export class DraftTables {
   public readonly listed: readonly DraftTable[];
 
   private readonly rowCounts = new Map<string, Promise<ReportedRowCounts>>();
+  private tableCatalogue?: DraftCatalogue;
 
   constructor(
     public readonly compared: ComparedSnapshot,
-    public readonly catalogue: DraftCatalogue,
+    private readonly buildCatalogue: () => DraftCatalogue,
     private readonly countsReader: ReportedRowCountsReader,
   ) {
     this.listed = listedTablesOf(compared);
+  }
+
+  // The table-level catalogue, built on first use: a row page builds its own with the changed rows of the page.
+  public get catalogue(): DraftCatalogue {
+    this.tableCatalogue ??= this.buildCatalogue();
+
+    return this.tableCatalogue;
   }
 
   public get readState(): DraftReadState {
@@ -233,4 +245,15 @@ function tableRowsOf(
   }
 
   return undefined;
+}
+
+export function tableIdsOf(pair: TablePair): TableIds {
+  const tableId = publicTableIdOf(pair);
+  const previousTableId = previousTableIdOf(pair);
+
+  if (previousTableId === undefined) {
+    return { tableId };
+  }
+
+  return { tableId, previousTableId };
 }

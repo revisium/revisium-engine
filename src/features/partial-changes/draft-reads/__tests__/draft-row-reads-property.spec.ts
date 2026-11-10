@@ -1,0 +1,265 @@
+import {
+  createPartialChangesTestKit,
+  type PartialChangesTestKit,
+} from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { DraftRowItem } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import type { DraftTableItem } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
+import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
+import {
+  ChangeType,
+  type RowChange,
+} from 'src/features/revision-changes/types';
+import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
+import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
+import type { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import {
+  rowItemsOf,
+  tableItemsOf,
+  unitsReachableFrom,
+} from '../../__tests__/support/draft-reading';
+import {
+  givenRandomDraft,
+  RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  RANDOM_DRAFT_SEEDS,
+} from '../../__tests__/support/random-draft';
+import { UnitKindCoverage } from '../../__tests__/support/unit-kind-coverage';
+
+const PAGE_SIZES = [1, 2, 7];
+const ALL_ROWS = 5_000;
+
+interface RowChangeView {
+  readonly key: string;
+  readonly fields: readonly (readonly [string, string, unknown, unknown])[];
+}
+
+describe('Draft row reads over random Drafts', () => {
+  let kit: PartialChangesTestKit;
+  const coverage = new UnitKindCoverage();
+
+  beforeAll(async () => {
+    kit = await createPartialChangesTestKit();
+  });
+
+  afterEach(async () => {
+    await kit.guard.verifyAndForget();
+  });
+
+  afterAll(async () => {
+    await kit.close();
+  });
+
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'reaches exactly the listed units from the table, row and summary reads (DR-01, seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const listed = await draft.listEveryUnit();
+      coverage.record(listed);
+
+      const reachable = unitsReachableFrom({
+        tables: await readEveryTable(draft),
+        rows: await readEveryRow(draft),
+        summary: await draft.readDraftChangesSummary(),
+      });
+
+      expect(distinctUnitsOf(reachable)).toEqual(distinctUnitsOf(listed));
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it('reaches every unit kind across its seeds', () => {
+    expect(coverage.missingKinds()).toEqual([]);
+  });
+
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'lists every native row change with its change type and field changes, on every page size, beside rows that differ only in a row column (DR-03, DR-15, seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const native = await draft.readNativeRowChanges();
+      const all = await readEveryRow(draft);
+
+      for (const first of PAGE_SIZES) {
+        expect(
+          rowItemsOf(await draft.readEveryDraftRowPage({ first })),
+        ).toEqual(all);
+      }
+
+      expect(nativeViewsOf(all).sort(byKey)).toEqual(
+        native.map(viewOfNativeChange).sort(byKey),
+      );
+      expect(all.filter((item) => !isNativeChange(item, native))).toEqual(
+        all.filter(differsOnlyInRowColumns),
+      );
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'counts in the table data of each table the rows the row read selects, and in the summary their sum (DR-05, seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const tables = await readEveryTable(draft);
+      const rows = await readEveryRow(draft);
+      const summary = await draft.readDraftChangesSummary();
+
+      for (const table of tables) {
+        expect([table.tableId, tableDataRowsOf(table)]).toEqual([
+          table.tableId,
+          rowsWithUnitsOf(table, rows),
+        ]);
+      }
+
+      expect(summary.rowsWithUnits).toBe(
+        tables.reduce((sum, table) => sum + tableDataRowsOf(table), 0),
+      );
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  async function readEveryRow(draft: ChangesScenario): Promise<DraftRowItem[]> {
+    return rowItemsOf([await draft.readDraftRowChanges({ first: ALL_ROWS })]);
+  }
+
+  async function readEveryTable(
+    draft: ChangesScenario,
+  ): Promise<DraftTableItem[]> {
+    return tableItemsOf([await draft.readDraftTableChanges({ first: 5_000 })]);
+  }
+});
+
+function distinctUnitsOf(units: readonly UnitRef[]): string[] {
+  const keys = units.map((unit) =>
+    JSON.stringify(withoutUndefined(addressedUnitOfListed(unit))),
+  );
+
+  return [...new Set(keys)].sort(compareCodePoints);
+}
+
+function withoutUndefined(unit: object): object {
+  return Object.fromEntries(
+    Object.entries(unit).filter(([, value]) => value !== undefined),
+  );
+}
+
+// The native diff compares id and data only: a renamed row that also differs in a row column is RENAMED there.
+function nativeViewsOf(items: readonly DraftRowItem[]): RowChangeView[] {
+  return items
+    .filter((item) => !differsOnlyInRowColumns(item))
+    .map((item) => ({
+      key: keyOf(item.tableId, item.rowId, nativeChangeTypeOf(item)),
+      fields: item.fields.map(({ path, changeType, oldValue, newValue }) => [
+        path,
+        changeType,
+        oldValue,
+        newValue,
+      ]),
+    }));
+}
+
+function nativeChangeTypeOf({
+  changeType,
+  fields,
+  columns,
+}: DraftRowItem): ChangeType {
+  if (
+    changeType === ChangeType.RenamedAndModified &&
+    fields.length === 0 &&
+    columns.length > 0
+  ) {
+    return ChangeType.Renamed;
+  }
+
+  return changeType;
+}
+
+function differsOnlyInRowColumns({
+  changeType,
+  fields,
+  columns,
+}: DraftRowItem): boolean {
+  return (
+    changeType === ChangeType.Modified &&
+    fields.length === 0 &&
+    columns.length > 0
+  );
+}
+
+function isNativeChange(
+  item: DraftRowItem,
+  native: readonly RowChange[],
+): boolean {
+  return native.some(
+    (change) =>
+      keyOf(
+        tableIdOfNative(change),
+        rowIdOfNative(change),
+        change.changeType,
+      ) === keyOf(item.tableId, item.rowId, nativeChangeTypeOf(item)),
+  );
+}
+
+function viewOfNativeChange(change: RowChange): RowChangeView {
+  return {
+    key: keyOf(
+      tableIdOfNative(change),
+      rowIdOfNative(change),
+      change.changeType,
+    ),
+    fields: change.fieldChanges.map(
+      ({ fieldPath, changeType, oldValue, newValue }) => [
+        fieldPath === '' ? '' : `/${fieldPath.replaceAll('.', '/')}`,
+        changeType,
+        oldValue ?? null,
+        newValue ?? null,
+      ],
+    ),
+  };
+}
+
+function tableIdOfNative({ table, fromTable }: RowChange): string {
+  return table?.id ?? fromTable?.id ?? '';
+}
+
+function rowIdOfNative({ row, fromRow }: RowChange): string {
+  return row?.id ?? fromRow?.id ?? '';
+}
+
+function keyOf(tableId: string, rowId: string, changeType: string): string {
+  return `${tableId}/${rowId} ${changeType}`;
+}
+
+function byKey(left: RowChangeView, right: RowChangeView): number {
+  return compareCodePoints(left.key, right.key);
+}
+
+function tableDataRowsOf({ selection }: DraftTableItem): number {
+  if (selection.state !== 'selectable') {
+    return 0;
+  }
+
+  return selection.tableData?.rows ?? 0;
+}
+
+// Selectable rows count by their row selector; a row whose only stored difference is computed counts too (§4).
+function rowsWithUnitsOf(
+  table: DraftTableItem,
+  rows: readonly DraftRowItem[],
+): number {
+  if (
+    table.changeType === ChangeType.Added ||
+    table.changeType === ChangeType.Removed
+  ) {
+    return 0;
+  }
+
+  const ofTable = rows.filter(({ tableId }) => tableId === table.tableId);
+  const selectors = new Set(
+    ofTable.flatMap(({ selection }) =>
+      selection.state === 'selectable' ? [JSON.stringify(selection.row)] : [],
+    ),
+  );
+  const computed = ofTable.filter(
+    ({ selection }) => selection.state === 'computed',
+  );
+
+  return selectors.size + computed.length;
+}

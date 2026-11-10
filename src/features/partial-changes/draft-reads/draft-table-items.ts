@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import type { Row } from 'src/engine-prisma-types';
-import { previousTableIdOf } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import { encodeTableCursor } from 'src/features/partial-changes/draft-reads/draft-cursor';
-import type {
-  DraftTable,
-  DraftTables,
+import {
+  type DraftTable,
+  type DraftTables,
+  tableIdsOf,
 } from 'src/features/partial-changes/draft-reads/draft-tables';
 import type { ReportedRowCounts } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
@@ -16,10 +16,6 @@ import type {
   TableSelection,
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
-import {
-  publicTableIdOf,
-  type TablePair,
-} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { pendingEntriesOf } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SchemaImpactService } from 'src/features/revision-changes/services/schema-impact.service';
 import { ViewsComparisonService } from 'src/features/revision-changes/services/views-comparison.service';
@@ -155,19 +151,6 @@ function tableDataOf(
   }
 
   return { selector: { tableData: [pair.draft.id] }, rows: rowsWithUnits };
-}
-
-export function tableIdsOf(
-  pair: TablePair,
-): Pick<DraftTableItem, 'tableId' | 'previousTableId'> {
-  const tableId = publicTableIdOf(pair);
-  const previousTableId = previousTableIdOf(pair);
-
-  if (previousTableId === undefined) {
-    return { tableId };
-  }
-
-  return { tableId, previousTableId };
 }
 
 function rowsSummaryOf({

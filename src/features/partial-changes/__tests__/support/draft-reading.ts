@@ -15,6 +15,8 @@ import type {
   DraftTableItem,
   DraftTablePage,
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
+import type { FieldSelection } from 'src/features/partial-changes/queries/impl/draft-reads';
+import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { GetRevisionChangesHandler } from 'src/features/revision-changes/queries/handlers/get-revision-changes.handler';
 import { GetRowChangesHandler } from 'src/features/revision-changes/queries/handlers/get-row-changes.handler';
@@ -165,6 +167,36 @@ export async function readNativeTableChanges(
   return page.edges.map(({ node }) => node);
 }
 
+export interface DraftReads {
+  readonly tables: readonly DraftTableItem[];
+  readonly rows: readonly DraftRowItem[];
+  readonly summary: DraftChangesSummary;
+}
+
+// Every unit a client reaches from the three reads: table selections, summary items, and row, field and column selections.
+export function unitsReachableFrom({
+  tables,
+  rows,
+  summary,
+}: DraftReads): UnitRef[] {
+  return [
+    ...tables.flatMap(({ selection }) =>
+      selection.state === 'selectable'
+        ? [selection.structure, selection.views].filter(isUnitRef)
+        : [],
+    ),
+    ...summary.sharedSchemas.map(({ unit }) => unit),
+    ...summary.transientTables.map(({ structure }) => structure),
+    ...summary.viewsOnlyTables.map(({ views }) => views),
+    ...rows.flatMap(({ selection, fields, columns }) => [
+      ...selection.units,
+      ...[...fields, ...columns].flatMap((change) =>
+        unitOfFieldSelection(change.selection),
+      ),
+    ]),
+  ];
+}
+
 export async function readNativeRowChanges(
   kit: PartialChangesTestKit,
   comparison: NativeComparison,
@@ -235,6 +267,18 @@ export async function draftReadQueriesDuring<T>(
   } finally {
     spies.forEach((spy) => spy.mockRestore());
   }
+}
+
+function unitOfFieldSelection(selection: FieldSelection): UnitRef[] {
+  if (selection.state === 'unit' || selection.state === 'goesWith') {
+    return [selection.unit];
+  }
+
+  return [];
+}
+
+function isUnitRef(unit: UnitRef | undefined): unit is UnitRef {
+  return unit !== undefined;
 }
 
 function recordingRawQueries(

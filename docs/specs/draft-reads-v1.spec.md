@@ -198,7 +198,7 @@ formula values of the page's rows are computed), in native order, each as one en
 
 | Selector result | `selection` |
 | --- | --- |
-| `notSelectable` (a formula or system value) | `{ state: 'computed' }` |
+| `notSelectable` (a formula or system value), or no unit while the stored values at `path` are equal (a computed value inside an array or File value, which is atomic) | `{ state: 'computed' }` |
 | requires the row's creation, deletion or replace unit | `goesWith`, reason `rowExistence` |
 | requires the structure unit | `goesWith`, reason `tableExistence` for a created, removed or replaced table, else `structureBound` |
 | selects a field unit, or requires the unit of the whole array or File value | `{ state: 'unit', unit }` |
@@ -513,6 +513,8 @@ Paging, filters, validation, snapshot:
   value, so DR-12 no longer asks for a field set to `null`.
 - §8: a row page whose last item ends its table reads the next tables until one has a reported row, to tell
   `hasNextPage`.
+- §5.2: a field change that matches no unit while the stored values at its path are equal is `computed`: a formula or
+  system value inside an atomic array or File value changes only in the computation.
 
 ### Version 1.1 (2026-11-10)
 

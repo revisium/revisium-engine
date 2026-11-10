@@ -1,6 +1,8 @@
+import { deepEqual } from '@revisium/schema-toolkit/lib';
 import type { Row } from 'src/engine-prisma-types';
 import type { AddressedRow } from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import {
+  type CatalogueRow,
   type CatalogueUnit,
   isExistenceUnit,
 } from 'src/features/partial-changes/catalogue/catalogue-unit';
@@ -8,7 +10,7 @@ import { differingColumnsOf } from 'src/features/partial-changes/catalogue/row-d
 import type { RowColumn } from 'src/features/partial-changes/catalogue/unit';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
-import { tableIdsOf } from 'src/features/partial-changes/draft-reads/draft-table-items';
+import { tableIdsOf } from 'src/features/partial-changes/draft-reads/draft-tables';
 import { pointerOfNativeFieldPath } from 'src/features/partial-changes/draft-reads/native-field-path';
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
@@ -48,6 +50,7 @@ export interface DraftRowEntry {
 }
 
 type RowIds = Pick<DraftRowItem, 'rowId' | 'previousRowId'>;
+type ItemIds = Pick<DraftRowItem, 'tableId' | 'previousTableId'> & RowIds;
 
 const COMPUTED = { state: 'computed' } as const;
 
@@ -96,10 +99,7 @@ class DraftRow {
     };
   }
 
-  private ids(): Pick<
-    DraftRowItem,
-    keyof RowIds | 'tableId' | 'previousTableId'
-  > {
+  private ids(): ItemIds {
     return { ...tableIdsOf(this.entry.table), ...rowIdsOf(this.entry) };
   }
 
@@ -185,6 +185,10 @@ class DraftRow {
 
     const [field] = units;
 
+    if (!field && this.storesEqualValuesAt(pointer)) {
+      return COMPUTED;
+    }
+
     if (!field) {
       throw new Error(
         `${this.address()}${pointer.toString()} changed but matches no unit`,
@@ -192,6 +196,13 @@ class DraftRow {
     }
 
     return { state: 'unit', unit: unitRefOf(field) };
+  }
+
+  // A value inside an atomic array or File that only the computation changed: the stored values are equal.
+  private storesEqualValuesAt(pointer: JsonPointer): boolean {
+    const { head, draft } = this.entry;
+
+    return deepEqual(pointer.valueIn(head?.data), pointer.valueIn(draft?.data));
   }
 
   private unitsMatched({ selected, required }: SelectorMatch): CatalogueUnit[] {
@@ -236,7 +247,7 @@ class DraftRow {
     return { state: 'unit', unit: unitRefOf(unit) };
   }
 
-  private loadedRow() {
+  private loadedRow(): CatalogueRow | undefined {
     return this.catalogue.changedRowOf(
       this.entry.table,
       this.entry.pair.identity,

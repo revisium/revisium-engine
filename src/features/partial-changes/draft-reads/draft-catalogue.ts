@@ -8,7 +8,6 @@ import {
   buildChangeCatalogue,
   type ChangeCatalogue,
 } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { groupRecreations } from 'src/features/partial-changes/catalogue/public-id-groups';
 import { carriesViewsChange } from 'src/features/partial-changes/catalogue/views-units';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { AddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
@@ -37,7 +36,6 @@ type RowsByIdentity = ReadonlyMap<string, CatalogueRow>;
 export class DraftCatalogue {
   private readonly catalogue: ChangeCatalogue;
   private readonly targets: SelectionTargets;
-  private readonly recreations = new Map<string, readonly TablePair[]>();
   private readonly loadedRows: ReadonlyMap<string, RowsByIdentity>;
 
   private constructor(compared: ComparedSnapshot, changedRows: ChangedRows) {
@@ -48,12 +46,6 @@ export class DraftCatalogue {
       addressedRows: NO_ADDRESSED_ROWS,
     });
     this.loadedRows = rowsByIdentityOf(this.catalogue.rows);
-
-    for (const group of groupRecreations(compared.snapshot.tables)) {
-      for (const { identity } of group) {
-        this.recreations.set(identity, group);
-      }
-    }
   }
 
   public static tableLevel(compared: ComparedSnapshot): DraftCatalogue {
@@ -71,8 +63,8 @@ export class DraftCatalogue {
     return this.catalogue.units;
   }
 
-  public isReplaced({ identity }: TablePair): boolean {
-    return (this.recreations.get(identity)?.length ?? 0) > 1;
+  public isReplaced(table: TablePair): boolean {
+    return this.targets.recreationOf(table).length > 1;
   }
 
   public refusalOf(table: TablePair): RefusedTable | undefined {

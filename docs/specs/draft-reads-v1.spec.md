@@ -93,13 +93,19 @@ A table item (`DraftTableItem`, §9):
 | `selection` | How the table's changes are selected (below). |
 
 Migrations and views come from the compared snapshot, by the table's identity, without further reads. The native
-history and compare reads look both up by table id and keep doing so.
+history and compare reads look both up by table id and keep doing so. Units compare whole views documents
+(`structureChange.views` and the views unit, partial-changes-v1 §3.6, §5.2), while `viewsChanges` lists the
+differences of the views and of the default view, as the native mapper does; so a document that differs only
+elsewhere (its `version`, or an empty document against none) has a unit or `structureChange.views: true` with
+`viewsChanges.hasChanges: false`, and for a table that is not refused `viewsChanges.hasChanges: true` always comes with
+one of them.
 
 **Change type of a renamed table.** A native rename writes a new table version, so the native diff reports every
 renamed table as `RENAMED_AND_MODIFIED`. The Draft reads report `RENAMED` when nothing but the table id differs and
 `RENAMED_AND_MODIFIED` when also: the structure differs beyond the id (a pending migration other than the rename, a
-different schema or schema history, or a changed field, partial-changes-v1 §3.3); the views differ (`viewsChanges`
-has changes); the table has a reported row; or the table is refused, so the reads do not analyse it. The row counts
+different schema or schema history, or a changed field, partial-changes-v1 §3.3); the views document differs
+(`structureChange.views`, below); the table has a reported row; or the table is refused, so the reads do not analyse
+it. The row counts
 decide only for a renamed table whose structure and views are unchanged: they are read once per call and shared with
 its item.
 
@@ -126,8 +132,9 @@ its item.
 
   So `rows` equals the number of distinct `selection.row` of the table's `selectable` row items over all pages of an
   unfiltered `rowChanges`, and row filters do not change it. A client that selected rows one by one knows from it when
-  it has selected all of them. One exception: a pair whose only stored difference is a computed value (only a write
-  below the native validation leaves one) makes `tableData` present and counts, while its row item is `computed`.
+  it has selected all of them. One exception: a pair whose only stored difference is a computed value (a formula
+  output that a native foreign-key rewrite left stale, partial-changes-v1 §5.2, or a write below the native
+  validation) makes `tableData` present and counts, while its row item is `computed` and it has no unit.
 
 ## 5. Row items
 
@@ -166,13 +173,16 @@ formula values of the page's rows are computed), in native order, each as one en
 | --- | --- |
 | `path` | JSON Pointer of the changed value: a field, an array element (`/tags/1`), or the root `''`. |
 | `changeType` | `FIELD_ADDED`, `FIELD_REMOVED` or `FIELD_MODIFIED`: the values of the native `RowChangeDetailType` that the value diff produces. |
-| `oldValue`, `newValue` | The Head and the Draft value. A side without the value has `null`: `oldValue` of `FIELD_ADDED`, `newValue` of `FIELD_REMOVED`, and the missing side of the root entry of a created or removed row. The change type, or the row's, tells a missing value from a JSON `null`. |
+| `oldValue`, `newValue` | The Head and the Draft value. A side without the value has `null`: `oldValue` of `FIELD_ADDED`, `newValue` of `FIELD_REMOVED`. The change type tells a missing value from a JSON `null`. |
 | `selection` | The result of the field selector at `path` (partial-changes-v1 §4.3), resolved by the selection normalisation itself (below). |
 | `follows` | The rename whose cascade rewrote this reference (§5.5). |
 
-- A created or removed row has one entry at the root pointer `''`, `FIELD_MODIFIED`, holding the whole row value on
-  its side. Its selection is that of any field of the row: `goesWith` the row's existence unit (`rowExistence`), or
-  the structure for a created, removed or replaced table (`tableExistence`).
+- A created row has one entry at the root pointer `''`: `FIELD_ADDED`, `oldValue: null`, `newValue` the whole row
+  data; a removed row one `FIELD_REMOVED` entry with `newValue: null`. Its selection is that of any field of the row:
+  `goesWith` the row's existence unit (`rowExistence`), or the structure for a created, removed or replaced table
+  (`tableExistence`).
+- An entry at an object pointer appears only when one side has no object there, which only a structure change or the
+  root entry gives; it goes with the structure (`structureBound`) or follows the root entry's rule.
 - The value diff does not follow schema moves: a field that a pending `move` patch carried reads as `FIELD_REMOVED` at
   its Head pointer and `FIELD_ADDED` at its Draft pointer, and both go with the structure (`structureBound`), whose
   `structureChange` reports the move (partial-changes-v1 §5.2).
@@ -246,8 +256,8 @@ rename. Array elements are compared by position. A rename in a refused table has
 | `headRevisionId`, `draftRevisionId`, `refusedTables` | As every read. |
 | `tablesSummary` | The listed tables by change type (§4): `total`, `added`, `modified`, `removed`, `renamed`, plus `replaced`, the number of replaced ids (each counted once; its two items are also counted in `added` and `removed`). |
 | `rowsSummary` | The reported rows of every listed table by change type, as `rowsSummary` of the table items. |
-| `rowsWithUnits` | The rows with units over all tables: the sum of the table items' `tableData.rows`. A client tells a user's own row edits from rows that only travel with a structure change by it. |
-| `sharedSchemas` | Every shared schema unit: `{ sharedSchemaId, change: 'added' \| 'removed' \| 'modified', changeType, unit }`, `changeType` `ADDED`, `REMOVED` or `MODIFIED`. |
+| `rowsWithUnits` | The rows with units over all tables: the sum of the table items' `tableData.rows` (with its exception, §4). A client tells a user's own row edits from rows that only travel with a structure change by it. |
+| `sharedSchemas` | Every shared schema unit: `{ sharedSchemaId, changeType, unit }`, `changeType` `ADDED` (no Head row), `REMOVED` (no Draft row) or `MODIFIED`. |
 | `transientTables` | Every structure unit of tables created and removed inside the Draft: `{ tableId, changeType: 'ADDED', structure }`. |
 | `viewsOnlyTables` | Every views unit of a table whose user table version is unchanged, which no table item shows: `{ tableId, changeType: 'MODIFIED', views }`. |
 | `sharedSchemasCount`, `transientTablesCount`, `viewsOnlyTablesCount` | The lengths of the three lists before `filters`. |
@@ -261,6 +271,7 @@ filter choices and in its empty state, from one call.
 
 A transient table is `ADDED`: it has no Head side, and a commit adds its migrations to the Head ledger as for a created
 table. A views-only table has one id and one version on both sides, so it is `MODIFIED`. No summary item is renamed.
+Each list is ordered by its id (`sharedSchemaId` or `tableId`) in code-point order.
 
 ## 7. Order, paging and filters
 
@@ -399,9 +410,7 @@ type DraftChangesSummary = DraftReadState & {
   transientTables: TransientTable[]; transientTablesCount: number;
   viewsOnlyTables: ViewsOnlyTable[]; viewsOnlyTablesCount: number;
 };
-type ChangedSharedSchema = { sharedSchemaId: string; change: SharedSchemaChange; changeType: ChangeType;
-  unit: UnitRef };
-type SharedSchemaChange = 'added' | 'removed' | 'modified';
+type ChangedSharedSchema = { sharedSchemaId: string; changeType: ChangeType; unit: UnitRef };
 type TransientTable = { tableId: string; changeType: ChangeType; structure: DescribedUnitRef };
 type ViewsOnlyTable = { tableId: string; changeType: ChangeType; views: UnitRef };
 ```
@@ -412,7 +421,7 @@ those of partial-changes-v1 §5.11. `ChangeType`, `RevisionChangeSummary`, `Sche
 the native `RowChangeDetailType` that the row value diff produces. Every code
 union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `GOES_WITH_REASONS`, `FOLLOW_REASONS`,
-`ID_EXCHANGE_TERMINATIONS`, `SHARED_SCHEMA_CHANGES`.
+`ID_EXCHANGE_TERMINATIONS`.
 
 ## 10. Acceptance scenarios
 
@@ -432,7 +441,9 @@ Reachability and oracles (properties over random Drafts):
   most and the rest forming transient tables; `viewsChanges` compare the views under the Head id in Head with those
   under the Draft id in Draft.
 - DR-05 `tableData.rows` of every table equals the distinct `selection.row` of its `selectable` items over an
-  unfiltered row read; the summary's `rowsWithUnits` equals their sum.
+  unfiltered row read; the summary's `rowsWithUnits` equals their sum; a preview that selects `tableData: [table]` has
+  a `coverage` entry with `rows` equal to `tableData.rows` (partial-changes-v1 §5.1), apart from the computed-only
+  exception.
 - DR-06 The summary equals the native summary in its counts and change types; each count of `tablesSummary` equals
   the `totalCount` of the table filter of its type, and of `rowsSummary` the number of rows the row filter of its
   type lists.
@@ -445,14 +456,16 @@ Items:
   `replaced` structure unit; `tablesSummary.replaced` counts it once; a refused replaced id is still `replaced`.
 - DR-09 A renamed table with nothing else changed is `RENAMED`; with a field change, another migration, a views change
   or a reported row it is `RENAMED_AND_MODIFIED`.
-- DR-10 A table whose structure changed has no `views` in its selection, also when its views were edited; a table
-  without a structure change and with a views edit has `views`; a views-only table appears only in the summary.
+- DR-10 A table whose structure changed has no `views` in its selection, also when its views were edited, and its
+  structure unit says `structureChange.views: true` exactly when its views document differs; a table without a
+  structure change and with a views edit has `views`; a views-only table appears only in the summary; whenever
+  `viewsChanges.hasChanges` is true, the table has a views unit or `structureChange.views: true`.
 - DR-11 A `contentEqual` table and a `computed` row; a refused table's items, rows and fields are `refused` with its
   code; rows of a created, removed or replaced table go with the structure (`tableExistence`).
 - DR-12 Field changes: paths are JSON Pointers (a nested field `/dims/width`, an array element `/tags/1`, which
   selects the array's unit); an added field has `oldValue: null`, a removed one `newValue: null`, and a field set to
-  `null` is `FIELD_MODIFIED` with `newValue: null`; a created row has one root entry `''` that goes with the row
-  (`rowExistence`); a field moved by a pending `move` reads as removed and added, both `structureBound`; a formula
+  `null` is `FIELD_MODIFIED` with `newValue: null`; a created row has one root entry `''`, `FIELD_ADDED` with the whole
+  data, and a removed row one `FIELD_REMOVED`, both going with the row (`rowExistence`); a field moved by a pending `move` reads as removed and added, both `structureBound`; a formula
   field is `computed`; a value of a changed field goes with the structure (`structureBound`).
 - DR-13 Columns: a `meta` and a `schemaHash` difference under an unchanged structure select the `rowColumns` unit; a
   `publishedAt` difference with a published-at field selects that field unit; under a changed structure the
@@ -486,7 +499,8 @@ Paging, filters, validation, snapshot:
   of `fromTableId` / `fromRowId`), merged field changes with values and a JSON Pointer `path` instead of a native dot
   `path` beside a `pointer`, `columns` (was `columnChanges`), `replaced` and `tablesSummary.replaced`,
   `tableData: { selector, rows }` (was `tableData` and `tableDataRows`), selectors as `SelectionItems`, the summary
-  without `revisionId`, `parentRevisionId` and `totalChanges`, with `rowsWithUnits` and `sharedSchemaId`; no
+  without `revisionId`, `parentRevisionId` and `totalChanges`, with `rowsWithUnits`, and shared schema items with
+  `sharedSchemaId` and `changeType` only (no `change`, no `SHARED_SCHEMA_CHANGES`); no
   `totalCount` on row pages; views units only for tables without a structure unit.
 
 [ADR-002]: ../adr/ADR-002-draft-reads-and-public-changes-api.md

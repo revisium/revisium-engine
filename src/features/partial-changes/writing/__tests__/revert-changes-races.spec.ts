@@ -26,6 +26,7 @@ import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const PRODUCTS = 'products';
 const TAGS = 'tags';
+const ITEMS = 'items';
 
 const pricedSchema = obj({ title: str(), price: num() });
 const tagSchema = obj({ title: str() });
@@ -146,6 +147,56 @@ describe('revertChanges racing other writers', () => {
       await expectData(draft, 'head', PRODUCTS, 'p1', {
         title: 'one',
         price: 1,
+      });
+      await expectConsistentRevisions(draft);
+    });
+  });
+
+  describe('a native structural write to the selected table while the revert planned', () => {
+    it('removing it: the attempt is retried and the selected field now requires the removal, nothing is written', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.removeTable(PRODUCTS),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toMatchObject({
+        status: 'required',
+        required: [
+          {
+            unit: { kind: 'structure', tableId: PRODUCTS },
+            reason: { code: 'structureBoundData' },
+          },
+        ],
+      });
+      await expectTables(draft, { head: [PRODUCTS], draft: [] });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('renaming it: the attempt is retried, the selector resolves through the Head id and the field is reverted', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.renameTable(PRODUCTS, ITEMS),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toMatchObject({
+        status: 'applied',
+        applied: { selected: 1, required: 0 },
+        draftHasChanges: true,
+      });
+      await expectTables(draft, { head: [PRODUCTS], draft: [ITEMS] });
+      await expectData(draft, 'draft', ITEMS, 'p1', {
+        title: 'one',
+        price: 10,
       });
       await expectConsistentRevisions(draft);
     });

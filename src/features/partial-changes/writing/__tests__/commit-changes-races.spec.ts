@@ -1,5 +1,5 @@
 import { num, obj, str } from '@revisium/schema-toolkit/mocks';
-import { addField } from 'src/__tests__/fixtures/ledger-steps';
+import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -25,6 +25,7 @@ import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 const PRODUCTS = 'products';
 const TAGS = 'tags';
 const LABELS = 'labels';
+const ITEMS = 'items';
 
 const pricedSchema = obj({ title: str(), price: num() });
 const tagSchema = obj({ title: str() });
@@ -198,6 +199,80 @@ describe('commitChanges racing other writers', () => {
     });
   });
 
+  describe('a native structural write to the selected table while the commit planned', () => {
+    it('removing it: the attempt is retried and the selected field now requires the removal, nothing is written', async () => {
+      const draft = await givenEditedPrices();
+      const headRevisionId = await draft.revisionId('head');
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.removeTable(PRODUCTS),
+      );
+
+      expect(attempts).toBe(2);
+      expectStructureOfProductsRequired(result);
+      expect(await draft.revisionId('head')).toBe(headRevisionId);
+      await expectTables(draft, { head: [PRODUCTS], draft: [] });
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'one',
+        price: 1,
+      });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('renaming it: the attempt is retried, the selector resolves through the Head id and the field is committed', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.renameTable(PRODUCTS, ITEMS),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toMatchObject({
+        status: 'applied',
+        applied: { selected: 1, required: 0 },
+        draftHasChanges: true,
+      });
+      await expectTables(draft, { head: [PRODUCTS], draft: [ITEMS] });
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'uno',
+        price: 1,
+      });
+      await expectData(draft, 'draft', ITEMS, 'p1', {
+        title: 'uno',
+        price: 10,
+      });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('removing the selected field: the attempt is retried and the field now requires the structure, nothing is written', async () => {
+      const draft = await givenEditedPrices();
+      const headRevisionId = await draft.revisionId('head');
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.updateTable(PRODUCTS, [removeField('title')]),
+      );
+
+      expect(attempts).toBe(2);
+      expectStructureOfProductsRequired(result);
+      expect(await draft.revisionId('head')).toBe(headRevisionId);
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'one',
+        price: 1,
+      });
+      await expectData(draft, 'draft', PRODUCTS, 'p1', { price: 10 });
+      await expectConsistentRevisions(draft);
+    });
+  });
+
   describe('a native commit or whole revert while the commit planned', () => {
     it('a native commit: the attempt is retried and finds nothing left to commit in the next Draft', async () => {
       const draft = await givenEditedPrices();
@@ -347,6 +422,18 @@ describe('commitChanges racing other writers', () => {
       });
     });
   });
+
+  function expectStructureOfProductsRequired(result: CommitChangesResult) {
+    expect(result).toMatchObject({
+      status: 'required',
+      required: [
+        {
+          unit: { kind: 'structure', tableId: PRODUCTS },
+          reason: { code: 'structureBoundData' },
+        },
+      ],
+    });
+  }
 
   function expectCommitted(
     result: CommitChangesResult,

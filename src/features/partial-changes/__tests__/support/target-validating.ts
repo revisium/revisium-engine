@@ -11,6 +11,7 @@ export function readValidationBlockers(
   branch: ChangesBranch,
   operation: ChangeOperation,
   selection: Selection,
+  unresolvedSteps: readonly string[],
 ): Promise<BlockerView[]> {
   return readInPlanningTransaction(kit, async () => {
     const { source, choice, target } = await closedPlanOf(
@@ -19,10 +20,11 @@ export function readValidationBlockers(
       operation,
       selection,
     );
-    const blockers = await kit.targetValidator.validate(source, {
-      choice,
-      assembled: target,
-    });
+    const blockers = await kit.targetValidator.validate(
+      source,
+      { choice, assembled: target },
+      new Set(unresolvedSteps),
+    );
 
     return blockers.map((blocker) => blockerView(source.catalogue, blocker));
   });

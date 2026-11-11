@@ -71,8 +71,8 @@ export function passingTheDeadlineAfterValidation(
 
   return jest
     .spyOn(validator, 'validate')
-    .mockImplementation(async (source, validated) => {
-      const blockers = await validate(source, validated);
+    .mockImplementation(async (source, validated, unresolvedSteps) => {
+      const blockers = await validate(source, validated, unresolvedSteps);
 
       blockEventLoopFor(durationMs);
 

@@ -291,11 +291,19 @@ export class ChangesScenario extends BranchScenario {
     return readClosedDependencies(this.kit, this.branch, operation, selection);
   }
 
+  // The steps name the migrations of requirements a closure could not add; a plan passes those of its closure.
   public validateTarget(
     operation: ChangeOperation,
     selection: Selection,
+    unresolvedSteps: readonly string[] = [],
   ): Promise<BlockerView[]> {
-    return readValidationBlockers(this.kit, this.branch, operation, selection);
+    return readValidationBlockers(
+      this.kit,
+      this.branch,
+      operation,
+      selection,
+      unresolvedSteps,
+    );
   }
 
   public fingerprintPlan(

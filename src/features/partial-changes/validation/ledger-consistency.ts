@@ -69,19 +69,22 @@ type ExistingInconsistencies = Readonly<
 export class LedgerConsistency {
   constructor(private readonly replayer: LedgerReplayer) {}
 
+  // The lineages that hold an unresolved step fail because of a requirement the plan already blocks on; they are left
+  // out like unledgered ones, with the failures that only read them.
   public blockersOf(
     source: ValidationSource,
     choice: AppliedUnits,
     ledger: LedgerPlan,
+    unresolvedSteps: ReadonlySet<string>,
   ): CatalogueBlocker[] {
     const sourceInconsistencies = sourceInconsistenciesOf(source);
 
     return resultingRolesOf(source, choice, ledger).flatMap((role) =>
       sourceInconsistencies
-        .newInconsistenciesOf({
-          ...role,
-          replayed: this.replayer.replay(role.ledger),
-        })
+        .newInconsistenciesOf(
+          { ...role, replayed: this.replayer.replay(role.ledger) },
+          unresolvedSteps,
+        )
         .map((found) => ledgerInconsistentOf(role, found)),
     );
   }
@@ -111,8 +114,14 @@ export class SourceInconsistencies {
 
   public newInconsistenciesOf(
     role: ReplayedResultingRole,
+    leftOutSteps: ReadonlySet<string> = new Set(),
   ): SlotInconsistency[] {
-    return inconsistenciesOf(role, this.unledgered).filter(
+    const leftOut = {
+      tableIds: this.unledgered.tableIds,
+      steps: new Set([...this.unledgered.steps, ...leftOutSteps]),
+    };
+
+    return inconsistenciesOf(role, leftOut).filter(
       (found) => !keepsExisting(role, this.existing, found),
     );
   }

@@ -31,6 +31,7 @@ import {
 import {
   type CatalogueReason,
   positionOf,
+  type ReasonSite,
 } from 'src/features/partial-changes/plan/reason';
 import {
   isWholeDraftSelection,
@@ -71,6 +72,8 @@ export type DependencyClosureResult =
   | (ClosureOutcome & {
       readonly kind: 'closed';
       readonly target: AssembledTarget;
+      // The ledger steps of the requirements the closure could not add (SPEC §6.9 step 3).
+      readonly unresolvedSteps: ReadonlySet<string>;
     })
   | (ClosureOutcome & { readonly kind: 'tooLarge' });
 
@@ -155,6 +158,7 @@ class SelectionClosure {
       ]),
       kind: 'closed',
       target,
+      unresolvedSteps: unresolvedStepsOf(findings),
     };
   }
 
@@ -231,5 +235,25 @@ class SelectionClosure {
       blockers: distinctBlockers([...this.resolution.blockers, ...blockers]),
       estimate,
     };
+  }
+}
+
+// Every requirement left after the last pass is unresolved: its unit is excluded or already applied.
+function unresolvedStepsOf(findings: readonly Finding[]): Set<string> {
+  return new Set(
+    findings.flatMap((finding) =>
+      finding.kind === 'requires' ? stepsAt(finding.reason.site) : [],
+    ),
+  );
+}
+
+function stepsAt(site: ReasonSite): string[] {
+  switch (site.kind) {
+    case 'migration':
+      return [site.migrationId];
+    case 'tableId':
+      return site.migrationId === undefined ? [] : [site.migrationId];
+    default:
+      return [];
   }
 }

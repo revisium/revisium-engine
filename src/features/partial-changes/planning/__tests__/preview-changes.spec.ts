@@ -37,6 +37,9 @@ const SCRATCH = 'scratch';
 const EMAIL = 'email';
 const ALPHA = 'alpha';
 const BETA = 'beta';
+const BRANDS = 'brands';
+const STICKERS = 'stickers';
+const LABELS = 'labels';
 
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
 const SAMPLE_SIZE = 20;
@@ -908,6 +911,44 @@ describe('previewChanges', () => {
 
       expect(replays).toEqual({ head: 1, draft: 1 });
     });
+
+    it.each<{
+      operation: ChangeOperation;
+      selection: Selection;
+      excluded: string;
+    }>([
+      {
+        operation: 'commit',
+        selection: {
+          structures: [{ tableId: STICKERS }],
+          exclude: { structures: [{ tableId: BRANDS }] },
+        },
+        excluded: BRANDS,
+      },
+      {
+        operation: 'revert',
+        selection: {
+          structures: [{ tableId: BRANDS }],
+          exclude: { structures: [{ tableId: STICKERS }] },
+        },
+        excluded: STICKERS,
+      },
+    ])(
+      'blocks a $operation by an excluded table that a foreign key needs once, without the ledger failures that follow from it',
+      async ({ operation, selection, excluded }) => {
+        const draft = await givenLabelsOfStickersOfCreatedBrands();
+
+        const preview = await draft.previewChanges({ operation, selection });
+
+        expect(preview.status).toBe('blocked');
+        expect(preview.blockers).toEqual([
+          expect.objectContaining({
+            code: 'requiredExcluded',
+            tableId: excluded,
+          }),
+        ]);
+      },
+    );
   });
 
   describe('read scope', () => {
@@ -1265,6 +1306,23 @@ describe('previewChanges', () => {
     await draft.createTable(SCRATCH, labelSchema);
     await draft.removeTable(SCRATCH);
     await draft.createSharedSchema(EMAIL, emailSchema);
+
+    return draft;
+  }
+
+  async function givenLabelsOfStickersOfCreatedBrands(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema },
+    });
+    await draft.createTable(BRANDS, titleSchema);
+    await draft.createTable(
+      STICKERS,
+      obj({ brand: str({ foreignKey: BRANDS }) }),
+    );
+    await draft.createTable(
+      LABELS,
+      obj({ sticker: str({ foreignKey: STICKERS }) }),
+    );
 
     return draft;
   }

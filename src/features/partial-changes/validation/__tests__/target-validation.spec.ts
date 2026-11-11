@@ -16,6 +16,7 @@ import {
 } from 'src/__tests__/fixtures/head-schema-damage';
 import {
   describedLedgerOf,
+  migrationIdOf,
   pendingMigrationIds,
 } from 'src/__tests__/fixtures/stored-ledger';
 import type { TableViewsData } from 'src/features/views/types';
@@ -26,6 +27,9 @@ const ITEMS = 'items';
 const CATEGORIES = 'categories';
 const ORDERS = 'orders';
 const TAGS = 'tags';
+const BRANDS = 'brands';
+const STICKERS = 'stickers';
+const LABELS = 'labels';
 
 const productSchema = obj({ title: str(), price: num() });
 const categorySchema = obj({ title: str() });
@@ -35,6 +39,16 @@ const taggedProductSchema = obj({ product: str({ foreignKey: PRODUCTS }) });
 const labelSchema = obj({ name: str() });
 
 const addColor = [addField('color', str())];
+
+const stickersWithoutBrands: Selection = {
+  structures: [{ tableId: STICKERS }],
+  exclude: { structures: [{ tableId: BRANDS }] },
+};
+const stickersFailing = (role: string) => ({
+  code: 'ledgerInconsistent',
+  tableId: STICKERS,
+  message: `The migration ledger of the ${role} cannot replay stickers: Foreign key target "brands" does not exist`,
+});
 
 const priceOfP1: FieldRef = { tableId: PRODUCTS, rowId: 'p1', path: '/price' };
 const titleOfP1: FieldRef = { tableId: PRODUCTS, rowId: 'p1', path: '/title' };
@@ -327,6 +341,34 @@ describe('TargetValidator', () => {
         },
       ]);
     });
+
+    it('blocks a Draft ledger that misfiles its pending rows and alters a published migration with both messages', async () => {
+      const draft = await givenEditedCatalog();
+      await draft.updateTable(PRODUCTS, [addField('weight', num())]);
+      await draft.updateTable(PRODUCTS, [addField('size', num())]);
+      const [firstId, secondId] = await pendingMigrationIds(draft);
+      await draft.exchangeMigrationIds(firstId ?? '', secondId ?? '');
+      await draft.alterPublishedMigration('init', CATEGORIES, {
+        schema: labelSchema,
+      });
+
+      const blockers = await draft.validateTarget('commit', {
+        fields: [titleOfC1],
+      });
+
+      expect(blockers).toEqual([
+        {
+          code: 'ledgerInconsistent',
+          message:
+            'A migration row is not stored under its own, distinct migration id',
+        },
+        {
+          code: 'ledgerInconsistent',
+          message:
+            'A published migration is missing or changed in the Draft ledger',
+        },
+      ]);
+    });
   });
 
   describe('replaying the resulting ledgers', () => {
@@ -348,7 +390,7 @@ describe('TargetValidator', () => {
       ]);
     });
 
-    it('blocks a commit whose new Head ledger does not replay as ledgerInconsistent', async () => {
+    it('blocks a commit whose new Head and remaining Draft ledgers do not replay as ledgerInconsistent, once per ledger', async () => {
       const draft = await givenForeignKeyAddedAndRemovedAgain();
 
       const blockers = await draft.validateTarget('commit', {
@@ -362,6 +404,12 @@ describe('TargetValidator', () => {
           tableId: PRODUCTS,
           message:
             'The migration ledger of the new Head cannot replay products: Foreign key target "tags" does not exist',
+        },
+        {
+          code: 'ledgerInconsistent',
+          tableId: PRODUCTS,
+          message:
+            'The migration ledger of the remaining Draft cannot replay products: Foreign key target "tags" does not exist',
         },
       ]);
     });
@@ -381,6 +429,35 @@ describe('TargetValidator', () => {
           message:
             'The migration ledger of the reverted Draft cannot replay products: Foreign key target "tags" does not exist',
         },
+      ]);
+    });
+
+    it('leaves out the lineage that holds the step of a requirement the plan could not add, and the failures that read it', async () => {
+      const draft = await givenLabelsOfStickersOfCreatedBrands();
+      const initOfStickers = await migrationIdOf(draft, 'init', STICKERS);
+
+      const blockers = await draft.validateTarget(
+        'commit',
+        stickersWithoutBrands,
+        [initOfStickers],
+      );
+
+      expect(blockers).toEqual([]);
+    });
+
+    it('still blocks every role of a failure whose lineage holds no unresolved step', async () => {
+      const draft = await givenLabelsOfStickersOfCreatedBrands();
+      const initOfLabels = await migrationIdOf(draft, 'init', LABELS);
+
+      const blockers = await draft.validateTarget(
+        'commit',
+        stickersWithoutBrands,
+        [initOfLabels],
+      );
+
+      expect(blockers).toEqual([
+        stickersFailing('new Head'),
+        stickersFailing('remaining Draft'),
       ]);
     });
 
@@ -515,6 +592,23 @@ describe('TargetValidator', () => {
     });
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
     await draft.writeInvalidRow(PRODUCTS, 'p1', { title: 'uno', price: 'ten' });
+
+    return draft;
+  }
+
+  async function givenLabelsOfStickersOfCreatedBrands(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema },
+    });
+    await draft.createTable(BRANDS, labelSchema);
+    await draft.createTable(
+      STICKERS,
+      obj({ brand: str({ foreignKey: BRANDS }) }),
+    );
+    await draft.createTable(
+      LABELS,
+      obj({ sticker: str({ foreignKey: STICKERS }) }),
+    );
 
     return draft;
   }

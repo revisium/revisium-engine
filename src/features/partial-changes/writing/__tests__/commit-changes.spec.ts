@@ -41,6 +41,8 @@ const ADDRESS = 'address';
 const GROUPS = 'groups';
 const GOODS = 'goods';
 const TAGS = 'tags';
+const BRANDS = 'brands';
+const STICKERS = 'stickers';
 
 const categorySchema = obj({ title: str() });
 const productSchema = obj({
@@ -321,6 +323,32 @@ describe('commitChanges', () => {
         blockers: [expect.objectContaining({ code: 'unmatchedSelector' })],
         required: [],
         unmatched: missingRow,
+      });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    });
+
+    it('is blocked once by an excluded table that a foreign key needs, and writes nothing', async () => {
+      const draft = await givenStickersOfCreatedBrands();
+      const contents = await branchContentsOf(kit, draft);
+
+      const result = await draft.commitChanges({
+        selection: {
+          structures: [{ tableId: STICKERS }],
+          exclude: { structures: [{ tableId: BRANDS }] },
+        },
+      });
+
+      expect(result).toEqual<CommitChangesResult>({
+        status: 'blocked',
+        planned: true,
+        blockers: [
+          expect.objectContaining({
+            code: 'requiredExcluded',
+            tableId: BRANDS,
+          }),
+        ],
+        required: [],
+        unmatched: {},
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
@@ -1220,6 +1248,19 @@ describe('commitChanges', () => {
         },
       },
     });
+  }
+
+  async function givenStickersOfCreatedBrands(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema },
+    });
+    await draft.createTable(BRANDS, categorySchema);
+    await draft.createTable(
+      STICKERS,
+      obj({ brand: str({ foreignKey: BRANDS }) }),
+    );
+
+    return draft;
   }
 
   async function givenEditedPrices(): Promise<ChangesScenario> {

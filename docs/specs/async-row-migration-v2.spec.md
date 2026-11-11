@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.5 |
+| Version | 2.6 |
 | Status | Accepted |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), delivery stage 0 |
@@ -405,7 +405,8 @@ The package also exports the scan's input and result types: `ScanSchemaLedgerDat
 Predicate (b) grows with the number of system-table versions, not with data. Predicate (a) reads every row link of each
 selected table version (the Head and Draft tables with `'headAndDraft'`, up to all of `_RowToTable` with `'all'`); it
 dominates and runs off-peak. The repair planner adds row validation of damaged tables (§6.3). Errors: unknown project or
-branch → not found; `branchName` without `projectId`, a malformed `cursor` or `limit` → validation error. No retries; a
+branch → not found; `projectId`, `branchName` or `cursor` that is not a string (`projectId must be a string`),
+`branchName` without `projectId`, a malformed `cursor` or `limit` → validation error. No retries; a
 failed call is repeated from its `cursor`. Causes other than async migrations also fail (b), for example referrers left
 by the 100-referrer rename limit before #88; they are reported and repaired the same way.
 
@@ -424,7 +425,10 @@ changes.
 | `dryRun` | boolean, default `false` | Planning only (§6.3). |
 
 `tableIds` or `dryRun` given as `null` is treated as absent, as in the scan (§5.2). `projectId` and `branchName` stay
-required: one given as `null` is refused as if omitted, and nothing is written.
+required: one given as `null` is refused as if omitted, and nothing is written. Wrong input types are refused with a
+validation error before any transaction: `projectId must be a string`, `branchName must be a string`, `tableIds must be
+an array of strings`, `dryRun must be a boolean`. Each call logs one structured entry (`Schema ledger operation
+finished`, [partial-changes-v1](partial-changes-v1.spec.md) §11.1).
 
 Output `{ headRevisionId, draftRevisionId, dryRun, tables, renumbered }`; each table entry is
 `{ tableId, outcome, migrationId?, patches?, removedPaths?, invalidRows?, blockedBy? }`; `renumbered` lists every
@@ -804,5 +808,13 @@ async swap can still rewrite committed rows during the scan.
 
 - §5.2, §6.1: the package exports the input and result types of the scan and the repair under their names, and the
   `step` of an `unreplayableLedger` detail gets its runtime list `MIGRATION_CHANGE_TYPES`.
+
+### Version 2.6 (2026-11-11)
+
+- §5.2, §6.1: wrong input types are refused with a validation error before any transaction: the scan's `projectId`,
+  `branchName` and `cursor` must be strings, and the repair checks every input field. A mistyped repair input
+  (`tableIds: 'orders'`) used to fail with a `TypeError` after planning had started, and a `dryRun` that is not a
+  boolean was taken by its truthiness (`0` wrote the repair).
+- §6.1: the repair logs one structured entry per call (partial-changes §11.1).
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

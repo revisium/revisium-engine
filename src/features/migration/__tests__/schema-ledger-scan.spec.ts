@@ -141,6 +141,11 @@ interface InvalidRequestCase {
   readonly data: ScanSchemaLedgerData;
 }
 
+interface MistypedRequestCase {
+  readonly data: Partial<Record<keyof ScanSchemaLedgerData, unknown>>;
+  readonly message: string;
+}
+
 describe('Schema ledger scan', () => {
   let kit: BranchScenarioTestKit;
 
@@ -705,6 +710,19 @@ describe('Schema ledger scan', () => {
       },
     ])('rejects $request', async ({ data }) => {
       await expect(scanLedgers(kit, data)).rejects.toThrow(BadRequestException);
+    });
+
+    it.each<MistypedRequestCase>([
+      { data: { projectId: 5 }, message: 'projectId must be a string' },
+      {
+        data: { projectId: 'project', branchName: 5 },
+        message: 'branchName must be a string',
+      },
+      { data: { cursor: 5 }, message: 'cursor must be a string' },
+    ])('rejects $data: $message', async ({ data, message }) => {
+      await expect(
+        scanLedgers(kit, data as ScanSchemaLedgerData),
+      ).rejects.toThrow(new BadRequestException(message));
     });
 
     it('reports an unknown project as not found', async () => {

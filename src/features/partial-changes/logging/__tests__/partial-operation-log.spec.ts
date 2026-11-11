@@ -10,6 +10,7 @@ import {
   PartialOperationLog,
 } from 'src/features/partial-changes/logging/partial-operation-log';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
+import { ChangeType } from 'src/features/revision-changes/types';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { commitWhileNativeWriteLands } from '../../__tests__/support/commit-races';
@@ -510,6 +511,113 @@ describe('PartialOperationLog', () => {
           error: 'SelectionValidationError',
         },
       ]);
+    });
+
+    it('log one entry for a page of table changes, with the page size asked and returned and the filters given', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await draft.readDraftTableChanges({
+        first: 10,
+        filters: { changeTypes: [ChangeType.Modified], search: null },
+      });
+
+      expect(entries.finished()).toEqual<OperationLogEntry[]>([
+        {
+          ...(await expectedEntryOf(draft, 'tableChanges')),
+          outcome: 'read',
+          pageSize: 10,
+          returned: 1,
+          filters: ['changeTypes'],
+          refusedTables: 0,
+        },
+      ]);
+    });
+
+    it('log one entry for a page of row changes', async () => {
+      const draft = await givenEditedNotes(['n1', 'n2']);
+      const entries = loggedEntries();
+
+      await draft.readDraftRowChanges({
+        first: 1,
+        filters: { tableId: NOTES, search: 'n' },
+      });
+
+      expect(entries.finished()).toEqual<OperationLogEntry[]>([
+        {
+          ...(await expectedEntryOf(draft, 'rowChanges')),
+          outcome: 'read',
+          pageSize: 1,
+          returned: 1,
+          filters: ['search', 'tableId'],
+          refusedTables: 0,
+        },
+      ]);
+    });
+
+    it('log one entry for a summary', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await draft.readDraftChangesSummary();
+
+      expect(entries.finished()).toEqual<OperationLogEntry[]>([
+        {
+          ...(await expectedEntryOf(draft, 'summary')),
+          outcome: 'read',
+          filters: [],
+          refusedTables: 0,
+        },
+      ]);
+    });
+
+    it('log the refused tables of a read', async () => {
+      const draft = await ChangesScenario.committedWithoutLedger(kit, {
+        [NOTES]: { schema: noteSchema, rows: { n1: { title: 'one' } } },
+      });
+      await draft.updateRow(NOTES, 'n1', { title: 'uno' });
+      const entries = loggedEntries();
+
+      await draft.readDraftTableChanges({ first: 10 });
+
+      expect(entries.finished()).toMatchObject([
+        {
+          operation: 'tableChanges',
+          refusedTables: 1,
+          refusedTableIds: [NOTES],
+        },
+      ]);
+    });
+
+    it('log a read whose input is refused as a failure before any attempt', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await expect(draft.readDraftRowChanges({ first: 0 })).rejects.toThrow();
+
+      expect(entries.failed()).toEqual<OperationLogEntry[]>([
+        {
+          message: OPERATION_FINISHED,
+          operation: 'rowChanges',
+          ...draft.branch,
+          durationMs: expect.any(Number) as number,
+          outcome: 'error',
+          attempts: 0,
+          escalations: 0,
+          error: 'ListingValidationError',
+        },
+      ]);
+    });
+
+    it('return a read when the logger throws', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {
+        throw new Error('logger down');
+      });
+
+      await expect(draft.readDraftChangesSummary()).resolves.toMatchObject({
+        rowsWithUnits: 1,
+      });
     });
 
     let kit: PartialChangesTestKit;

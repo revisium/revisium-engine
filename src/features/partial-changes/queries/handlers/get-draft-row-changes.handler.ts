@@ -1,6 +1,10 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { rowChangesRequestOf } from 'src/features/partial-changes/draft-reads/draft-read-request';
+import {
+  presentFiltersOf,
+  rowChangesRequestOf,
+} from 'src/features/partial-changes/draft-reads/draft-read-request';
 import { DraftRowPages } from 'src/features/partial-changes/draft-reads/draft-row-pages';
+import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
 import {
   type DraftRowPage,
   GetDraftRowChangesQuery,
@@ -15,13 +19,24 @@ export class GetDraftRowChangesHandler implements IQueryHandler<
   constructor(
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly rowPages: DraftRowPages,
+    private readonly operationLog: PartialOperationLog,
   ) {}
 
   public execute({ data }: GetDraftRowChangesQuery): Promise<DraftRowPage> {
-    const request = rowChangesRequestOf(data);
+    return this.operationLog.track('rowChanges', data.branch, async (trace) => {
+      const request = rowChangesRequestOf(data);
+      const page = await this.transactionRunner.runPlanning(
+        () => this.rowPages.readPage(request),
+        trace,
+      );
+      trace.planned(page);
+      trace.described({
+        pageSize: request.first,
+        returned: page.edges.length,
+        filters: presentFiltersOf(request.filters),
+      });
 
-    return this.transactionRunner.runPlanning(() =>
-      this.rowPages.readPage(request),
-    );
+      return page;
+    });
   }
 }

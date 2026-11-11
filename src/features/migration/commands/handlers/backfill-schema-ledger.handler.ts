@@ -4,6 +4,7 @@ import {
   type BackfillCommitted,
   type BackfillEntry,
   BackfillSchemaLedgerCommand,
+  type BackfillSchemaLedgerData,
   type SchemaLedgerBackfill,
 } from 'src/features/migration/commands/impl/backfill-schema-ledger.command';
 import type { BackfillMigration } from 'src/features/migration/ledger-backfill/backfill-migrations';
@@ -21,6 +22,11 @@ import {
   LedgerBackfillPlanService,
 } from 'src/features/migration/ledger-backfill/ledger-backfill-plan.service';
 import { StoredBackfillVerification } from 'src/features/migration/ledger-backfill/stored-backfill-verification';
+import {
+  type OperationDetails,
+  type OperationTrace,
+  PartialOperationLog,
+} from 'src/features/partial-changes/logging/partial-operation-log';
 import type { HeadAndDraft } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { ShareCommands } from 'src/features/share/share.commands';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
@@ -39,27 +45,47 @@ export class BackfillSchemaLedgerHandler implements ICommandHandler<
     private readonly writer: BackfillWriter,
     private readonly verification: StoredBackfillVerification,
     private readonly shareCommands: ShareCommands,
+    private readonly operationLog: PartialOperationLog,
   ) {}
 
   public async execute({
     data,
   }: BackfillSchemaLedgerCommand): Promise<SchemaLedgerBackfill> {
-    const request = backfillRequestOf(data);
+    const backfill = await this.operationLog.track(
+      'backfill',
+      data,
+      async (trace) => {
+        const result = await this.backfill(data, trace);
+        trace.described(backfillDetailsOf(result));
 
-    if (request.dryRun) {
-      return this.transactionRunner.runPlanning(() =>
-        this.planBackfill(request),
-      );
-    }
-
-    const backfill = await this.transactionRunner.runWrite(
-      request,
-      (deadline) => this.planAndWrite(request, deadline),
+        return result;
+      },
     );
 
     await this.notifyWhenBackfilled(backfill);
 
     return backfill;
+  }
+
+  private backfill(
+    data: BackfillSchemaLedgerData,
+    trace: OperationTrace,
+  ): Promise<SchemaLedgerBackfill> {
+    const request = backfillRequestOf(data);
+    trace.described({ dryRun: request.dryRun });
+
+    if (request.dryRun) {
+      return this.transactionRunner.runPlanning(
+        () => this.planBackfill(request),
+        trace,
+      );
+    }
+
+    return this.transactionRunner.runWrite(
+      request,
+      (deadline) => this.planAndWrite(request, deadline),
+      trace,
+    );
   }
 
   private async planBackfill(
@@ -144,6 +170,29 @@ function backfillResultOf(
   }
 
   return { status: 'notNeeded', ...branch };
+}
+
+function backfillDetailsOf(backfill: SchemaLedgerBackfill): OperationDetails {
+  const { headRevisionId, draftRevisionId } = backfill;
+
+  if (backfill.status === 'backfilled') {
+    return {
+      previousHeadRevisionId: backfill.previousHeadRevisionId,
+      headRevisionId,
+      draftRevisionId,
+      entries: backfill.entries.length,
+    };
+  }
+
+  if (backfill.status === 'planned') {
+    return {
+      headRevisionId,
+      draftRevisionId,
+      entries: backfill.entries.length,
+    };
+  }
+
+  return { headRevisionId, draftRevisionId };
 }
 
 function entriesOf(migrations: readonly BackfillMigration[]): BackfillEntry[] {

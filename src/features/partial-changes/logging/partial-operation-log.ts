@@ -5,9 +5,23 @@ import type { PlanEstimate } from 'src/features/partial-changes/limits/operation
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { AttemptObserver } from 'src/infrastructure/database/operation-transaction-runner';
 
-export type PartialOperation = 'list' | 'preview' | ChangeOperation;
+export type DraftRead = 'tableChanges' | 'rowChanges' | 'summary';
+
+export type LedgerOperation = 'backfill' | 'repair';
+
+export type PartialOperation =
+  | 'list'
+  | 'preview'
+  | ChangeOperation
+  | DraftRead
+  | LedgerOperation;
 
 export const OPERATION_FINISHED = 'Partial changes operation finished';
+
+export const LEDGER_OPERATION_FINISHED = 'Schema ledger operation finished';
+
+const LEDGER_OPERATIONS: ReadonlySet<PartialOperation> =
+  new Set<LedgerOperation>(['backfill', 'repair']);
 
 const LOGGED_REFUSED_TABLE_IDS = 5;
 
@@ -34,8 +48,10 @@ export interface OperationLogEntry {
   readonly operation: PartialOperation;
   readonly projectId?: string;
   readonly branchName?: string;
+  readonly previousHeadRevisionId?: string;
   readonly headRevisionId?: string;
   readonly draftRevisionId?: string;
+  readonly dryRun?: boolean;
   readonly durationMs: number;
   readonly outcome: string;
   readonly attempts: number;
@@ -44,9 +60,32 @@ export interface OperationLogEntry {
   readonly estimate?: LoggedEstimate;
   readonly refusedTables?: number;
   readonly refusedTableIds?: readonly string[];
+  readonly pageSize?: number;
+  readonly returned?: number;
+  readonly filters?: readonly string[];
+  readonly entries?: number;
+  readonly tables?: number;
+  readonly repairedTables?: number;
+  readonly renumbered?: number;
   readonly error?: string;
   readonly errorCode?: string;
 }
+
+// What an operation reports beyond its plan: its input, its page or what it wrote; only ids and counts.
+export type OperationDetails = Pick<
+  OperationLogEntry,
+  | 'previousHeadRevisionId'
+  | 'headRevisionId'
+  | 'draftRevisionId'
+  | 'dryRun'
+  | 'pageSize'
+  | 'returned'
+  | 'filters'
+  | 'entries'
+  | 'tables'
+  | 'repairedTables'
+  | 'renumbered'
+>;
 
 export class OperationTrace implements AttemptObserver {
   private attempts = 0;
@@ -54,6 +93,10 @@ export class OperationTrace implements AttemptObserver {
   private escalations = 0;
 
   private facts?: PlannedFacts;
+
+  private details: OperationDetails = {};
+
+  private outcome?: string;
 
   // Each attempt plans again, so the facts of an earlier one no longer describe the operation.
   public attempted(escalated: boolean): void {
@@ -81,6 +124,20 @@ export class OperationTrace implements AttemptObserver {
     };
   }
 
+  // Details survive a new attempt: they describe the input or the result, not one attempt's plan.
+  public described(details: OperationDetails): void {
+    this.details = { ...this.details, ...details };
+  }
+
+  // For a result without a status.
+  public concluded(outcome: string): void {
+    this.outcome = outcome;
+  }
+
+  public outcomeOf(operation: PartialOperation, result: unknown): string {
+    return this.outcome ?? statusOf(result) ?? defaultOutcomeOf(operation);
+  }
+
   public entryOf(
     operation: PartialOperation,
     branch: unknown,
@@ -88,7 +145,7 @@ export class OperationTrace implements AttemptObserver {
     outcome: string,
   ): OperationLogEntry {
     return {
-      message: OPERATION_FINISHED,
+      message: messageOf(operation),
       operation,
       ...branchFieldsOf(branch),
       ...this.revisionFields(),
@@ -97,6 +154,7 @@ export class OperationTrace implements AttemptObserver {
       attempts: this.attempts,
       escalations: this.escalations,
       ...this.planFields(),
+      ...this.details,
     };
   }
 
@@ -138,7 +196,8 @@ type RefusalFields = Pick<
 
 type ErrorFields = Pick<OperationLogEntry, 'error' | 'errorCode'>;
 
-// One entry per listing page, preview, commit or revert, when it ends: info when it returns, warn when it throws.
+// One entry per listing page, Draft read, preview, commit, revert, backfill or repair, when it ends: info when it
+// returns, warn when it throws.
 @Injectable()
 export class PartialOperationLog {
   private readonly logger = new Logger(PartialOperationLog.name);
@@ -176,7 +235,7 @@ export class PartialOperationLog {
           operation,
           branch,
           elapsedMsSince(startedAt),
-          outcomeOf(result),
+          trace.outcomeOf(operation, result),
         ),
       ),
     );
@@ -194,11 +253,21 @@ export class PartialOperationLog {
   }
 }
 
-// A listing page has no status.
-function outcomeOf(result: unknown): string {
+function statusOf(result: unknown): string | undefined {
   const { status } = result as { status?: unknown };
 
-  return typeof status === 'string' ? status : 'listed';
+  return typeof status === 'string' ? status : undefined;
+}
+
+// A listing page and a Draft read have no status.
+function defaultOutcomeOf(operation: PartialOperation): string {
+  return operation === 'list' ? 'listed' : 'read';
+}
+
+function messageOf(operation: PartialOperation): string {
+  return LEDGER_OPERATIONS.has(operation)
+    ? LEDGER_OPERATION_FINISHED
+    : OPERATION_FINISHED;
 }
 
 function elapsedMsSince(startedAt: number): number {

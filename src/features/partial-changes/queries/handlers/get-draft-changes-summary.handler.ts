@@ -1,6 +1,10 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { summaryRequestOf } from 'src/features/partial-changes/draft-reads/draft-read-request';
+import {
+  presentFiltersOf,
+  summaryRequestOf,
+} from 'src/features/partial-changes/draft-reads/draft-read-request';
 import { DraftChangesSummaryReader } from 'src/features/partial-changes/draft-reads/draft-changes-summary';
+import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
 import {
   type DraftChangesSummary,
   GetDraftChangesSummaryQuery,
@@ -15,15 +19,22 @@ export class GetDraftChangesSummaryHandler implements IQueryHandler<
   constructor(
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly summaryReader: DraftChangesSummaryReader,
+    private readonly operationLog: PartialOperationLog,
   ) {}
 
   public execute({
     data,
   }: GetDraftChangesSummaryQuery): Promise<DraftChangesSummary> {
-    const request = summaryRequestOf(data);
+    return this.operationLog.track('summary', data.branch, async (trace) => {
+      const request = summaryRequestOf(data);
+      const summary = await this.transactionRunner.runPlanning(
+        () => this.summaryReader.read(request),
+        trace,
+      );
+      trace.planned(summary);
+      trace.described({ filters: presentFiltersOf(request.filters) });
 
-    return this.transactionRunner.runPlanning(() =>
-      this.summaryReader.read(request),
-    );
+      return summary;
+    });
   }
 }

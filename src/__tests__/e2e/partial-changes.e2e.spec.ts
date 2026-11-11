@@ -2,6 +2,7 @@ import { join } from 'path';
 import { BadRequestException } from '@nestjs/common';
 import { num, obj, str } from '@revisium/schema-toolkit/mocks';
 import { namesExportedFrom } from 'src/__tests__/utils/package-exports';
+import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import * as engine from 'src/index';
 import {
@@ -884,6 +885,63 @@ describe('EngineApiService.changes (AS-92)', () => {
       await expect(refusal).rejects.toThrow(message);
     },
   );
+
+  it('refuses the cursor of another operation as a bad request', async () => {
+    await givenCommittedProducts({
+      desk: { title: 'Desk', price: 20 },
+      lamp: { title: 'Lamp', price: 10 },
+    });
+    await updateDraftProduct('desk', { title: 'Oak desk', price: 20 });
+    await updateDraftProduct('lamp', { title: 'Desk lamp', price: 10 });
+    const rowCursor = (await changes.rowChanges({ branch, first: 1 })).pageInfo
+      .endCursor;
+    const tableCursor = (await changes.tableChanges({ branch, first: 1 }))
+      .pageInfo.endCursor;
+    const listingCursor = (await changes.list({ branch, pageSize: 1 }))
+      .nextCursor;
+
+    expect([rowCursor, tableCursor, listingCursor]).not.toContain(null);
+    await expectBadRequest(
+      changes.list({ branch, cursor: rowCursor, pageSize: 5 }),
+      'cursor is malformed',
+    );
+    await expectBadRequest(
+      changes.list({ branch, cursor: tableCursor, pageSize: 5 }),
+      'cursor is malformed',
+    );
+    await expectBadRequest(
+      changes.rowChanges({ branch, first: 1, after: listingCursor }),
+      'after is malformed',
+    );
+    await expectBadRequest(
+      changes.tableChanges({ branch, first: 1, after: listingCursor }),
+      'after is malformed',
+    );
+  });
+
+  it('refuses a listing cursor holding the NUL character as a bad request, not a database error', async () => {
+    await givenCommittedProducts({ lamp: { title: 'Lamp', price: 10 } });
+    await updateDraftProduct('lamp', { title: 'Desk lamp', price: 10 });
+
+    await expectBadRequest(
+      changes.list({
+        branch,
+        cursor: encodeListingCursor({
+          tableId: PRODUCTS,
+          rows: { rowId: 'lamp\u0000', inclusive: false },
+        }),
+      }),
+      'cursor is malformed',
+    );
+  });
+
+  async function expectBadRequest(
+    refusal: Promise<unknown>,
+    message: string,
+  ): Promise<void> {
+    await expect(refusal).rejects.toBeInstanceOf(BadRequestException);
+    await expect(refusal).rejects.toThrow(message);
+  }
 
   async function givenCommittedProducts(
     rows: Readonly<Record<string, InputJsonValue>>,

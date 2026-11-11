@@ -34,9 +34,9 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 | `changes.summary` | `branch`; `filters: { changeTypes?, search? }` (optional, those of `tableChanges`) | `DraftChangesSummary` (§9) |
 
 - An optional input given as `null` is treated as absent, at any depth, as in partial-changes-v1 §5.
-- `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of the other read (a table cursor passed
-  to `rowChanges` or the reverse), a filter of a wrong type, or a `search` holding the NUL character (no id holds it)
-  → validation error before the snapshot.
+- `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of another operation (a table cursor passed
+  to `rowChanges` or the reverse, or a `nextCursor` of `changes.list`), a filter of a wrong type, or a `search` holding
+  the NUL character (no id holds it) → validation error before the snapshot.
 - An unknown project or branch → the native lookup error, a `BadRequestException` (partial-changes-v1 §5.9).
 - `changeTypes` takes the native `ChangeType` values (`ADDED`, `REMOVED`, `MODIFIED`, `RENAMED`,
   `RENAMED_AND_MODIFIED`).

@@ -19,6 +19,11 @@ import {
   replaceField,
 } from 'src/__tests__/fixtures/ledger-steps';
 import type { InputJsonValue } from 'src/engine-prisma-types';
+import {
+  encodeRowCursor,
+  encodeTableCursor,
+} from 'src/features/partial-changes/draft-reads/draft-cursor';
+import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type {
   DraftFieldChange,
@@ -1134,13 +1139,20 @@ describe('draft row changes', () => {
       ['an offset cursor', { first: 10, after: '10' }],
       [
         'a cursor of the table read',
-        { first: 10, after: cursorOf({ v: 1, tableId: 'a', headOnly: false }) },
-      ],
-      [
-        'a cursor of another version',
         {
           first: 10,
-          after: cursorOf({ v: 2, tableId: 'a', headOnly: false, rowId: 'r' }),
+          after: encodeTableCursor({ tableId: 'a', headOnly: false }),
+        },
+      ],
+      [
+        'a cursor of the unit listing',
+        { first: 10, after: encodeListingCursor({ tableId: 'a' }) },
+      ],
+      [
+        'a cursor of the format before cursor kinds',
+        {
+          first: 10,
+          after: cursorOf({ v: 1, tableId: 'a', headOnly: false, rowId: 'r' }),
         },
       ],
       ['an after that is not a string', { first: 10, after: 1 }],
@@ -1148,10 +1160,8 @@ describe('draft row changes', () => {
         'a cursor whose row id holds the NUL character',
         {
           first: 10,
-          after: cursorOf({
-            v: 1,
-            tableId: 'a',
-            headOnly: false,
+          after: encodeRowCursor({
+            table: { tableId: 'a', headOnly: false },
             rowId: 'r\u0000',
           }),
         },

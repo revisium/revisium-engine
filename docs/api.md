@@ -771,7 +771,7 @@ Blockers ([SPEC §5.8](specs/partial-changes-v1.spec.md#58-blockers)):
 | `danglingInSource` | Changes the selection, or repairs the Draft natively. |
 | `invalidRow` | Changes the selection. |
 | `invalidViews` | Fixes the table's views natively. |
-| `ledgerInconsistent` | Changes the selection, or repairs the Draft natively. |
+| `ledgerInconsistent` | Changes the selection, or repairs the Draft natively. Not returned for a ledger failure that a `requiredExcluded` of the same result causes: one blocker names the decision. |
 | `unrecordedStructureChange` | Commits other units, or reverts the structure. |
 | `headSchemaInconsistent`, `unledgeredTable` | See [Refused tables](#refused-tables). |
 | `migrationInProgress` | Waits for the async migration (preview only; commit and revert fail with `MIGRATION_LOCKED`). |

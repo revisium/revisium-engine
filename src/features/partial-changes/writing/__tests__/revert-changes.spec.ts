@@ -41,6 +41,8 @@ import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
 const TAGS = 'tags';
+const BRANDS = 'brands';
+const STICKERS = 'stickers';
 const GOODS = 'goods';
 const ADDRESS = 'address';
 const DOCUMENTS = 'documents';
@@ -260,6 +262,32 @@ describe('revertChanges', () => {
         blockers: [expect.objectContaining({ code: 'unmatchedSelector' })],
         required: [],
         unmatched: missingRow,
+      });
+      expect(await branchContentsOf(kit, draft)).toEqual(contents);
+    });
+
+    it('is blocked once by an excluded table that a foreign key needs, and writes nothing', async () => {
+      const draft = await givenStickersOfCreatedBrands();
+      const contents = await branchContentsOf(kit, draft);
+
+      const result = await draft.revertChanges({
+        selection: {
+          structures: [{ tableId: BRANDS }],
+          exclude: { structures: [{ tableId: STICKERS }] },
+        },
+      });
+
+      expect(result).toEqual<RevertChangesResult>({
+        status: 'blocked',
+        planned: true,
+        blockers: [
+          expect.objectContaining({
+            code: 'requiredExcluded',
+            tableId: STICKERS,
+          }),
+        ],
+        required: [],
+        unmatched: {},
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
@@ -961,6 +989,19 @@ describe('revertChanges', () => {
     const draft = await givenCommittedPrices();
     await draft.renameRow(PRODUCTS, 'p1', 'p9');
     await draft.createRows(PRODUCTS, { p1: { title: 'new one', price: 5 } });
+
+    return draft;
+  }
+
+  async function givenStickersOfCreatedBrands(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema },
+    });
+    await draft.createTable(BRANDS, categorySchema);
+    await draft.createTable(
+      STICKERS,
+      obj({ brand: str({ foreignKey: BRANDS }) }),
+    );
 
     return draft;
   }

@@ -94,14 +94,21 @@ export function ledgerInconsistentBlockerOf(
   };
 }
 
+// A blocker that names a unit is one per unit and address, whatever its reason; one without a unit is one per message.
 export function distinctBlockers(
   blockers: readonly CatalogueBlocker[],
 ): CatalogueBlocker[] {
   const distinct = new Map<string, CatalogueBlocker>();
 
   for (const blocker of blockers) {
-    const { code, tableId, rowId, path } = blocker;
-    const key = JSON.stringify([code, tableId, rowId, path]);
+    const { code, tableId, rowId, path, unitKey, message } = blocker;
+    const key = JSON.stringify([
+      code,
+      tableId,
+      rowId,
+      path,
+      unitKey ?? message,
+    ]);
 
     if (!distinct.has(key)) {
       distinct.set(key, blocker);

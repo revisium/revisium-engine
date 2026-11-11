@@ -57,12 +57,14 @@ export class TargetValidator {
   public async validate(
     source: ValidationSource,
     { choice, assembled }: AppliedTarget,
+    unresolvedSteps: ReadonlySet<string>,
   ): Promise<CatalogueBlocker[]> {
     const unrecorded = unrecordedStructureChangesOf(source, choice);
     const ledger = this.ledgerConsistency.blockersOf(
       source,
       choice,
       assembled.ledger,
+      unresolvedSteps,
     );
     const invalidRows = await new InvalidRows(
       this.dataValidator,

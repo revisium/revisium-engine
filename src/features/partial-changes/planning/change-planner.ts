@@ -220,7 +220,11 @@ export class ChangePlanner {
       },
       assembled: closure.target,
     };
-    const blockers = await this.targetValidator.validate(source, target);
+    const blockers = await this.targetValidator.validate(
+      source,
+      target,
+      closure.unresolvedSteps,
+    );
 
     await deadline.checkpoint();
 

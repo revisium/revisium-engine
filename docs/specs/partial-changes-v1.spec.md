@@ -351,7 +351,8 @@ cause?: ReasonCause }` (§5.7):
 - `because` is the same requirement in English, for display and logs.
 
 **Blocker** (exported as `PlanBlocker`) `{ code: BlockerCode; tableId?: string; rowId?: string; path?: string;
-message: string; unit?: DescribedUnitRef; reason?: RequiredReason }`, deduplicated by code, table, row and path.
+message: string; unit?: DescribedUnitRef; reason?: RequiredReason }`, deduplicated by code, table, row, path and unit
+(by message for a blocker without a unit): one blocker per unit, whatever reasons require it, and one per message.
 `unit` names the unit to remove or change when there is one: the excluded required unit for `requiredExcluded` (with
 the `reason` that required it), the applied unit whose target would dangle for `danglingInSource`, the unit of an
 invalid row for `invalidRow`.
@@ -1200,7 +1201,8 @@ vacated the taken id (`rename` away, `remove`), before that step.
 - The step belongs to a unit that is not applied (it fails in the reverted or the remaining Draft) → the unit of the
   step is required: `referrerStillReferences` for a referenced id, `idOccupied` for a taken id.
 
-`because` names the migration and the table id. An excluded unit gives `requiredExcluded`. A step whose unit is not in
+`because` names the migration and the table id. An excluded unit gives `requiredExcluded`, and validation leaves the
+lineage of the step out (§6.9 step 3). A step whose unit is not in
 the catalogue (a published migration, a refused table), or, when the provider would be the required unit, whose
 provider is not, adds nothing and is left to validation (`ledgerInconsistent`, §6.9). The cause of a requirement
 follows §5.7: the provider lookup above decides which unit is required, not which applied unit caused it. A step that fails only because a table it reads failed earlier is not
@@ -1304,7 +1306,11 @@ Per user table on both sides, with structure side S and the opposite side O:
    tainted slot taints its own. Compare the result with the role's schemas: commit → new Head and remaining Draft (with
    renumbered ids); revert → reverted Draft. A mismatch or failure that the source role does not already have →
    `ledgerInconsistent`. Inconsistencies that exist natively are tolerated, except damaged Head tables (§6.10).
-   Unledgered tables (§6.10) are left out of the comparison (only exactly `{ all: true }` can apply their units).
+   Unledgered tables (§6.10) are left out of the comparison (only exactly `{ all: true }` can apply their units). So is
+   every lineage that holds the step of a requirement the closure could not add (§6.6: its unit is excluded,
+   `requiredExcluded`, or already applied, `danglingInSource`), with each failure that only reads a left-out table: that
+   blocker already names the cause, and the replay would report it again as `ledgerInconsistent` on the referrer. A
+   failure in any other lineage is still reported, as are steps 1 and 2.
 4. Validate every merged row against its target schema → `invalidRow`.
 5. Commit only: validate the Draft views document of every table whose structure or views unit the commit applies
    (its shape, view ids and fields against the table's Draft structure), with that unit as the owner →
@@ -1968,7 +1974,10 @@ versions unchanged" (§14) holds in every scenario.
   the examples in revert and commit: each required unit carries its selector, and `because` names the migration
   and the table id; adding the selectors closes with nothing required; the revert applies and the Draft ledger replays
   to its schemas; the new Head and remaining Draft ledgers of the commit replay (commits are checked at the target
-  level until structure commits apply); an excluded required unit → `blocked` (`requiredExcluded`). A reference behind
+  level until structure commits apply); an excluded required unit → `blocked` with `requiredExcluded` alone (a new
+  table `stickers` with a foreign key to a new table `brands`, committed without `brands` or reverting `brands`
+  without `stickers`: no `ledgerInconsistent` for `stickers` or a table whose foreign key reads it), while a failure
+  of a lineage without such a step is still `ledgerInconsistent`, once per resulting role. A reference behind
   a failure the Draft ledger already has (SQL fixture of an unrecorded field moved natively) requires nothing, and the
   revert applies.
 - AS-44 Structure revert of one of two tables → remaining Draft rows mapped back (Head values for changed fields of

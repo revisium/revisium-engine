@@ -97,13 +97,27 @@ export type FindingContent =
   | FindingOf<'draftOnlyDamage' | 'damagedHistory', Record<string, never>>
   | FindingOf<'rowSchemaHashMismatch', RowSchemaHashMismatchDetail>;
 
-export type SchemaLedgerFinding = FindingContent & {
+export interface FindingSite {
   readonly projectId: string;
   readonly branchName: string;
   readonly tableId: string;
   readonly role: FindingRole;
+}
+
+// Every revision of the branch that shares the finding's evaluation.
+export interface ListedRevisions {
   readonly revisionIds: readonly string[];
-};
+}
+
+// The history revisions without a migration table, which no backfill rewrites, by their count and the earliest.
+export interface CountedRevisions {
+  readonly revisionCount: number;
+  readonly firstRevisionId: string;
+}
+
+export type SchemaLedgerFinding = FindingContent &
+  FindingSite &
+  (ListedRevisions | CountedRevisions);
 
 export interface SchemaLedgerScanStats {
   readonly branches: number;

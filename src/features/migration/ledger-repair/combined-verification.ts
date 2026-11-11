@@ -1,10 +1,12 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
-import type { RenumberedMigration } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type {
   ReplayedLedger,
   ReplayedSlot,
 } from 'src/features/share/ledger-replay/ledger-replay';
-import { NativeIdSequence } from 'src/features/share/ledger/native-migration-id';
+import {
+  type MigrationRenumbering,
+  NativeIdSequence,
+} from 'src/features/share/ledger/native-migration-id';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { renumberedAfter, withRenumberedIds } from './repair-ids';
 import type { RepairLedger } from './repair-ledger';
@@ -22,7 +24,7 @@ export interface Rejection {
 
 export interface VerifiedPlan {
   readonly repairIds: ReadonlyMap<string, string>;
-  readonly renumbered: readonly RenumberedMigration[];
+  readonly renumberedMigrations: readonly MigrationRenumbering[];
   readonly rejections: ReadonlyMap<string, Rejection>;
 }
 
@@ -36,7 +38,7 @@ export function verifyCombinedPlan(
   rejections: ReadonlyMap<string, Rejection> = new Map(),
 ): VerifiedPlan {
   if (candidates.size === 0) {
-    return { repairIds: new Map(), renumbered: [], rejections };
+    return { repairIds: new Map(), renumberedMigrations: [], rejections };
   }
 
   const round = new PlanRound(ledger, candidates);
@@ -45,7 +47,7 @@ export function verifyCombinedPlan(
   if (rejected.size === 0) {
     return {
       repairIds: round.repairIds,
-      renumbered: round.renumbered,
+      renumberedMigrations: round.renumbered,
       rejections,
     };
   }
@@ -59,7 +61,7 @@ export function verifyCombinedPlan(
 
 class PlanRound {
   public readonly repairIds: ReadonlyMap<string, string>;
-  public readonly renumbered: readonly RenumberedMigration[];
+  public readonly renumbered: readonly MigrationRenumbering[];
   private readonly previousIds: ReadonlyMap<string, string>;
   private readonly replay: ReplayedLedger;
   private readonly coupling: TableCoupling;
@@ -72,7 +74,7 @@ class PlanRound {
     this.repairIds = new Map(repairs.map(({ tableId, id }) => [tableId, id]));
     this.renumbered = renumberedAfterRepairs(repairs, ledger.pending);
     this.previousIds = new Map(
-      this.renumbered.map(({ previousId, id }) => [id, previousId]),
+      this.renumbered.map(({ from, to }) => [to, from]),
     );
     const pending = withRenumberedIds(ledger.pending, this.renumbered);
 
@@ -183,7 +185,7 @@ function numberedRepairsOf(
 function renumberedAfterRepairs(
   repairs: readonly Migration[],
   pending: readonly Migration[],
-): RenumberedMigration[] {
+): MigrationRenumbering[] {
   const lastRepair = repairs.at(-1);
 
   if (!lastRepair) {

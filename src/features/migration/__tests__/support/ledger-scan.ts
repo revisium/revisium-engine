@@ -108,6 +108,16 @@ export function findingOf(
   return { ...draft.branch, ...expected, role, revisionIds };
 }
 
+export function listedRevisionIdsOf(
+  finding: SchemaLedgerFinding,
+): readonly string[] {
+  if (!('revisionIds' in finding)) {
+    throw new Error('The finding counts its revisions instead of listing them');
+  }
+
+  return finding.revisionIds;
+}
+
 export async function findingAt(
   draft: BranchScenario,
   side: RevisionSide,

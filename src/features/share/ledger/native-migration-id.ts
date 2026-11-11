@@ -6,6 +6,12 @@ export interface MigrationBounds {
   readonly publishedAt: Date | null;
 }
 
+// A pending migration that a write moved after the published ledger: its id before and after.
+export interface MigrationRenumbering {
+  readonly from: string;
+  readonly to: string;
+}
+
 export type RenumberedMigrationRow = Pick<
   Row,
   | 'createdId'

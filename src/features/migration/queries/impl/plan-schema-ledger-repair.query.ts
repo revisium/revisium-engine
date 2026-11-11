@@ -1,4 +1,5 @@
 import type { JsonPatch } from '@revisium/schema-toolkit/types';
+import type { MigrationRenumbering } from 'src/features/share/ledger/native-migration-id';
 
 export interface PlanSchemaLedgerRepairData {
   readonly projectId: string;
@@ -41,11 +42,6 @@ export interface PlannedTableRepair {
   readonly blockedBy?: readonly string[];
 }
 
-export interface RenumberedMigration {
-  readonly previousId: string;
-  readonly id: string;
-}
-
 export interface ValidatedTableFingerprint {
   readonly tableVersionId: string;
   readonly rowCount: number;
@@ -66,6 +62,6 @@ export interface SchemaLedgerRepairPlan {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly tables: readonly PlannedTableRepair[];
-  readonly renumbered: readonly RenumberedMigration[];
+  readonly renumberedMigrations: readonly MigrationRenumbering[];
   readonly fingerprint: ValidationFingerprint;
 }

@@ -5,13 +5,13 @@ import {
   type CommitChangesResult,
   CommitDraftChangesCommand,
   type CommittedDraft,
-  type MigrationRenumbering,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import { partialOperation } from 'src/features/partial-changes/logging/partial-operation-fields';
 import type { CompletePlan } from 'src/features/partial-changes/planning/change-planner';
 import { validateComment } from 'src/features/partial-changes/selection/selection-validator';
 import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';
 import { commitTargetWritePlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';
+import type { MigrationRenumbering } from 'src/features/share/ledger/native-migration-id';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { OperationLog } from 'src/infrastructure/database/operation-log';
 

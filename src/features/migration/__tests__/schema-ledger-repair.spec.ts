@@ -162,9 +162,9 @@ describe('Schema ledger repair', () => {
 
       const repair = await repairLedger(kit, draft, { tableIds: [PRODUCTS] });
 
-      const renumberedId = repair.renumbered.at(0)?.id;
-      expect(repair.renumbered).toEqual([
-        { previousId: pendingId, id: expect.any(String) },
+      const renumberedId = repair.renumberedMigrations.at(0)?.to;
+      expect(repair.renumberedMigrations).toEqual([
+        { from: pendingId, to: expect.any(String) },
       ]);
       expect(await pendingMigrationIds(draft)).toEqual([
         tableRepairOf(repair, PRODUCTS).migrationId,
@@ -287,7 +287,7 @@ describe('Schema ledger repair', () => {
 
       const repair = await repairLedger(kit, draft, { tableIds: [PRODUCTS] });
 
-      const renumberedId = repair.renumbered.at(0)?.id ?? '';
+      const renumberedId = repair.renumberedMigrations.at(0)?.to ?? '';
       const renumbered = await draft.row(
         'draft',
         SystemTables.Migration,
@@ -315,7 +315,7 @@ describe('Schema ledger repair', () => {
 
       const repair = await repairLedger(kit, draft, { tableIds: [PRODUCTS] });
 
-      expect(repair.renumbered).toHaveLength(1);
+      expect(repair.renumberedMigrations).toHaveLength(1);
       await expectCopiedInsteadOfEdited(kit, draft, migrationTable);
     });
 
@@ -473,13 +473,13 @@ describe('Schema ledger repair', () => {
       expect(repair.tables).toEqual([
         expect.objectContaining({ tableId: PRODUCTS, outcome: 'repaired' }),
       ]);
-      expect(repair.renumbered).toEqual([
-        { previousId: tagsPendingId, id: expect.any(String) },
+      expect(repair.renumberedMigrations).toEqual([
+        { from: tagsPendingId, to: expect.any(String) },
       ]);
       expect(tagsFailure).toMatchObject({ migrationId: tagsPendingId });
       expect(await draftReplayFailureOf(draft, TAGS)).toEqual({
         ...tagsFailure,
-        migrationId: repair.renumbered.at(0)?.id,
+        migrationId: repair.renumberedMigrations.at(0)?.to,
       });
     });
   });
@@ -528,7 +528,7 @@ describe('Schema ledger repair', () => {
         expect(result.tables).toEqual([
           { tableId: PRODUCTS, outcome: 'stale' },
         ]);
-        expect(result.renumbered).toEqual([]);
+        expect(result.renumberedMigrations).toEqual([]);
         expect(await branchContentsOf(kit, draft)).toEqual(before);
         expect(notifications).toEqual([]);
       },
@@ -599,7 +599,7 @@ describe('Schema ledger repair', () => {
   });
 
   describe('a dry run', () => {
-    it('AM-61 returns the plan that a real run then writes, and writes nothing', async () => {
+    it('AM-61 returns the plan that a real run then writes, reports the tables it would repair as planned, and writes nothing', async () => {
       const draft = await givenTwoDamagedTablesAfterFuturePublication(kit);
       await draft.updateTable(CATEGORIES, addNote);
       const plan = await planRepair(kit, draft, [PRODUCTS, TAGS]);
@@ -611,10 +611,19 @@ describe('Schema ledger repair', () => {
       });
 
       expect(dryRun).toEqual(repairOfPlan(plan, true));
+      expect(dryRun.tables.map(({ outcome }) => outcome)).toEqual([
+        'planned',
+        'planned',
+      ]);
       expect(await branchContentsOf(kit, draft)).toEqual(before);
-      await expect(
-        repairLedger(kit, draft, { tableIds: [PRODUCTS, TAGS] }),
-      ).resolves.toEqual(repairOfPlan(plan, false));
+      const written = await repairLedger(kit, draft, {
+        tableIds: [PRODUCTS, TAGS],
+      });
+      expect(written).toEqual(repairOfPlan(plan, false));
+      expect(written.tables.map(({ outcome }) => outcome)).toEqual([
+        'repaired',
+        'repaired',
+      ]);
     });
 
     it('AM-61 refuses a dry run and a real run while an async migration is active on the branch', async () => {

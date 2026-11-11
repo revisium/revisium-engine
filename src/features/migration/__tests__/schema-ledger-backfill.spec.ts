@@ -47,7 +47,6 @@ import {
 import {
   createBranchFromHead,
   findingAt,
-  findingOf,
   hashOf,
   scanBranch,
   schemaRowHashOf,
@@ -595,15 +594,16 @@ describe('Schema ledger backfill', () => {
       ]);
       expectStrictlyAscending(await ledgerIdsOf(draft, 'draft'));
       const scan = await scanBranch(kit, draft);
-      const history = [backfill.previousHeadRevisionId];
       expect(scan.findings).toEqual(
-        [CATEGORIES, PRODUCTS].map((tableId) =>
-          findingOf(draft, 'history', history, {
-            code: 'unledgeredTable',
-            tableId,
-            detail: { reason: 'noMigrationTable' },
-          }),
-        ),
+        [CATEGORIES, PRODUCTS].map((tableId) => ({
+          ...draft.branch,
+          code: 'unledgeredTable',
+          tableId,
+          role: 'history',
+          detail: { reason: 'noMigrationTable' },
+          revisionCount: 1,
+          firstRevisionId: backfill.previousHeadRevisionId,
+        })),
       );
     });
 
@@ -638,7 +638,9 @@ describe('Schema ledger backfill', () => {
       await backfillLedger(kit, draft);
       await draft.createRows(CATEGORIES, { c2: { title: 'second' } });
 
-      const scan = await scanBranch(kit, draft);
+      const scan = await scanBranch(kit, draft, {
+        rowDiagnostics: 'headAndDraft',
+      });
 
       expect(
         scan.findings.filter(({ role }) => role !== 'history'),

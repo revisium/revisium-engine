@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.1 |
+| Version | 2.2 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -339,7 +339,12 @@ cause?: ReasonCause }` (§5.7):
   now (a table created and removed in the Draft): at a `migration` site `tableId` is the migration's own table id; at
   a `tableId` site it is the id the migration takes (the table id of an `init`, the new id of a `rename`).
   `migrationId` is the id the Draft ledger holds now, before any renumbering by the operation (§6.8). The units
-  involved, the required unit and `cause.unit`, carry the public ids.
+  involved, the required unit and `cause.unit`, carry the public ids. So a ledger `tableId` can also name another
+  current table: when the Draft creates `x`, renames it to `y` and creates another `x`, committing the second `x`
+  alone requires `y` at a `tableId` site with `tableId` `x`, the id the second table holds now (§5.7). A client links a
+  reason at these two sites to the Draft items through the required unit and `cause.unit`, or by `migrationId`, which
+  is the `migrationId` of an entry of `schemaMigrations` of the table item that holds the pending migration
+  ([draft-reads-v1](draft-reads-v1.spec.md) §4; a transient table has no item, only its structure unit).
 - `references` is what a `row`, `schema` or `migration` site references: `{ kind: 'row'; tableId; rowId }` (the
   referenced table as units address it, the row id the reference holds) or `{ kind: 'table'; tableId }` (the table id
   the foreign key holds at a `schema` site; at a `migration` site, the table id the step references, in the ledger's
@@ -788,6 +793,9 @@ added (§6.9).
   optional variant fields, documented as present exactly when the engine type has them (GraphQL rejects one field
   name with different nullability across the members of a union, so a union needs distinct names). GraphQL clients
   that send a returned selector back drop `__typename` first.
+- **Previews are never cached.** `previewChanges` plans anew on every call, so a transport that serves it as a query
+  is fetched from the network by a caching client every time; a cached answer shows an old plan and passes an old
+  fingerprint as `expected`.
 - **One spelling per transport.** Every code union of the operations (§5.11) has one runtime list in the engine, next
   to its type, and the type is derived from the list. A transport builds its enums from these lists instead of
   copying the values, by one naming rule, so a code the engine adds reaches it without a hand-kept mirror and each
@@ -2361,6 +2369,14 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.2 (2026-11-11)
+
+Clarifications from the review of the whole epic; no behaviour or shape changes.
+
+- §5.1: a ledger `tableId` at a `migration` site or a `tableId` site with `migrationId` can name another current table,
+  and a client links such a reason to the Draft items through the required unit, `cause.unit` or `migrationId`.
+- §5.10: a caching client fetches `previewChanges` from the network on every call.
 
 ### Version 2.1 (2026-11-11)
 

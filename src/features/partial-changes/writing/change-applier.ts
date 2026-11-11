@@ -77,7 +77,7 @@ export class ChangeApplier {
     await this.admitDraftWrite(request.branch);
 
     const plan = await this.plan(request, deadline);
-    trace.planned(plannedFieldsOf(plan));
+    trace.planned(() => plannedFieldsOf(plan));
 
     if (!plan.planned) {
       return stoppedByLimit(plan);

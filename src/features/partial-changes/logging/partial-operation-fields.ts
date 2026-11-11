@@ -98,9 +98,10 @@ function loggedEstimateOf({
     mergedRows,
     perRowWorkRows,
     mixedTables: mixedTables.length,
-    maxLinksCopied: Math.max(
+    // A loop, not an argument spread: a plan can hold more mixed tables than a call takes arguments.
+    maxLinksCopied: mixedTables.reduce(
+      (largest, { linksCopied }) => Math.max(largest, linksCopied),
       0,
-      ...mixedTables.map(({ linksCopied }) => linksCopied),
     ),
   };
 }

@@ -4,7 +4,16 @@ import {
   type BranchScenarioTestKit,
   createBranchScenarioTestKit,
 } from 'src/__tests__/kit/create-branch-scenario-test-kit';
-import { LEDGER_OPERATION_FINISHED } from 'src/features/migration/ledger-operation-log';
+import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
+import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
+import type * as LedgerOperationLogModule from 'src/features/migration/ledger-operation-log';
+import {
+  backfillFieldsOf,
+  LEDGER_OPERATION_FINISHED,
+  repairFieldsOf,
+  repairOutcomeOf,
+} from 'src/features/migration/ledger-operation-log';
+import { ShareCommands } from 'src/features/share/share.commands';
 import type { OperationLogEntry } from 'src/infrastructure/database/operation-log';
 import {
   backfillLedger,
@@ -19,7 +28,24 @@ import {
   PRODUCTS,
   products,
 } from './support/ledger-damage';
-import { repairLedger } from './support/ledger-repair-writing';
+import {
+  releaseHeldRepairs,
+  repairLedger,
+  repairUntilPlanned,
+} from './support/ledger-repair-writing';
+
+jest.mock('src/features/migration/ledger-operation-log', () => {
+  const actual: typeof LedgerOperationLogModule = jest.requireActual(
+    'src/features/migration/ledger-operation-log',
+  );
+
+  return {
+    ...actual,
+    backfillFieldsOf: jest.fn(actual.backfillFieldsOf),
+    repairFieldsOf: jest.fn(actual.repairFieldsOf),
+    repairOutcomeOf: jest.fn(actual.repairOutcomeOf),
+  };
+});
 
 describe('Schema ledger operation log', () => {
   let kit: BranchScenarioTestKit;
@@ -29,7 +55,9 @@ describe('Schema ledger operation log', () => {
   });
 
   afterEach(async () => {
+    await releaseHeldRepairs();
     jest.restoreAllMocks();
+    restoreLedgerFields();
     await kit.guard.verifyAndForget();
   });
 
@@ -105,6 +133,18 @@ describe('Schema ledger operation log', () => {
       ]);
     });
 
+    it('returns its result when its log fields cannot be computed', async () => {
+      const draft = await givenCatalogWithoutLedger();
+      loggedEntries();
+      jest.mocked(backfillFieldsOf).mockImplementation(() => {
+        throw new RangeError('fields');
+      });
+
+      await expect(backfillLedger(kit, draft)).resolves.toMatchObject({
+        status: 'backfilled',
+      });
+    });
+
     it('returns its result when the logger throws', async () => {
       const draft = await givenCatalogWithoutLedger();
       jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {
@@ -153,6 +193,66 @@ describe('Schema ledger operation log', () => {
           repairedTables: 1,
           renumbered: 0,
         },
+      ]);
+    });
+
+    it('counts the planning and the write attempt that its admission refused', async () => {
+      const draft = await givenUnpublishedInPlaceMigration(kit);
+      const repair = await repairUntilPlanned(kit, draft, {
+        tableIds: [PRODUCTS],
+      });
+      await givenActiveMigration(kit, draft, CATEGORIES);
+      const entries = loggedEntries();
+
+      await expect(repair.resume()).rejects.toThrow(MigrationLockedException);
+
+      expect(entries.failed()).toMatchObject([
+        {
+          operation: 'repair',
+          outcome: 'error',
+          attempts: 2,
+          error: 'MigrationLockedException',
+        },
+      ]);
+    });
+
+    it('logs its entry before it notifies the Draft endpoints, and keeps it when the notification fails', async () => {
+      const draft = await givenUnpublishedInPlaceMigration(kit);
+      const entries = loggedEntries();
+      const loggedBeforeNotification: number[] = [];
+      jest
+        .spyOn(kit.module.get(ShareCommands), 'notifyEndpoints')
+        .mockImplementation(() => {
+          loggedBeforeNotification.push(entries.finished().length);
+
+          return Promise.reject(new Error('endpoint down'));
+        });
+
+      await expect(
+        repairLedger(kit, draft, { tableIds: [PRODUCTS] }),
+      ).rejects.toThrow('endpoint down');
+
+      expect(loggedBeforeNotification).toEqual([1]);
+      expect(entries.finished()).toMatchObject([
+        { operation: 'repair', outcome: 'repaired' },
+      ]);
+      expect(entries.failed()).toEqual([]);
+    });
+
+    it('returns its result when its log fields cannot be computed', async () => {
+      const draft = await givenUnpublishedInPlaceMigration(kit);
+      loggedEntries();
+      jest.mocked(repairFieldsOf).mockImplementation(() => {
+        throw new RangeError('fields');
+      });
+      jest.mocked(repairOutcomeOf).mockImplementation(() => {
+        throw new RangeError('outcome');
+      });
+
+      const repair = await repairLedger(kit, draft);
+
+      expect(repair.tables).toMatchObject([
+        { tableId: PRODUCTS, outcome: 'repaired' },
       ]);
     });
 
@@ -257,4 +357,14 @@ function ledgerEntriesOf(calls: unknown[][]): OperationLogEntry[] {
         entry !== null &&
         (entry as { message?: unknown }).message === LEDGER_OPERATION_FINISHED,
     );
+}
+
+function restoreLedgerFields(): void {
+  const actual: typeof LedgerOperationLogModule = jest.requireActual(
+    'src/features/migration/ledger-operation-log',
+  );
+
+  jest.mocked(backfillFieldsOf).mockImplementation(actual.backfillFieldsOf);
+  jest.mocked(repairFieldsOf).mockImplementation(actual.repairFieldsOf);
+  jest.mocked(repairOutcomeOf).mockImplementation(actual.repairOutcomeOf);
 }

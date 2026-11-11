@@ -35,12 +35,12 @@ export class GetDraftTableChangesHandler implements IQueryHandler<
           () => this.tablePages.readPage(request),
           trace,
         );
-        trace.planned(plannedFieldsOf(page));
-        trace.described({
+        trace.planned(() => plannedFieldsOf(page));
+        trace.described(() => ({
           pageSize: request.first,
           returned: page.edges.length,
           filters: presentFiltersOf(request.filters),
-        });
+        }));
 
         return page;
       },

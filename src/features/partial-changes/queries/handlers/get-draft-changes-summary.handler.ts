@@ -37,8 +37,8 @@ export class GetDraftChangesSummaryHandler implements IQueryHandler<
           () => this.summaryReader.read(request),
           trace,
         );
-        trace.planned(plannedFieldsOf(summary));
-        trace.described({ filters: presentFiltersOf(request.filters) });
+        trace.planned(() => plannedFieldsOf(summary));
+        trace.described(() => ({ filters: presentFiltersOf(request.filters) }));
 
         return summary;
       },

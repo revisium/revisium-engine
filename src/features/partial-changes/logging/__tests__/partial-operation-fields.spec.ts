@@ -9,6 +9,7 @@ import {
   partialOperation,
   plannedFieldsOf,
 } from 'src/features/partial-changes/logging/partial-operation-fields';
+import type * as OperationFieldsModule from 'src/features/partial-changes/logging/partial-operation-fields';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import { ChangeType } from 'src/features/revision-changes/types';
 import {
@@ -19,6 +20,17 @@ import { OperationTimeoutException } from 'src/infrastructure/database/operation
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { commitWhileNativeWriteLands } from '../../__tests__/support/commit-races';
 import { HeldPartialRevert } from '../../__tests__/support/revert-races';
+
+jest.mock(
+  'src/features/partial-changes/logging/partial-operation-fields',
+  () => {
+    const actual: typeof OperationFieldsModule = jest.requireActual(
+      'src/features/partial-changes/logging/partial-operation-fields',
+    );
+
+    return { ...actual, plannedFieldsOf: jest.fn(actual.plannedFieldsOf) };
+  },
+);
 
 const NOTES = 'notes';
 const MAX_CHANGED_ROWS = 3;
@@ -49,7 +61,7 @@ describe('Partial operation log', () => {
           trace.attempted(false);
           trace.attempted(false);
           trace.attempted(true);
-          trace.planned(plannedFieldsOf({ ...PLANNED, planned: true }));
+          trace.planned(() => plannedFieldsOf({ ...PLANNED, planned: true }));
 
           return Promise.resolve({ status: 'applied' });
         },
@@ -79,10 +91,10 @@ describe('Partial operation log', () => {
       await new OperationLog().track(
         partialOperation('revert', BRANCH),
         (trace) => {
-          trace.planned(
+          trace.planned(() =>
             plannedFieldsOf({ ...PLANNED, refusedTables: [unledgered('a')] }),
           );
-          trace.planned(
+          trace.planned(() =>
             plannedFieldsOf({ ...PLANNED, draftRevisionId: 'next draft' }),
           );
 
@@ -103,7 +115,9 @@ describe('Partial operation log', () => {
           partialOperation('commit', BRANCH),
           (trace) => {
             trace.attempted(false);
-            trace.planned(plannedFieldsOf({ ...PLANNED, planned: false }));
+            trace.planned(() =>
+              plannedFieldsOf({ ...PLANNED, planned: false }),
+            );
             trace.attempted(false);
 
             return Promise.reject(new OperationTimeoutException(5));
@@ -125,7 +139,7 @@ describe('Partial operation log', () => {
       await new OperationLog().track(
         partialOperation('preview', BRANCH),
         (trace) => {
-          trace.planned(
+          trace.planned(() =>
             plannedFieldsOf({ ...PLANNED, refusedTables: refused }),
           );
 
@@ -144,7 +158,7 @@ describe('Partial operation log', () => {
       await new OperationLog().track(
         partialOperation('preview', BRANCH),
         (trace) => {
-          trace.planned(
+          trace.planned(() =>
             plannedFieldsOf({
               ...PLANNED,
               planned: false,
@@ -178,6 +192,29 @@ describe('Partial operation log', () => {
       ]);
     });
 
+    it('names the largest copy of row links among 200,000 mixed tables', () => {
+      const mixedTables = Array.from({ length: 200_000 }, (_, index) => ({
+        tableId: `t${index}`,
+        linksCopied: index,
+        linksAdded: 0,
+      }));
+
+      const fields = plannedFieldsOf({
+        ...PLANNED,
+        planned: false,
+        estimate: {
+          changedRows: 1,
+          mergedRows: 0,
+          perRowWorkRows: 0,
+          mixedTables,
+        },
+      });
+
+      expect(fields).toMatchObject({
+        estimate: { mixedTables: 200_000, maxLinksCopied: 199_999 },
+      });
+    });
+
     it('says `listed` for a result without a status, and nothing of limits a listing does not apply', async () => {
       const entries = loggedEntries();
 
@@ -185,7 +222,7 @@ describe('Partial operation log', () => {
         partialOperation('list', BRANCH),
         (trace) => {
           trace.attempted(false);
-          trace.planned(plannedFieldsOf(PLANNED));
+          trace.planned(() => plannedFieldsOf(PLANNED));
 
           return Promise.resolve({});
         },
@@ -526,6 +563,27 @@ describe('Partial operation log', () => {
       });
     });
 
+    it('return the result of a preview, a commit and a Draft read when their plan fields cannot be computed', async () => {
+      const draft = await givenEditedNotes(['n1', 'n2']);
+      loggedEntries();
+      jest.mocked(plannedFieldsOf).mockImplementation(() => {
+        throw new RangeError('Maximum call stack size exceeded');
+      });
+
+      await expect(
+        draft.previewChanges({
+          operation: 'commit',
+          selection: { fields: [titleOf('n1')] },
+        }),
+      ).resolves.toMatchObject({ status: 'ready' });
+      await expect(
+        draft.readDraftTableChanges({ first: 10 }),
+      ).resolves.toMatchObject({ totalCount: 1 });
+      await expect(
+        draft.commitChanges({ selection: { fields: [titleOf('n1')] } }),
+      ).resolves.toMatchObject({ status: 'applied' });
+    });
+
     let kit: PartialChangesTestKit;
 
     beforeAll(async () => {
@@ -564,8 +622,17 @@ describe('Partial operation log', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    jest
+      .mocked(plannedFieldsOf)
+      .mockImplementation(actualOperationFields().plannedFieldsOf);
   });
 });
+
+function actualOperationFields(): typeof OperationFieldsModule {
+  return jest.requireActual(
+    'src/features/partial-changes/logging/partial-operation-fields',
+  );
+}
 
 const BRANCH = { projectId: 'project', branchName: 'master' };
 

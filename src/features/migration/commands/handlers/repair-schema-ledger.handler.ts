@@ -19,11 +19,14 @@ import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-s
 import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
 import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
 import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
-import { ledgerOperation } from 'src/features/migration/ledger-operation-log';
+import {
+  ledgerOperation,
+  repairFieldsOf,
+  repairOutcomeOf,
+} from 'src/features/migration/ledger-operation-log';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 import {
-  type LogFields,
   OperationLog,
   type OperationTrace,
 } from 'src/infrastructure/database/operation-log';
@@ -58,8 +61,8 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
       ledgerOperation('repair', data),
       async (trace) => {
         const result = await this.repair(data, trace);
-        trace.described(repairDetailsOf(result.repair));
-        trace.concluded(repairOutcomeOf(result));
+        trace.described(() => repairFieldsOf(result.repair));
+        trace.concluded(() => repairOutcomeOf(result.repair, result.written));
 
         return result;
       },
@@ -79,7 +82,7 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
     trace: OperationTrace,
   ): Promise<FinishedRepair> {
     const request = repairRequestOf(data);
-    trace.described({ dryRun: request.dryRun });
+    trace.described(() => ({ dryRun: request.dryRun }));
     const planned = await this.transactionRunner.runPlanning(
       () => this.planRepair(request),
       trace,
@@ -113,11 +116,8 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
   ): Promise<FinishedRepair> {
     const written = await this.writeAdmission.runSerializableRevisionWrite(
       planned.state.draftRevisionId,
-      () => {
-        trace.attempted(false);
-
-        return this.recordFreshRepair(request, planned);
-      },
+      () => this.recordFreshRepair(request, planned),
+      trace,
     );
 
     if (!written) {
@@ -140,38 +140,6 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
 
     return true;
   }
-}
-
-function repairOutcomeOf({ repair, written }: FinishedRepair): string {
-  if (written) {
-    return 'repaired';
-  }
-
-  if (repair.dryRun) {
-    return 'planned';
-  }
-
-  if (repair.tables.some(({ outcome }) => outcome === 'stale')) {
-    return 'stale';
-  }
-
-  return 'unchanged';
-}
-
-function repairDetailsOf({
-  headRevisionId,
-  draftRevisionId,
-  tables,
-  renumbered,
-}: SchemaLedgerRepair): LogFields {
-  return {
-    headRevisionId,
-    draftRevisionId,
-    tables: tables.length,
-    repairedTables: tables.filter(({ outcome }) => outcome === 'repaired')
-      .length,
-    renumbered: renumbered.length,
-  };
 }
 
 function repairResultOf(

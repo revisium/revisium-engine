@@ -85,7 +85,7 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
       ...plan,
       blockers: [...migrationBlockers, ...plan.blockers],
     };
-    trace.planned(plannedFieldsOf(preview));
+    trace.planned(() => plannedFieldsOf(preview));
 
     return previewResultOf(preview, decidePlanStatus(preview, request));
   }

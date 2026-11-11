@@ -5,6 +5,10 @@ import type { AttemptObserver } from 'src/infrastructure/database/operation-tran
 // Fields an operation adds to its entry; only ids, counts and names, never row data, values or messages.
 export type LogFields = Readonly<Record<string, unknown>>;
 
+// Computes fields when the entry is written, under the log's best-effort boundary: a describer that throws loses the
+// entry, never the operation's result or error.
+export type Describer<Value> = () => Value;
+
 // What a caller logs an operation as.
 export interface TrackedOperation {
   readonly operation: string;
@@ -36,11 +40,11 @@ export class OperationTrace implements AttemptObserver {
 
   private escalations = 0;
 
-  private attemptFields?: LogFields;
+  private attemptFields?: Describer<LogFields>;
 
-  private details: LogFields = {};
+  private details: Describer<LogFields>[] = [];
 
-  private outcome?: string;
+  private outcome?: Describer<string>;
 
   // Each attempt plans again, so what an earlier one planned no longer describes the operation.
   public attempted(escalated: boolean): void {
@@ -53,23 +57,23 @@ export class OperationTrace implements AttemptObserver {
   }
 
   // What the current attempt planned; replaced by the next plan, dropped by the next attempt.
-  public planned(fields: LogFields): void {
+  public planned(fields: Describer<LogFields>): void {
     this.attemptFields = fields;
   }
 
   // Details survive a new attempt: they describe the input or the result, not one attempt's plan.
-  public described(details: LogFields): void {
-    this.details = { ...this.details, ...details };
+  public described(details: Describer<LogFields>): void {
+    this.details.push(details);
   }
 
   // For a result without a status.
-  public concluded(outcome: string): void {
+  public concluded(outcome: Describer<string>): void {
     this.outcome = outcome;
   }
 
   public outcomeOf(tracked: TrackedOperation, result: unknown): string {
     return (
-      this.outcome ?? statusOf(result) ?? tracked.outcome ?? DEFAULT_OUTCOME
+      this.outcome?.() ?? statusOf(result) ?? tracked.outcome ?? DEFAULT_OUTCOME
     );
   }
 
@@ -86,9 +90,16 @@ export class OperationTrace implements AttemptObserver {
       outcome,
       attempts: this.attempts,
       escalations: this.escalations,
-      ...this.attemptFields,
-      ...this.details,
+      ...this.attemptFields?.(),
+      ...this.detailFields(),
     };
+  }
+
+  private detailFields(): LogFields {
+    return this.details.reduce<LogFields>(
+      (fields, details) => ({ ...fields, ...details() }),
+      {},
+    );
   }
 }
 
@@ -96,7 +107,8 @@ type BranchFields = Pick<OperationLogEntry, 'projectId' | 'branchName'>;
 
 type ErrorFields = Pick<OperationLogEntry, 'error' | 'errorCode'>;
 
-// One entry per tracked operation, when it ends: info when it returns, warn when it throws.
+// One entry per tracked operation, when it ends: info when it returns, warn when it throws. The entry and each of its
+// fields are computed inside `write`.
 @Injectable()
 export class OperationLog {
   private readonly logger = new Logger(OperationLog.name);

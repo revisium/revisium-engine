@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import {
   OperationLog,
   type OperationLogEntry,
+  type OperationTrace,
   type TrackedOperation,
 } from 'src/infrastructure/database/operation-log';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
@@ -18,7 +19,7 @@ describe('OperationLog', () => {
       const tracked = { ...trackedAs('read', BRANCH), outcome: 'read' };
 
       await log.track(tracked, (trace) => {
-        trace.concluded('repaired');
+        trace.concluded(() => 'repaired');
 
         return Promise.resolve({ status: 'applied' });
       });
@@ -38,11 +39,11 @@ describe('OperationLog', () => {
       const entries = loggedEntries();
 
       await new OperationLog().track(trackedAs('write', BRANCH), (trace) => {
-        trace.described({ dryRun: false });
+        trace.described(() => ({ dryRun: false }));
         trace.attempted(false);
-        trace.planned({ headRevisionId: 'head' });
+        trace.planned(() => ({ headRevisionId: 'head' }));
         trace.attempted(true);
-        trace.described({ entries: 2 });
+        trace.described(() => ({ entries: 2 }));
 
         return Promise.resolve({ status: 'written' });
       });
@@ -55,6 +56,39 @@ describe('OperationLog', () => {
         entries: 2,
       });
       expect(entry).not.toHaveProperty('headRevisionId');
+    });
+  });
+
+  describe('a describer that throws', () => {
+    it('changes neither the result nor the error, since every field is computed under the best-effort boundary', async () => {
+      const log = new OperationLog();
+      const timeout = new OperationTimeoutException(5);
+      const throwingDescribers = (trace: OperationTrace) => {
+        trace.planned(() => {
+          throw new RangeError('planned');
+        });
+        trace.described(() => {
+          throw new RangeError('described');
+        });
+        trace.concluded(() => {
+          throw new RangeError('concluded');
+        });
+      };
+
+      await expect(
+        log.track(trackedAs('write', BRANCH), (trace) => {
+          throwingDescribers(trace);
+
+          return Promise.resolve({ status: 'applied' });
+        }),
+      ).resolves.toEqual({ status: 'applied' });
+      await expect(
+        log.track(trackedAs('write', BRANCH), (trace) => {
+          throwingDescribers(trace);
+
+          return Promise.reject(timeout);
+        }),
+      ).rejects.toBe(timeout);
     });
   });
 

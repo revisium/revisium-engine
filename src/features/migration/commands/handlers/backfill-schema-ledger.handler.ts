@@ -22,13 +22,15 @@ import {
   LedgerBackfillPlanService,
 } from 'src/features/migration/ledger-backfill/ledger-backfill-plan.service';
 import { StoredBackfillVerification } from 'src/features/migration/ledger-backfill/stored-backfill-verification';
-import { ledgerOperation } from 'src/features/migration/ledger-operation-log';
+import {
+  backfillFieldsOf,
+  ledgerOperation,
+} from 'src/features/migration/ledger-operation-log';
 import type { HeadAndDraft } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { ShareCommands } from 'src/features/share/share.commands';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 import {
-  type LogFields,
   OperationLog,
   type OperationTrace,
 } from 'src/infrastructure/database/operation-log';
@@ -56,7 +58,7 @@ export class BackfillSchemaLedgerHandler implements ICommandHandler<
       ledgerOperation('backfill', data),
       async (trace) => {
         const result = await this.backfill(data, trace);
-        trace.described(backfillDetailsOf(result));
+        trace.described(() => backfillFieldsOf(result));
 
         return result;
       },
@@ -72,7 +74,7 @@ export class BackfillSchemaLedgerHandler implements ICommandHandler<
     trace: OperationTrace,
   ): Promise<SchemaLedgerBackfill> {
     const request = backfillRequestOf(data);
-    trace.described({ dryRun: request.dryRun });
+    trace.described(() => ({ dryRun: request.dryRun }));
 
     if (request.dryRun) {
       return this.transactionRunner.runPlanning(
@@ -170,29 +172,6 @@ function backfillResultOf(
   }
 
   return { status: 'notNeeded', ...branch };
-}
-
-function backfillDetailsOf(backfill: SchemaLedgerBackfill): LogFields {
-  const { headRevisionId, draftRevisionId } = backfill;
-
-  if (backfill.status === 'backfilled') {
-    return {
-      previousHeadRevisionId: backfill.previousHeadRevisionId,
-      headRevisionId,
-      draftRevisionId,
-      entries: backfill.entries.length,
-    };
-  }
-
-  if (backfill.status === 'planned') {
-    return {
-      headRevisionId,
-      draftRevisionId,
-      entries: backfill.entries.length,
-    };
-  }
-
-  return { headRevisionId, draftRevisionId };
 }
 
 function entriesOf(migrations: readonly BackfillMigration[]): BackfillEntry[] {

@@ -942,7 +942,8 @@ list types, and how a typed transport maps the unions:
   Every listing page, Draft read (`tableChanges`, `rowChanges`, `summary`), preview, commit and revert logs one
   structured entry (`Partial changes operation finished`) with its duration, outcome and attempts; a Draft read adds
   the page size asked and returned and the names of its filters. `backfillSchemaLedger` and `repairSchemaLedger` log
-  the same kind of entry as `Schema ledger operation finished`, with `dryRun` and what they planned or wrote
+  the same kind of entry as `Schema ledger operation finished`, with `dryRun` and what they planned or wrote. Every
+  entry goes through the NestJS logger with the context `OperationLog`
   ([SPEC §11.1](specs/partial-changes-v1.spec.md#111-operation-logs)).
 
 ---

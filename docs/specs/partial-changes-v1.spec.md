@@ -1788,8 +1788,8 @@ variable it came from.
 ### 11.1 Operation logs
 
 Each listing page, Draft read ([draft-reads-v1]), preview, commit and revert logs one structured entry when it ends
-(`OperationLog` in `src/infrastructure/database/operation-log.ts`, through the engine's NestJS logger): `log` when it
-returns, `warn` when it throws. The entry has `message` `Partial changes operation finished` and these fields:
+(`OperationLog` in `src/infrastructure/database/operation-log.ts`, through the engine's NestJS logger with the context
+`OperationLog`): `log` when it returns, `warn` when it throws. The entry has `message` `Partial changes operation finished` and these fields:
 
 | Field | Value |
 | --- | --- |
@@ -1809,7 +1809,8 @@ returns, `warn` when it throws. The entry has `message` `Partial changes operati
 An entry never holds row data, values, selectors or an error message, since a message can quote them. The
 endpoint notification after a commit or revert (the internal hook, a no-op in this package) is outside the entry: a
 failing notification is the caller's error, not the operation's outcome. Logging is best effort: a logger that throws
-changes neither the result nor the error the caller gets.
+changes neither the result nor the error the caller gets. Every field is computed while the entry is written, inside
+that boundary: a field that cannot be computed loses the entry, never the operation's result or error.
 
 The schema ledger backfill and repair ([async-row-migration-v2] §6, [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)) log through the same
 facility, with `message` `Schema ledger operation finished`, the same rules and the fields above that apply
@@ -1822,7 +1823,7 @@ facility, with `message` `Schema ledger operation finished`, the same rules and 
 | `headRevisionId`, `draftRevisionId` | From the result: after `backfilled`, the new Head and Draft. |
 | `previousHeadRevisionId` | `backfilled` only: the Head the backfill replaced. |
 | `outcome` | Backfill: the result's `status`. Repair: `planned` (dry run), `repaired` (written), `stale` (the plan was stale at write time) or `unchanged` (no table to repair). |
-| `attempts` | Backfill: the attempts of its one transaction. Repair: its planning transaction plus each attempt of its write. |
+| `attempts` | Backfill: the attempts of its one transaction. Repair: its planning transaction plus each attempt of its write transaction, counted when the transaction starts, before the fence and migration-lock admission, so an attempt that admission refuses counts too. |
 | `entries` | Backfill, `planned` or `backfilled`: the number of entries. |
 | `tables`, `repairedTables`, `renumbered` | Repair: the tables in the result, those whose outcome is `repaired`, and the renumbered pending migrations. |
 
@@ -2386,7 +2387,9 @@ Additive operation logs; no behaviour or shape changes.
 - §11.1: the Draft reads `changes.tableChanges`, `changes.rowChanges` and `changes.summary` log one entry each, with
   outcome `read`, the page size asked and returned and the names of the filters given. The schema ledger backfill and
   repair log through the same facility as `Schema ledger operation finished`; the facility moves from `partial-changes`
-  to `src/infrastructure/database` as `OperationLog`, so `migration` does not import `partial-changes`.
+  to `src/infrastructure/database` as `OperationLog`, so `migration` does not import `partial-changes`. The logger
+  context of every entry, those of preview, commit and revert included, is `OperationLog` (it was
+  `PartialOperationLog`). Every field is computed under the log's best-effort boundary.
 
 ### Version 2.1 (2026-11-11)
 

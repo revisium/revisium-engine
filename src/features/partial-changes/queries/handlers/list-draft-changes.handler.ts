@@ -32,7 +32,7 @@ export class ListDraftChangesHandler implements IQueryHandler<
           () => this.unitListing.listPage(request),
           trace,
         );
-        trace.planned(plannedFieldsOf(page));
+        trace.planned(() => plannedFieldsOf(page));
 
         return page;
       },

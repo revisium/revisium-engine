@@ -23,9 +23,19 @@ export interface LedgerReplayInput {
   recordTrail?: boolean;
 }
 
+// The change types of the stored migrations, which a replay failure names as its step.
+export const MIGRATION_CHANGE_TYPES = [
+  'init',
+  'update',
+  'rename',
+  'remove',
+] as const satisfies readonly Migration['changeType'][];
+
+export type MigrationChangeType = (typeof MIGRATION_CHANGE_TYPES)[number];
+
 export interface ReplayFailure {
   migrationId: string;
-  step: Migration['changeType'];
+  step: MigrationChangeType;
   error: string;
 }
 

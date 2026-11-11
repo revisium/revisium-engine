@@ -8,7 +8,11 @@ import {
   type ExpectedFingerprint,
   readExpected,
 } from 'src/features/partial-changes/plan/fingerprint';
-import type { Selection } from 'src/features/partial-changes/selection/selection';
+import {
+  type Selection,
+  type SelectionInput,
+  selectsWholeDraft,
+} from 'src/features/partial-changes/selection/selection';
 import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 
 export class SelectionValidationError extends BadRequestException {}
@@ -38,6 +42,12 @@ const SIDES: ReadonlySet<unknown> = new Set(SELECTOR_SIDES);
 
 export function validateSelection(input: unknown): Selection {
   return checkSelection(input, 'selection') as Selection;
+}
+
+// Whether the operations take this selection as exactly { all: true }: they validate it, which drops the optional
+// fields given as null, and apply the planner's rule. A malformed selection is refused with the operations' error.
+export function isWholeDraftSelection(selection: SelectionInput): boolean {
+  return selectsWholeDraft(validateSelection(selection));
 }
 
 export function validateOperation(input: unknown): ChangeOperation {

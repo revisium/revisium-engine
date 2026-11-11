@@ -34,7 +34,7 @@ import {
 } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
 import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
 import {
-  isWholeDraftSelection,
+  selectsWholeDraft,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
@@ -145,7 +145,7 @@ export class ChangePlanner {
     selection,
   }: SnapshotRequest): Promise<ComparedSnapshot> {
     return this.comparedSnapshotReader.readComparedSnapshot(branch, {
-      wholeDraft: isWholeDraftSelection(selection),
+      wholeDraft: selectsWholeDraft(selection),
     });
   }
 
@@ -216,7 +216,7 @@ export class ChangePlanner {
       choice: {
         operation,
         applied: closure.applied,
-        wholeDraft: isWholeDraftSelection(selection),
+        wholeDraft: selectsWholeDraft(selection),
       },
       assembled: closure.target,
     };

@@ -33,7 +33,7 @@ import {
   positionOf,
 } from 'src/features/partial-changes/plan/reason';
 import {
-  isWholeDraftSelection,
+  selectsWholeDraft,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type {
@@ -162,7 +162,7 @@ class SelectionClosure {
     return {
       operation: this.request.operation,
       applied: this.applied,
-      wholeDraft: isWholeDraftSelection(this.request.selection),
+      wholeDraft: selectsWholeDraft(this.request.selection),
     };
   }
 

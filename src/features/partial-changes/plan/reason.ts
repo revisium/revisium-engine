@@ -50,6 +50,10 @@ export type ReasonSite =
       readonly migrationId?: string;
     };
 
+export const REFERENCED_ENTITY_KINDS = ['row', 'table'] as const;
+
+export type ReferencedEntityKind = (typeof REFERENCED_ENTITY_KINDS)[number];
+
 export type ReferencedEntity =
   | { readonly kind: 'row'; readonly tableId: string; readonly rowId: string }
   | { readonly kind: 'table'; readonly tableId: string };

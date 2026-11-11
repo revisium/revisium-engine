@@ -16,7 +16,7 @@ import type {
   CauseRole,
 } from 'src/features/partial-changes/plan/reason';
 import {
-  isWholeDraftSelection,
+  selectsWholeDraft,
   type ItemKind,
   type Selection,
   type SelectionItems,
@@ -115,7 +115,7 @@ export async function closedPlanOf(
     choice: {
       operation,
       applied: closure.applied,
-      wholeDraft: isWholeDraftSelection(selection),
+      wholeDraft: selectsWholeDraft(selection),
     },
     target: closure.target,
   };

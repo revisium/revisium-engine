@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.0 |
+| Version | 2.1 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
-| Date | 2026-11-10 |
+| Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
 | Evidence | [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md) (PoC v2, `c86e86c`, tag `archive/partial-changes-poc-v2`); the Draft changes PoC (engine `poc/draft-diff` `ddb22c6`, core and admin `poc/partial-changes`) for v2.0 |
@@ -772,7 +772,11 @@ added (§6.9).
   `changes.rowChanges` and `changes.summary` of [draft-reads-v1](draft-reads-v1.spec.md).
 - Public API, CLI and MCP map the same fields one to one (REQ-001.BR-001). The public API and MCP reject a partial
   `commitChanges` or `revertChanges` without `expected`; only the exact selection `{ all: true }` may omit it. The
-  engine operations keep `expected` optional for internal callers.
+  engine operations keep `expected` optional for internal callers. The package exports the predicate
+  `isWholeDraftSelection(selection: SelectionInput): boolean`, so a host enforces this rule without a copy of it: it
+  validates the selection as the operations do (an optional field given as `null` is absent; a malformed selection
+  throws the operations' validation error) and applies the planner's own rule, under which any other field, even an
+  empty list or an empty `exclude`, makes the selection partial.
 - Paths are JSON Pointers at every boundary; native dot paths stay internal to the patch APIs.
 - **Typed transports.** A transport gives every engine value its own type: selections and returned selectors
   (`Selection` as input, `SelectionItems` as output), `unmatched`, `estimate`, `renumberedMigrations`, reasons, sites,
@@ -799,6 +803,7 @@ added (§6.9).
 | `ANNOTATION_KEYWORDS` | `ChangedField.annotations` (§5.2) |
 | `REQUIRED_REASON_CODES` | `RequiredReasonCode` (§5.7) |
 | `REASON_SITE_KINDS` | `ReasonSite.kind` (§5.1) |
+| `REFERENCED_ENTITY_KINDS` | `ReferencedEntity.kind` (§5.7) |
 | `CAUSE_ROLES` | `ReasonCause.role` (§5.7) |
 | `BLOCKER_CODES` | `BlockerCode` (§5.8) |
 | `REFUSAL_CODES` | `RefusedTable.code` (§6.10) |
@@ -851,8 +856,11 @@ diff payloads, and no type of this API reuses those names), the plan's blocker, 
 `PlanCounts` and `PlanEstimate`, a deferred row is `DeferredRow`, a reason `RequiredReason`, and the selection-state
 variants of the Draft reads end in `Selection` (`GoesWithSelection`, `FieldUnitSelection`, …). Each code list is
 exported with the union type derived from it, also where §5.11 spells the union inline (`PreviewStatus`,
-`ApplyStatus`, `ReasonSiteKind`, and `TableSelectionState`, `RowSelectionState` and `FieldSelectionState` of the
-Draft reads). As for the other engine features, the package also exports `PartialChangesModule` and
+`ApplyStatus`, `ReasonSiteKind`, `ReferencedEntityKind`, and `TableSelectionState`, `RowSelectionState` and
+`FieldSelectionState` of the Draft reads). Every object type that a result holds has an exported name, so a typed
+transport maps each of its types to one engine name (`MixedTableEstimate`, `PlannedChangesBlocked`,
+`StoppedChangesBlocked`, and those of draft-reads-v1 §9); only the variants of a discriminated union written inline
+(`Unit`, `ReasonSite`, `ReferencedEntity`) and the parts of an intersection have none. As for the other engine features, the package also exports `PartialChangesModule` and
 `PartialChangesApiService`.
 
 ### 5.11 TypeScript types
@@ -905,6 +913,7 @@ type ReasonSite =
   | { kind: 'migration'; tableId: string; migrationId: string }
   | { kind: 'rowId'; tableId: string; rowId: string }
   | { kind: 'tableId'; tableId: string; migrationId?: string };
+type ReferencedEntityKind = 'row' | 'table';
 type ReferencedEntity = { kind: 'row'; tableId: string; rowId: string } | { kind: 'table'; tableId: string };
 type CauseRole = 'referrer' | 'remover' | 'taker' | 'occupant';
 type ReasonCause = { unit: DescribedUnitRef; role: CauseRole };
@@ -918,7 +927,8 @@ type DeferredPath = { path: string };
 type DeferredRow = { unit: DescribedUnitRef; defaulted: DeferredValue[]; omitted: DeferredPath[];
   structure: DescribedUnitRef };
 type PlanEstimate = { changedRows: number; mergedRows: number; perRowWorkRows: number;
-  mixedTables: Array<{ tableId: string; linksCopied: number; linksAdded: number }> };
+  mixedTables: MixedTableEstimate[] };
+type MixedTableEstimate = { tableId: string; linksCopied: number; linksAdded: number };
 type PlanCounts = { selected: number; required: number };
 type TableCoverage = { tableId: string; previousTableId?: string; side?: SelectorSide; structure?: boolean;
   views?: boolean; rows: number; appliedRows: number; partlyAppliedRows: number };
@@ -948,10 +958,10 @@ type RevertChangesInput = Omit<CommitChangesInput, 'comment'>;
 type MigrationRenumbering = { from: string; to: string };
 type StaleChange = 'version' | 'operation' | 'revisions' | 'units' | 'content';
 type ChangesRequireAdditions = { status: 'required'; required: RequiredUnit[] };
-type ChangesBlocked =
-  | { status: 'blocked'; planned: true; blockers: PlanBlocker[]; required: RequiredUnit[];
-      unmatched: UnmatchedSelectors }
-  | { status: 'blocked'; planned: false; blockers: PlanBlocker[]; required: [] };  // stopped by a limit
+type ChangesBlocked = PlannedChangesBlocked | StoppedChangesBlocked;
+type PlannedChangesBlocked = { status: 'blocked'; planned: true; blockers: PlanBlocker[]; required: RequiredUnit[];
+  unmatched: UnmatchedSelectors };
+type StoppedChangesBlocked = { status: 'blocked'; planned: false; blockers: PlanBlocker[]; required: [] };  // a limit
 type ChangesStale = { status: 'stale'; changed: StaleChange[]; headRevisionId: string; draftRevisionId: string;
   unmatched: UnmatchedSelectors };
 type NothingToApply = { status: 'empty'; headRevisionId: string; draftRevisionId: string;
@@ -2342,6 +2352,17 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.1 (2026-11-11)
+
+Additive package exports for hosts; no behaviour or shape changes.
+
+- §5.10, §5.11: `ReferencedEntity.kind` gets its runtime list `REFERENCED_ENTITY_KINDS` and the type
+  `ReferencedEntityKind`.
+- §5.10, §5.11: every object type that a result holds is exported under a name: `MixedTableEstimate` (an entry of
+  `PlanEstimate.mixedTables`), `PlannedChangesBlocked` and `StoppedChangesBlocked` (the variants of `ChangesBlocked`).
+- §5.10: the package exports `isWholeDraftSelection`, the operations' own decision whether a `SelectionInput` is
+  exactly `{ all: true }`.
 
 ### Version 2.0 (2026-11-10)
 

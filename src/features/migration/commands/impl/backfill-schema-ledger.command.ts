@@ -25,9 +25,13 @@ export const BACKFILL_REFUSAL_CODES = [
 
 export type BackfillRefusalCode = (typeof BACKFILL_REFUSAL_CODES)[number];
 
+export const BACKFILL_CHANGE_TYPES = ['init', 'update'] as const;
+
+export type BackfillChangeType = (typeof BACKFILL_CHANGE_TYPES)[number];
+
 export interface BackfillEntry {
   readonly id: string;
-  readonly changeType: 'init' | 'update';
+  readonly changeType: BackfillChangeType;
   readonly tableId: string;
   readonly hash: string;
 }

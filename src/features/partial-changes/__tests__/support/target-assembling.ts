@@ -19,7 +19,7 @@ import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/cha
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
-  isWholeDraftSelection,
+  selectsWholeDraft,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type { SelectionResolution } from 'src/features/partial-changes/selection/selection-resolution';
@@ -109,7 +109,7 @@ export function readAssembledTarget(
       {
         operation,
         applied: appliedUnitsOf(resolution),
-        wholeDraft: isWholeDraftSelection(selection),
+        wholeDraft: selectsWholeDraft(selection),
       },
     );
 

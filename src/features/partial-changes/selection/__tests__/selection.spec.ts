@@ -1,11 +1,11 @@
 import {
-  isWholeDraftSelection,
+  selectsWholeDraft,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 
 describe('Selection', () => {
   it('treats only the literal { all: true } as the whole Draft', () => {
-    expect(isWholeDraftSelection({ all: true })).toBe(true);
+    expect(selectsWholeDraft({ all: true })).toBe(true);
   });
 
   it.each<{ selection: string; value: Selection }>([
@@ -24,6 +24,6 @@ describe('Selection', () => {
     { selection: 'all: false', value: { all: false } },
     { selection: 'an empty selection', value: {} },
   ])('treats $selection as a partial selection', ({ value }) => {
-    expect(isWholeDraftSelection(value)).toBe(false);
+    expect(selectsWholeDraft(value)).toBe(false);
   });
 });

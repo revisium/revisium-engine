@@ -33,7 +33,7 @@ interface UnledgeredOf<Reason extends UnledgeredReason> {
   readonly reason: Reason;
 }
 
-interface BrokenLineage extends UnledgeredOf<'brokenLineage'> {
+export interface BrokenLineage extends UnledgeredOf<'brokenLineage'> {
   readonly migrationId: string;
 }
 

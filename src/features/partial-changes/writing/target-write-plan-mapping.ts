@@ -40,6 +40,19 @@ export function targetWritePlanOf(writable: WritableTarget): TargetWritePlan {
   return writePlanOf(writable, systemTableWritePlanOf);
 }
 
+// Every table the plan read whose Draft and Head versions differ, as a relink candidate that keeps its Draft version:
+// the writer links the Head version instead only where its content check finds the two versions content-equal.
+export function draftFollowsHeadPlanOf(
+  writable: WritableTarget,
+): TargetWritePlan {
+  const plan = targetWritePlanOf(writable);
+
+  return {
+    ...plan,
+    tables: plan.tables.filter(differsFromHead).map(keepingDraftVersion),
+  };
+}
+
 export function commitTargetWritePlanOf(
   writable: WritableTarget,
   comment?: string,
@@ -173,6 +186,27 @@ function linkSideVersionIdOf({
   }
 
   return versionId;
+}
+
+function differsFromHead({
+  headVersionId,
+  draftVersionId,
+}: TableWritePlan): boolean {
+  return (
+    headVersionId !== undefined &&
+    draftVersionId !== undefined &&
+    headVersionId !== draftVersionId
+  );
+}
+
+function keepingDraftVersion(plan: TableWritePlan): TableWritePlan {
+  return {
+    identity: plan.identity,
+    headVersionId: plan.headVersionId,
+    draftVersionId: plan.draftVersionId,
+    target: { kind: 'linked', versionId: plan.draftVersionId },
+    relinkCandidate: true,
+  };
 }
 
 function pairOf(

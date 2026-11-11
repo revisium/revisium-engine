@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import type { TargetWritePlan } from 'src/features/draft-revision/commands/impl';
+import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import type {
   ApplyChangesInput,
+  NothingToApply,
   StoppedChangesBlocked,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
@@ -25,7 +28,10 @@ import {
   decidePlanStatus,
   type PlanStatus,
 } from 'src/features/partial-changes/planning/plan-decision';
-import type { Selection } from 'src/features/partial-changes/selection/selection';
+import {
+  selectsWholeDraft,
+  type Selection,
+} from 'src/features/partial-changes/selection/selection';
 import {
   hasUnmatchedSelectors,
   type UnmatchedSelectors,
@@ -35,6 +41,8 @@ import {
   validateSelection,
 } from 'src/features/partial-changes/selection/selection-validator';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import { draftFollowsHeadPlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 
@@ -48,7 +56,7 @@ interface ApplyRequest {
   readonly expected?: ExpectedFingerprint;
 }
 
-type RefusalStatus = Exclude<PlanStatus, 'ready'>;
+type RefusalStatus = Exclude<PlanStatus, 'ready' | 'empty'>;
 
 @Injectable()
 export class ChangeApplier {
@@ -57,6 +65,8 @@ export class ChangeApplier {
     private readonly draftWriteAdmission: DraftWriteAdmissionService,
     private readonly planner: ChangePlanner,
     private readonly limits: PartialChangesLimits,
+    private readonly snapshotReader: ChangesSnapshotReader,
+    private readonly draftRevisionTargetApi: DraftRevisionTargetApiService,
   ) {}
 
   public apply<Applied>(
@@ -93,6 +103,10 @@ export class ChangeApplier {
 
     const status = decidePlanStatus(plan, request);
 
+    if (status === 'empty') {
+      return this.nothingToApply(plan, request, deadline, trace);
+    }
+
     if (status !== 'ready') {
       return unappliedChangesOf(plan, status, request, maxListedDetails);
     }
@@ -101,6 +115,43 @@ export class ChangeApplier {
 
     // The write takes the whole plan; only a refusal lists its details cut (SPEC §5.1).
     return writeTarget(plan);
+  }
+
+  private async nothingToApply(
+    plan: CompletePlan,
+    request: ApplyRequest,
+    deadline: DeadlineHandle,
+    trace: OperationTrace,
+  ): Promise<NothingToApply> {
+    const normalisation = normalisationOf(plan, request);
+
+    if (!normalisation) {
+      return nothingToApplyOf(
+        plan,
+        await this.snapshotReader.readDraftHasChanges(plan.draftRevisionId),
+      );
+    }
+
+    return nothingToApplyOf(
+      plan,
+      await this.normaliseDraft(plan, normalisation, deadline, trace),
+    );
+  }
+
+  // Links the Head versions of the content-equal Draft table versions; no unit is applied and no revision created.
+  private async normaliseDraft(
+    plan: CompletePlan,
+    normalisation: TargetWritePlan,
+    deadline: DeadlineHandle,
+    trace: OperationTrace,
+  ): Promise<boolean> {
+    await deadline.checkpoint();
+
+    const { draftHasChanges, relinkedTables } =
+      await this.draftRevisionTargetApi.revertToTarget(normalisation);
+    trace.planned(() => ({ ...plannedFieldsOf(plan), relinkedTables }));
+
+    return draftHasChanges;
   }
 
   private admitDraftWrite({
@@ -137,6 +188,38 @@ function applyRequestOf(
     branch,
     selection: validateSelection(selection),
     ...acceptance,
+  };
+}
+
+// Only exactly { all: true } reads every table; a narrower selection leaves the tables it did not read as they are
+// (SPEC §3.8).
+function normalisationOf(
+  plan: CompletePlan,
+  { selection }: ApplyRequest,
+): TargetWritePlan | undefined {
+  if (!selectsWholeDraft(selection)) {
+    return undefined;
+  }
+
+  const normalisation = draftFollowsHeadPlanOf(plan.target);
+
+  if (normalisation.tables.length === 0) {
+    return undefined;
+  }
+
+  return normalisation;
+}
+
+function nothingToApplyOf(
+  plan: CompletePlan,
+  draftHasChanges: boolean,
+): NothingToApply {
+  return {
+    status: 'empty',
+    headRevisionId: plan.headRevisionId,
+    draftRevisionId: plan.draftRevisionId,
+    ...unmatchedSelectorsOf(plan),
+    draftHasChanges,
   };
 }
 
@@ -177,13 +260,6 @@ function unappliedChangesOf(
         headRevisionId: plan.headRevisionId,
         draftRevisionId: plan.draftRevisionId,
         unmatched: plan.unmatched,
-      };
-    case 'empty':
-      return {
-        status,
-        headRevisionId: plan.headRevisionId,
-        draftRevisionId: plan.draftRevisionId,
-        ...unmatchedSelectorsOf(plan),
       };
   }
 }

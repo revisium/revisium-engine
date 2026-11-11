@@ -6,6 +6,8 @@ export interface DraftRevisionRevertToTargetCommandReturnType {
   readonly draftRevisionId: string;
   // The Draft's hasChanges, recomputed from its table versions.
   readonly draftHasChanges: boolean;
+  // The tables whose Draft link the write changed.
+  readonly relinkedTables: number;
 }
 
 export class DraftRevisionRevertToTargetCommand {

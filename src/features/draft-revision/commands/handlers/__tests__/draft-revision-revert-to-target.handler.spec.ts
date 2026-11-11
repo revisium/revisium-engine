@@ -274,7 +274,7 @@ describe('DraftRevisionRevertToTargetHandler', () => {
   });
 
   describe('hasChanges', () => {
-    it('is false when the target equals Head, and the result says so', async () => {
+    it('is false when the target equals Head, and the result says so with the one table it relinked', async () => {
       const draft = await givenDraftWithEditedPrices();
       const draftRevisionId = await draft.revisionId('draft');
 
@@ -284,7 +284,11 @@ describe('DraftRevisionRevertToTargetHandler', () => {
       });
 
       expect(await draft.hasChanges()).toBe(false);
-      expect(result).toEqual({ draftRevisionId, draftHasChanges: false });
+      expect(result).toEqual({
+        draftRevisionId,
+        draftHasChanges: false,
+        relinkedTables: 1,
+      });
     });
 
     it('stays true while the Draft keeps changes, and the result says so', async () => {

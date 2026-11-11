@@ -45,7 +45,7 @@ export interface TableSide {
   readonly tableIdentities: TableIdentities;
 }
 
-export interface TableStructureInput {
+interface TableStructureInput {
   readonly head: TableSide;
   readonly draft: TableSide;
   readonly pendingMigrations: readonly Migration[];

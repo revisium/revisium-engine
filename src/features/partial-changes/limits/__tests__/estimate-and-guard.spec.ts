@@ -12,8 +12,9 @@ import type {
 } from 'src/features/partial-changes/selection/selection';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { titleOf } from '../../__tests__/support/field-refs';
+import { tableViews } from '../../__tests__/support/views-documents';
 
 const MAX_MIXED_TABLE_LINKS = 3;
 const MAX_PER_ROW_WORK = 1;
@@ -64,11 +65,6 @@ const SCHEMA_HASH_OF_P1_AND_TITLE_OF_P2: Selection = {
 const FIVE_IDS = ['1', '2', '3', '4', '5'];
 const MIXED_CASE_TABLE_IDS = ['apple', '_mixed', 'Zebra'];
 
-const titleOf = (tableId: string, rowId: string): FieldRef => ({
-  tableId,
-  rowId,
-  path: '/title',
-});
 const priceOf = (rowId: string): FieldRef => ({
   tableId: ORDERS,
   rowId,
@@ -516,12 +512,12 @@ async function givenFiveTableViewsWithTwoEdited(
   const draft = await givenFiveTables(kit);
 
   for (const id of FIVE_IDS) {
-    await draft.updateViews(`t${id}`, tableViews('All'));
+    await draft.updateViews(`t${id}`, tableViews('All', ['title']));
   }
 
   await draft.commit();
-  await draft.updateViews('t1', tableViews('Renamed'));
-  await draft.updateViews('t2', tableViews('Renamed'));
+  await draft.updateViews('t1', tableViews('Renamed', ['title']));
+  await draft.updateViews('t2', tableViews('Renamed', ['title']));
 
   return draft;
 }
@@ -543,14 +539,6 @@ function givenFiveTables(kit: PartialChangesTestKit): Promise<ChangesScenario> {
       FIVE_IDS.map((id) => [`t${id}`, { schema: obj({ title: str() }) }]),
     ),
   );
-}
-
-function tableViews(name: string): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [{ id: 'default', name, columns: [{ field: 'data.title' }] }],
-  };
 }
 
 function tooLargeSystemTable(

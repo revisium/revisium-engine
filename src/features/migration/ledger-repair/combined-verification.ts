@@ -17,7 +17,7 @@ export interface RepairCandidate {
   readonly patch: RepairPatch;
 }
 
-export interface Rejection {
+interface Rejection {
   readonly outcome: 'blockedByDependency' | 'needsDraftStructureRevert';
   readonly blockedBy?: readonly string[];
 }

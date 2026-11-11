@@ -37,7 +37,7 @@ export type SchemaCheck =
 
 export type ReplayedCheck = Extract<SchemaCheck, { kind: 'replayed' }>;
 
-export type SchemaHashing = (schema: JsonSchema) => string;
+type SchemaHashing = (schema: JsonSchema) => string;
 
 export function schemaCheckOf(
   replay: ReplayedLedger | undefined,

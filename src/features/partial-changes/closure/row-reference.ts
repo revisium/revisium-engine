@@ -18,7 +18,7 @@ import type { JsonPointer } from 'src/features/partial-changes/structure/json-po
 
 // Public ids of the referring row; `path` is the referring field, the array's
 // pointer for a reference inside an array.
-export interface ReferringSite {
+interface ReferringSite {
   readonly tableId: string;
   readonly rowId: string;
   readonly path: string;

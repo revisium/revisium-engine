@@ -7,20 +7,15 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { JsonValue } from 'src/engine-prisma-types';
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
-import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
 import { createExpressFile } from 'src/__tests__/utils/file';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
-import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
-import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type {
-  FieldRef,
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { TableViewsData } from 'src/features/views/types';
 import {
   type IStorageService,
   STORAGE_SERVICE,
@@ -30,13 +25,11 @@ import {
   givenReadonlyDraftVersion,
 } from 'src/__tests__/fixtures/readonly-draft-versions';
 import { ledgerIdsOf } from 'src/__tests__/fixtures/stored-ledger';
-import {
-  recordEndpointNotifications,
-  type RevertOptions,
-} from '../../__tests__/support/change-reverting';
+import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
-import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input-refusal';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
+import { titleOf } from '../../__tests__/support/field-refs';
+import { tableViews } from '../../__tests__/support/views-documents';
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
@@ -75,11 +68,6 @@ const emptyFile = {
   height: 0,
 };
 
-const titleOf = (tableId: string, rowId: string): FieldRef => ({
-  tableId,
-  rowId,
-  path: '/title',
-});
 const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
 
 const INJECTED_FAILURE = 'Injected failure after the writes';
@@ -182,51 +170,6 @@ describe('revertChanges', () => {
       });
     });
 
-    it.each<{ input: string; options: unknown }>([
-      {
-        input: 'includeRequired without expected',
-        options: { selection: creationOfC9, includeRequired: true },
-      },
-      {
-        input: 'includeRequired given as a string',
-        options: { selection: creationOfC9, includeRequired: 'false' },
-      },
-      {
-        input: 'includeRequired given as a number',
-        options: { selection: creationOfC9, includeRequired: 1 },
-      },
-      {
-        input: 'an empty expected',
-        options: { selection: creationOfC9, expected: '' },
-      },
-      {
-        input: 'expected given as a number',
-        options: { selection: creationOfC9, expected: 1 },
-      },
-      {
-        input: 'an expected that is not a fingerprint',
-        options: { selection: creationOfC9, expected: 'other' },
-      },
-      {
-        input: 'a malformed selection',
-        options: {
-          selection: {
-            fields: [{ tableId: PRODUCTS, rowId: 'p1', path: 'title' }],
-          },
-        },
-      },
-      {
-        input: 'a null selection',
-        options: { selection: null },
-      },
-    ])('refuses $input before any transaction', async ({ options }) => {
-      const draft = await givenProductOfCreatedCategory();
-
-      await expectRefusedBeforeAnyTransaction(kit, () =>
-        draft.revertChanges(options as RevertOptions),
-      );
-    });
-
     it('applies with includeRequired, expected and optional selection fields given as null as it applies without them', async () => {
       const draft = await givenEditedPrices();
       const headRevisionId = await draft.revisionId('head');
@@ -246,27 +189,6 @@ describe('revertChanges', () => {
         draftHasChanges: true,
       });
       await expectDraftRow(draft, PRODUCTS, 'p1', { title: 'one', price: 10 });
-    });
-
-    it('is blocked by a selector that matches no unit next to one that does, and writes nothing', async () => {
-      const draft = await givenEditedPrices();
-      const contents = await branchContentsOf(kit, draft);
-      const missingRow = { rows: [rowOf(PRODUCTS, 'missing')] };
-
-      const result = await draft.revertChanges({
-        selection: { ...titleOfP1, ...missingRow },
-      });
-
-      expect(result).toEqual<RevertChangesResult>({
-        status: 'blocked',
-        planned: true,
-        blockers: [expect.objectContaining({ code: 'unmatchedSelector' })],
-        blockersTotal: 1,
-        required: [],
-        requiredTotal: 0,
-        unmatched: missingRow,
-      });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
 
     it('is blocked once by an excluded table that a foreign key needs, and writes nothing', async () => {
@@ -313,30 +235,6 @@ describe('revertChanges', () => {
       await expectDraftRow(draft, PRODUCTS, 'p1', { title: 'one', price: 10 });
     });
 
-    it('is stale and writes nothing when the selected row changed after the preview', async () => {
-      const draft = await givenEditedPrices();
-      const preview = await draft.previewChanges({
-        operation: 'revert',
-        selection: titleOfP1,
-      });
-      await draft.updateRow(PRODUCTS, 'p1', { title: 'uno!', price: 10 });
-      const contents = await branchContentsOf(kit, draft);
-
-      const result = await draft.revertChanges({
-        selection: titleOfP1,
-        expected: preview.fingerprint,
-      });
-
-      expect(result).toEqual<RevertChangesResult>({
-        status: 'stale',
-        changed: ['content'],
-        headRevisionId: await draft.revisionId('head'),
-        draftRevisionId: await draft.revisionId('draft'),
-        unmatched: {},
-      });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-    });
-
     it('is stale and writes nothing when the Draft structure that the restored row moves into changes after the preview', async () => {
       const draft = await givenDeletedRowOfChangedStructure();
       const preview = await draft.previewChanges({
@@ -352,54 +250,6 @@ describe('revertChanges', () => {
       });
 
       expect(result).toMatchObject({ status: 'stale', changed: ['content'] });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-    });
-
-    it('is stale with the fingerprint of a commit preview of the same selection', async () => {
-      const draft = await givenEditedPrices();
-      const commitPreview = await draft.previewChanges({
-        operation: 'commit',
-        selection: titleOfP1,
-      });
-
-      const result = await draft.revertChanges({
-        selection: titleOfP1,
-        expected: commitPreview.fingerprint,
-      });
-
-      expect(result).toEqual<RevertChangesResult>({
-        status: 'stale',
-        changed: ['operation'],
-        headRevisionId: await draft.revisionId('head'),
-        draftRevisionId: await draft.revisionId('draft'),
-        unmatched: {},
-      });
-    });
-
-    it('is empty with the current revisions when it is repeated, and never reverts twice', async () => {
-      const draft = await givenEditedPrices();
-      const preview = await draft.previewChanges({
-        operation: 'revert',
-        selection: titleOfP1,
-      });
-      await draft.revertChanges({
-        selection: titleOfP1,
-        expected: preview.fingerprint,
-      });
-      const contents = await branchContentsOf(kit, draft);
-
-      const repeat = await draft.revertChanges({
-        selection: titleOfP1,
-        expected: preview.fingerprint,
-      });
-
-      expect(repeat).toEqual<RevertChangesResult>({
-        status: 'empty',
-        headRevisionId: await draft.revisionId('head'),
-        draftRevisionId: await draft.revisionId('draft'),
-        unmatched: titleOfP1,
-        draftHasChanges: true,
-      });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
 
@@ -656,9 +506,12 @@ describe('revertChanges', () => {
 
     it('reverts a views edit and keeps the data edits of the table', async () => {
       const draft = await givenCommittedPrices();
-      await draft.updateViews(PRODUCTS, productViews('All'));
+      await draft.updateViews(PRODUCTS, tableViews('All', ['title', 'price']));
       await draft.commit();
-      await draft.updateViews(PRODUCTS, productViews('Renamed'));
+      await draft.updateViews(
+        PRODUCTS,
+        tableViews('Renamed', ['title', 'price']),
+      );
       await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
 
       await expectApplied(
@@ -769,23 +622,6 @@ describe('revertChanges', () => {
         expect(await draft.hasChanges()).toBe(false);
       },
     );
-
-    it('is empty for exactly { all: true } of a Draft holding only content-equal versions: it links the Head version into the Draft, which has no changes left (AS-54)', async () => {
-      const draft = await givenOnlyContentEqualVersions();
-      const headRevisionId = await draft.revisionId('head');
-      const draftRevisionId = await draft.revisionId('draft');
-
-      const result = await draft.revertChanges({ selection: { all: true } });
-
-      expect(result).toEqual<RevertChangesResult>({
-        status: 'empty',
-        headRevisionId,
-        draftRevisionId,
-        draftHasChanges: false,
-      });
-      await expectDraftLinksHeadVersion(draft, PRODUCTS);
-      expect(await draft.hasChanges()).toBe(false);
-    });
   });
 
   describe('endpoint notification', () => {
@@ -803,17 +639,6 @@ describe('revertChanges', () => {
           seenOutsideTheTransaction: { title: 'one', price: 10 },
         },
       ]);
-    });
-
-    it('notifies nothing for a revert that writes nothing', async () => {
-      const draft = await givenEditedPrices();
-      const notifications = recordEndpointNotifications(kit, () =>
-        draftDataOf(draft, PRODUCTS, 'p1'),
-      );
-
-      await draft.revertChanges({ selection: titleOfP1, expected: 'pcf3.AA' });
-
-      expect(notifications).toEqual([]);
     });
   });
 
@@ -849,23 +674,6 @@ describe('revertChanges', () => {
         expect(notifications).toEqual([]);
       },
     );
-  });
-
-  describe('during an async migration', () => {
-    it('refuses with MigrationLocked, cancels nothing and writes nothing', async () => {
-      const draft = await givenEditedPrices();
-      await givenActiveMigration(kit, draft, PRODUCTS);
-      const contents = await branchContentsOf(kit, draft);
-
-      await expect(
-        draft.revertChanges({ selection: titleOfP1 }),
-      ).rejects.toThrow(MigrationLockedException);
-
-      expect(await migrationStatusesOf(draft)).toEqual([
-        MigrationStatus.PENDING,
-      ]);
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-    });
   });
 
   async function expectApplied(
@@ -968,15 +776,6 @@ describe('revertChanges', () => {
 
       throw new Error(INJECTED_FAILURE);
     });
-  }
-
-  async function migrationStatusesOf(draft: ChangesScenario) {
-    const migrations = await kit.prisma.tableMigration.findMany({
-      where: { revisionId: await draft.revisionId('draft') },
-      select: { status: true },
-    });
-
-    return migrations.map(({ status }) => status);
   }
 
   async function givenCommittedPrices(): Promise<ChangesScenario> {
@@ -1151,17 +950,6 @@ describe('revertChanges', () => {
     return draft;
   }
 
-  async function givenOnlyContentEqualVersions(): Promise<ChangesScenario> {
-    const draft = await givenCommittedPrices();
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 1 });
-
-    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(true);
-    expect(await draft.hasChanges()).toBe(true);
-
-    return draft;
-  }
-
   async function givenProductOfCreatedCategory(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
@@ -1187,18 +975,4 @@ interface FailingRevert {
   readonly holding: string;
   readonly given: () => Promise<ChangesScenario>;
   readonly selection: Selection;
-}
-
-function productViews(name: string): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name,
-        columns: [{ field: 'data.title' }, { field: 'data.price' }],
-      },
-    ],
-  };
 }

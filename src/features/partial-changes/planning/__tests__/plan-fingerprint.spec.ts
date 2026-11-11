@@ -15,7 +15,6 @@ import type {
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
-import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   type PlanVariant,
@@ -25,6 +24,7 @@ import {
   READING_EVERY_TABLE,
   readScopedCatalogue,
 } from '../../__tests__/support/scoped-reading';
+import { tableViews } from '../../__tests__/support/views-documents';
 
 const PRODUCTS = 'products';
 const CATEGORIES = 'categories';
@@ -164,7 +164,10 @@ describe('PlanFingerprint', () => {
     const draft = await givenViewsEdit();
     const before = await draft.fingerprintPlan('commit', { views: [PRODUCTS] });
 
-    await draft.updateViews(PRODUCTS, productViews('Edited again'));
+    await draft.updateViews(
+      PRODUCTS,
+      tableViews('Edited again', ['title', 'price']),
+    );
 
     expect(
       staleChangesOf(
@@ -467,9 +470,9 @@ describe('PlanFingerprint', () => {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: { schema: productSchema },
     });
-    await draft.updateViews(PRODUCTS, productViews('All'));
+    await draft.updateViews(PRODUCTS, tableViews('All', ['title', 'price']));
     await draft.commit();
-    await draft.updateViews(PRODUCTS, productViews('Edited'));
+    await draft.updateViews(PRODUCTS, tableViews('Edited', ['title', 'price']));
 
     return draft;
   }
@@ -517,18 +520,4 @@ function revisionIdsOf({
   draftRevisionId,
 }: Fingerprint): Pick<Fingerprint, 'headRevisionId' | 'draftRevisionId'> {
   return { headRevisionId, draftRevisionId };
-}
-
-function productViews(name: string): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name,
-        columns: [{ field: 'data.title' }, { field: 'data.price' }],
-      },
-    ],
-  };
 }

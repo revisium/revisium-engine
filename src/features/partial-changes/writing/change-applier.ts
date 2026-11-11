@@ -46,7 +46,7 @@ import { draftFollowsHeadPlanOf } from 'src/features/partial-changes/writing/tar
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 
-export type TargetWrite<Applied> = (plan: CompletePlan) => Promise<Applied>;
+type TargetWrite<Applied> = (plan: CompletePlan) => Promise<Applied>;
 
 interface ApplyRequest {
   readonly operation: ChangeOperation;

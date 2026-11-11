@@ -13,7 +13,7 @@ import {
 import type { RepairLedger, TableAssessment } from './repair-ledger';
 import { type HistoryPatchesValidator, repairPatchOf } from './repair-patch';
 
-export interface DecidedRepairs {
+interface DecidedRepairs {
   readonly tables: readonly PlannedTableRepair[];
   readonly renumberedMigrations: readonly MigrationRenumbering[];
 }

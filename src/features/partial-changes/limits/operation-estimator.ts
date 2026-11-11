@@ -42,11 +42,11 @@ export interface PlanEstimate {
   readonly mixedTables: readonly MixedTableEstimate[];
 }
 
-export interface EstimationSource extends AssemblySource {
+interface EstimationSource extends AssemblySource {
   readonly changedRowCount: number;
 }
 
-export type GuardedEstimate =
+type GuardedEstimate =
   | { readonly kind: 'withinLimits'; readonly estimate: PlanEstimate }
   | {
       readonly kind: 'tooLarge';

@@ -2,7 +2,7 @@ import type { Migration } from '@revisium/schema-toolkit/types';
 import { lineageIdOf } from 'src/features/share/ledger-replay/slot-check';
 import { TableSlots } from 'src/features/share/ledger-replay/table-slots';
 
-export interface TableIdChange {
+interface TableIdChange {
   readonly migration: Migration;
   readonly lineage?: string;
 }

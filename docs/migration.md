@@ -344,10 +344,11 @@ the same id, which joins it. Updates below the threshold apply synchronously, as
 ### How is the repair of a schema ledger planned?
 
 The old swap rewrote schema rows in place without recording a migration, so a Head table can have a schema row that its
-Head ledger does not reproduce. `MigrationApiService.planSchemaLedgerRepair({ projectId, branchName, tableIds? })` plans
-the forward-only repair ([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger))
-and writes nothing; `repairSchemaLedger` writes it (see the next section). It reads one `READ ONLY` RepeatableRead
-snapshot, fails with `MIGRATION_LOCKED` while an async migration is active in the Draft, and gives each requested Head
+Head ledger does not reproduce. `repairSchemaLedger({ projectId, branchName, tableIds?, dryRun? })` first plans the
+forward-only repair
+([async-row-migration-v2 §6](specs/async-row-migration-v2.spec.md#6-forward-only-repair-repairschemaledger)); with
+`dryRun: true` it returns the plan and writes nothing (see the next section). The planning reads one `READ ONLY`
+RepeatableRead snapshot, fails with `MIGRATION_LOCKED` while an async migration is active in the Draft, and gives each requested Head
 table (without `tableIds`, each Head table whose ledger does not reproduce its schema row) the first matching outcome:
 
 | Outcome | When |
@@ -392,7 +393,7 @@ of the previous section, or `stale` for every planned table when the Draft chang
 a table it would repair as `planned` instead of `repaired`. Errors are those of planning: unknown project or branch, an
 unknown Head table id, `MIGRATION_LOCKED` before any work.
 
-1. **Plan** in one `READ ONLY` RepeatableRead snapshot, as `planSchemaLedgerRepair`. `dryRun: true` returns that plan
+1. **Plan** in one `READ ONLY` RepeatableRead snapshot, as the previous section describes. `dryRun: true` returns that plan
    and writes nothing; so does a plan without a `repaired` table.
 2. **Admit** the write in one Serializable transaction of the native runner: the branch write fence shared, then the
    migration-lock check (an async migration started after planning fails the call with `MIGRATION_LOCKED`).
@@ -464,7 +465,7 @@ finds its plan stale. When every attempt (`TRANSACTION_MAX_RETRIES`) fails seria
 | --- | --- | --- |
 | `unledgeredTable` | any | No intact lineage ends at the table id; `reason`: `noMigrationTable`, `noLineage` (no open slot, for example a removed table recreated without an `init`) or `brokenLineage` with the `migrationId` that broke it (an unattributable step, or a step that reused a taken id). |
 | `unreplayableLedger` | any | The slot is tainted; the first failing migration (`migrationId`, `step`, `error`). A failed rename moves the slot, so the new id is reported. |
-| `damagedTable` | `head` | Fails (b); `shape` from the Head rows' hashes: `unpublished` (some rows carry the replayed schema's hash, none the schema row's), `published` (every row carries the schema row's hash), else `unknown` (no rows, mixed or other hashes, or no schema row); `repair`: the planner's outcome for the table when every damaged Head table of the branch is planned together (as `planSchemaLedgerRepair` without `tableIds`), or `deferred` while an async migration is active in the Draft. |
+| `damagedTable` | `head` | Fails (b); `shape` from the Head rows' hashes: `unpublished` (some rows carry the replayed schema's hash, none the schema row's), `published` (every row carries the schema row's hash), else `unknown` (no rows, mixed or other hashes, or no schema row); `repair`: the planner's outcome for the table when every damaged Head table of the branch is planned together (as the repair planning without `tableIds`), or `deferred` while an async migration is active in the Draft. |
 | `draftOnlyDamage` | `draft` | Fails (b) while its Head counterpart passes (b), or the table has no Head counterpart. The counterpart is the Head table of the same lineage (the same opening migration), or, for a Head table without a lineage, the Head table of the same id. A counterpart that is damaged, unreplayable or unledgered has its own Head finding, which covers the table: the Draft then gets no (b) finding. |
 | `damagedHistory` | `history` | An earlier revision fails (b). |
 | `rowSchemaHashMismatch` | per `rowDiagnostics` | Predicate (a) fails; `schemaHash` and, per row hash, `rowCount` and the first matching `reason`: `unmigratedByAsync` (the table fails (b) and the hash is the replayed schema's), `renamedReference` (the hash is in the slot's trail and only referrer rewrites follow it), `unmigratedRows` (an own step follows it), `unknownHash` (not in the trail, for example `''`). |
@@ -744,7 +745,7 @@ src/features/migration/
   commands/                        StartAsyncMigration (admission, validation, record, trigger), AbortMigration,
                                    RepairSchemaLedger (plan, admitted write, notification), BackfillSchemaLedger
                                    (dry-run plan, or admitted plan-and-write with verification, then notification)
-  queries/                         GetMigrationStatus, GetActiveMigrations, PlanSchemaLedgerRepair, ScanSchemaLedger
+  queries/                         GetMigrationStatus, GetActiveMigrations, ScanSchemaLedger
 ```
 
 ## Known Limitations (v1)

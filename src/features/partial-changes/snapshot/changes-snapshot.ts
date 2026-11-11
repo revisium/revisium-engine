@@ -40,7 +40,7 @@ export interface SystemTableVersionIds {
   readonly draft?: string;
 }
 
-export interface SystemTableVersions {
+interface SystemTableVersions {
   readonly head?: StoredTableVersion;
   readonly draft?: StoredTableVersion;
 }

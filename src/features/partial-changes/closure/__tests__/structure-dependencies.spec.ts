@@ -10,11 +10,12 @@ import type {
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import { addField, replaceField } from 'src/__tests__/fixtures/ledger-steps';
-import type { TableViewsData } from 'src/features/views/types';
 import type { TableFixture } from 'src/__tests__/fixtures/branch-scenario';
 import { completeAsyncMigrationInPlace } from 'src/__tests__/fixtures/head-schema-damage';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
+import { tableViews } from '../../__tests__/support/views-documents';
+import { structureRef } from '../../__tests__/support/expected-unit-refs';
 
 const ALPHA = 'alpha';
 const BETA = 'beta';
@@ -31,17 +32,6 @@ const categoryReferrerSchema = obj({
   category: str({ foreignKey: CATEGORIES }),
 });
 
-const structureOf = (tableId: string) => ({
-  kind: 'structure',
-  tableId,
-  selector: { structures: [{ tableId }] },
-});
-const renamedStructureOf = (tableId: string, previousTableId: string) => ({
-  kind: 'structure',
-  tableId,
-  previousTableId,
-  selector: { structures: [{ tableId }] },
-});
 const createdRow = ({ tableId, rowId }: RowRef) => ({
   kind: 'rowCreate',
   tableId,
@@ -137,24 +127,24 @@ describe('DependencyClosure: structures, views and rows that come with a structu
       {
         operation: 'commit',
         selected: BETA,
-        required: renamedStructureOf(ALPHA, BETA),
-        taker: renamedStructureOf(BETA, ALPHA),
+        required: structureRef(ALPHA, BETA),
+        taker: structureRef(BETA, ALPHA),
         tableId: BETA,
         target: 'new Head',
       },
       {
         operation: 'commit',
         selected: ALPHA,
-        required: renamedStructureOf(BETA, ALPHA),
-        taker: renamedStructureOf(ALPHA, BETA),
+        required: structureRef(BETA, ALPHA),
+        taker: structureRef(ALPHA, BETA),
         tableId: ALPHA,
         target: 'new Head',
       },
       {
         operation: 'revert',
         selected: BETA,
-        required: renamedStructureOf(ALPHA, BETA),
-        taker: renamedStructureOf(BETA, ALPHA),
+        required: structureRef(ALPHA, BETA),
+        taker: structureRef(BETA, ALPHA),
         tableId: ALPHA,
         target: 'reverted Draft',
       },
@@ -193,14 +183,14 @@ describe('DependencyClosure: structures, views and rows that come with a structu
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(BRANDS),
+          unit: structureRef(BRANDS),
           reason: {
             code: 'referencedTableMissing',
             because:
               'the schema of products references the table brands, which exists only in the Draft',
             site: schemaOf(PRODUCTS),
             references: referencedTable(BRANDS),
-            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+            cause: { unit: structureRef(PRODUCTS), role: 'referrer' },
           },
         },
       ]);
@@ -216,14 +206,14 @@ describe('DependencyClosure: structures, views and rows that come with a structu
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(PRODUCTS),
+          unit: structureRef(PRODUCTS),
           reason: {
             code: 'referrerStillReferences',
             because:
               'the schema of products references the table brands, which the reverted Draft no longer contains',
             site: schemaOf(PRODUCTS),
             references: referencedTable(BRANDS),
-            cause: { unit: structureOf(BRANDS), role: 'remover' },
+            cause: { unit: structureRef(BRANDS), role: 'remover' },
           },
         },
       ]);
@@ -240,24 +230,24 @@ describe('DependencyClosure: structures, views and rows that come with a structu
     }>([
       {
         selected: KINDS,
-        required: structureOf(PRODUCTS),
+        required: structureRef(PRODUCTS),
         code: 'referrerStillReferences',
         because:
           'the schema of products references the table categories, which the new Head no longer contains',
         referenced: CATEGORIES,
         cause: {
-          unit: renamedStructureOf(KINDS, CATEGORIES),
+          unit: structureRef(KINDS, CATEGORIES),
           role: 'remover',
         },
       },
       {
         selected: PRODUCTS,
-        required: renamedStructureOf(KINDS, CATEGORIES),
+        required: structureRef(KINDS, CATEGORIES),
         code: 'referencedTableMissing',
         because:
           'the schema of products references the table kinds, which exists only in the Draft',
         referenced: KINDS,
-        cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+        cause: { unit: structureRef(PRODUCTS), role: 'referrer' },
       },
     ])(
       'commits a table rename and the referrer schema it rewrote together when $selected is selected',
@@ -298,13 +288,13 @@ describe('DependencyClosure: structures, views and rows that come with a structu
 
         expect(closure.required).toEqual([
           {
-            unit: structureOf(PRODUCTS),
+            unit: structureRef(PRODUCTS),
             reason: {
               code: 'referrerStillReferences',
               because: `the schema of products references the table ${tableId}, which is another table in the ${target}`,
               site: schemaOf(PRODUCTS),
               references: referencedTable(tableId),
-              cause: { unit: renamedStructureOf(ALPHA, BETA), role: 'remover' },
+              cause: { unit: structureRef(ALPHA, BETA), role: 'remover' },
             },
           },
         ]);
@@ -321,24 +311,24 @@ describe('DependencyClosure: structures, views and rows that come with a structu
 
       expect(closure.required).toEqual([
         {
-          unit: renamedStructureOf(ALPHA, BETA),
+          unit: structureRef(ALPHA, BETA),
           reason: {
             code: 'referencedTableMissing',
             because:
               'the schema of products references the table alpha, which is another table in the new Head',
             site: schemaOf(PRODUCTS),
             references: referencedTable(ALPHA),
-            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+            cause: { unit: structureRef(PRODUCTS), role: 'referrer' },
           },
         },
         {
-          unit: renamedStructureOf(BETA, ALPHA),
+          unit: structureRef(BETA, ALPHA),
           reason: {
             code: 'idOccupied',
             because:
               'the table id alpha would be held by two tables in the new Head',
             site: { kind: 'tableId', tableId: ALPHA },
-            cause: { unit: renamedStructureOf(ALPHA, BETA), role: 'taker' },
+            cause: { unit: structureRef(ALPHA, BETA), role: 'taker' },
           },
         },
       ]);
@@ -361,7 +351,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
 
         expect(closure.required).toEqual([
           {
-            unit: structureOf(tableId),
+            unit: structureRef(tableId),
             reason: {
               code: 'structureBoundData',
               because: `the views of ${tableId} change with its structure`,
@@ -404,7 +394,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           code: 'requiredExcluded',
           tableId: OFFERS,
           message: 'offers is required but excluded',
-          unit: structureOf(OFFERS),
+          unit: structureRef(OFFERS),
           reason: {
             code: 'structureBoundData',
             because: 'the views of offers change with its structure',
@@ -443,7 +433,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
               'offers/o2/category references categories/c9, which exists only in the Draft',
             site: referringField(OFFERS, 'o2'),
             references: { kind: 'row', tableId: CATEGORIES, rowId: 'c9' },
-            cause: { unit: structureOf(OFFERS), role: 'referrer' },
+            cause: { unit: structureRef(OFFERS), role: 'referrer' },
           },
         },
       ]);
@@ -481,7 +471,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
               'offers/o1/category references categories/c1, which exists only in Head',
             site: referringField(OFFERS, 'o1'),
             references: { kind: 'row', tableId: CATEGORIES, rowId: 'c1' },
-            cause: { unit: structureOf(OFFERS), role: 'referrer' },
+            cause: { unit: structureRef(OFFERS), role: 'referrer' },
           },
         },
       ]);
@@ -525,7 +515,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
               because,
               site: referringField(PRODUCTS, 'p1'),
               references: { kind: 'row', tableId: referenced, rowId: 'c1' },
-              cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+              cause: { unit: structureRef(PRODUCTS), role: 'referrer' },
             },
           },
         ]);
@@ -553,7 +543,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
               'products/p1/category references brands/c1, which exists only in the Draft',
             site: referringField(PRODUCTS, 'p1'),
             references: { kind: 'row', tableId: BRANDS, rowId: 'c1' },
-            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+            cause: { unit: structureRef(PRODUCTS), role: 'referrer' },
           },
         },
       ]);
@@ -577,7 +567,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
               'products/p1/category references brands/c1, which the new Head no longer contains',
             site: referringField(PRODUCTS, 'p1'),
             references: { kind: 'row', tableId: BRANDS, rowId: 'c1' },
-            cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+            cause: { unit: structureRef(PRODUCTS), role: 'referrer' },
           },
         },
       ]);
@@ -600,7 +590,7 @@ describe('DependencyClosure: structures, views and rows that come with a structu
           path: '/category',
           message:
             'No unit can restore consistency: offers/o1/category references categories/c404, which the new Head does not contain',
-          unit: structureOf(OFFERS),
+          unit: structureRef(OFFERS),
         },
       ]);
     });
@@ -681,14 +671,14 @@ describe('DependencyClosure: structures, views and rows that come with a structu
         code: 'requiredExcluded',
         tableId: BRANDS,
         message: 'brands is required but excluded',
-        unit: structureOf(BRANDS),
+        unit: structureRef(BRANDS),
         reason: {
           code: 'referencedTableMissing',
           because:
             'the schema of products references the table brands, which exists only in the Draft',
           site: schemaOf(PRODUCTS),
           references: referencedTable(BRANDS),
-          cause: { unit: structureOf(PRODUCTS), role: 'referrer' },
+          cause: { unit: structureRef(PRODUCTS), role: 'referrer' },
         },
       },
     ]);
@@ -876,7 +866,7 @@ async function givenViewsOfNewField(
 ): Promise<ChangesScenario> {
   const draft = await givenProductsWithViews(kit);
   await draft.updateTable(PRODUCTS, [addField('color', str())]);
-  await draft.updateViews(PRODUCTS, tableViews(['title', 'color']));
+  await draft.updateViews(PRODUCTS, tableViews('All', ['title', 'color']));
 
   return draft;
 }
@@ -886,7 +876,10 @@ async function givenViewsOfMissingField(
 ): Promise<ChangesScenario> {
   const draft = await givenProductsWithViews(kit);
   await draft.updateTable(PRODUCTS, [addField('color', str())]);
-  await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'missing']));
+  await draft.writeInvalidViews(
+    PRODUCTS,
+    tableViews('All', ['title', 'missing']),
+  );
 
   return draft;
 }
@@ -897,7 +890,7 @@ async function givenProductsWithViews(
   const draft = await ChangesScenario.committed(kit, {
     [PRODUCTS]: { schema: titleSchema },
   });
-  await draft.updateViews(PRODUCTS, tableViews(['title']));
+  await draft.updateViews(PRODUCTS, tableViews('All', ['title']));
   await draft.commit();
 
   return draft;
@@ -908,7 +901,7 @@ async function givenCreatedOffersWithViews(
 ): Promise<ChangesScenario> {
   const draft = await ChangesScenario.committed(kit, {});
   await draft.createTable(OFFERS, titleSchema);
-  await draft.updateViews(OFFERS, tableViews(['title']));
+  await draft.updateViews(OFFERS, tableViews('All', ['title']));
 
   return draft;
 }
@@ -1021,19 +1014,5 @@ function withoutInit(refusedTableId: string): Committing {
     await draft.commit();
 
     return draft;
-  };
-}
-
-function tableViews(fields: readonly string[]): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name: 'All',
-        columns: fields.map((field) => ({ field: `data.${field}` })),
-      },
-    ],
   };
 }

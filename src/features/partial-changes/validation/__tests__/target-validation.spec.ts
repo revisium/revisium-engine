@@ -19,8 +19,8 @@ import {
   migrationIdOf,
   pendingMigrationIds,
 } from 'src/__tests__/fixtures/stored-ledger';
-import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { tableViews } from '../../__tests__/support/views-documents';
 
 const PRODUCTS = 'products';
 const ITEMS = 'items';
@@ -705,7 +705,7 @@ describe('TargetValidator', () => {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: productFixture(),
     });
-    await draft.updateViews(PRODUCTS, tableViews(['title', 'price']));
+    await draft.updateViews(PRODUCTS, tableViews('All', ['title', 'price']));
     await draft.commit();
 
     return draft;
@@ -713,7 +713,10 @@ describe('TargetValidator', () => {
 
   async function givenViewsOfMissingField(): Promise<ChangesScenario> {
     const draft = await givenCommittedProductsWithViews();
-    await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'missing']));
+    await draft.writeInvalidViews(
+      PRODUCTS,
+      tableViews('All', ['title', 'missing']),
+    );
 
     return draft;
   }
@@ -721,7 +724,10 @@ describe('TargetValidator', () => {
   async function givenRemovedPriceWithHeadViews(): Promise<ChangesScenario> {
     const draft = await givenCommittedProductsWithViews();
     await draft.updateTable(PRODUCTS, [removeField('price')]);
-    await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'price']));
+    await draft.writeInvalidViews(
+      PRODUCTS,
+      tableViews('All', ['title', 'price']),
+    );
 
     return draft;
   }
@@ -729,7 +735,10 @@ describe('TargetValidator', () => {
   async function givenInvalidHeadViewsCopiedIntoTheDraft(): Promise<ChangesScenario> {
     const draft = await givenViewsOfMissingField();
     await draft.commit();
-    await draft.writeInvalidViews(PRODUCTS, tableViews(['title', 'missing']));
+    await draft.writeInvalidViews(
+      PRODUCTS,
+      tableViews('All', ['title', 'missing']),
+    );
     await draft.updateRow(PRODUCTS, 'p1', { title: 'edited', price: 1 });
 
     return draft;
@@ -738,8 +747,11 @@ describe('TargetValidator', () => {
   async function givenCreatedTagsWithViewsOfMissingField(): Promise<ChangesScenario> {
     const draft = await givenCommittedProductsWithViews();
     await draft.createTable(TAGS, tagSchema);
-    await draft.updateViews(TAGS, tableViews(['label']));
-    await draft.writeInvalidViews(TAGS, tableViews(['label', 'missing']));
+    await draft.updateViews(TAGS, tableViews('All', ['label']));
+    await draft.writeInvalidViews(
+      TAGS,
+      tableViews('All', ['label', 'missing']),
+    );
 
     return draft;
   }
@@ -747,7 +759,10 @@ describe('TargetValidator', () => {
   async function givenRenamedProductsWithViewsOfMissingField(): Promise<ChangesScenario> {
     const draft = await givenCommittedProductsWithViews();
     await draft.renameTable(PRODUCTS, ITEMS);
-    await draft.writeInvalidViews(ITEMS, tableViews(['title', 'missing']));
+    await draft.writeInvalidViews(
+      ITEMS,
+      tableViews('All', ['title', 'missing']),
+    );
 
     return draft;
   }
@@ -763,7 +778,10 @@ describe('TargetValidator', () => {
   async function givenNewFieldWithViewsOfMissingField(): Promise<ChangesScenario> {
     const draft = await givenCommittedProductsWithViews();
     await draft.updateTable(PRODUCTS, addColor);
-    await draft.writeInvalidViews(PRODUCTS, tableViews(['color', 'missing']));
+    await draft.writeInvalidViews(
+      PRODUCTS,
+      tableViews('All', ['color', 'missing']),
+    );
 
     return draft;
   }
@@ -809,19 +827,5 @@ function productFixture() {
   return {
     schema: productSchema,
     rows: { p1: { title: 'one', price: 1 } },
-  };
-}
-
-function tableViews(fields: readonly string[]): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name: 'All',
-        columns: fields.map((field) => ({ field: `data.${field}` })),
-      },
-    ],
   };
 }

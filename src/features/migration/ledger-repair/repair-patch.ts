@@ -62,7 +62,7 @@ export function repairMigrationOf(
   return { changeType: 'update', id, tableId, hash, patches };
 }
 
-export function schemaPatchesBetween(
+function schemaPatchesBetween(
   from: JsonSchema,
   to: JsonSchema,
   path = '',

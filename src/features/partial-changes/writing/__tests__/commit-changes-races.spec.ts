@@ -9,11 +9,8 @@ import type {
   CommitChangesResult,
   CommittedDraft,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
-import type {
-  FieldRef,
-  Selection,
-} from 'src/features/partial-changes/selection/selection';
-import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
+import type { Selection } from 'src/features/partial-changes/selection/selection';
+import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   commitOvertakenBy,
@@ -21,6 +18,7 @@ import {
 } from '../../__tests__/support/commit-races';
 import { expectConsistentRevisions } from '../../__tests__/support/revision-consistency';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
+import { titleOf } from '../../__tests__/support/field-refs';
 
 const PRODUCTS = 'products';
 const TAGS = 'tags';
@@ -30,15 +28,11 @@ const ITEMS = 'items';
 const pricedSchema = obj({ title: str(), price: num() });
 const tagSchema = obj({ title: str() });
 
-const titleOf = (rowId: string): FieldRef => ({
-  tableId: PRODUCTS,
-  rowId,
-  path: '/title',
-});
-
-const titleOfP1: Selection = { fields: [titleOf('p1')] };
-const titleOfP2: Selection = { fields: [titleOf('p2')] };
-const titlesOfP1AndP2: Selection = { fields: [titleOf('p1'), titleOf('p2')] };
+const titleOfP1: Selection = { fields: [titleOf(PRODUCTS, 'p1')] };
+const titleOfP2: Selection = { fields: [titleOf(PRODUCTS, 'p2')] };
+const titlesOfP1AndP2: Selection = {
+  fields: [titleOf(PRODUCTS, 'p1'), titleOf(PRODUCTS, 'p2')],
+};
 
 describe('commitChanges racing other writers', () => {
   let kit: PartialChangesTestKit;

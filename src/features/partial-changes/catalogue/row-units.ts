@@ -29,14 +29,14 @@ import {
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 
-export interface ChangedTable {
+interface ChangedTable {
   readonly identity: string;
   readonly tableId: string;
   readonly structure: TableStructure;
   readonly pairs: readonly RowPair[];
 }
 
-export interface RowUnits {
+interface RowUnits {
   readonly units: readonly CatalogueUnit[];
   readonly rows: readonly CatalogueRow[];
 }

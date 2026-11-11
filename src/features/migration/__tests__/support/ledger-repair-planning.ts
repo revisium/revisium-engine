@@ -8,21 +8,29 @@ import type {
 import objectHash from 'object-hash';
 import { ledgerIdsOf } from 'src/__tests__/fixtures/stored-ledger';
 import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scenario-test-kit';
-import { MigrationApiService } from 'src/features/migration/migration-api.service';
+import { LedgerRepairPlanService } from 'src/features/migration/ledger-repair/ledger-repair-plan.service';
+import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-state-reader';
 import type {
   PlannedTableRepair,
   SchemaLedgerRepairPlan,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
+import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 
+// The plan that repairSchemaLedger writes, with the fingerprint that its result leaves out.
 export function planRepair(
   kit: BranchScenarioTestKit,
   draft: BranchScenario,
   tableIds?: readonly string[],
 ): Promise<SchemaLedgerRepairPlan> {
-  return kit.module
-    .get(MigrationApiService)
-    .planSchemaLedgerRepair({ ...draft.branch, tableIds });
+  const stateReader = kit.module.get(RepairStateReader);
+  const planService = kit.module.get(LedgerRepairPlanService);
+
+  return kit.module.get(OperationTransactionRunner).runPlanning(async () => {
+    const state = await stateReader.readUnlockedBranch(draft.branch);
+
+    return planService.plan(state, { tableIds });
+  });
 }
 
 export function repairOf(

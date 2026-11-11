@@ -9,7 +9,6 @@ import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type {
-  FieldRef,
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
@@ -28,6 +27,8 @@ import {
   sourceLedgersOf,
   sourceReplaysDuring,
 } from '../../__tests__/support/ledger-replaying';
+import { titleOf } from '../../__tests__/support/field-refs';
+import { structureRef } from '../../__tests__/support/expected-unit-refs';
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
@@ -63,11 +64,6 @@ const renamedViews: TableViewsData = {
   ],
 };
 
-const titleOf = (tableId: string, rowId: string): FieldRef => ({
-  tableId,
-  rowId,
-  path: '/title',
-});
 const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
 
 const titleOfC1: Selection = { fields: [titleOf(CATEGORIES, 'c1')] };
@@ -779,12 +775,12 @@ describe('previewChanges', () => {
 
       expect(commit).toMatchObject({
         status: 'required',
-        required: [{ unit: structureOf(TAGS) }],
+        required: [{ unit: structureRef(TAGS) }],
         blockers: [],
       });
       expect(revert).toMatchObject({
         status: 'required',
-        required: [{ unit: structureOf(TAGS) }],
+        required: [{ unit: structureRef(TAGS) }],
         blockers: [],
       });
     });
@@ -1603,13 +1599,5 @@ function wholeRowOfC9() {
       rowId: 'c9',
       path: '/title',
     },
-  };
-}
-
-function structureOf(tableId: string): UnitRef {
-  return {
-    kind: 'structure',
-    tableId,
-    selector: { structures: [{ tableId }] },
   };
 }

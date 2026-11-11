@@ -49,7 +49,7 @@ export interface ScannedTable {
   readonly schemaEvaluation: string;
 }
 
-export interface RepairInput {
+interface RepairInput {
   readonly state: RepairState;
   readonly storedReplays: Partial<StoredLedgerReplays>;
 }

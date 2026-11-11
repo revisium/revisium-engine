@@ -3,8 +3,10 @@ import type { BranchScenarioTestKit } from 'src/__tests__/kit/create-branch-scen
 import { FileUsageApiService } from 'src/features/file-usage/file-usage-api.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import type { RevisionSide } from './snapshot-reading';
-
-type FileState = 'active' | 'tombstoned';
+import {
+  type FileState,
+  readFileStates,
+} from 'src/__tests__/fixtures/file-states';
 
 export interface RowFiles {
   readonly tableId: string;
@@ -30,7 +32,7 @@ export async function readFileAccounting(
     projectFileBytes: await kit.module
       .get(FileUsageApiService)
       .getProjectStorageBytes({ projectId }),
-    files: await fileStatesOf(kit, projectId),
+    files: await readFileStates(kit, projectId),
     head: await rowFilesOf(kit, draft, 'head'),
     draft: await rowFilesOf(kit, draft, 'draft'),
   };
@@ -50,23 +52,6 @@ export async function readFileReferences(
       rows.map(({ versionId }) => `${id}/${versionId}`),
     )
     .sort(compareCodePoints);
-}
-
-async function fileStatesOf(
-  kit: BranchScenarioTestKit,
-  projectId: string,
-): Promise<Record<string, FileState>> {
-  const blobs = await kit.prisma.fileBlob.findMany({
-    where: { projectId },
-    select: { hash: true, deletedAt: true },
-  });
-
-  return Object.fromEntries(
-    blobs.map(({ hash, deletedAt }) => [
-      hash,
-      deletedAt ? 'tombstoned' : 'active',
-    ]),
-  );
 }
 
 async function rowFilesOf(

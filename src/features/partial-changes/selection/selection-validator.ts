@@ -17,7 +17,7 @@ import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer
 
 export class SelectionValidationError extends BadRequestException {}
 
-export interface RequiredAdditionsAcceptance {
+interface RequiredAdditionsAcceptance {
   readonly includeRequired: boolean;
   readonly expected?: ExpectedFingerprint;
 }

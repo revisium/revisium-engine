@@ -1,16 +1,6 @@
 import type { JsonPatch } from '@revisium/schema-toolkit/types';
 import type { MigrationRenumbering } from 'src/features/share/ledger/native-migration-id';
 
-export interface PlanSchemaLedgerRepairData {
-  readonly projectId: string;
-  readonly branchName: string;
-  readonly tableIds?: readonly string[];
-}
-
-export class PlanSchemaLedgerRepairQuery {
-  constructor(public readonly data: PlanSchemaLedgerRepairData) {}
-}
-
 export const REPAIR_OUTCOMES = [
   'unledgered',
   'ledgerDoesNotReplay',

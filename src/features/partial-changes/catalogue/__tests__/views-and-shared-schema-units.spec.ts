@@ -4,10 +4,10 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { removeField } from 'src/__tests__/fixtures/ledger-steps';
-import type { TableViewsData } from 'src/features/views/types';
 import type { AddressedUnit } from '../../__tests__/support/catalogue-reading';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
+import { tableViews } from '../../__tests__/support/views-documents';
 
 const PRODUCTS = 'products';
 const ADDRESS = 'address';
@@ -39,7 +39,7 @@ describe('ChangeCatalogue: views and shared schema units', () => {
   describe('views', () => {
     it('lists an independent views edit as the views unit of its table', async () => {
       const draft = await givenCommittedProductsWithViews();
-      await draft.updateViews(PRODUCTS, productViews('Renamed', ['code']));
+      await draft.updateViews(PRODUCTS, tableViews('Renamed', ['code']));
 
       const catalogue = await draft.readCatalogue([PRODUCTS]);
 
@@ -62,7 +62,7 @@ describe('ChangeCatalogue: views and shared schema units', () => {
     it('lists a views edit made after a schema migration as part of the structure unit (AS-82)', async () => {
       const draft = await givenCommittedProductsWithViews();
       await draft.updateTable(PRODUCTS, [removeField('price')]);
-      await draft.updateViews(PRODUCTS, productViews('Renamed', ['code']));
+      await draft.updateViews(PRODUCTS, tableViews('Renamed', ['code']));
 
       const catalogue = await draft.readCatalogue([PRODUCTS]);
 
@@ -77,7 +77,7 @@ describe('ChangeCatalogue: views and shared schema units', () => {
 
     it('owns only the views rows of its table in a views unit', async () => {
       const draft = await givenCommittedProductsWithViews();
-      await draft.updateViews(PRODUCTS, productViews('Renamed', ['code']));
+      await draft.updateViews(PRODUCTS, tableViews('Renamed', ['code']));
 
       const catalogue = await draft.readCatalogue([PRODUCTS]);
 
@@ -187,23 +187,9 @@ describe('ChangeCatalogue: views and shared schema units', () => {
         rows: { p1: { code: 'one', price: 1 } },
       },
     });
-    await draft.updateViews(PRODUCTS, productViews('All', ['code', 'price']));
+    await draft.updateViews(PRODUCTS, tableViews('All', ['code', 'price']));
     await draft.commit();
 
     return draft;
   }
 });
-
-function productViews(name: string, fields: string[]): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name,
-        columns: fields.map((field) => ({ field: `data.${field}` })),
-      },
-    ],
-  };
-}

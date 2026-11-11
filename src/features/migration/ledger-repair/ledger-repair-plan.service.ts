@@ -21,7 +21,7 @@ import {
 import { RepairOutcomeDecider } from './repair-outcome-decider';
 import type { RepairState } from './repair-state-reader';
 
-export interface LedgerRepairPlanOptions {
+interface LedgerRepairPlanOptions {
   readonly tableIds?: readonly string[];
   readonly storedReplays?: Partial<StoredLedgerReplays>;
 }

@@ -9,8 +9,8 @@ import type { ChangeOperation } from 'src/features/partial-changes/plan/change-o
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { tableViews } from '../../__tests__/support/views-documents';
 
 const PRODUCTS = 'products';
 const GOODS = 'goods';
@@ -412,17 +412,3 @@ describe('system table plans: system rows of the target', () => {
     return draft;
   }
 });
-
-function tableViews(name: string, fields: string[]): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name,
-        columns: fields.map((field) => ({ field: `data.${field}` })),
-      },
-    ],
-  };
-}

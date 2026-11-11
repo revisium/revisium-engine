@@ -19,6 +19,7 @@ import {
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { withSelectorsOf } from '../../__tests__/support/dependency-closing';
 import { replayedSchemasOf } from '../../__tests__/support/ledger-replaying';
+import { structureRef } from '../../__tests__/support/expected-unit-refs';
 
 const NOTES = 'notes';
 const MEMOS = 'memos';
@@ -35,18 +36,6 @@ const linkSchemaTo = (tableId: string) =>
   obj({ title: str(), target: str({ foreignKey: tableId }) });
 const targetIn = (tableId: string) =>
   addField('target', str({ foreignKey: tableId }));
-
-const structureOf = (tableId: string) => ({
-  kind: 'structure',
-  tableId,
-  selector: { structures: [{ tableId }] },
-});
-const renamedStructureOf = (tableId: string, previousTableId: string) => ({
-  kind: 'structure',
-  tableId,
-  previousTableId,
-  selector: { structures: [{ tableId }] },
-});
 
 const stepOf = (tableId: string, migrationId: string) => ({
   kind: 'migration',
@@ -162,13 +151,13 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(LINKS),
+          unit: structureRef(LINKS),
           reason: {
             code: 'referrerStillReferences',
             because: `the migration ${initOfLinks} of links references the table memos, which the reverted Draft ledger does not hold at that step`,
             site: stepOf(LINKS, initOfLinks),
             references: referencedTable(MEMOS),
-            cause: { unit: structureOf(NOTES), role: 'remover' },
+            cause: { unit: structureRef(NOTES), role: 'remover' },
           },
         },
       ]);
@@ -185,13 +174,13 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(NOTES),
+          unit: structureRef(NOTES),
           reason: {
             code: 'referencedTableMissing',
             because: `the migration ${initOfLinks} of links references the table memos, which the new Head ledger does not hold at that step`,
             site: stepOf(LINKS, initOfLinks),
             references: referencedTable(MEMOS),
-            cause: { unit: structureOf(LINKS), role: 'referrer' },
+            cause: { unit: structureRef(LINKS), role: 'referrer' },
           },
         },
       ]);
@@ -208,13 +197,13 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(LINKS),
+          unit: structureRef(LINKS),
           reason: {
             code: 'referrerStillReferences',
             because: `the migration ${initOfLinks} of links references the table memos, which the remaining Draft ledger does not hold at that step`,
             site: stepOf(LINKS, initOfLinks),
             references: referencedTable(MEMOS),
-            cause: { unit: structureOf(NOTES), role: 'remover' },
+            cause: { unit: structureRef(NOTES), role: 'remover' },
           },
         },
       ]);
@@ -236,13 +225,13 @@ describe('DependencyClosure: pending migrations that need a table id another uni
           code: 'requiredExcluded',
           tableId: LINKS,
           message: 'links is required but excluded',
-          unit: structureOf(LINKS),
+          unit: structureRef(LINKS),
           reason: {
             code: 'referrerStillReferences',
             because: `the migration ${initOfLinks} of links references the table memos, which the reverted Draft ledger does not hold at that step`,
             site: stepOf(LINKS, initOfLinks),
             references: referencedTable(MEMOS),
-            cause: { unit: structureOf(NOTES), role: 'remover' },
+            cause: { unit: structureRef(NOTES), role: 'remover' },
           },
         },
       ]);
@@ -261,14 +250,14 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(LINKS),
+          unit: structureRef(LINKS),
           reason: {
             code: 'referrerStillReferences',
             because: `the migration ${initOfLinks} of links references the table kinds, which the reverted Draft ledger does not hold at that step`,
             site: stepOf(LINKS, initOfLinks),
             references: referencedTable(KINDS),
             cause: {
-              unit: renamedStructureOf(KINDS, CATEGORIES),
+              unit: structureRef(KINDS, CATEGORIES),
               role: 'remover',
             },
           },
@@ -288,13 +277,13 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: renamedStructureOf(KINDS, CATEGORIES),
+          unit: structureRef(KINDS, CATEGORIES),
           reason: {
             code: 'referencedTableMissing',
             because: `the migration ${initOfLinks} of links references the table kinds, which the new Head ledger does not hold at that step`,
             site: stepOf(LINKS, initOfLinks),
             references: referencedTable(KINDS),
-            cause: { unit: structureOf(LINKS), role: 'referrer' },
+            cause: { unit: structureRef(LINKS), role: 'referrer' },
           },
         },
       ]);
@@ -317,20 +306,20 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: renamedStructureOf(CATEGORIES, PRODUCTS),
+          unit: structureRef(CATEGORIES, PRODUCTS),
           reason: {
             code: 'idOccupied',
             because:
               'the table id categories would be held by two tables in the reverted Draft',
             site: { kind: 'tableId', tableId: CATEGORIES },
             cause: {
-              unit: renamedStructureOf(PRODUCTS, CATEGORIES),
+              unit: structureRef(PRODUCTS, CATEGORIES),
               role: 'taker',
             },
           },
         },
         {
-          unit: renamedStructureOf(PRODUCTS, CATEGORIES),
+          unit: structureRef(PRODUCTS, CATEGORIES),
           reason: {
             code: 'idOccupied',
             because: `the migration ${renameOfCategories} of categories takes the table id notes, which the reverted Draft ledger already holds at that step`,
@@ -339,7 +328,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
               tableId: NOTES,
               migrationId: renameOfCategories,
             },
-            cause: { unit: structureOf(NOTES), role: 'occupant' },
+            cause: { unit: structureRef(NOTES), role: 'occupant' },
           },
         },
       ]);
@@ -360,20 +349,20 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: renamedStructureOf(CATEGORIES, PRODUCTS),
+          unit: structureRef(CATEGORIES, PRODUCTS),
           reason: {
             code: 'idOccupied',
             because:
               'the table id products would be held by two tables in the new Head',
             site: { kind: 'tableId', tableId: PRODUCTS },
             cause: {
-              unit: renamedStructureOf(PRODUCTS, CATEGORIES),
+              unit: structureRef(PRODUCTS, CATEGORIES),
               role: 'taker',
             },
           },
         },
         {
-          unit: structureOf(NOTES),
+          unit: structureRef(NOTES),
           reason: {
             code: 'idOccupied',
             because: `the migration ${renameOfCategories} of categories takes the table id notes, which the new Head ledger already holds at that step`,
@@ -383,7 +372,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
               migrationId: renameOfCategories,
             },
             cause: {
-              unit: renamedStructureOf(PRODUCTS, CATEGORIES),
+              unit: structureRef(PRODUCTS, CATEGORIES),
               role: 'taker',
             },
           },
@@ -405,13 +394,13 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(PRODUCTS),
+          unit: structureRef(PRODUCTS),
           reason: {
             code: 'referrerStillReferences',
             because: `the migration ${updateOfProducts} of products references the table notes, which is another table in the remaining Draft ledger at that step`,
             site: stepOf(PRODUCTS, updateOfProducts),
             references: referencedTable(NOTES),
-            cause: { unit: structureOf(NOTES), role: 'remover' },
+            cause: { unit: structureRef(NOTES), role: 'remover' },
           },
         },
       ]);
@@ -428,27 +417,27 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(NOTES),
+          unit: structureRef(NOTES),
           reason: {
             code: 'idOccupied',
             because:
               'the table id notes would be held by two tables in the reverted Draft',
             site: { kind: 'tableId', tableId: NOTES },
             cause: {
-              unit: renamedStructureOf(ARCHIVE, NOTES),
+              unit: structureRef(ARCHIVE, NOTES),
               role: 'taker',
             },
           },
         },
         {
-          unit: structureOf(PRODUCTS),
+          unit: structureRef(PRODUCTS),
           reason: {
             code: 'referrerStillReferences',
             because:
               'the schema of products references the table notes, which is another table in the reverted Draft',
             site: { kind: 'schema', tableId: PRODUCTS },
             references: referencedTable(NOTES),
-            cause: { unit: structureOf(NOTES), role: 'remover' },
+            cause: { unit: structureRef(NOTES), role: 'remover' },
           },
         },
       ]);
@@ -467,7 +456,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(LABELS),
+          unit: structureRef(LABELS),
           reason: {
             code: 'idOccupied',
             because: `the migration ${initOfFirstTags} of tags takes the table id tags, which the remaining Draft ledger already holds at that step`,
@@ -476,7 +465,7 @@ describe('DependencyClosure: pending migrations that need a table id another uni
               tableId: TAGS,
               migrationId: initOfFirstTags,
             },
-            cause: { unit: structureOf(TAGS), role: 'occupant' },
+            cause: { unit: structureRef(TAGS), role: 'occupant' },
           },
         },
       ]);
@@ -493,13 +482,13 @@ describe('DependencyClosure: pending migrations that need a table id another uni
 
       expect(closure.required).toEqual([
         {
-          unit: structureOf(LINKS),
+          unit: structureRef(LINKS),
           reason: {
             code: 'referrerStillReferences',
             because: `the migration ${initOfLinks} of links references the table notes, which the remaining Draft ledger does not hold at that step`,
             site: stepOf(LINKS, initOfLinks),
             references: referencedTable(NOTES),
-            cause: { unit: structureOf(NOTES), role: 'remover' },
+            cause: { unit: structureRef(NOTES), role: 'remover' },
           },
         },
       ]);

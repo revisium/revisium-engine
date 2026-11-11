@@ -8,14 +8,14 @@ import type {
 
 export type DraftRead = 'tableChanges' | 'rowChanges' | 'summary';
 
-export type PartialOperation = 'list' | 'preview' | ChangeOperation | DraftRead;
+type PartialOperation = 'list' | 'preview' | ChangeOperation | DraftRead;
 
 export const OPERATION_FINISHED = 'Partial changes operation finished';
 
 const LOGGED_REFUSED_TABLE_IDS = 5;
 
 // What an operation learned from its plan, or from its listing page; only ids and counts, never row data.
-export interface PlannedFacts {
+interface PlannedFacts {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly refusedTables: readonly RefusedTable[];
@@ -24,7 +24,7 @@ export interface PlannedFacts {
   readonly estimate?: PlanEstimate;
 }
 
-export interface LoggedEstimate {
+interface LoggedEstimate {
   readonly changedRows: number;
   readonly mergedRows: number;
   readonly perRowWorkRows: number;

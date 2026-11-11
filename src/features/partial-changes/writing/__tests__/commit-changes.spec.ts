@@ -10,27 +10,25 @@ import {
   branchContentOf,
   branchContentsOf,
 } from 'src/__tests__/fixtures/branch-content';
-import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
-import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { ListChangesResult } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type {
-  FieldRef,
   RowRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
 import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { TableViewsData } from 'src/features/views/types';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
 import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
-import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
+import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
 import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input-refusal';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
+import { titleOf } from '../../__tests__/support/field-refs';
+import { tableViews } from '../../__tests__/support/views-documents';
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
@@ -74,11 +72,6 @@ const emptyFile = {
   height: 0,
 };
 
-const titleOf = (tableId: string, rowId: string): FieldRef => ({
-  tableId,
-  rowId,
-  path: '/title',
-});
 const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
 
 const INJECTED_FAILURE = 'Injected failure after the writes';
@@ -205,30 +198,6 @@ describe('commitChanges', () => {
 
     it.each<{ input: string; options: unknown }>([
       {
-        input: 'includeRequired without expected',
-        options: { selection: categoryOfP1, includeRequired: true },
-      },
-      {
-        input: 'includeRequired given as a string',
-        options: { selection: categoryOfP1, includeRequired: 'false' },
-      },
-      {
-        input: 'includeRequired given as a number',
-        options: { selection: categoryOfP1, includeRequired: 1 },
-      },
-      {
-        input: 'an empty expected',
-        options: { selection: categoryOfP1, expected: '' },
-      },
-      {
-        input: 'expected given as a number',
-        options: { selection: categoryOfP1, expected: 1 },
-      },
-      {
-        input: 'an expected that is not a fingerprint',
-        options: { selection: categoryOfP1, expected: 'other' },
-      },
-      {
         input:
           'the bare SHA-256 hex that engines before v2.0 issued as expected',
         options: { selection: categoryOfP1, expected: 'a'.repeat(64) },
@@ -243,18 +212,6 @@ describe('commitChanges', () => {
       {
         input: 'comment given as a number',
         options: { selection: categoryOfP1, comment: 1 },
-      },
-      {
-        input: 'a malformed selection',
-        options: {
-          selection: {
-            fields: [{ tableId: PRODUCTS, rowId: 'p1', path: 'title' }],
-          },
-        },
-      },
-      {
-        input: 'a null selection',
-        options: { selection: null },
       },
       ...FORBIDDEN_NULL_FIELDS.map(({ field, selection }) => ({
         input: `${field} given as null`,
@@ -309,27 +266,6 @@ describe('commitChanges', () => {
       });
     });
 
-    it('is blocked by a selector that matches no unit next to one that does, and writes nothing', async () => {
-      const draft = await givenEditedPrices();
-      const contents = await branchContentsOf(kit, draft);
-      const missingRow = { rows: [rowOf(PRODUCTS, 'missing')] };
-
-      const result = await draft.commitChanges({
-        selection: { ...titleOfP1, ...missingRow },
-      });
-
-      expect(result).toEqual<CommitChangesResult>({
-        status: 'blocked',
-        planned: true,
-        blockers: [expect.objectContaining({ code: 'unmatchedSelector' })],
-        blockersTotal: 1,
-        required: [],
-        requiredTotal: 0,
-        unmatched: missingRow,
-      });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-    });
-
     it('is blocked once by an excluded table that a foreign key needs, and writes nothing', async () => {
       const draft = await givenStickersOfCreatedBrands();
       const contents = await branchContentsOf(kit, draft);
@@ -377,30 +313,6 @@ describe('commitChanges', () => {
       });
     });
 
-    it('is stale and writes nothing when the selected row changed after the preview', async () => {
-      const draft = await givenEditedPrices();
-      const preview = await draft.previewChanges({
-        operation: 'commit',
-        selection: titleOfP1,
-      });
-      await draft.updateRow(PRODUCTS, 'p1', { title: 'uno!', price: 10 });
-      const contents = await branchContentsOf(kit, draft);
-
-      const result = await draft.commitChanges({
-        selection: titleOfP1,
-        expected: preview.fingerprint,
-      });
-
-      expect(result).toEqual<CommitChangesResult>({
-        status: 'stale',
-        changed: ['content'],
-        headRevisionId: await draft.revisionId('head'),
-        draftRevisionId: await draft.revisionId('draft'),
-        unmatched: {},
-      });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-    });
-
     it('is stale and writes nothing when a rename of the table after the preview hands the schemaHash of the selected row columns to the structure', async () => {
       const draft = await givenCommittedPrices();
       await draft.writeRowColumns(PRODUCTS, 'p1', {
@@ -439,76 +351,6 @@ describe('commitChanges', () => {
 
       expect(result).toMatchObject({ status: 'applied' });
       expect(await draft.rowIds('head', PRODUCTS)).toEqual(['p2']);
-    });
-
-    it.each<{
-      previewed: 'commit' | 'revert';
-      apply: (
-        draft: ChangesScenario,
-        options: CommitOptions,
-      ) => Promise<unknown>;
-    }>([
-      {
-        previewed: 'revert',
-        apply: (draft, options) => draft.commitChanges(options),
-      },
-      {
-        previewed: 'commit',
-        apply: (draft, options) => draft.revertChanges(options),
-      },
-    ])(
-      'is stale with the fingerprint of a $previewed preview of the same selection, which the other operation never passes',
-      async ({ previewed, apply }) => {
-        const draft = await givenEditedPrices();
-        const preview = await draft.previewChanges({
-          operation: previewed,
-          selection: titleOfP1,
-        });
-        const contents = await branchContentsOf(kit, draft);
-
-        const result = await apply(draft, {
-          selection: titleOfP1,
-          expected: preview.fingerprint,
-        });
-
-        expect(result).toEqual({
-          status: 'stale',
-          changed: ['operation'],
-          headRevisionId: await draft.revisionId('head'),
-          draftRevisionId: await draft.revisionId('draft'),
-          unmatched: {},
-        });
-        expect(await branchContentsOf(kit, draft)).toEqual(contents);
-      },
-    );
-
-    it('is empty with the current revisions when it is repeated, and never commits twice', async () => {
-      const draft = await givenEditedPrices();
-      const preview = await draft.previewChanges({
-        operation: 'commit',
-        selection: titleOfP1,
-      });
-      await expectApplied(
-        draft.commitChanges({
-          selection: titleOfP1,
-          expected: preview.fingerprint,
-        }),
-      );
-      const contents = await branchContentsOf(kit, draft);
-
-      const repeat = await draft.commitChanges({
-        selection: titleOfP1,
-        expected: preview.fingerprint,
-      });
-
-      expect(repeat).toEqual<CommitChangesResult>({
-        status: 'empty',
-        headRevisionId: await draft.revisionId('head'),
-        draftRevisionId: await draft.revisionId('draft'),
-        unmatched: titleOfP1,
-        draftHasChanges: true,
-      });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
   });
 
@@ -624,17 +466,24 @@ describe('commitChanges', () => {
 
     it('commits a views edit and keeps the data edits in the Draft', async () => {
       const draft = await givenCommittedPrices();
-      await draft.updateViews(PRODUCTS, productViews('All'));
+      await draft.updateViews(PRODUCTS, tableViews('All', ['title', 'price']));
       await draft.commit();
-      await draft.updateViews(PRODUCTS, productViews('Renamed'));
+      await draft.updateViews(
+        PRODUCTS,
+        tableViews('Renamed', ['title', 'price']),
+      );
       await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
 
       await expectApplied(
         draft.commitChanges({ selection: { views: [PRODUCTS] } }),
       );
 
-      expect(await viewsOf(draft, 'head')).toEqual(productViews('Renamed'));
-      expect(await viewsOf(draft, 'draft')).toEqual(productViews('Renamed'));
+      expect(await viewsOf(draft, 'head')).toEqual(
+        tableViews('Renamed', ['title', 'price']),
+      );
+      expect(await viewsOf(draft, 'draft')).toEqual(
+        tableViews('Renamed', ['title', 'price']),
+      );
       await expectProducts(draft, 'head', {
         p1: { title: 'one', price: 1 },
         p2: { title: 'two', price: 2 },
@@ -960,24 +809,6 @@ describe('commitChanges', () => {
         expect(await branchContentsOf(kit, draft)).toEqual(contents);
       },
     );
-
-    it('is empty for exactly { all: true } of a Draft holding only content-equal versions: it creates no revision and links the Head version into the Draft, which has no changes left (AS-54)', async () => {
-      const draft = await givenOnlyContentEqualVersions();
-      const headRevisionId = await draft.revisionId('head');
-      const draftRevisionId = await draft.revisionId('draft');
-
-      const result = await draft.commitChanges({ selection: { all: true } });
-
-      expect(result).toEqual<CommitChangesResult>({
-        status: 'empty',
-        headRevisionId,
-        draftRevisionId,
-        draftHasChanges: false,
-      });
-      expect(await draft.revisionId('head')).toBe(headRevisionId);
-      await expectDraftLinksHeadVersion(draft, PRODUCTS);
-      expect(await draft.hasChanges()).toBe(false);
-    });
   });
 
   describe('endpoint notification', () => {
@@ -996,17 +827,6 @@ describe('commitChanges', () => {
         { revisionId: committed.head, seenOutsideTheTransaction: committed },
         { revisionId: committed.draft, seenOutsideTheTransaction: committed },
       ]);
-    });
-
-    it('notifies nothing for a commit that writes nothing', async () => {
-      const draft = await givenEditedPrices();
-      const notifications = recordEndpointNotifications(kit, () =>
-        branchRevisionsOf(draft),
-      );
-
-      await draft.commitChanges({ selection: titleOfP1, expected: 'pcf3.AA' });
-
-      expect(notifications).toEqual([]);
     });
   });
 
@@ -1064,20 +884,6 @@ describe('commitChanges', () => {
       ).rejects.toThrow(
         'The plan applies units of products, whose changed rows it did not read',
       );
-
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-    });
-  });
-
-  describe('during an async migration', () => {
-    it('refuses with MigrationLocked and writes nothing', async () => {
-      const draft = await givenEditedPrices();
-      await givenActiveMigration(kit, draft, PRODUCTS);
-      const contents = await branchContentsOf(kit, draft);
-
-      await expect(
-        draft.commitChanges({ selection: titleOfP1 }),
-      ).rejects.toThrow(MigrationLockedException);
 
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
@@ -1316,17 +1122,6 @@ describe('commitChanges', () => {
     return draft;
   }
 
-  async function givenOnlyContentEqualVersions(): Promise<ChangesScenario> {
-    const draft = await givenCommittedPrices();
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 1 });
-
-    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(true);
-    expect(await draft.hasChanges()).toBe(true);
-
-    return draft;
-  }
-
   async function givenRenamedCategoriesOfEditedProducts(): Promise<ChangesScenario> {
     const draft = await givenCommittedCatalog();
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', category: 'c1' });
@@ -1373,14 +1168,17 @@ describe('commitChanges', () => {
       },
       [LOGS]: { schema: logSchema, rows: { l1: { entry: 'started' } } },
     });
-    await draft.updateViews(PRODUCTS, productViews('All'));
+    await draft.updateViews(PRODUCTS, tableViews('All', ['title', 'price']));
     await draft.commit();
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
     await draft.removeRow(PRODUCTS, 'p2');
     await draft.renameRow(PRODUCTS, 'p3', 'p9');
     await draft.createRows(PRODUCTS, { p4: { title: 'four', price: 4 } });
     await draft.writeRowColumns(CATEGORIES, 'c1', { meta: { note: 'draft' } });
-    await draft.updateViews(PRODUCTS, productViews('Renamed'));
+    await draft.updateViews(
+      PRODUCTS,
+      tableViews('Renamed', ['title', 'price']),
+    );
     await draft.updateRow(LOGS, 'l1', { entry: 'restarted' });
     await draft.updateRow(LOGS, 'l1', { entry: 'started' });
 
@@ -1399,7 +1197,7 @@ describe('commitChanges', () => {
       },
       [LOGS]: { schema: logSchema, rows: { l1: { entry: 'started' } } },
     });
-    await draft.updateViews(PRODUCTS, productViews('All'));
+    await draft.updateViews(PRODUCTS, tableViews('All', ['title', 'price']));
     await draft.commit();
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
     await draft.updateTable(PRODUCTS, [addField('color', str())]);
@@ -1407,7 +1205,10 @@ describe('commitChanges', () => {
     await draft.removeTable(LOGS);
     await draft.createTable(TAGS, tagSchema);
     await draft.createRows(TAGS, { t1: { label: 'one' } });
-    await draft.updateViews(PRODUCTS, productViews('Renamed'));
+    await draft.updateViews(
+      PRODUCTS,
+      tableViews('Renamed', ['title', 'price']),
+    );
 
     return draft;
   }
@@ -1471,18 +1272,4 @@ interface FailingCommit {
   readonly holding: string;
   readonly given: () => Promise<ChangesScenario>;
   readonly selection: Selection;
-}
-
-function productViews(name: string): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name,
-        columns: [{ field: 'data.title' }, { field: 'data.price' }],
-      },
-    ],
-  };
 }

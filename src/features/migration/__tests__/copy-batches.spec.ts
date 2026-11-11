@@ -18,6 +18,7 @@ import {
   MigrationStatus,
 } from 'src/features/migration/types/migration.types';
 import { CleanupService } from 'src/infrastructure/database/cleanup.service';
+import { readFileStates } from 'src/__tests__/fixtures/file-states';
 import {
   failRightAfterFileRegistration,
   recordBatchWriteFailures,
@@ -26,7 +27,6 @@ import {
 import {
   countFileLinks,
   expectRowsToLinkTheirFiles,
-  readFileStates,
   readLinkedFilesOfTableVersion,
   readProjectFileBytes,
   uploadedFileOf,

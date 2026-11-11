@@ -11,7 +11,7 @@ import type {
   SelectionItems,
 } from 'src/features/partial-changes/selection/selection';
 
-export interface RequiredAddition {
+interface RequiredAddition {
   readonly key: string;
   readonly reason: CatalogueReason;
 }

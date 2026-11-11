@@ -45,7 +45,7 @@ const SNAPSHOT_SYSTEM_TABLES: readonly SystemTables[] = [
   SystemTables.SharedSchemas,
 ];
 
-export interface ReferrerQuery {
+interface ReferrerQuery {
   readonly jsonPath: string;
   readonly rowIds: readonly string[];
   readonly exceptRows: readonly string[];
@@ -56,7 +56,7 @@ export interface FirstReferrer {
   readonly rowId: string;
 }
 
-export interface UnresolvedReferenceQuery {
+interface UnresolvedReferenceQuery {
   readonly jsonPath: string;
   readonly exceptRows: readonly string[];
   readonly referencedTableVersionId: string;

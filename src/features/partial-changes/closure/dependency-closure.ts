@@ -54,7 +54,7 @@ export interface ClosureSource extends SelectionSource {
   readonly changedRowCount: number;
 }
 
-export interface ClosureRequest {
+interface ClosureRequest {
   readonly operation: ChangeOperation;
   readonly selection: Selection;
 }

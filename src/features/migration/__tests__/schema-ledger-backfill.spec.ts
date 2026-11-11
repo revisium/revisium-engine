@@ -3,6 +3,7 @@ import type { Migration } from '@revisium/schema-toolkit/types';
 import objectHash from 'object-hash';
 import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
+import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
 import { BranchScenario } from 'src/__tests__/fixtures/branch-scenario';
 import { HeadSyncedReplica } from 'src/__tests__/fixtures/ledger-replicas';
 import { createBarrier } from 'src/__tests__/utils/barrier';
@@ -38,7 +39,6 @@ import {
   entriesOf,
   initEntry,
   migrationTableOf,
-  observeEndpointNotifications,
   planBackfill,
   revisionCommentOf,
   revisionsOf,
@@ -371,7 +371,7 @@ describe('Schema ledger backfill', () => {
     it('BF-10 rolls back, raises and notifies nothing when the stored rows are not the planned entries', async () => {
       const draft = await givenCatalogWithoutLedger();
       const before = await branchContentsOf(kit, draft);
-      const notifications = observeEndpointNotifications(kit, () =>
+      const notifications = recordEndpointNotifications(kit, () =>
         migrationTableOf(kit, draft, 'head'),
       );
       storeFirstEntryWithAnotherSchema();
@@ -667,7 +667,7 @@ describe('Schema ledger backfill', () => {
   describe('notifications', () => {
     it('BF-19 notifies the endpoints of the new Head and the new Draft once each, after the commit', async () => {
       const draft = await givenCatalogWithoutLedger();
-      const notifications = observeEndpointNotifications(kit, () =>
+      const notifications = recordEndpointNotifications(kit, () =>
         migrationTableOf(kit, draft, 'head'),
       );
 
@@ -711,7 +711,7 @@ describe('Schema ledger backfill', () => {
       'BF-19 notifies nothing after $outcome',
       async ({ outcome, given, input }) => {
         const draft = await given();
-        const notifications = observeEndpointNotifications(kit, () =>
+        const notifications = recordEndpointNotifications(kit, () =>
           Promise.resolve(null),
         );
 

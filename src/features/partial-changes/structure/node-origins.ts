@@ -38,7 +38,7 @@ export type PatchEffect =
   | { readonly kind: 'annotate'; readonly at: JsonPointer }
   | { readonly kind: 'end'; readonly at: JsonPointer };
 
-export interface ReplayTables {
+interface ReplayTables {
   readonly head: ReadonlyMap<string, string>;
   readonly draft: ReadonlyMap<string, string>;
 }

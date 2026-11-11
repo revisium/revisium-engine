@@ -54,12 +54,12 @@ import {
 } from 'src/features/partial-changes/validation/target-validator';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 
-export interface SnapshotRequest {
+interface SnapshotRequest {
   readonly branch: ChangesBranch;
   readonly selection: Selection;
 }
 
-export interface PlanRequest {
+interface PlanRequest {
   readonly operation: ChangeOperation;
   readonly selection: Selection;
   readonly compared: ComparedSnapshot;

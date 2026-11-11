@@ -11,6 +11,10 @@ import type {
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
+import {
+  type SqlStatement,
+  sqlStatementsDuring,
+} from 'src/__tests__/utils/sql-statements';
 import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
@@ -107,6 +111,38 @@ describe('ChangesSnapshotReader: snapshot', () => {
     });
   });
 
+  describe('statements', () => {
+    it('reads the tables of Head and Draft in one statement', async () => {
+      const draft = await givenCommittedTables(PRODUCTS, CATEGORIES);
+      await draft.updateRow(PRODUCTS, 'first', { code: 'changed', price: 1 });
+
+      const statements = await sqlStatementsDuring(() => draft.readSnapshot());
+
+      expect(statements.filter(readsLinkedTables)).toHaveLength(1);
+    });
+
+    it('reads a system table version that Head and Draft share once', async () => {
+      const draft = await givenCommittedTables(PRODUCTS);
+      await draft.updateViews(PRODUCTS, productViews);
+      await draft.commit();
+      await draft.updateRow(PRODUCTS, 'first', { code: 'changed', price: 1 });
+      const sharedVersionIds = sharedSystemVersionIdsOf(
+        await draft.readSnapshot(),
+      );
+
+      const statements = await sqlStatementsDuring(() => draft.readSnapshot());
+
+      expect(sharedVersionIds).toHaveLength(3);
+      expect(
+        sharedVersionIds.map(
+          (versionId) =>
+            statements.filter(({ values }) => values.includes(versionId))
+              .length,
+        ),
+      ).toEqual([1, 1, 1]);
+    });
+  });
+
   describe('row digest of a Draft table version', () => {
     it('stays the same while the rows do not change', async () => {
       const draft = await givenEditedProducts();
@@ -198,6 +234,22 @@ function pairOf(snapshot: ChangesSnapshot, tableId: string): TablePair {
   }
 
   return pair;
+}
+
+function readsLinkedTables({ text }: SqlStatement): boolean {
+  return text.includes('"_RevisionToTable"');
+}
+
+function sharedSystemVersionIdsOf({ systemRows }: ChangesSnapshot): string[] {
+  return Object.values(systemRows).flatMap(({ versions }) => {
+    const versionId = versions.head?.versionId;
+
+    if (versionId === undefined || versionId !== versions.draft?.versionId) {
+      return [];
+    }
+
+    return [versionId];
+  });
 }
 
 function rowIdsOf(rows: RevisionRows) {

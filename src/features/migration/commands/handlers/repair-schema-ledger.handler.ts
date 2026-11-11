@@ -34,6 +34,7 @@ import {
   OperationLog,
   type OperationTrace,
 } from 'src/infrastructure/database/operation-log';
+import { failingWithSerializationConflict } from 'src/infrastructure/database/serialization-conflict.exception';
 
 // Whether the repair wrote, so that the Draft endpoints are notified after its log entry, as after a commit.
 interface FinishedRepair {
@@ -118,10 +119,13 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
     planned: PlannedRepair,
     trace: OperationTrace,
   ): Promise<FinishedRepair> {
-    const written = await this.writeAdmission.runSerializableRevisionWrite(
-      planned.state.draftRevisionId,
-      () => this.recordFreshRepair(request, planned),
-      trace,
+    // The admission is shared with native writers, which keep their own failure; only the repair converts it.
+    const written = await failingWithSerializationConflict(() =>
+      this.writeAdmission.runSerializableRevisionWrite(
+        planned.state.draftRevisionId,
+        () => this.recordFreshRepair(request, planned),
+        trace,
+      ),
     );
 
     if (!written) {

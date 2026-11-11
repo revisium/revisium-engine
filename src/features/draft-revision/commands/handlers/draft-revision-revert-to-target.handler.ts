@@ -41,14 +41,17 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
     const { headRevisionId, draftRevisionId } = data;
     const tables = await this.revertTables(data.tables);
 
-    await this.relinkDraftTables(draftRevisionId, tables);
+    const relinkedTables = await this.relinkDraftTables(
+      draftRevisionId,
+      tables,
+    );
     await this.fileReferences.register(draftRevisionId, tables);
     const draftHasChanges = await this.internalService.updateHasChanges(
       draftRevisionId,
       headRevisionId,
     );
 
-    return { draftRevisionId, draftHasChanges };
+    return { draftRevisionId, draftHasChanges, relinkedTables };
   }
 
   private async revertTables(
@@ -114,13 +117,13 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
   private async relinkDraftTables(
     draftRevisionId: string,
     tables: readonly WrittenTable[],
-  ): Promise<void> {
+  ): Promise<number> {
     const relinked = tables.filter(
       ({ plan, written }) => plan.draftVersionId !== written.versionId,
     );
 
     if (relinked.length === 0) {
-      return;
+      return 0;
     }
 
     await this.transaction.revision.update({
@@ -136,5 +139,7 @@ export class DraftRevisionRevertToTargetHandler implements ICommandHandler<
         },
       },
     });
+
+    return relinked.length;
   }
 }

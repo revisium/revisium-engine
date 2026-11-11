@@ -423,9 +423,10 @@ unknown Head table id, `MIGRATION_LOCKED` before any work.
    ([Host integration](api.md#host-integration)).
 
 A serialization failure retries the transaction from step 2, so of two concurrent repairs one writes and the other
-finds its plan stale. A second run plans `alreadyRepaired`; once a native or `{ all: true }` commit publishes the
-repair, `notDamaged`. Head-synced replicas apply the published repair like any `update` and lose the values of
-`removedPaths`.
+finds its plan stale. When every attempt (`TRANSACTION_MAX_RETRIES`) fails serialization, the call fails with
+`SERIALIZATION_CONFLICT` (409) and writes nothing. A second run plans `alreadyRepaired`; once a native or
+`{ all: true }` commit publishes the repair, `notDamaged`. Head-synced replicas apply the published repair like any
+`update` and lose the values of `removedPaths`.
 
 ### How does the schema ledger scan report damage?
 
@@ -501,7 +502,8 @@ it to administrators. Input types are checked before any transaction; `null` mea
    the migration-lock check), reads the Head and Draft, plans and writes; a serialization failure starts the next
    attempt again. After 2 consecutive failures each further attempt holds the fence exclusively. The attempt
    cap and the timeout are those of partial operations (`PARTIAL_CHANGES_MAX_ATTEMPTS`,
-   `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`).
+   `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`). When the last attempt fails serialization, the call fails with
+   `SERIALIZATION_CONFLICT` (409).
 3. **Plan.** The Head user tables, in foreign-key order (nested objects and array items included, self-references
    ignored): repeatedly the smallest table id (code-point order) whose targets are all planned gets an `init` with its
    Head schema. When no remaining table is ready, the smallest cycle member whose schema survives the split gets an `init`

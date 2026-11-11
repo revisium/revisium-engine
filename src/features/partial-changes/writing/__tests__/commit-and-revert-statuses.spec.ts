@@ -202,27 +202,9 @@ describe('statuses that commit and revert share', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: titleOfP1,
+        draftHasChanges: true,
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
-    });
-
-    it('is empty for exactly { all: true } of a Draft holding only content-equal versions: it creates no revision, writes nothing and leaves hasChanges true (AS-54)', async () => {
-      const draft = await givenOnlyContentEqualVersions();
-      const headRevisionId = await draft.revisionId('head');
-      const draftRevisionId = await draft.revisionId('draft');
-      const contents = await branchContentsOf(kit, draft);
-
-      const result = await applyChanges(draft, operation, {
-        selection: { all: true },
-      });
-
-      expect(result).toEqual<UnappliedChanges>({
-        status: 'empty',
-        headRevisionId,
-        draftRevisionId,
-      });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-      expect(await draft.hasChanges()).toBe(true);
     });
 
     it('notifies no endpoint when it writes nothing', async () => {
@@ -292,17 +274,6 @@ describe('statuses that commit and revert share', () => {
     const draft = await givenCommittedPrices();
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
     await draft.updateRow(PRODUCTS, 'p2', { title: 'dos', price: 2 });
-
-    return draft;
-  }
-
-  async function givenOnlyContentEqualVersions(): Promise<ChangesScenario> {
-    const draft = await givenCommittedPrices();
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 1 });
-
-    expect(await draft.hasDraftVersion(PRODUCTS, 'p1')).toBe(true);
-    expect(await draft.hasChanges()).toBe(true);
 
     return draft;
   }

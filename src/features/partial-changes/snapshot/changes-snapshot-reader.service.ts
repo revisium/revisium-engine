@@ -86,6 +86,16 @@ export class ChangesSnapshotReader {
     };
   }
 
+  // The Draft's stored hasChanges, as native writers and the partial writers left it.
+  public async readDraftHasChanges(draftRevisionId: string): Promise<boolean> {
+    const { hasChanges } = await this.transaction.revision.findUniqueOrThrow({
+      where: { id: draftRevisionId },
+      select: { hasChanges: true },
+    });
+
+    return hasChanges;
+  }
+
   public async countChangedRows(
     tables: readonly ComparedTable[],
   ): Promise<number> {

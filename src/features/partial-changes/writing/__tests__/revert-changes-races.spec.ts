@@ -213,6 +213,7 @@ describe('revertChanges racing other writers', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: titleOfP1,
+        draftHasChanges: false,
       });
       await expectData(draft, 'head', PRODUCTS, 'p1', {
         title: 'uno',
@@ -258,6 +259,7 @@ describe('revertChanges racing other writers', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: titleOfP1,
+        draftHasChanges: true,
       });
       await expectDraftData(draft, 'p1', { title: 'one', price: 10 });
     });

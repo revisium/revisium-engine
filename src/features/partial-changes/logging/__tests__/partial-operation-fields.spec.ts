@@ -294,6 +294,25 @@ describe('Partial operation log', () => {
       ]);
     });
 
+    it('log the tables an empty commit of exactly { all: true } linked to their Head versions', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      await draft.updateRow(NOTES, 'n1', { title: 'one' });
+      const planned = await expectedEntryOf(draft, 'commit');
+      const entries = loggedEntries();
+
+      await draft.commitChanges({ selection: { all: true } });
+
+      expect(entries.finished()).toEqual<OperationLogEntry[]>([
+        {
+          ...planned,
+          outcome: 'empty',
+          tooLarge: false,
+          refusedTables: 0,
+          relinkedTables: 1,
+        },
+      ]);
+    });
+
     it('log every attempt of a commit that a native write made retry', async () => {
       const draft = await givenEditedNotes(['n1']);
       const entries = loggedEntries();

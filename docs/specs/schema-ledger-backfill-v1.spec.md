@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.7 |
+| Version | 1.8 |
 | Status | Accepted |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
@@ -94,7 +94,10 @@ Errors as the partial operations:
   dry run too;
 - `BranchWriteFencedException` (`BRANCH_WRITE_FENCED`, HTTP 423) when a wait for the branch write fence exceeds its
   limit (partial-changes §8.4);
-- `OperationTimeoutException` (`OPERATION_TIMEOUT`, HTTP 408) after `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`.
+- `OperationTimeoutException` (`OPERATION_TIMEOUT`, HTTP 408) after `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`;
+- `SerializationConflictException` (`SERIALIZATION_CONFLICT`, HTTP 409), a run only, when its last attempt
+  (`PARTIAL_CHANGES_MAX_ATTEMPTS`) fails serialization or deadlocks; the database error is its `cause`
+  (partial-changes §8.1).
 
 ## 3. Algorithm
 
@@ -318,6 +321,11 @@ No question is open.
 | 4 | `docs/api.md` and `docs/migration.md`. | — |
 
 ## Changelog
+
+### Version 1.8 (2026-11-11)
+
+- §2: a run whose last attempt fails serialization throws `SERIALIZATION_CONFLICT` (409) instead of the database error
+  (partial-changes §8.1).
 
 ### Version 1.7 (2026-11-11)
 

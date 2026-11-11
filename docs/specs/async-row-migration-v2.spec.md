@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.7 |
+| Version | 2.8 |
 | Status | Accepted |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), delivery stage 0 |
@@ -445,7 +445,8 @@ every pending migration the plan renumbers, branch-wide (§6.3 step 4), includin
 (partial-changes §5.4). A dry run reports `planned` where a written repair reports `repaired`, so a host tells from the
 outcome alone whether the Draft changed. Errors: unknown
 project or branch → not found; an unknown table id → validation error; an active async migration on the branch →
-`MigrationLockedException` before any work.
+`MigrationLockedException` before any work; a write that fails serialization on every attempt →
+`SerializationConflictException` (§6.4).
 
 The outcomes (§6.2) have runtime lists exported like those of the scan: `REPAIR_OUTCOMES`, the planner's outcomes
 (every outcome but `planned` and `stale`), and `TABLE_REPAIR_OUTCOMES`, the values of a table entry's `outcome`:
@@ -512,7 +513,12 @@ scan's `damagedTable` detail keeps the planner's outcome.
 
 ### 6.4 Writing, verification and concurrency
 
-One Serializable transaction through the native runner, with the migration-lock check and the fence shared (§3.9):
+One Serializable transaction through the native runner, with the migration-lock check and the fence shared (§3.9).
+The runner retries a serialization failure up to `TRANSACTION_MAX_RETRIES` attempts in total. When the last attempt
+fails serialization or deadlocks, the repair throws `SerializationConflictException` (`SERIALIZATION_CONFLICT`,
+HTTP 409) with the database error as its `cause`, as partial operations do (partial-changes §8.1). The repair converts
+the error at its own call of the shared admission (`DraftWriteAdmissionService.runSerializableRevisionWrite`), so the
+native writers that share that admission keep throwing the database error. The transaction:
 
 1. Re-read the Head and Draft ids, and the schema rows, ledger rows and table version ids planning read; recompute the
    validation fingerprint in SQL (one aggregate statement per table version). Any difference → `stale` for every table,
@@ -841,5 +847,10 @@ async swap can still rewrite committed rows during the scan.
 - §6.1, §6.2: the repair returns `renumberedMigrations: { from, to }[]` instead of `renumbered: { previousId, id }[]`,
   as a partial commit does, and the package exports `MigrationRenumbering` instead of `RenumberedMigration`. A dry run
   reports the new outcome `planned` instead of `repaired`.
+
+### Version 2.8 (2026-11-11)
+
+- §6.1, §6.4: a repair write that fails serialization on every attempt throws `SERIALIZATION_CONFLICT` (409) with the
+  database error as its `cause`, instead of that error. Native writers are unchanged.
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

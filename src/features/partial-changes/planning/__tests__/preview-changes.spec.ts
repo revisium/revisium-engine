@@ -875,7 +875,7 @@ describe('previewChanges', () => {
     );
 
     it.each(OPERATIONS)(
-      'is empty for a %s of exactly { all: true } of a Draft holding only content-equal versions (AS-54)',
+      'is empty for a %s of exactly { all: true } of a Draft holding only content-equal versions, and says the Draft has changes (AS-54)',
       async (operation) => {
         const draft = await givenOnlyContentEqualVersions();
 
@@ -890,6 +890,7 @@ describe('previewChanges', () => {
           blockers: [],
           sample: [],
           unmatched: {},
+          draftHasChanges: true,
         });
       },
     );

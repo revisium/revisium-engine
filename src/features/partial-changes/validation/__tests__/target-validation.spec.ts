@@ -44,10 +44,10 @@ const stickersWithoutBrands: Selection = {
   structures: [{ tableId: STICKERS }],
   exclude: { structures: [{ tableId: BRANDS }] },
 };
-const stickersFailing = (role: string) => ({
+const productsFailing = (role: string) => ({
   code: 'ledgerInconsistent',
-  tableId: STICKERS,
-  message: `The migration ledger of the ${role} cannot replay stickers: Foreign key target "brands" does not exist`,
+  tableId: PRODUCTS,
+  message: `The migration ledger of the ${role} cannot replay products: Foreign key target "tags" does not exist`,
 });
 
 const priceOfP1: FieldRef = { tableId: PRODUCTS, rowId: 'p1', path: '/price' };
@@ -445,19 +445,23 @@ describe('TargetValidator', () => {
       expect(blockers).toEqual([]);
     });
 
-    it('still blocks every role of a failure whose lineage holds no unresolved step', async () => {
-      const draft = await givenLabelsOfStickersOfCreatedBrands();
-      const initOfLabels = await migrationIdOf(draft, 'init', LABELS);
+    it('still blocks, in every role, a failure whose lineage neither holds nor reads an unresolved step', async () => {
+      const draft =
+        await givenStickersOfCreatedBrandsNextToProductsThatReferencedTags();
+      const initOfStickers = await migrationIdOf(draft, 'init', STICKERS);
 
       const blockers = await draft.validateTarget(
         'commit',
-        stickersWithoutBrands,
-        [initOfLabels],
+        {
+          structures: [{ tableId: STICKERS }, { tableId: PRODUCTS }],
+          exclude: { structures: [{ tableId: BRANDS }, { tableId: TAGS }] },
+        },
+        [initOfStickers],
       );
 
       expect(blockers).toEqual([
-        stickersFailing('new Head'),
-        stickersFailing('remaining Draft'),
+        productsFailing('new Head'),
+        productsFailing('remaining Draft'),
       ]);
     });
 
@@ -592,6 +596,17 @@ describe('TargetValidator', () => {
     });
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
     await draft.writeInvalidRow(PRODUCTS, 'p1', { title: 'uno', price: 'ten' });
+
+    return draft;
+  }
+
+  async function givenStickersOfCreatedBrandsNextToProductsThatReferencedTags(): Promise<ChangesScenario> {
+    const draft = await givenForeignKeyAddedAndRemovedAgain();
+    await draft.createTable(BRANDS, labelSchema);
+    await draft.createTable(
+      STICKERS,
+      obj({ brand: str({ foreignKey: BRANDS }) }),
+    );
 
     return draft;
   }

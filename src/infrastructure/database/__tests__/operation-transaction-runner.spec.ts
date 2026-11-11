@@ -15,7 +15,10 @@ import {
   holdBranchFenceAsWriter,
   readBranchFenceLocks,
 } from 'src/features/draft/commands/handlers/__tests__/support/branch-write-fence';
+import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
+import { MigrationStatus } from 'src/features/migration/types/migration.types';
 import { TransactionPrismaClient } from 'src/features/share/types';
+import { isSerializationFailure } from 'src/infrastructure/database/database-errors';
 import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
 import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
 import {
@@ -29,6 +32,7 @@ import {
 } from 'src/infrastructure/database/operation-transaction-runner';
 import { SerializationConflictException } from 'src/infrastructure/database/serialization-conflict.exception';
 import { TransactionTimeoutSupport } from 'src/infrastructure/database/transaction-timeout-support';
+import { TransactionIsolationLevel } from 'src/engine-prisma-types';
 
 const NATIVE_TRANSACTION_TIMEOUT_MS = 200;
 const NATIVE_MAX_RETRIES = 10;
@@ -39,6 +43,9 @@ const SHORTER_SESSION_DEFAULT_MS = 300;
 const LONGER_SESSION_DEFAULT_MS = 30 * OPERATION_TIMEOUT_MS;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const CONFIGURED_MAX_ATTEMPTS = 2;
+
+// A valid table id that contains the text the serialization predicate matches.
+const SERIALIZATION_TEXT_TABLE_ID = 'TransactionWriteConflict';
 
 // Longer than the kit's native transaction timeout, so a slow attempt under load fails serialization, not P2028.
 const NATIVE_ATTEMPT_TIMEOUT_MS = 10_000;
@@ -157,6 +164,75 @@ describe('OperationTransactionRunner', () => {
       ).rejects.toThrow(SerializationConflictException);
 
       expect(observed.escalated).toEqual([false, false, true]);
+    });
+  });
+
+  describe('spent attempts', () => {
+    it.each([
+      {
+        failure: 'a deadlock (40P01)',
+        failWith: () =>
+          Object.assign(new Error('lock cycle'), { code: '40P01' }),
+      },
+      {
+        failure: 'a serialization failure known only by its text',
+        failWith: () =>
+          new Error(
+            'could not serialize access due to read/write dependencies among transactions',
+          ),
+      },
+    ])(
+      'end with SerializationConflictException caused by $failure of the last attempt',
+      async ({ failWith }) => {
+        const failures: Error[] = [];
+
+        const failure = await failureOf(
+          runner.runWrite(branch, () => {
+            const attemptFailure = failWith();
+            failures.push(attemptFailure);
+
+            return Promise.reject(attemptFailure);
+          }),
+        );
+
+        expect(failure.error).toBeInstanceOf(SerializationConflictException);
+        expect(failures).toHaveLength(DEFAULT_MAX_ATTEMPTS);
+        expect((failure.error as SerializationConflictException).cause).toBe(
+          failures.at(-1),
+        );
+      },
+    );
+
+    it('end with SerializationConflictException when the serialization failure comes at COMMIT, after the operation returned', async () => {
+      const read = await givenCounter(kit);
+      const written = await givenCounter(kit);
+      let returned = 0;
+
+      const failure = await failureOf(
+        runner.runWrite(branch, async () => {
+          await writeSkewedWithConcurrentTransaction(kit, read, written);
+          returned += 1;
+        }),
+      );
+
+      expect(returned).toBe(DEFAULT_MAX_ATTEMPTS);
+      expect(failure.error).toBeInstanceOf(SerializationConflictException);
+      expect(
+        isSerializationFailure(
+          (failure.error as SerializationConflictException).cause,
+        ),
+      ).toBe(true);
+    });
+
+    it('keep an engine exception whose message carries serialization text as it is', async () => {
+      const locked = migrationLockedOn(SERIALIZATION_TEXT_TABLE_ID);
+
+      const failure = await failureOf(
+        runner.runWrite(branch, () => Promise.reject(locked)),
+      );
+
+      expect(isSerializationFailure(locked)).toBe(true);
+      expect(failure.error).toBe(locked);
     });
   });
 
@@ -1098,4 +1174,34 @@ function statementFor(
 ): Promise<number> {
   return kit.transactionService.getTransaction()
     .$executeRaw`SELECT pg_sleep(${durationMs / 1000})`;
+}
+
+// Reads one counter and writes the other; a concurrent Serializable transaction does the opposite and commits first,
+// so PostgreSQL fails this transaction at its COMMIT.
+async function writeSkewedWithConcurrentTransaction(
+  kit: DatabaseServiceTestKit,
+  read: Counter,
+  written: Counter,
+): Promise<void> {
+  await readCounterInTransaction(kit, read);
+  await writeCounterInTransaction(kit, written, 1);
+  await kit.prismaService.$transaction(
+    async (concurrent) => {
+      await concurrent.projectFileUsage.findUniqueOrThrow({ where: written });
+      await concurrent.projectFileUsage.update({
+        where: read,
+        data: { fileBytes: { increment: 1 } },
+      });
+    },
+    { isolationLevel: TransactionIsolationLevel.Serializable },
+  );
+}
+
+function migrationLockedOn(tableId: string): MigrationLockedException {
+  return new MigrationLockedException({
+    migrationId: 'migration',
+    tableId,
+    status: MigrationStatus.PENDING,
+    progress: { percentage: 0, copiedRows: 0, totalRows: 0 },
+  });
 }

@@ -1525,7 +1525,8 @@ Invariants:
   runner recognises the failure with the predicate its retry loop uses, and converts it in one place
   (`OperationTransactionRunner.runWrite`). Like `BRANCH_WRITE_FENCED` (423) and `OPERATION_TIMEOUT` (408), the code is
   a 4xx "retry later" a host maps without database messages; 409 names the conflict with concurrent writes. Other
-  failures pass unchanged. Native writers keep throwing the database error after their `TRANSACTION_MAX_RETRIES`
+  failures pass unchanged, and so does every engine `HttpException` whatever its message: the predicate also matches
+  by text, which a refusal can carry in a table id (`MIGRATION_LOCKED` for a table `TransactionWriteConflict`). Native writers keep throwing the database error after their `TRANSACTION_MAX_RETRIES`
   attempts.
 - Escalation (§8.4) starts with the third attempt, so with `PARTIAL_CHANGES_MAX_ATTEMPTS` of 1 or 2 no attempt runs
   under the exclusive fence.

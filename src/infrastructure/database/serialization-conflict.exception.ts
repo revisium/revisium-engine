@@ -23,10 +23,16 @@ export async function failingWithSerializationConflict<T>(
   try {
     return await operation();
   } catch (error) {
-    if (isSerializationFailure(error)) {
+    if (isDatabaseSerializationFailure(error)) {
       throw new SerializationConflictException(error);
     }
 
     throw error;
   }
+}
+
+// The predicate also matches by message text, which an engine refusal can carry in a user-given id; such a refusal
+// already has its own code.
+function isDatabaseSerializationFailure(error: unknown): boolean {
+  return !(error instanceof HttpException) && isSerializationFailure(error);
 }

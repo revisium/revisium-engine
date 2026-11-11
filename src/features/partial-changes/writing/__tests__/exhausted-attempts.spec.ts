@@ -4,8 +4,10 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import { givenActiveMigration } from 'src/__tests__/fixtures/active-migration';
 import { BranchApiService } from 'src/features/branch/branch-api.service';
 import { serializationFailure } from 'src/features/draft-revision/services/__tests__/support/revision-lookup-test-kit';
+import { MigrationLockedException } from 'src/features/migration/exceptions/migration-locked.exception';
 import { OPERATION_FINISHED } from 'src/features/partial-changes/logging/partial-operation-fields';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { FindTableInRevisionHandler } from 'src/features/share/queries/handlers/transactional/find-table-in-revision.handler';
@@ -17,6 +19,9 @@ import { commitWhileNativeWriteLands } from '../../__tests__/support/commit-race
 import { revertWhileNativeWriteLands } from '../../__tests__/support/revert-races';
 
 const PRODUCTS = 'products';
+
+// A valid table id that contains the text the serialization predicate matches.
+const SERIALIZATION_TEXT_TABLE_ID = 'TransactionWriteConflict';
 
 const pricedSchema = obj({ title: str(), price: num() });
 
@@ -33,6 +38,7 @@ const ONE_ATTEMPT_SETTINGS = {
 
 interface RacedOperation {
   readonly operation: 'commit' | 'revert';
+  run(draft: ChangesScenario): Promise<unknown>;
   race(
     kit: PartialChangesTestKit,
     draft: ChangesScenario,
@@ -43,6 +49,7 @@ interface RacedOperation {
 const racedOperations: RacedOperation[] = [
   {
     operation: 'commit',
+    run: (draft) => draft.commitChanges({ selection: titleOfP1 }),
     race: (kit, draft, nativeWrite) =>
       commitWhileNativeWriteLands(
         kit,
@@ -53,6 +60,7 @@ const racedOperations: RacedOperation[] = [
   },
   {
     operation: 'revert',
+    run: (draft) => draft.revertChanges({ selection: titleOfP1 }),
     race: (kit, draft, nativeWrite) =>
       revertWhileNativeWriteLands(
         kit,
@@ -113,6 +121,35 @@ describe('Partial operations whose attempts are spent', () => {
             escalations: 0,
             error: 'SerializationConflictException',
             errorCode: 'SERIALIZATION_CONFLICT',
+          },
+        ]);
+      });
+    },
+  );
+
+  describe.each(racedOperations)(
+    'a partial $operation refused by an engine exception whose message carries serialization text',
+    ({ operation, run }) => {
+      it('fails with that exception and its details, logged with its own code', async () => {
+        const draft = await givenEditedPrices();
+        await givenActiveMigration(kit, draft, SERIALIZATION_TEXT_TABLE_ID);
+        const entries = loggedEntries();
+
+        const failure = await failureOf(run(draft));
+
+        expect(failure).toBeInstanceOf(MigrationLockedException);
+        expect(
+          (failure as MigrationLockedException).getResponse(),
+        ).toMatchObject({
+          code: 'MIGRATION_LOCKED',
+          migration: { tableId: SERIALIZATION_TEXT_TABLE_ID },
+        });
+        expect(entries.failed()).toMatchObject([
+          {
+            operation,
+            outcome: 'error',
+            error: 'MigrationLockedException',
+            errorCode: 'MIGRATION_LOCKED',
           },
         ]);
       });

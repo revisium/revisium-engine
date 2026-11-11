@@ -290,12 +290,12 @@ function holdEachBeforeWriting(
 
   jest
     .spyOn(admission, 'runSerializableRevisionWrite')
-    .mockImplementation(async (revisionId, write) => {
+    .mockImplementation(async (revisionId, write, observer) => {
       const barrier = barriers[arrivals];
       arrivals += 1;
       await barrier?.arrive();
 
-      return runWrite(revisionId, write);
+      return runWrite(revisionId, write, observer);
     });
 }
 

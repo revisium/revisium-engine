@@ -980,8 +980,11 @@ list types, and how a typed transport maps the unions:
   work above its limits with `tooLarge`. The defaults are conservative; a host raises them through the environment
   once the operation logs show the real costs ([ENV.md](../ENV.md),
   [SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration)).
-  Every listing page, preview, commit and revert logs one structured entry (`Partial changes operation finished`)
-  with its duration, outcome and attempts
+  Every listing page, Draft read (`tableChanges`, `rowChanges`, `summary`), preview, commit and revert logs one
+  structured entry (`Partial changes operation finished`) with its duration, outcome and attempts; a Draft read adds
+  the page size asked and returned and the names of its filters. `backfillSchemaLedger` and `repairSchemaLedger` log
+  the same kind of entry as `Schema ledger operation finished`, with `dryRun` and what they planned or wrote. Every
+  entry goes through the NestJS logger with the context `OperationLog`
   ([SPEC §11.1](specs/partial-changes-v1.spec.md#111-operation-logs)).
 
 ---
@@ -1348,7 +1351,9 @@ engine.scanSchemaLedger({ // the argument is optional
 Reports, read-only, where a revision's ledger does not reproduce its schema rows: one branch, the branches of a
 project, or every branch, paged by branch. Codes: `FINDING_CODES`, `FINDING_ROLES`, `UNLEDGERED_REASONS`,
 `DAMAGE_SHAPES`, `DAMAGED_TABLE_REPAIRS`, `ROW_HASH_REASONS`, `ROW_DIAGNOSTICS`, and `MIGRATION_CHANGE_TYPES` for the
-`step` of an `unreplayableLedger` finding. See
+`step` of an `unreplayableLedger` finding. Errors: a validation error (400) for wrong input types (`projectId must be a
+string`, `cursor must be a string`, …), `branchName` without `projectId`, a malformed `cursor` or `limit`, or an
+unknown `rowDiagnostics`; unknown project or branch. See
 [How does the schema ledger scan report damage?](migration.md#how-does-the-schema-ledger-scan-report-damage)
 
 ### repairSchemaLedger
@@ -1366,7 +1371,12 @@ engine.repairSchemaLedger({
 
 Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. A call with
 `dryRun: false` that returns a `repaired` table has changed the Draft, so the host refreshes the Draft's endpoints
-([Host integration](#host-integration)). Outcomes: `REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. See
+([Host integration](#host-integration)). Outcomes: `REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. Errors: a validation
+error (400) for wrong input types, before any transaction (`projectId must be a string`, `branchName must be a string`,
+`tableIds must be an array of strings`, `dryRun must be a boolean`), or for an unknown table id; unknown project or
+branch; `MIGRATION_LOCKED` (423) while an async migration is active. Each call logs one structured entry
+(`Schema ledger operation finished`,
+[partial-changes §11.1](specs/partial-changes-v1.spec.md#111-operation-logs)). See
 [How is the schema ledger repaired?](migration.md#how-is-the-schema-ledger-repaired)
 
 ### backfillSchemaLedger
@@ -1420,7 +1430,7 @@ applied `changes.commit` ([Host integration](#host-integration)). The variants a
 `BackfillPlanned`, `BackfillCommitted` and `BackfillRefused`. Codes: `BACKFILL_STATUSES`, `BACKFILL_REFUSAL_CODES`,
 `BACKFILL_CHANGE_TYPES`. Errors: a validation error for wrong input types (before any transaction), unknown project
 or branch, `MIGRATION_LOCKED` (423) while an async migration is active (a dry run too), `BRANCH_WRITE_FENCED` (423, a
-run only), `OPERATION_TIMEOUT` (408).
+run only), `OPERATION_TIMEOUT` (408). Each call logs one structured entry (`Schema ledger operation finished`).
 See [How is a missing schema ledger backfilled?](migration.md#how-is-a-missing-schema-ledger-backfilled)
 
 ---

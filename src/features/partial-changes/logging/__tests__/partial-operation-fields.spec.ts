@@ -5,15 +5,32 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import {
-  type OperationLogEntry,
   OPERATION_FINISHED,
-  PartialOperationLog,
-} from 'src/features/partial-changes/logging/partial-operation-log';
+  partialOperation,
+  plannedFieldsOf,
+} from 'src/features/partial-changes/logging/partial-operation-fields';
+import type * as OperationFieldsModule from 'src/features/partial-changes/logging/partial-operation-fields';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
+import { ChangeType } from 'src/features/revision-changes/types';
+import {
+  OperationLog,
+  type OperationLogEntry,
+} from 'src/infrastructure/database/operation-log';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { commitWhileNativeWriteLands } from '../../__tests__/support/commit-races';
 import { HeldPartialRevert } from '../../__tests__/support/revert-races';
+
+jest.mock(
+  'src/features/partial-changes/logging/partial-operation-fields',
+  () => {
+    const actual: typeof OperationFieldsModule = jest.requireActual(
+      'src/features/partial-changes/logging/partial-operation-fields',
+    );
+
+    return { ...actual, plannedFieldsOf: jest.fn(actual.plannedFieldsOf) };
+  },
+);
 
 const NOTES = 'notes';
 const MAX_CHANGED_ROWS = 3;
@@ -33,19 +50,22 @@ const PLANNED = {
   refusedTables: [],
 };
 
-describe('PartialOperationLog', () => {
+describe('Partial operation log', () => {
   describe('an entry', () => {
     it('counts every attempt and the escalated ones', async () => {
       const entries = loggedEntries();
 
-      await new PartialOperationLog().track('commit', BRANCH, (trace) => {
-        trace.attempted(false);
-        trace.attempted(false);
-        trace.attempted(true);
-        trace.planned({ ...PLANNED, planned: true });
+      await new OperationLog().track(
+        partialOperation('commit', BRANCH),
+        (trace) => {
+          trace.attempted(false);
+          trace.attempted(false);
+          trace.attempted(true);
+          trace.planned(() => plannedFieldsOf({ ...PLANNED, planned: true }));
 
-        return Promise.resolve({ status: 'applied' });
-      });
+          return Promise.resolve({ status: 'applied' });
+        },
+      );
 
       expect(entries.finished()).toEqual<OperationLogEntry[]>([
         {
@@ -68,12 +88,19 @@ describe('PartialOperationLog', () => {
     it('keeps the facts of the last plan', async () => {
       const entries = loggedEntries();
 
-      await new PartialOperationLog().track('revert', BRANCH, (trace) => {
-        trace.planned({ ...PLANNED, refusedTables: [unledgered('a')] });
-        trace.planned({ ...PLANNED, draftRevisionId: 'next draft' });
+      await new OperationLog().track(
+        partialOperation('revert', BRANCH),
+        (trace) => {
+          trace.planned(() =>
+            plannedFieldsOf({ ...PLANNED, refusedTables: [unledgered('a')] }),
+          );
+          trace.planned(() =>
+            plannedFieldsOf({ ...PLANNED, draftRevisionId: 'next draft' }),
+          );
 
-        return Promise.resolve({ status: 'stale' });
-      });
+          return Promise.resolve({ status: 'stale' });
+        },
+      );
 
       expect(entries.finished()).toMatchObject([
         { draftRevisionId: 'next draft', outcome: 'stale', refusedTables: 0 },
@@ -84,13 +111,18 @@ describe('PartialOperationLog', () => {
       const entries = loggedEntries();
 
       await expect(
-        new PartialOperationLog().track('commit', BRANCH, (trace) => {
-          trace.attempted(false);
-          trace.planned({ ...PLANNED, planned: false });
-          trace.attempted(false);
+        new OperationLog().track(
+          partialOperation('commit', BRANCH),
+          (trace) => {
+            trace.attempted(false);
+            trace.planned(() =>
+              plannedFieldsOf({ ...PLANNED, planned: false }),
+            );
+            trace.attempted(false);
 
-          return Promise.reject(new OperationTimeoutException(5));
-        }),
+            return Promise.reject(new OperationTimeoutException(5));
+          },
+        ),
       ).rejects.toThrow(OperationTimeoutException);
 
       const [entry] = entries.failed();
@@ -104,11 +136,16 @@ describe('PartialOperationLog', () => {
       const entries = loggedEntries();
       const refused = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(unledgered);
 
-      await new PartialOperationLog().track('preview', BRANCH, (trace) => {
-        trace.planned({ ...PLANNED, refusedTables: refused });
+      await new OperationLog().track(
+        partialOperation('preview', BRANCH),
+        (trace) => {
+          trace.planned(() =>
+            plannedFieldsOf({ ...PLANNED, refusedTables: refused }),
+          );
 
-        return Promise.resolve({ status: 'blocked' });
-      });
+          return Promise.resolve({ status: 'blocked' });
+        },
+      );
 
       expect(entries.finished()).toMatchObject([
         { refusedTables: 7, refusedTableIds: ['a', 'b', 'c', 'd', 'e'] },
@@ -118,23 +155,28 @@ describe('PartialOperationLog', () => {
     it('carries the estimate of a plan a limit stopped, with its largest copy of row links', async () => {
       const entries = loggedEntries();
 
-      await new PartialOperationLog().track('preview', BRANCH, (trace) => {
-        trace.planned({
-          ...PLANNED,
-          planned: false,
-          estimate: {
-            changedRows: 9,
-            mergedRows: 2,
-            perRowWorkRows: 1,
-            mixedTables: [
-              { tableId: 'a', linksCopied: 10, linksAdded: 1 },
-              { tableId: 'b', linksCopied: 30, linksAdded: 0 },
-            ],
-          },
-        });
+      await new OperationLog().track(
+        partialOperation('preview', BRANCH),
+        (trace) => {
+          trace.planned(() =>
+            plannedFieldsOf({
+              ...PLANNED,
+              planned: false,
+              estimate: {
+                changedRows: 9,
+                mergedRows: 2,
+                perRowWorkRows: 1,
+                mixedTables: [
+                  { tableId: 'a', linksCopied: 10, linksAdded: 1 },
+                  { tableId: 'b', linksCopied: 30, linksAdded: 0 },
+                ],
+              },
+            }),
+          );
 
-        return Promise.resolve({ status: 'blocked' });
-      });
+          return Promise.resolve({ status: 'blocked' });
+        },
+      );
 
       expect(entries.finished()).toMatchObject([
         {
@@ -150,144 +192,46 @@ describe('PartialOperationLog', () => {
       ]);
     });
 
+    it('names the largest copy of row links among 200,000 mixed tables', () => {
+      const mixedTables = Array.from({ length: 200_000 }, (_, index) => ({
+        tableId: `t${index}`,
+        linksCopied: index,
+        linksAdded: 0,
+      }));
+
+      const fields = plannedFieldsOf({
+        ...PLANNED,
+        planned: false,
+        estimate: {
+          changedRows: 1,
+          mergedRows: 0,
+          perRowWorkRows: 0,
+          mixedTables,
+        },
+      });
+
+      expect(fields).toMatchObject({
+        estimate: { mixedTables: 200_000, maxLinksCopied: 199_999 },
+      });
+    });
+
     it('says `listed` for a result without a status, and nothing of limits a listing does not apply', async () => {
       const entries = loggedEntries();
 
-      await new PartialOperationLog().track('list', BRANCH, (trace) => {
-        trace.attempted(false);
-        trace.planned(PLANNED);
+      await new OperationLog().track(
+        partialOperation('list', BRANCH),
+        (trace) => {
+          trace.attempted(false);
+          trace.planned(() => plannedFieldsOf(PLANNED));
 
-        return Promise.resolve({});
-      });
+          return Promise.resolve({});
+        },
+      );
 
       const [entry] = entries.finished();
       expect(entry).toMatchObject({ outcome: 'listed', attempts: 1 });
       expect(entry).not.toHaveProperty('tooLarge');
       expect(entry).not.toHaveProperty('estimate');
-    });
-  });
-
-  describe('a failure', () => {
-    it('is logged as a warning with its name and code, and rethrown', async () => {
-      const entries = loggedEntries();
-      const timeout = new OperationTimeoutException(5);
-
-      await expect(
-        new PartialOperationLog().track('commit', BRANCH, (trace) => {
-          trace.attempted(false);
-
-          return Promise.reject(timeout);
-        }),
-      ).rejects.toBe(timeout);
-
-      expect(entries.finished()).toEqual([]);
-      expect(entries.failed()).toEqual<OperationLogEntry[]>([
-        {
-          message: OPERATION_FINISHED,
-          operation: 'commit',
-          projectId: BRANCH.projectId,
-          branchName: BRANCH.branchName,
-          durationMs: expect.any(Number) as number,
-          outcome: 'error',
-          attempts: 1,
-          escalations: 0,
-          error: 'OperationTimeoutException',
-          errorCode: 'OPERATION_TIMEOUT',
-        },
-      ]);
-    });
-
-    it('names a database error by its code, never by its message', async () => {
-      const entries = loggedEntries();
-      const conflict = Object.assign(new Error(`row ${SECRET_TITLE}`), {
-        name: 'PrismaClientKnownRequestError',
-        code: 'P2034',
-      });
-
-      await expect(
-        new PartialOperationLog().track('revert', BRANCH, () =>
-          Promise.reject(conflict),
-        ),
-      ).rejects.toBe(conflict);
-
-      const [entry] = entries.failed();
-      expect(entry).toMatchObject({
-        error: 'PrismaClientKnownRequestError',
-        errorCode: 'P2034',
-      });
-      expect(JSON.stringify(entry)).not.toContain(SECRET_TITLE);
-    });
-
-    it('names an error without a code by its name only', async () => {
-      const entries = loggedEntries();
-      const failure = new TypeError(`row ${SECRET_TITLE}`);
-
-      await expect(
-        new PartialOperationLog().track('commit', BRANCH, () =>
-          Promise.reject(failure),
-        ),
-      ).rejects.toBe(failure);
-
-      const [entry] = entries.failed();
-      expect(entry).toMatchObject({ error: 'TypeError' });
-      expect(entry).not.toHaveProperty('errorCode');
-      expect(JSON.stringify(entry)).not.toContain(SECRET_TITLE);
-    });
-
-    it('names a thrown value that is not an Error by its type', async () => {
-      const entries = loggedEntries();
-
-      await expect(
-        new PartialOperationLog().track('list', BRANCH, () =>
-          Promise.reject(SECRET_TITLE),
-        ),
-      ).rejects.toBe(SECRET_TITLE);
-
-      const [entry] = entries.failed();
-      expect(entry).toMatchObject({ error: 'string' });
-      expect(JSON.stringify(entry)).not.toContain(SECRET_TITLE);
-    });
-
-    it('does not reach the caller when the logger throws after the operation returned', async () => {
-      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {
-        throw new Error('logger down');
-      });
-      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-
-      await expect(
-        new PartialOperationLog().track('commit', BRANCH, () =>
-          Promise.resolve({ status: 'applied' }),
-        ),
-      ).resolves.toEqual({ status: 'applied' });
-
-      expect(warn).not.toHaveBeenCalled();
-    });
-
-    it('rethrows the error of the operation when the logger throws', async () => {
-      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
-        throw new Error('logger down');
-      });
-      const timeout = new OperationTimeoutException(5);
-
-      await expect(
-        new PartialOperationLog().track('commit', BRANCH, () =>
-          Promise.reject(timeout),
-        ),
-      ).rejects.toBe(timeout);
-    });
-
-    it('reads no branch from input that is not one', async () => {
-      const entries = loggedEntries();
-
-      await expect(
-        new PartialOperationLog().track('preview', 'main', () =>
-          Promise.reject(new Error('invalid')),
-        ),
-      ).rejects.toThrow('invalid');
-
-      const [entry] = entries.failed();
-      expect(entry).not.toHaveProperty('projectId');
-      expect(entry).not.toHaveProperty('branchName');
     });
   });
 
@@ -512,6 +456,134 @@ describe('PartialOperationLog', () => {
       ]);
     });
 
+    it('log one entry for a page of table changes, with the page size asked and returned and the filters given', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await draft.readDraftTableChanges({
+        first: 10,
+        filters: { changeTypes: [ChangeType.Modified], search: null },
+      });
+
+      expect(entries.finished()).toEqual<OperationLogEntry[]>([
+        {
+          ...(await expectedEntryOf(draft, 'tableChanges')),
+          outcome: 'read',
+          pageSize: 10,
+          returned: 1,
+          filters: ['changeTypes'],
+          refusedTables: 0,
+        },
+      ]);
+    });
+
+    it('log one entry for a page of row changes', async () => {
+      const draft = await givenEditedNotes(['n1', 'n2']);
+      const entries = loggedEntries();
+
+      await draft.readDraftRowChanges({
+        first: 1,
+        filters: { tableId: NOTES, search: 'n' },
+      });
+
+      expect(entries.finished()).toEqual<OperationLogEntry[]>([
+        {
+          ...(await expectedEntryOf(draft, 'rowChanges')),
+          outcome: 'read',
+          pageSize: 1,
+          returned: 1,
+          filters: ['search', 'tableId'],
+          refusedTables: 0,
+        },
+      ]);
+    });
+
+    it('log one entry for a summary', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await draft.readDraftChangesSummary();
+
+      expect(entries.finished()).toEqual<OperationLogEntry[]>([
+        {
+          ...(await expectedEntryOf(draft, 'summary')),
+          outcome: 'read',
+          filters: [],
+          refusedTables: 0,
+        },
+      ]);
+    });
+
+    it('log the refused tables of a read', async () => {
+      const draft = await ChangesScenario.committedWithoutLedger(kit, {
+        [NOTES]: { schema: noteSchema, rows: { n1: { title: 'one' } } },
+      });
+      await draft.updateRow(NOTES, 'n1', { title: 'uno' });
+      const entries = loggedEntries();
+
+      await draft.readDraftTableChanges({ first: 10 });
+
+      expect(entries.finished()).toMatchObject([
+        {
+          operation: 'tableChanges',
+          refusedTables: 1,
+          refusedTableIds: [NOTES],
+        },
+      ]);
+    });
+
+    it('log a read whose input is refused as a failure before any attempt', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await expect(draft.readDraftRowChanges({ first: 0 })).rejects.toThrow();
+
+      expect(entries.failed()).toEqual<OperationLogEntry[]>([
+        {
+          message: OPERATION_FINISHED,
+          operation: 'rowChanges',
+          ...draft.branch,
+          durationMs: expect.any(Number) as number,
+          outcome: 'error',
+          attempts: 0,
+          escalations: 0,
+          error: 'ListingValidationError',
+        },
+      ]);
+    });
+
+    it('return a read when the logger throws', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {
+        throw new Error('logger down');
+      });
+
+      await expect(draft.readDraftChangesSummary()).resolves.toMatchObject({
+        rowsWithUnits: 1,
+      });
+    });
+
+    it('return the result of a preview, a commit and a Draft read when their plan fields cannot be computed', async () => {
+      const draft = await givenEditedNotes(['n1', 'n2']);
+      loggedEntries();
+      jest.mocked(plannedFieldsOf).mockImplementation(() => {
+        throw new RangeError('Maximum call stack size exceeded');
+      });
+
+      await expect(
+        draft.previewChanges({
+          operation: 'commit',
+          selection: { fields: [titleOf('n1')] },
+        }),
+      ).resolves.toMatchObject({ status: 'ready' });
+      await expect(
+        draft.readDraftTableChanges({ first: 10 }),
+      ).resolves.toMatchObject({ totalCount: 1 });
+      await expect(
+        draft.commitChanges({ selection: { fields: [titleOf('n1')] } }),
+      ).resolves.toMatchObject({ status: 'applied' });
+    });
+
     let kit: PartialChangesTestKit;
 
     beforeAll(async () => {
@@ -550,8 +622,17 @@ describe('PartialOperationLog', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    jest
+      .mocked(plannedFieldsOf)
+      .mockImplementation(actualOperationFields().plannedFieldsOf);
   });
 });
+
+function actualOperationFields(): typeof OperationFieldsModule {
+  return jest.requireActual(
+    'src/features/partial-changes/logging/partial-operation-fields',
+  );
+}
 
 const BRANCH = { projectId: 'project', branchName: 'master' };
 

@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { str } from '@revisium/schema-toolkit/mocks';
 import objectHash from 'object-hash';
 import {
@@ -44,6 +45,8 @@ import {
   tagSchema,
   TONE,
 } from './support/ledger-damage';
+import type { RepairSchemaLedgerData } from 'src/features/migration/commands/impl/repair-schema-ledger.command';
+import { transactionsStartedDuring } from './support/ledger-backfill';
 import { planRepair } from './support/ledger-repair-planning';
 import {
   draftReplayFailureOf,
@@ -87,6 +90,11 @@ const MALFORMED_HISTORY_ENTRY = {
 interface MalformedHistoryCase {
   readonly entry: string;
   readonly given: () => Promise<BranchScenario>;
+}
+
+interface InvalidInputCase {
+  readonly input: Partial<Record<keyof RepairSchemaLedgerData, unknown>>;
+  readonly message: string;
 }
 
 interface StaleCase {
@@ -648,6 +656,36 @@ describe('Schema ledger repair', () => {
           requestRepair(kit, { ...draft.branch, [field]: null }),
         ).rejects.toThrow();
         expect(await branchContentsOf(kit, draft)).toEqual(before);
+      },
+    );
+
+    it.each<InvalidInputCase>([
+      { input: { projectId: 5 }, message: 'projectId must be a string' },
+      { input: { branchName: null }, message: 'branchName must be a string' },
+      {
+        input: { tableIds: PRODUCTS },
+        message: 'tableIds must be an array of strings',
+      },
+      {
+        input: { tableIds: [PRODUCTS, 5] },
+        message: 'tableIds must be an array of strings',
+      },
+      { input: { dryRun: 'yes' }, message: 'dryRun must be a boolean' },
+    ])(
+      'rejects $input before any transaction: $message',
+      async ({ input, message }) => {
+        const draft = await givenUnpublishedInPlaceMigration(kit);
+
+        const transactions = await transactionsStartedDuring(kit, () =>
+          expect(
+            requestRepair(kit, {
+              ...draft.branch,
+              ...input,
+            } as RepairSchemaLedgerData),
+          ).rejects.toThrow(new BadRequestException(message)),
+        );
+
+        expect(transactions).toBe(0);
       },
     );
   });

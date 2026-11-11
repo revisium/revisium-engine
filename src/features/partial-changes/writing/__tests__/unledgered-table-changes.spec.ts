@@ -14,13 +14,11 @@ import type { ChangesBlocked } from 'src/features/partial-changes/commands/impl/
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
-import type {
-  FieldRef,
-  Selection,
-} from 'src/features/partial-changes/selection/selection';
+import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
+import { titleOf } from '../../__tests__/support/field-refs';
 
 const CATEGORIES = 'categories';
 const KINDS = 'kinds';
@@ -30,12 +28,6 @@ const categorySchema = obj({ title: str() });
 const productSchema = obj({
   title: str(),
   category: str({ foreignKey: CATEGORIES }),
-});
-
-const titleOf = (tableId: string, rowId: string): FieldRef => ({
-  tableId,
-  rowId,
-  path: '/title',
 });
 
 const titleOfC1: Selection = { fields: [titleOf(CATEGORIES, 'c1')] };

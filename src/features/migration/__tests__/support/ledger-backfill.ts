@@ -13,7 +13,6 @@ import type {
 } from 'src/features/migration/commands/impl/backfill-schema-ledger.command';
 import { LedgerBackfillPlanService } from 'src/features/migration/ledger-backfill/ledger-backfill-plan.service';
 import { MigrationApiService } from 'src/features/migration/migration-api.service';
-import { ShareCommands } from 'src/features/share/share.commands';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { SystemTablesService } from 'src/features/share/system-tables.service';
 
@@ -24,11 +23,6 @@ export type BackfillInput = Partial<
 export interface RetriedBackfill {
   readonly result: SchemaLedgerBackfill;
   readonly attempts: number;
-}
-
-export interface EndpointNotification<T> {
-  readonly revisionId: string;
-  readonly seenOutsideTheTransaction: T;
 }
 
 export interface StoredTableVersion {
@@ -225,24 +219,6 @@ export async function backfillWhileNativeWriteLands(
   }
 
   return { result: await backfilling, attempts: plans.mock.calls.length };
-}
-
-export function observeEndpointNotifications<T>(
-  kit: BranchScenarioTestKit,
-  readOutsideTheTransaction: () => Promise<T>,
-): EndpointNotification<T>[] {
-  const notifications: EndpointNotification<T>[] = [];
-
-  jest
-    .spyOn(kit.module.get(ShareCommands), 'notifyEndpoints')
-    .mockImplementation(async ({ revisionId }) => {
-      notifications.push({
-        revisionId,
-        seenOutsideTheTransaction: await readOutsideTheTransaction(),
-      });
-    });
-
-  return notifications;
 }
 
 export async function migrationTableOf(

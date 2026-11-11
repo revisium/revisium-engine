@@ -10,11 +10,8 @@ import {
   readBranchFenceLocks,
 } from 'src/features/draft/commands/handlers/__tests__/support/branch-write-fence';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
-import type {
-  FieldRef,
-  Selection,
-} from 'src/features/partial-changes/selection/selection';
-import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
+import type { Selection } from 'src/features/partial-changes/selection/selection';
+import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   HeldPartialRevert,
@@ -23,6 +20,7 @@ import {
 } from '../../__tests__/support/revert-races';
 import { expectConsistentRevisions } from '../../__tests__/support/revision-consistency';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
+import { titleOf } from '../../__tests__/support/field-refs';
 
 const PRODUCTS = 'products';
 const TAGS = 'tags';
@@ -31,15 +29,11 @@ const ITEMS = 'items';
 const pricedSchema = obj({ title: str(), price: num() });
 const tagSchema = obj({ title: str() });
 
-const titleOf = (rowId: string): FieldRef => ({
-  tableId: PRODUCTS,
-  rowId,
-  path: '/title',
-});
-
-const titleOfP1: Selection = { fields: [titleOf('p1')] };
-const titleOfP2: Selection = { fields: [titleOf('p2')] };
-const titlesOfP1AndP2: Selection = { fields: [titleOf('p1'), titleOf('p2')] };
+const titleOfP1: Selection = { fields: [titleOf(PRODUCTS, 'p1')] };
+const titleOfP2: Selection = { fields: [titleOf(PRODUCTS, 'p2')] };
+const titlesOfP1AndP2: Selection = {
+  fields: [titleOf(PRODUCTS, 'p1'), titleOf(PRODUCTS, 'p2')],
+};
 const rowP1: Selection = { rows: [{ tableId: PRODUCTS, rowId: 'p1' }] };
 
 describe('revertChanges racing other writers', () => {

@@ -5,8 +5,6 @@ import { FileUsageApiService } from 'src/features/file-usage/file-usage-api.serv
 import { FileStatus, ID_LENGTH } from 'src/features/plugin/file/consts';
 import { readRows } from './revision-records';
 
-type FileState = 'active' | 'tombstoned';
-
 interface TableInRevision {
   revisionId: string;
   tableId: string;
@@ -89,23 +87,6 @@ export function readProjectFileBytes(
   return kit.module
     .get(FileUsageApiService)
     .getProjectStorageBytes({ projectId });
-}
-
-export async function readFileStates(
-  kit: MigrationTestKit,
-  projectId: string,
-): Promise<Record<string, FileState>> {
-  const blobs = await kit.prisma.fileBlob.findMany({
-    where: { projectId },
-    select: { hash: true, deletedAt: true },
-  });
-
-  return Object.fromEntries(
-    blobs.map(({ hash, deletedAt }) => [
-      hash,
-      deletedAt ? 'tombstoned' : 'active',
-    ]),
-  );
 }
 
 function fileHashOf(data: unknown, field: string): string {

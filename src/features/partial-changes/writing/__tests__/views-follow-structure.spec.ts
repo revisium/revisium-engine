@@ -12,6 +12,8 @@ import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { TableViewsData } from 'src/features/views/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
+import { tableViews } from '../../__tests__/support/views-documents';
+import { structureRef } from '../../__tests__/support/expected-unit-refs';
 
 const PRODUCTS = 'products';
 const GOODS = 'goods';
@@ -21,12 +23,6 @@ const productSchema = obj({ title: str(), price: num() });
 const offerSchema = obj({ title: str() });
 
 const titleOfP1: FieldRef = { tableId: PRODUCTS, rowId: 'p1', path: '/title' };
-
-const structureOf = (tableId: string) => ({
-  kind: 'structure',
-  tableId,
-  selector: { structures: [{ tableId }] },
-});
 
 describe('views that follow the structure (AS-82)', () => {
   let kit: PartialChangesTestKit;
@@ -100,7 +96,7 @@ describe('views that follow the structure (AS-82)', () => {
           unmatched: {},
           required: [
             {
-              unit: structureOf(PRODUCTS),
+              unit: structureRef(PRODUCTS),
               reason: {
                 code: 'structureBoundData',
                 because: 'the views of products change with its structure',
@@ -291,7 +287,7 @@ describe('views that follow the structure (AS-82)', () => {
         status: 'required',
         required: [
           {
-            unit: structureOf(OFFERS),
+            unit: structureRef(OFFERS),
             reason: {
               code: 'structureBoundData',
               site: { kind: 'selector', tableId: OFFERS },
@@ -392,7 +388,7 @@ describe('views that follow the structure (AS-82)', () => {
           {
             code: 'invalidViews',
             tableId: PRODUCTS,
-            unit: structureOf(PRODUCTS),
+            unit: structureRef(PRODUCTS),
           },
         ],
       });
@@ -524,18 +520,4 @@ function editedViews(): TableViewsData {
 
 function offerViews(): TableViewsData {
   return tableViews('Offers', ['title']);
-}
-
-function tableViews(name: string, fields: readonly string[]): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name,
-        columns: fields.map((field) => ({ field: `data.${field}` })),
-      },
-    ],
-  };
 }

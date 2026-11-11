@@ -10,7 +10,6 @@ import {
   plannedFieldsOf,
 } from 'src/features/partial-changes/logging/partial-operation-fields';
 import type * as OperationFieldsModule from 'src/features/partial-changes/logging/partial-operation-fields';
-import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import { ChangeType } from 'src/features/revision-changes/types';
 import {
   OperationLog,
@@ -20,6 +19,7 @@ import { OperationTimeoutException } from 'src/infrastructure/database/operation
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { commitWhileNativeWriteLands } from '../../__tests__/support/commit-races';
 import { HeldPartialRevert } from '../../__tests__/support/revert-races';
+import { titleOf } from '../../__tests__/support/field-refs';
 
 jest.mock(
   'src/features/partial-changes/logging/partial-operation-fields',
@@ -37,12 +37,6 @@ const MAX_CHANGED_ROWS = 3;
 const SECRET_TITLE = 'a secret title';
 
 const noteSchema = obj({ title: str() });
-
-const titleOf = (rowId: string): FieldRef => ({
-  tableId: NOTES,
-  rowId,
-  path: '/title',
-});
 
 const PLANNED = {
   headRevisionId: 'head',
@@ -257,7 +251,7 @@ describe('Partial operation log', () => {
 
       await draft.previewChanges({
         operation: 'commit',
-        selection: { fields: [titleOf('n1')] },
+        selection: { fields: [titleOf(NOTES, 'n1')] },
       });
 
       expect(entries.finished()).toEqual<OperationLogEntry[]>([
@@ -275,7 +269,9 @@ describe('Partial operation log', () => {
       const planned = await expectedEntryOf(draft, 'commit');
       const entries = loggedEntries();
 
-      await draft.commitChanges({ selection: { fields: [titleOf('n1')] } });
+      await draft.commitChanges({
+        selection: { fields: [titleOf(NOTES, 'n1')] },
+      });
 
       const finished = entries.finished();
       expect(finished).toEqual<OperationLogEntry[]>([
@@ -289,7 +285,9 @@ describe('Partial operation log', () => {
       const planned = await expectedEntryOf(draft, 'revert');
       const entries = loggedEntries();
 
-      await draft.revertChanges({ selection: { fields: [titleOf('n1')] } });
+      await draft.revertChanges({
+        selection: { fields: [titleOf(NOTES, 'n1')] },
+      });
 
       expect(entries.finished()).toEqual<OperationLogEntry[]>([
         { ...planned, outcome: 'applied', tooLarge: false, refusedTables: 0 },
@@ -303,7 +301,7 @@ describe('Partial operation log', () => {
       const { attempts } = await commitWhileNativeWriteLands(
         kit,
         draft,
-        { selection: { fields: [titleOf('n1')] } },
+        { selection: { fields: [titleOf(NOTES, 'n1')] } },
         () => draft.updateRow(NOTES, 'n1', { title: 'newer' }),
       );
 
@@ -317,7 +315,7 @@ describe('Partial operation log', () => {
       const draft = await givenEditedNotes(['n1', 'n2']);
       const entries = loggedEntries();
       const revert = new HeldPartialRevert(kit, draft, {
-        selection: { fields: [titleOf('n1')] },
+        selection: { fields: [titleOf(NOTES, 'n1')] },
       });
 
       await revert.losesAttemptTo(() =>
@@ -346,7 +344,7 @@ describe('Partial operation log', () => {
 
       await draft.previewChanges({
         operation: 'commit',
-        selection: { fields: [titleOf('n1')] },
+        selection: { fields: [titleOf(NOTES, 'n1')] },
       });
 
       expect(entries.finished()).toEqual<OperationLogEntry[]>([
@@ -373,7 +371,9 @@ describe('Partial operation log', () => {
       await draft.updateRow(NOTES, 'n1', { title: 'uno' });
       const entries = loggedEntries();
 
-      await draft.commitChanges({ selection: { fields: [titleOf('n1')] } });
+      await draft.commitChanges({
+        selection: { fields: [titleOf(NOTES, 'n1')] },
+      });
 
       expect(entries.finished()).toMatchObject([
         {
@@ -413,7 +413,7 @@ describe('Partial operation log', () => {
 
       await expect(
         draft.commitChanges({
-          selection: { fields: [titleOf('n1')] },
+          selection: { fields: [titleOf(NOTES, 'n1')] },
           comment: 42 as never,
         }),
       ).rejects.toThrow();
@@ -573,14 +573,14 @@ describe('Partial operation log', () => {
       await expect(
         draft.previewChanges({
           operation: 'commit',
-          selection: { fields: [titleOf('n1')] },
+          selection: { fields: [titleOf(NOTES, 'n1')] },
         }),
       ).resolves.toMatchObject({ status: 'ready' });
       await expect(
         draft.readDraftTableChanges({ first: 10 }),
       ).resolves.toMatchObject({ totalCount: 1 });
       await expect(
-        draft.commitChanges({ selection: { fields: [titleOf('n1')] } }),
+        draft.commitChanges({ selection: { fields: [titleOf(NOTES, 'n1')] } }),
       ).resolves.toMatchObject({ status: 'applied' });
     });
 

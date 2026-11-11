@@ -8,7 +8,7 @@ import { ChangePlanner } from 'src/features/partial-changes/planning/change-plan
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';
 import { passingTheDeadlineAfterValidation } from '../../__tests__/support/change-preview';
-import { recordEndpointNotifications } from '../../__tests__/support/change-reverting';
+import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const OPERATION_TIMEOUT_MS = 1_000;

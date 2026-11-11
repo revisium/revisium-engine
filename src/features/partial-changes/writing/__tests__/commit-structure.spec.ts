@@ -33,7 +33,6 @@ import {
   replaceField,
 } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
-import type { TableViewsData } from 'src/features/views/types';
 import {
   DraftSyncedReplica,
   expectPendingMigrationsAfterPublished,
@@ -42,6 +41,8 @@ import {
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { replayedSchemasOf } from '../../__tests__/support/ledger-replaying';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
+import { tableViews } from '../../__tests__/support/views-documents';
+import { structureRef } from '../../__tests__/support/expected-unit-refs';
 
 const PRODUCTS = 'products';
 const ORDERS = 'orders';
@@ -89,11 +90,6 @@ const priceOf = (rowId: string): FieldRef => ({
   path: '/price',
 });
 const rowOf = (tableId: string, rowId: string): RowRef => ({ tableId, rowId });
-const structureOf = (tableId: string) => ({
-  kind: 'structure',
-  tableId,
-  selector: { structures: [{ tableId }] },
-});
 
 describe('commitChanges of structure units', () => {
   let kit: PartialChangesTestKit;
@@ -198,7 +194,7 @@ describe('commitChanges of structure units', () => {
         status: 'required',
         required: [
           {
-            unit: structureOf(PRODUCTS),
+            unit: structureRef(PRODUCTS),
             reason: { code: 'structureBoundData', site: { path: '/color' } },
           },
         ],
@@ -282,7 +278,7 @@ describe('commitChanges of structure units', () => {
               },
             ],
             omitted: [],
-            structure: structureOf(MEDIA),
+            structure: structureRef(MEDIA),
           },
         ],
       });
@@ -409,7 +405,7 @@ describe('commitChanges of structure units', () => {
         status: 'required',
         required: [
           {
-            unit: structureOf(PRODUCTS),
+            unit: structureRef(PRODUCTS),
             reason: { code: 'structureBoundData', site: { path: '/category' } },
           },
         ],
@@ -462,7 +458,7 @@ describe('commitChanges of structure units', () => {
         status: 'required',
         required: [
           {
-            unit: structureOf(TAGS),
+            unit: structureRef(TAGS),
             reason: { code: 'structureBoundData', site: { tableId: TAGS } },
           },
         ],
@@ -538,7 +534,7 @@ describe('commitChanges of structure units', () => {
 
         expect(preview).toMatchObject({
           status: 'required',
-          required: [{ unit: structureOf(required) }],
+          required: [{ unit: structureRef(required) }],
         });
         expect(result).toMatchObject({ status: 'applied' });
         expect(await draft.hasTable('head', GROUPS)).toBe(true);
@@ -565,7 +561,7 @@ describe('commitChanges of structure units', () => {
         status: 'required',
         required: [
           {
-            unit: structureOf(BRANDS),
+            unit: structureRef(BRANDS),
             reason: { code: 'referencedTableMissing' },
           },
         ],
@@ -588,7 +584,7 @@ describe('commitChanges of structure units', () => {
         }),
       );
 
-      expect(migratedViews).toEqual(productViews('All', ['title', 'cost']));
+      expect(migratedViews).toEqual(tableViews('All', ['title', 'cost']));
       expect(await viewsOf(draft, 'head')).toEqual(migratedViews);
     });
 
@@ -597,7 +593,7 @@ describe('commitChanges of structure units', () => {
       await draft.updateTable(PRODUCTS, [addField('color', str())]);
       await draft.updateViews(
         PRODUCTS,
-        productViews('All', ['title', 'price', 'color']),
+        tableViews('All', ['title', 'price', 'color']),
       );
       const selection: Selection = { views: [PRODUCTS] };
 
@@ -615,21 +611,21 @@ describe('commitChanges of structure units', () => {
         status: 'required',
         required: [
           {
-            unit: structureOf(PRODUCTS),
+            unit: structureRef(PRODUCTS),
             reason: { code: 'structureBoundData' },
           },
         ],
       });
       expect(result).toMatchObject({ status: 'applied' });
       expect(await viewsOf(draft, 'head')).toEqual(
-        productViews('All', ['title', 'price', 'color']),
+        tableViews('All', ['title', 'price', 'color']),
       );
     });
 
     it('commits a views edit made after the migration with the structure, leaving no views unit (AS-82)', async () => {
       const draft = await givenCommittedProductsWithViews();
       await draft.updateTable(PRODUCTS, [moveField('price', 'cost')]);
-      await draft.updateViews(PRODUCTS, productViews('Renamed', ['cost']));
+      await draft.updateViews(PRODUCTS, tableViews('Renamed', ['cost']));
 
       await expectApplied(
         draft.commitChanges({
@@ -638,7 +634,7 @@ describe('commitChanges of structure units', () => {
       );
 
       expect(await viewsOf(draft, 'head')).toEqual(
-        productViews('Renamed', ['cost']),
+        tableViews('Renamed', ['cost']),
       );
       expect(await draft.listEveryUnit()).toEqual([]);
     });
@@ -929,7 +925,7 @@ describe('commitChanges of structure units', () => {
 
   async function givenCommittedProductsWithViews(): Promise<ChangesScenario> {
     const draft = await givenCommittedProducts();
-    await draft.updateViews(PRODUCTS, productViews('All', ['title', 'price']));
+    await draft.updateViews(PRODUCTS, tableViews('All', ['title', 'price']));
     await draft.commit();
 
     return draft;
@@ -982,18 +978,4 @@ function renumberedOf(
 
 function statusesOf(results: readonly { status: string }[]): string[] {
   return results.map(({ status }) => status);
-}
-
-function productViews(name: string, fields: readonly string[]): TableViewsData {
-  return {
-    version: 1,
-    defaultViewId: 'default',
-    views: [
-      {
-        id: 'default',
-        name,
-        columns: fields.map((field) => ({ field: `data.${field}` })),
-      },
-    ],
-  };
 }

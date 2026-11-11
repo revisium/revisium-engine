@@ -22,15 +22,16 @@ import {
   LedgerBackfillPlanService,
 } from 'src/features/migration/ledger-backfill/ledger-backfill-plan.service';
 import { StoredBackfillVerification } from 'src/features/migration/ledger-backfill/stored-backfill-verification';
-import {
-  type OperationDetails,
-  type OperationTrace,
-  PartialOperationLog,
-} from 'src/infrastructure/database/operation-log';
+import { ledgerOperation } from 'src/features/migration/ledger-operation-log';
 import type { HeadAndDraft } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { ShareCommands } from 'src/features/share/share.commands';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
+import {
+  type LogFields,
+  OperationLog,
+  type OperationTrace,
+} from 'src/infrastructure/database/operation-log';
 
 @CommandHandler(BackfillSchemaLedgerCommand)
 export class BackfillSchemaLedgerHandler implements ICommandHandler<
@@ -45,15 +46,14 @@ export class BackfillSchemaLedgerHandler implements ICommandHandler<
     private readonly writer: BackfillWriter,
     private readonly verification: StoredBackfillVerification,
     private readonly shareCommands: ShareCommands,
-    private readonly operationLog: PartialOperationLog,
+    private readonly operationLog: OperationLog,
   ) {}
 
   public async execute({
     data,
   }: BackfillSchemaLedgerCommand): Promise<SchemaLedgerBackfill> {
     const backfill = await this.operationLog.track(
-      'backfill',
-      data,
+      ledgerOperation('backfill', data),
       async (trace) => {
         const result = await this.backfill(data, trace);
         trace.described(backfillDetailsOf(result));
@@ -172,7 +172,7 @@ function backfillResultOf(
   return { status: 'notNeeded', ...branch };
 }
 
-function backfillDetailsOf(backfill: SchemaLedgerBackfill): OperationDetails {
+function backfillDetailsOf(backfill: SchemaLedgerBackfill): LogFields {
   const { headRevisionId, draftRevisionId } = backfill;
 
   if (backfill.status === 'backfilled') {

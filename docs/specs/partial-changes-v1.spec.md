@@ -1788,8 +1788,8 @@ variable it came from.
 ### 11.1 Operation logs
 
 Each listing page, Draft read ([draft-reads-v1]), preview, commit and revert logs one structured entry when it ends
-(`PartialOperationLog`, through the engine's NestJS logger): `log` when it returns, `warn` when it throws. The entry has
-`message` `Partial changes operation finished` and these fields:
+(`OperationLog` in `src/infrastructure/database/operation-log.ts`, through the engine's NestJS logger): `log` when it
+returns, `warn` when it throws. The entry has `message` `Partial changes operation finished` and these fields:
 
 | Field | Value |
 | --- | --- |
@@ -2385,7 +2385,8 @@ Additive operation logs; no behaviour or shape changes.
 
 - §11.1: the Draft reads `changes.tableChanges`, `changes.rowChanges` and `changes.summary` log one entry each, with
   outcome `read`, the page size asked and returned and the names of the filters given. The schema ledger backfill and
-  repair log through the same facility as `Schema ledger operation finished`.
+  repair log through the same facility as `Schema ledger operation finished`; the facility moves from `partial-changes`
+  to `src/infrastructure/database` as `OperationLog`, so `migration` does not import `partial-changes`.
 
 ### Version 2.1 (2026-11-11)
 

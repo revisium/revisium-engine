@@ -5,11 +5,12 @@ import {
   RevertDraftChangesCommand,
   type RevertedDraft,
 } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
-import { PartialOperationLog } from 'src/infrastructure/database/operation-log';
+import { partialOperation } from 'src/features/partial-changes/logging/partial-operation-fields';
 import type { CompletePlan } from 'src/features/partial-changes/planning/change-planner';
 import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';
 import { targetWritePlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';
 import { ShareCommands } from 'src/features/share/share.commands';
+import { OperationLog } from 'src/infrastructure/database/operation-log';
 
 @CommandHandler(RevertDraftChangesCommand)
 export class RevertDraftChangesHandler implements ICommandHandler<
@@ -20,15 +21,14 @@ export class RevertDraftChangesHandler implements ICommandHandler<
     private readonly changeApplier: ChangeApplier,
     private readonly draftRevisionTargetApi: DraftRevisionTargetApiService,
     private readonly shareCommands: ShareCommands,
-    private readonly operationLog: PartialOperationLog,
+    private readonly operationLog: OperationLog,
   ) {}
 
   public async execute({
     data,
   }: RevertDraftChangesCommand): Promise<RevertChangesResult> {
     const result = await this.operationLog.track(
-      'revert',
-      data.branch,
+      partialOperation('revert', data.branch),
       (trace) =>
         this.changeApplier.apply(
           'revert',

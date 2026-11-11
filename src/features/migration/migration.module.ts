@@ -32,7 +32,6 @@ import { LedgerBackfillPlanService } from 'src/features/migration/ledger-backfil
 import { StoredBackfillVerification } from 'src/features/migration/ledger-backfill/stored-backfill-verification';
 import { BranchPageReader } from 'src/features/migration/ledger-scan/branch-page-reader';
 import { ScanRevisionReader } from 'src/features/migration/ledger-scan/scan-revision-reader';
-import { PartialOperationLog } from 'src/infrastructure/database/operation-log';
 import { MIGRATION_OPTIONS } from 'src/features/migration/migration.consts';
 import { MIGRATION_QUERY_HANDLERS } from 'src/features/migration/queries/handlers';
 import { MIGRATION_COMMAND_HANDLERS } from 'src/features/migration/commands/handlers';
@@ -65,7 +64,6 @@ const SERVICES = [
   StoredBackfillVerification,
   BranchPageReader,
   ScanRevisionReader,
-  PartialOperationLog,
   ...MIGRATION_QUERY_HANDLERS,
   ...MIGRATION_COMMAND_HANDLERS,
 ];

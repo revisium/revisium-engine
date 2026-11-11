@@ -19,13 +19,14 @@ import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-s
 import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
 import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
 import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
-import {
-  type OperationDetails,
-  type OperationTrace,
-  PartialOperationLog,
-} from 'src/infrastructure/database/operation-log';
+import { ledgerOperation } from 'src/features/migration/ledger-operation-log';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
+import {
+  type LogFields,
+  OperationLog,
+  type OperationTrace,
+} from 'src/infrastructure/database/operation-log';
 
 // Whether the repair wrote, so that the Draft endpoints are notified after its log entry, as after a commit.
 interface FinishedRepair {
@@ -47,15 +48,14 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
     private readonly writer: RepairWriter,
     private readonly verification: StoredLedgerVerification,
     private readonly shareCommands: ShareCommands,
-    private readonly operationLog: PartialOperationLog,
+    private readonly operationLog: OperationLog,
   ) {}
 
   public async execute({
     data,
   }: RepairSchemaLedgerCommand): Promise<SchemaLedgerRepair> {
     const { repair, written } = await this.operationLog.track(
-      'repair',
-      data,
+      ledgerOperation('repair', data),
       async (trace) => {
         const result = await this.repair(data, trace);
         trace.described(repairDetailsOf(result.repair));
@@ -163,7 +163,7 @@ function repairDetailsOf({
   draftRevisionId,
   tables,
   renumbered,
-}: SchemaLedgerRepair): OperationDetails {
+}: SchemaLedgerRepair): LogFields {
   return {
     headRevisionId,
     draftRevisionId,

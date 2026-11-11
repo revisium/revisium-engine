@@ -7,12 +7,13 @@ import {
   type CommittedDraft,
   type MigrationRenumbering,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
-import { PartialOperationLog } from 'src/infrastructure/database/operation-log';
+import { partialOperation } from 'src/features/partial-changes/logging/partial-operation-fields';
 import type { CompletePlan } from 'src/features/partial-changes/planning/change-planner';
 import { validateComment } from 'src/features/partial-changes/selection/selection-validator';
 import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';
 import { commitTargetWritePlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';
 import { ShareCommands } from 'src/features/share/share.commands';
+import { OperationLog } from 'src/infrastructure/database/operation-log';
 
 @CommandHandler(CommitDraftChangesCommand)
 export class CommitDraftChangesHandler implements ICommandHandler<
@@ -23,15 +24,14 @@ export class CommitDraftChangesHandler implements ICommandHandler<
     private readonly changeApplier: ChangeApplier,
     private readonly draftRevisionTargetApi: DraftRevisionTargetApiService,
     private readonly shareCommands: ShareCommands,
-    private readonly operationLog: PartialOperationLog,
+    private readonly operationLog: OperationLog,
   ) {}
 
   public async execute({
     data,
   }: CommitDraftChangesCommand): Promise<CommitChangesResult> {
     const result = await this.operationLog.track(
-      'commit',
-      data.branch,
+      partialOperation('commit', data.branch),
       (trace) => {
         const comment = validateComment(data.comment);
 

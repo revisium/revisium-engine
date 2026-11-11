@@ -4,10 +4,8 @@ import {
   type BranchScenarioTestKit,
   createBranchScenarioTestKit,
 } from 'src/__tests__/kit/create-branch-scenario-test-kit';
-import {
-  LEDGER_OPERATION_FINISHED,
-  type OperationLogEntry,
-} from 'src/infrastructure/database/operation-log';
+import { LEDGER_OPERATION_FINISHED } from 'src/features/migration/ledger-operation-log';
+import type { OperationLogEntry } from 'src/infrastructure/database/operation-log';
 import {
   backfillLedger,
   backfillWhileNativeWriteLands,

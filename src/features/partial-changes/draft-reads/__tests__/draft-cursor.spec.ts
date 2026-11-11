@@ -9,6 +9,9 @@ import {
 import { encodeCursor } from 'src/features/partial-changes/input/cursor-codec';
 import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
+import { deeplyNestedCursor } from '../../__tests__/support/hostile-cursors';
+
+const LONGEST_ID = 'i'.repeat(64);
 
 const MALFORMED_AFTER = new ListingValidationError(
   'after is malformed: pass the endCursor of the previous page',
@@ -36,10 +39,18 @@ describe('Draft table cursor', () => {
     ]);
   });
 
-  it('decodes the position it encodes', () => {
-    const position = { tableId: 'notes', headOnly: true };
-
+  it.each([
+    { tableId: 'notes', headOnly: true },
+    { tableId: 'say "hi" C:\\notes\\', headOnly: false },
+    { tableId: LONGEST_ID, headOnly: false },
+  ])('decodes the position it encodes for $tableId', (position) => {
     expect(decodeTableCursor(encodeTableCursor(position))).toEqual(position);
+  });
+
+  it('refuses a deeply nested cursor without exhausting the stack', () => {
+    expect(() => decodeTableCursor(deeplyNestedCursor('tables'))).toThrow(
+      MALFORMED_AFTER,
+    );
   });
 
   it.each(['', 'not a cursor', 'eyJ2Ijo', '10'])(
@@ -83,13 +94,21 @@ describe('Draft table cursor', () => {
 });
 
 describe('Draft row cursor', () => {
-  it('decodes the position it encodes', () => {
-    const position = {
-      table: { tableId: 'notes', headOnly: true },
-      rowId: 'n/1',
-    };
-
+  it.each([
+    { table: { tableId: 'notes', headOnly: true }, rowId: 'n/1' },
+    {
+      table: { tableId: 'say "hi"', headOnly: false },
+      rowId: 'C:\\n"1\\',
+    },
+    { table: { tableId: LONGEST_ID, headOnly: false }, rowId: LONGEST_ID },
+  ])('decodes the position it encodes for $rowId', (position) => {
     expect(decodeRowCursor(encodeRowCursor(position))).toEqual(position);
+  });
+
+  it('refuses a deeply nested cursor without exhausting the stack', () => {
+    expect(() => decodeRowCursor(deeplyNestedCursor('rows'))).toThrow(
+      MALFORMED_AFTER,
+    );
   });
 
   it.each(['', 'not a cursor', 'eyJ2Ijo', '10'])(

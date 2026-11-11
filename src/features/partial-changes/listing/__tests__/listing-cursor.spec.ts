@@ -2,13 +2,19 @@ import {
   encodeRowCursor,
   encodeTableCursor,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
-import { encodeCursor } from 'src/features/partial-changes/input/cursor-codec';
+import {
+  encodeCursor,
+  MAX_CURSOR_LENGTH,
+} from 'src/features/partial-changes/input/cursor-codec';
 import {
   decodeListingCursor,
   encodeListingCursor,
   type ListingCursor,
 } from 'src/features/partial-changes/listing/listing-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
+import { deeplyNestedCursor } from '../../__tests__/support/hostile-cursors';
+
+const MAX_ID_LENGTH = 64;
 
 const cursorInsideRow: ListingCursor = {
   tableId: 'products',
@@ -65,8 +71,40 @@ describe('ListingCursor', () => {
       cursor: cursorAfterRowsWithoutUnits,
     },
     { position: 'after a renamed row', cursor: cursorAfterRowRename },
+    { position: 'at the start of a table', cursor: { tableId: 'goods' } },
+    {
+      position: 'with ids holding quotes and backslashes',
+      cursor: cursorWithIds('say "hi"\\', 'C:\\goods"'),
+    },
+    {
+      position: 'with ids and a field path of the longest a cursor allows',
+      cursor: longestCursor(),
+    },
   ])('decodes the cursor it encoded $position', ({ cursor }) => {
     expect(decodeListingCursor(encodeListingCursor(cursor))).toEqual(cursor);
+  });
+
+  it('encodes the longest position within the cursor length limit', () => {
+    expect(encodeListingCursor(longestCursor()).length).toBeLessThanOrEqual(
+      MAX_CURSOR_LENGTH,
+    );
+  });
+
+  it('refuses a cursor nested deeper than any position without exhausting the stack', () => {
+    expect(() => decodeListingCursor(deeplyNestedCursor('units'))).toThrow(
+      new ListingValidationError('cursor is malformed'),
+    );
+  });
+
+  it('refuses a cursor longer than the limit', () => {
+    const cursor = encodeListingCursor({
+      tableId: 'goods',
+      rows: { rowId: 'g'.repeat(MAX_CURSOR_LENGTH), inclusive: false },
+    });
+
+    expect(() => decodeListingCursor(cursor)).toThrow(
+      new ListingValidationError('cursor is malformed'),
+    );
   });
 
   it('encodes an opaque URL-safe text', () => {
@@ -180,6 +218,39 @@ describe('ListingCursor', () => {
     );
   });
 });
+
+function cursorWithIds(tableId: string, rowId: string): ListingCursor {
+  return {
+    tableId,
+    rows: { rowId, inclusive: true },
+    last: {
+      key: JSON.stringify(['field', tableId, rowId, '/a']),
+      unit: { kind: 'field', tableId, rowId, path: '/a' },
+    },
+  };
+}
+
+// Ids of at most 64 characters, a field path of 64 names of 63 characters.
+function longestCursor(): ListingCursor {
+  const id = 'i'.repeat(MAX_ID_LENGTH);
+  const path = `/${'f'.repeat(MAX_ID_LENGTH - 1)}`.repeat(MAX_ID_LENGTH);
+
+  return {
+    tableId: id,
+    rows: { rowId: id, inclusive: false },
+    last: {
+      key: JSON.stringify(['field', id, id, path]),
+      unit: {
+        kind: 'field',
+        tableId: id,
+        rowId: id,
+        path,
+        previousTableId: id,
+        previousRowId: id,
+      },
+    },
+  };
+}
 
 function withLast(
   cursor: ListingCursor,

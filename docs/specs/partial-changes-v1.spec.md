@@ -421,7 +421,7 @@ Input:
 | --- | --- | --- | --- |
 | `branch` | ChangesBranch | yes | |
 | `tableId` | string | no | Only units of this table (Draft id, else Head id); an id of neither side is a validation error. |
-| `cursor` | string | no | Opaque cursor from the previous page of `listChanges`; a malformed cursor, or a cursor that another operation issued (the `endCursor` of a Draft read), is a validation error. |
+| `cursor` | string | no | Opaque cursor from the previous page of `listChanges`; a malformed cursor, or a cursor that another operation issued (the `endCursor` of a Draft read), is a validation error. A cursor of any operation holds at most 16,384 characters and nests at most three levels; a longer or deeper text is malformed. The longest legitimate cursor, a position after a field, holds ids of at most 64 characters and the field path twice, which leaves room for a path of over 5,000 characters. |
 | `pageSize` | integer 1–5,000 | no | Units per page; default 500. |
 
 Output:

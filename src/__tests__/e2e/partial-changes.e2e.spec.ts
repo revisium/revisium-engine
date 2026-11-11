@@ -2,6 +2,7 @@ import { join } from 'path';
 import { BadRequestException } from '@nestjs/common';
 import { num, obj, str } from '@revisium/schema-toolkit/mocks';
 import { namesExportedFrom } from 'src/__tests__/utils/package-exports';
+import { deeplyNestedCursor } from 'src/features/partial-changes/__tests__/support/hostile-cursors';
 import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import * as engine from 'src/index';
@@ -932,6 +933,32 @@ describe('EngineApiService.changes (AS-92)', () => {
         }),
       }),
       'cursor is malformed',
+    );
+  });
+
+  it('refuses a deeply nested cursor in every paged operation as a bad request', async () => {
+    await givenCommittedProducts({ lamp: { title: 'Lamp', price: 10 } });
+    await updateDraftProduct('lamp', { title: 'Desk lamp', price: 10 });
+
+    await expectBadRequest(
+      changes.list({ branch, cursor: deeplyNestedCursor('units') }),
+      'cursor is malformed',
+    );
+    await expectBadRequest(
+      changes.tableChanges({
+        branch,
+        first: 1,
+        after: deeplyNestedCursor('tables'),
+      }),
+      'after is malformed',
+    );
+    await expectBadRequest(
+      changes.rowChanges({
+        branch,
+        first: 1,
+        after: deeplyNestedCursor('rows'),
+      }),
+      'after is malformed',
     );
   });
 

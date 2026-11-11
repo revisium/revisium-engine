@@ -7,6 +7,13 @@ import {
 // One kind per operation that issues cursors: an operation accepts only its own.
 export type CursorKind = 'units' | 'tables' | 'rows';
 
+// The longest legitimate cursor is a listing position after a field: ids of at most 64 characters (native id rules)
+// and a field path that the position holds twice. 16,384 characters leave room for a path of over 5,000 characters
+// (64 levels of 64-character field names take 4,160), and bound the work spent on any cursor text.
+export const MAX_CURSOR_LENGTH = 16_384;
+
+// The payload, a listing position in it, and the unit address of that position.
+const MAX_NESTING = 3;
 const CURSOR_VERSION = 2;
 const BASE64URL = /^[\w-]+$/;
 const ENVELOPE_FIELDS = ['v', 'kind'] as const;
@@ -30,7 +37,7 @@ export function cursorPartsOf(
     payload.v !== CURSOR_VERSION ||
     payload.kind !== kind ||
     !hasOnlyFields(payload, new Set([...ENVELOPE_FIELDS, ...partNames])) ||
-    holdsNul(payload)
+    !isShallowWithoutNul(payload)
   ) {
     return undefined;
   }
@@ -39,7 +46,7 @@ export function cursorPartsOf(
 }
 
 function payloadOf(text: string): unknown {
-  if (!BASE64URL.test(text)) {
+  if (text.length > MAX_CURSOR_LENGTH || !BASE64URL.test(text)) {
     return undefined;
   }
 
@@ -50,15 +57,28 @@ function payloadOf(text: string): unknown {
   }
 }
 
-// No id holds the NUL character, and a database text parameter cannot.
-function holdsNul(value: unknown): boolean {
-  if (typeof value === 'string') {
-    return value.includes('\u0000');
+// Level by level, so no payload can exhaust the stack. No id holds the NUL character, and a database text parameter
+// cannot.
+function isShallowWithoutNul(payload: Fields): boolean {
+  let level: readonly object[] = [payload];
+
+  for (let depth = 1; depth <= MAX_NESTING; depth += 1) {
+    const parts = level.flatMap((value) => Object.values(value));
+
+    if (parts.some(isTextWithNul)) {
+      return false;
+    }
+
+    level = parts.filter(isObject);
   }
 
-  if (typeof value === 'object' && value !== null) {
-    return Object.values(value).some(holdsNul);
-  }
+  return level.length === 0;
+}
 
-  return false;
+function isTextWithNul(value: unknown): boolean {
+  return typeof value === 'string' && value.includes('\u0000');
+}
+
+function isObject(value: unknown): value is object {
+  return typeof value === 'object' && value !== null;
 }

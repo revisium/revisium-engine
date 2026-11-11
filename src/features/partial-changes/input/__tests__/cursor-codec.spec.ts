@@ -1,7 +1,9 @@
 import {
   cursorPartsOf,
   encodeCursor,
+  MAX_CURSOR_LENGTH,
 } from 'src/features/partial-changes/input/cursor-codec';
+import { deeplyNestedCursor } from '../../__tests__/support/hostile-cursors';
 
 const ROW_PARTS: ReadonlySet<string> = new Set(['tableId', 'rowId', 'bound']);
 
@@ -64,6 +66,42 @@ describe('cursor codec', () => {
     expect(
       cursorPartsOf(encodeCursor('rows', parts), 'rows', ROW_PARTS),
     ).toBeUndefined();
+  });
+
+  it.each([
+    { quoting: 'quotes', tableId: 'say "hi"' },
+    { quoting: 'backslashes', tableId: 'C:\\notes\\' },
+  ])('decodes ids with $quoting', ({ tableId }) => {
+    const cursor = encodeCursor('rows', { tableId });
+
+    expect(cursorPartsOf(cursor, 'rows', ROW_PARTS)).toMatchObject({
+      tableId,
+    });
+  });
+
+  it('refuses a part nested deeper than any cursor nests', () => {
+    const cursor = encodeCursor('rows', {
+      tableId: 'notes',
+      bound: { inclusive: { deeper: { deepest: true } } },
+    });
+
+    expect(cursorPartsOf(cursor, 'rows', ROW_PARTS)).toBeUndefined();
+  });
+
+  it('refuses a deeply nested part without exhausting the stack', () => {
+    const cursor = deeplyNestedCursor('rows');
+
+    expect(cursorPartsOf(cursor, 'rows', ROW_PARTS)).toBeUndefined();
+  });
+
+  it('refuses a text longer than any cursor', () => {
+    const cursor = encodeCursor('rows', {
+      tableId: 'notes',
+      rowId: 'n'.repeat(MAX_CURSOR_LENGTH),
+    });
+
+    expect(cursor.length).toBeGreaterThan(MAX_CURSOR_LENGTH);
+    expect(cursorPartsOf(cursor, 'rows', ROW_PARTS)).toBeUndefined();
   });
 });
 

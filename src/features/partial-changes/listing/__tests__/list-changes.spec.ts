@@ -9,6 +9,7 @@ import {
   type Unit,
   type UnitKind,
 } from 'src/features/partial-changes/catalogue/unit';
+import { MAX_CURSOR_LENGTH } from 'src/features/partial-changes/input/cursor-codec';
 import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
@@ -23,6 +24,7 @@ import {
   unitsOfPages,
 } from '../../__tests__/support/change-listing';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { deeplyNestedCursor } from '../../__tests__/support/hostile-cursors';
 import {
   sourceLedgersOf,
   sourceReplaysDuring,
@@ -437,6 +439,33 @@ describe('listChanges', () => {
         draft.listChanges({ cursor: pageInfo.endCursor, pageSize: 5 }),
       ).rejects.toThrow(new ListingValidationError('cursor is malformed'));
     });
+
+    it.each([
+      ['deeply nested', () => deeplyNestedCursor('units')],
+      [
+        'longer than the limit',
+        () =>
+          encodeListingCursor({
+            tableId: CATEGORIES,
+            rows: { rowId: 'c'.repeat(MAX_CURSOR_LENGTH), inclusive: false },
+          }),
+      ],
+    ])(
+      'refuses a cursor %s as a malformed cursor before reading the snapshot',
+      async (_cursor, cursorOf) => {
+        const draft = await givenOneEditedCategory();
+        const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');
+
+        try {
+          await expect(
+            draft.listChanges({ cursor: cursorOf() }),
+          ).rejects.toThrow(new ListingValidationError('cursor is malformed'));
+          expect(readSnapshot).not.toHaveBeenCalled();
+        } finally {
+          readSnapshot.mockRestore();
+        }
+      },
+    );
 
     it('refuses a cursor whose row id holds the NUL character as a malformed cursor, not a database error', async () => {
       const draft = await givenTwoEditedCategories();

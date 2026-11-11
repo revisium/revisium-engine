@@ -37,6 +37,7 @@ import {
   hashOf,
   isStoredLedgerReplay,
   ledgerReplaysDuring,
+  listedRevisionIdsOf,
   removeSchemaRow,
   rowHashClassificationsDuring,
   removeSchemaTable,
@@ -210,6 +211,36 @@ describe('Schema ledger scan', () => {
       expect(scan.findings).toEqual([
         await findingAt(draft, 'head', unledgered),
         await findingAt(draft, 'draft', unledgered),
+      ]);
+    });
+
+    it('reports the history revisions of a table without a migration table by their count and the earliest of them', async () => {
+      const draft = await BranchScenario.committedWithoutLedger(kit, {
+        [CATEGORIES]: categories,
+      });
+      await draft.createRows(CATEGORIES, { c2: { title: 'second' } });
+      await draft.commit();
+      await draft.createRows(CATEGORIES, { c3: { title: 'third' } });
+      await draft.commit();
+      const [, firstCommitId] = await committedRevisionIds(kit, draft);
+
+      const scan = await scanBranch(kit, draft);
+
+      const unledgered = {
+        code: 'unledgeredTable',
+        tableId: CATEGORIES,
+        detail: { reason: 'noMigrationTable' },
+      } as const;
+      expect(scan.findings).toEqual([
+        await findingAt(draft, 'head', unledgered),
+        await findingAt(draft, 'draft', unledgered),
+        {
+          ...draft.branch,
+          ...unledgered,
+          role: 'history',
+          revisionCount: 2,
+          firstRevisionId: firstCommitId,
+        },
       ]);
     });
 
@@ -394,7 +425,9 @@ describe('Schema ledger scan', () => {
       const draft = await givenDamageSharedByTenCommits();
       const committed = await committedRevisionIds(kit, draft);
 
-      const scan = await scanBranch(kit, draft);
+      const scan = await scanBranch(kit, draft, {
+        rowDiagnostics: 'headAndDraft',
+      });
 
       expect(
         findingsOf(scan, PRODUCTS).filter(({ role }) => role === 'history'),
@@ -468,7 +501,9 @@ describe('Schema ledger scan', () => {
     it('classifies rows an async migration left behind under the rewritten schema row', async () => {
       const draft = await givenUnpublishedInPlaceMigration();
 
-      const scan = await scanBranch(kit, draft);
+      const scan = await scanBranch(kit, draft, {
+        rowDiagnostics: 'headAndDraft',
+      });
 
       expect(findingsOf(scan, PRODUCTS)).toEqual([
         await findingAt(draft, 'head', {
@@ -497,7 +532,9 @@ describe('Schema ledger scan', () => {
       const draft = await givenRowsBehindOwnStepAndRename();
       const weightedHash = await rowSchemaHashOf(draft, PRODUCTS, 'p2');
 
-      const scan = await scanBranch(kit, draft);
+      const scan = await scanBranch(kit, draft, {
+        rowDiagnostics: 'headAndDraft',
+      });
 
       expect(scan.findings).toEqual([
         await findingAt(draft, 'draft', {
@@ -522,7 +559,9 @@ describe('Schema ledger scan', () => {
       const draft = await givenCommittedCatalog();
       await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: '' });
 
-      const scan = await scanBranch(kit, draft);
+      const scan = await scanBranch(kit, draft, {
+        rowDiagnostics: 'headAndDraft',
+      });
 
       expect(scan.findings).toEqual([
         await findingAt(draft, 'draft', {
@@ -557,6 +596,19 @@ describe('Schema ledger scan', () => {
       },
     );
 
+    it('checks no row schema hashes when rowDiagnostics is omitted', async () => {
+      const draft = await givenRowMismatchesInDraftAndHistory();
+
+      const scan = await scanBranch(kit, draft);
+
+      expect(
+        scan.findings.filter(({ code }) => code === 'rowSchemaHashMismatch'),
+      ).toEqual([]);
+      expect(scan).toEqual(
+        await scanBranch(kit, draft, { rowDiagnostics: 'none' }),
+      );
+    });
+
     it('covers every value of ROW_DIAGNOSTICS', () => {
       const modes = rowDiagnosticsCases.map(
         ({ rowDiagnostics }) => rowDiagnostics,
@@ -576,9 +628,7 @@ describe('Schema ledger scan', () => {
       const mismatches = findingsOf(scan, PRODUCTS).filter(
         ({ code }) => code === 'rowSchemaHashMismatch',
       );
-      expect(mismatches.flatMap(({ revisionIds }) => revisionIds)).toHaveLength(
-        12,
-      );
+      expect(mismatches.flatMap(listedRevisionIdsOf)).toHaveLength(12);
       expect(classifications).toBe(2);
     });
 

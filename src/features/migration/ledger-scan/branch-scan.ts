@@ -1,9 +1,12 @@
 import type { RepairOutcome } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type {
+  CountedRevisions,
   DamagedTableRepair,
   DamageShape,
   FindingContent,
   FindingRole,
+  FindingSite,
+  ListedRevisions,
   RowDiagnostics,
   SchemaLedgerFinding,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
@@ -40,8 +43,11 @@ interface EvaluatedFinding {
   readonly content: FindingContent;
 }
 
+type SitedFinding = FindingContent & FindingSite;
+
 interface CollectedFinding {
-  readonly finding: SchemaLedgerFinding;
+  readonly finding: SitedFinding;
+  readonly firstRevisionId: string;
   readonly revisionIds: string[];
 }
 
@@ -55,9 +61,9 @@ export class BranchScan {
   ) {}
 
   public all(): SchemaLedgerFinding[] {
-    return [...this.findings.values()].map(({ finding, revisionIds }) => ({
-      ...finding,
-      revisionIds,
+    return [...this.findings.values()].map((collected) => ({
+      ...collected.finding,
+      ...revisionsOf(collected),
     }));
   }
 
@@ -225,11 +231,32 @@ export class BranchScan {
         branchName: this.branch.branchName,
         tableId,
         role,
-        revisionIds: [],
       },
+      firstRevisionId: revisionId,
       revisionIds: [revisionId],
     });
   }
+}
+
+function revisionsOf({
+  finding,
+  firstRevisionId,
+  revisionIds,
+}: CollectedFinding): ListedRevisions | CountedRevisions {
+  if (!isUnledgeredHistory(finding)) {
+    return { revisionIds };
+  }
+
+  return { revisionCount: revisionIds.length, firstRevisionId };
+}
+
+// History without a migration table is never rewritten, so listing its revisions would grow with every commit.
+function isUnledgeredHistory(finding: SitedFinding): boolean {
+  return (
+    finding.role === 'history' &&
+    finding.code === 'unledgeredTable' &&
+    finding.detail.reason === 'noMigrationTable'
+  );
 }
 
 function evaluatedAs(

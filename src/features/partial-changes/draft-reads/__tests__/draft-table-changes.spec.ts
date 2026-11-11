@@ -14,6 +14,11 @@ import {
   pendingMigrationIds,
   storedLedgerOf,
 } from 'src/__tests__/fixtures/stored-ledger';
+import {
+  encodeRowCursor,
+  encodeTableCursor,
+} from 'src/features/partial-changes/draft-reads/draft-cursor';
+import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type {
   DraftTableItem,
@@ -1161,12 +1166,29 @@ describe('draft table changes', () => {
       ['a first that is not a number', { first: '10' }],
       ['an offset cursor', { first: 10, after: '10' }],
       [
-        'a cursor naming a row',
-        { first: 10, after: cursorOf({ v: 1, tableId: 'a', rowId: 'r' }) },
+        'a cursor of the row read',
+        {
+          first: 10,
+          after: encodeRowCursor({
+            table: { tableId: 'a', headOnly: false },
+            rowId: 'r',
+          }),
+        },
       ],
       [
-        'a cursor of another version',
-        { first: 10, after: cursorOf({ v: 2, tableId: 'a', headOnly: false }) },
+        'a cursor of the unit listing',
+        { first: 10, after: encodeListingCursor({ tableId: 'a' }) },
+      ],
+      [
+        'a cursor of the format before cursor kinds',
+        { first: 10, after: cursorOf({ v: 1, tableId: 'a', headOnly: false }) },
+      ],
+      [
+        'a cursor whose table id holds the NUL character',
+        {
+          first: 10,
+          after: encodeTableCursor({ tableId: 'a\u0000', headOnly: false }),
+        },
       ],
       ['an after that is not a string', { first: 10, after: 1 }],
       ['filters that are not an object', { first: 10, filters: [] }],

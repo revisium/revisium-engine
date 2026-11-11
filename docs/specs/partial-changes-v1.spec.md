@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.5 |
+| Version | 2.6 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -220,7 +220,7 @@ finds a difference that change detection missed. Every other selection, `{ all: 
 its scope and writes nothing when it is `empty`: normalising tables that a selection did not read would cost a content
 check per table on every operation (AS-74). A preview writes nothing; its `empty` result carries `draftHasChanges`, the
 Draft's stored flag, so `true` there for exactly `{ all: true }` says that applying it normalises the Draft. Before
-v2.5 such an operation returned `empty` and wrote nothing, and only native `createRevision` or `revertChanges` cleared
+v2.6 such an operation returned `empty` and wrote nothing, and only native `createRevision` or `revertChanges` cleared
 the Draft, while `{ all: true, exclude: {…} }` applied together with a unit did (AS-52).
 
 ## 4. Selection
@@ -446,7 +446,7 @@ Input:
 | --- | --- | --- | --- |
 | `branch` | ChangesBranch | yes | |
 | `tableId` | string | no | Only units of this table (Draft id, else Head id); an id of neither side is a validation error. |
-| `cursor` | string | no | Opaque cursor from the previous page; a malformed cursor is a validation error. |
+| `cursor` | string | no | Opaque cursor from the previous page of `listChanges`; a malformed cursor, or a cursor that another operation issued (the `endCursor` of a Draft read), is a validation error. A cursor of any operation holds at most 16,384 characters and nests at most three levels; a longer or deeper text is malformed. The longest legitimate cursor, a position after a field, holds ids of at most 64 characters and the field path twice, which leaves room for a path of over 5,000 characters. |
 | `pageSize` | integer 1–5,000 | no | Units per page; default 500. |
 
 Output:
@@ -793,7 +793,7 @@ added (§6.9).
 | `includeRequired` other than a boolean, `expected` other than a non-empty string, or `comment` other than a string (`null` in any of them is absent, §5) | Validation error before any transaction. |
 | `expected` that is malformed: no `pcf<n>.` prefix with a base64url body, or a `pcf2.` body that is not exactly the engine's encoding of five strings (§9.1) | Validation error before any transaction. |
 | A malformed selection: an unknown field (also the pre-v2.0 `tables` and `renames`), a wrong type (`null` in an optional field is absent, §5), an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
-| Invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
+| Invalid `pageSize`, `cursor` (a cursor of another operation included) or `tableId`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
 | Unknown project or branch | The native lookup error: a `BadRequestException` (400) with the message `A branch with this name does not exist in the project`, the same class as a validation error. |
 | Commit or revert while an async migration is active on the branch | `MigrationLocked` error (native lock). |
 | Operation or statement timeout, attempts exhausted, any write failure | Error; the transaction is rolled back; nothing is persisted, including file references and ledger rows. A retry is safe (§9). |
@@ -1882,7 +1882,7 @@ facility, with `message` `Schema ledger operation finished`, the same rules and 
 | `outcome` | Backfill: the result's `status`. Repair: `planned` (dry run), `repaired` (written), `stale` (the plan was stale at write time) or `unchanged` (no table to repair). |
 | `attempts` | Backfill: the attempts of its one transaction. Repair: its planning transaction plus each attempt of its write transaction, counted when the transaction starts, before the fence and migration-lock admission, so an attempt that admission refuses counts too. |
 | `entries` | Backfill, `planned` or `backfilled`: the number of entries. |
-| `tables`, `repairedTables`, `renumbered` | Repair: the tables in the result, those whose outcome is `repaired`, and the renumbered pending migrations. |
+| `tables`, `repairedTables`, `renumbered` | Repair: the tables in the result, those whose outcome is `repaired` (`planned` in a dry run), and the renumbered pending migrations (`renumberedMigrations`). |
 
 ## 12. Native prerequisites (stage 0)
 
@@ -2178,8 +2178,8 @@ versions unchanged" (§14) holds in every scenario.
 - AS-66 `listChanges` reads changed rows only of the tables a page lists, continues from the cursor's table, and with
   `tableId` lists and reads only that table; paging until `nextCursor = null` returns the same units as a full
   listing, also when a page is empty. Keyset paging inside one large table returns the same units, reads at most
-  `pageSize` changed rows per page, and continues a row whose units did not fit; an unknown `tableId` or a malformed
-  cursor is a validation error.
+  `pageSize` changed rows per page, and continues a row whose units did not fit; an unknown `tableId`, a malformed
+  cursor, a cursor of a Draft read or one holding the NUL character is a validation error.
 - AS-67 Required, deferred and blocking units carry exact selectors: adding each required unit's `selector` to the
   selection (also a Head-side unit addressed with `side: 'head'`) previews `ready` with no required units; the
   `unit` of a `requiredExcluded` blocker names the excluded unit and its `reason`.
@@ -2461,7 +2461,7 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 
 ## Changelog
 
-### Version 2.5 (2026-11-11)
+### Version 2.6 (2026-11-11)
 
 Exactly `{ all: true }` clears content-equal versions. The API is unreleased, so the result shape changes without a
 new major version.
@@ -2475,6 +2475,11 @@ new major version.
 - §9.2: the normalisation needs no `expected`; `empty` still comes before `stale`.
 - §11.1: the log field `relinkedTables`.
 - §13: AS-54 reworded; AS-95 – AS-97.
+
+### Version 2.5 (2026-11-11)
+
+- §11.1: the repair's log fields keep their names. `repairedTables` of a dry run counts the tables with the new outcome
+  `planned`, and `renumbered` counts the result's `renumberedMigrations` (async-row-migration-v2 §6.1).
 
 ### Version 2.4 (2026-11-11)
 

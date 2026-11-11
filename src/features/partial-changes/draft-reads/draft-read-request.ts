@@ -4,6 +4,10 @@ import {
   type RowPosition,
   type TablePosition,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
+import {
+  type Fields,
+  isFields,
+} from 'src/features/partial-changes/input/fields';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { DraftChangesSummaryInput } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import type { DraftRowChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
@@ -38,8 +42,6 @@ export interface DraftChangesSummaryRequest {
   readonly branch: ChangesBranch;
   readonly filters: TableFilters;
 }
-
-type Fields = Readonly<Record<string, unknown>>;
 
 const MAX_PAGE_SIZE = 5_000;
 const CHANGE_TYPES: ReadonlySet<unknown> = new Set(Object.values(ChangeType));
@@ -198,8 +200,4 @@ function searchOf(search: unknown): string | undefined {
 
 function isChangeType(value: unknown): value is ChangeType {
   return CHANGE_TYPES.has(value);
-}
-
-function isFields(value: unknown): value is Fields {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

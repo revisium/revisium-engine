@@ -1,8 +1,8 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
-import type { RenumberedMigration } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type { LedgerEntry } from 'src/features/share/ledger/migration-ledger';
 import {
   type MigrationBounds,
+  type MigrationRenumbering,
   NativeIdSequence,
   publishedAtOf,
 } from 'src/features/share/ledger/native-migration-id';
@@ -28,7 +28,7 @@ export function lastPublishedBoundsOf(
 export function renumberedAfter(
   lastRepairId: string,
   pending: readonly Migration[],
-): RenumberedMigration[] {
+): MigrationRenumbering[] {
   if (pending.every(({ id }) => compareCodePoints(id, lastRepairId) > 0)) {
     return [];
   }
@@ -38,14 +38,14 @@ export function renumberedAfter(
     publishedAt: publishedAtOf(lastRepairId),
   });
 
-  return pending.map(({ id }) => ({ previousId: id, id: sequence.next() }));
+  return pending.map(({ id }) => ({ from: id, to: sequence.next() }));
 }
 
 export function withRenumberedIds(
   pending: readonly Migration[],
-  renumbered: readonly RenumberedMigration[],
+  renumbered: readonly MigrationRenumbering[],
 ): Migration[] {
-  const ids = new Map(renumbered.map(({ previousId, id }) => [previousId, id]));
+  const ids = new Map(renumbered.map(({ from, to }) => [from, to]));
 
   return pending.map((migration) => ({
     ...migration,

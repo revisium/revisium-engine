@@ -8,10 +8,7 @@ import type {
 } from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionApiService } from 'src/features/draft-revision/draft-revision-api.service';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
-import type {
-  PlannedTableRepair,
-  RenumberedMigration,
-} from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import type { PlannedTableRepair } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import type { StoredTableVersion } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { JsonSchemaValidatorService } from 'src/features/share/json-schema-validator.service';
 import type {
@@ -19,6 +16,7 @@ import type {
   StoredSchema,
 } from 'src/features/share/ledger/migration-ledger';
 import {
+  type MigrationRenumbering,
   publishedAtOf,
   renumberedMigrationRowOf,
 } from 'src/features/share/ledger/native-migration-id';
@@ -50,7 +48,11 @@ export class RepairWriter {
     const draftLedger = new DraftLedger(state);
     const repairs = repairedTablesOf(plan).map(repairRecordOf);
 
-    await this.renumberPendingMigrations(state, draftLedger, plan.renumbered);
+    await this.renumberPendingMigrations(
+      state,
+      draftLedger,
+      plan.renumberedMigrations,
+    );
     await this.recordRepairMigrations(state, repairs);
     await this.extendSchemaHistories(state, draftLedger, repairs);
   }
@@ -58,15 +60,15 @@ export class RepairWriter {
   private async renumberPendingMigrations(
     state: RepairState,
     draftLedger: DraftLedger,
-    renumbered: readonly RenumberedMigration[],
+    renumbered: readonly MigrationRenumbering[],
   ): Promise<void> {
     if (renumbered.length === 0) {
       return;
     }
 
-    const renumberings = renumbered.map(({ previousId, id }) => ({
-      source: pendingEntryOf(draftLedger, previousId).row,
-      id,
+    const renumberings = renumbered.map(({ from, to }) => ({
+      source: pendingEntryOf(draftLedger, from).row,
+      id: to,
     }));
     const migrationTable = draftMigrationTableOf(state);
 

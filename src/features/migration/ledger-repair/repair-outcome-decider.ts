@@ -1,8 +1,8 @@
 import type {
   InvalidRows,
   PlannedTableRepair,
-  RenumberedMigration,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import type { MigrationRenumbering } from 'src/features/share/ledger/native-migration-id';
 import type { SchemaRefs } from 'src/features/share/ledger-replay/native-schema-rules';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import {
@@ -15,7 +15,7 @@ import { type HistoryPatchesValidator, repairPatchOf } from './repair-patch';
 
 export interface DecidedRepairs {
   readonly tables: readonly PlannedTableRepair[];
-  readonly renumbered: readonly RenumberedMigration[];
+  readonly renumberedMigrations: readonly MigrationRenumbering[];
 }
 
 type PreliminaryOutcome =
@@ -56,7 +56,7 @@ export class RepairOutcomeDecider {
       tables: [...decided, ...verifiedTablesOf(candidates, verified)].sort(
         (left, right) => compareCodePoints(left.tableId, right.tableId),
       ),
-      renumbered: verified.renumbered,
+      renumberedMigrations: verified.renumberedMigrations,
     };
   }
 

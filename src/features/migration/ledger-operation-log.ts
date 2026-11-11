@@ -1,5 +1,8 @@
 import type { SchemaLedgerBackfill } from 'src/features/migration/commands/impl/backfill-schema-ledger.command';
-import type { SchemaLedgerRepair } from 'src/features/migration/commands/impl/repair-schema-ledger.command';
+import type {
+  SchemaLedgerRepair,
+  TableRepair,
+} from 'src/features/migration/commands/impl/repair-schema-ledger.command';
 import type {
   LogFields,
   TrackedOperation,
@@ -60,19 +63,22 @@ export function repairOutcomeOf(
   return 'unchanged';
 }
 
-// The ids and counts of a repair's result.
+// The ids and counts of a repair's result; `repairedTables` counts a dry run's planned tables too.
 export function repairFieldsOf({
   headRevisionId,
   draftRevisionId,
   tables,
-  renumbered,
+  renumberedMigrations,
 }: SchemaLedgerRepair): LogFields {
   return {
     headRevisionId,
     draftRevisionId,
     tables: tables.length,
-    repairedTables: tables.filter(({ outcome }) => outcome === 'repaired')
-      .length,
-    renumbered: renumbered.length,
+    repairedTables: tables.filter(isRepairedOrPlanned).length,
+    renumbered: renumberedMigrations.length,
   };
+}
+
+function isRepairedOrPlanned({ outcome }: TableRepair): boolean {
+  return outcome === 'repaired' || outcome === 'planned';
 }

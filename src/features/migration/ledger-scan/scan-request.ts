@@ -9,7 +9,7 @@ import type { BranchRef } from 'src/features/share/branch-revisions/branch-revis
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 1_000;
-const DEFAULT_ROW_DIAGNOSTICS: RowDiagnostics = 'headAndDraft';
+const DEFAULT_ROW_DIAGNOSTICS: RowDiagnostics = 'none';
 
 type DecodedCursor = Partial<Record<keyof BranchRef, unknown>> | null;
 

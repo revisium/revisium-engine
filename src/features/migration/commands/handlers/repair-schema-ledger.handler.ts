@@ -4,6 +4,7 @@ import {
   RepairSchemaLedgerCommand,
   type RepairSchemaLedgerData,
   type SchemaLedgerRepair,
+  type TableRepair,
 } from 'src/features/migration/commands/impl/repair-schema-ledger.command';
 import { RepairFreshness } from 'src/features/migration/ledger-repair/repair-freshness';
 import {
@@ -18,7 +19,10 @@ import {
 import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-state-reader';
 import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
 import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
-import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import type {
+  PlannedTableRepair,
+  SchemaLedgerRepairPlan,
+} from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
 import {
   ledgerOperation,
   repairFieldsOf,
@@ -150,15 +154,23 @@ function repairResultOf(
     headRevisionId: plan.headRevisionId,
     draftRevisionId: plan.draftRevisionId,
     dryRun,
-    tables: plan.tables,
-    renumbered: plan.renumbered,
+    tables: dryRun ? plan.tables.map(plannedTableOf) : plan.tables,
+    renumberedMigrations: plan.renumberedMigrations,
   };
+}
+
+function plannedTableOf(table: PlannedTableRepair): TableRepair {
+  if (table.outcome !== 'repaired') {
+    return table;
+  }
+
+  return { ...table, outcome: 'planned' };
 }
 
 function staleRepairOf(plan: SchemaLedgerRepairPlan): SchemaLedgerRepair {
   return {
     ...repairResultOf(plan, false),
     tables: plan.tables.map(({ tableId }) => ({ tableId, outcome: 'stale' })),
-    renumbered: [],
+    renumberedMigrations: [],
   };
 }

@@ -21,14 +21,15 @@ const LEDGER_OPERATION_TYPES = [
   'BackfillSchemaLedgerData',
   'BackfillStatus',
   'BrokenLineage',
+  'CountedRevisions',
   'DamageShape',
   'DamagedTableDetail',
   'DamagedTableRepair',
   'FindingCode',
   'FindingRole',
   'InvalidRows',
+  'ListedRevisions',
   'MismatchedRowHash',
-  'RenumberedMigration',
   'RepairOutcome',
   'RepairSchemaLedgerData',
   'RowDiagnostics',
@@ -105,6 +106,7 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
     'needsDraftStructureRevert',
     'notDamaged',
     'patchNotReproducible',
+    'planned',
     'repaired',
     'rowsNeedMigration',
     'stale',
@@ -268,6 +270,26 @@ const RESULT_PARTS_HAVE_THEIR_NAMES =
         engine.SchemaLedgerFinding
       >,
       Equal<engine.SchemaLedgerScan['stats'], engine.SchemaLedgerScanStats>,
+      Equal<
+        Pick<
+          Extract<
+            engine.SchemaLedgerFinding,
+            { readonly revisionIds: unknown }
+          >,
+          'revisionIds'
+        >,
+        engine.ListedRevisions
+      >,
+      Equal<
+        Pick<
+          Extract<
+            engine.SchemaLedgerFinding,
+            { readonly revisionCount: unknown }
+          >,
+          'revisionCount' | 'firstRevisionId'
+        >,
+        engine.CountedRevisions
+      >,
       Equal<FindingOf<'unledgeredTable'>['detail'], engine.UnledgeredDetail>,
       Equal<
         Extract<engine.UnledgeredDetail, { readonly reason: 'brokenLineage' }>,
@@ -289,8 +311,12 @@ const RESULT_PARTS_HAVE_THEIR_NAMES =
       >,
       Equal<engine.SchemaLedgerRepair['tables'][number], engine.TableRepair>,
       Equal<
-        engine.SchemaLedgerRepair['renumbered'][number],
-        engine.RenumberedMigration
+        engine.SchemaLedgerRepair['renumberedMigrations'][number],
+        engine.MigrationRenumbering
+      >,
+      Equal<
+        engine.CommittedDraft['renumberedMigrations'][number],
+        engine.MigrationRenumbering
       >,
       Equal<NonNullable<engine.TableRepair['invalidRows']>, engine.InvalidRows>,
       Equal<

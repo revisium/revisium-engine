@@ -371,25 +371,26 @@ replayed schema through the native row migration into the Head schema. The diff 
 of one edited schema, not two schemas, so the planner diffs them itself; a plain schema-to-schema diff in the toolkit
 would replace it. The repairs take one id sequence after the last published migration in table id order (the native id
 rule, so a published timestamp ahead of the clock still gives distinct ids); when a pending migration id is not after
-the last repair, all pending migrations are renumbered after it once (`renumbered`). The combined plan replays the
-published ledger, the repairs and the renumbered pending migrations: each candidate and each Draft table the Draft
-ledger reproduced before must reproduce its Draft schema row, and no step of any table, closed and transient ones
-included, may fail that did not fail in the replay without repairs; other tables may keep failing as before. A failing
-candidate is rejected, a broken table or a newly failing step rejects the candidates coupled to it (a pending migration
-of one reads the other: a foreign key it names, a removal refused while referenced, a rename that rewrites referrers),
-and planning repeats with the rest. The plan carries a fingerprint of what it validated: per validated Draft table
-version its row count and a digest of row version ids and hashes, and per table version that a foreign key of a
-validated row references a digest of its row ids.
+the last repair, all pending migrations are renumbered after it once (`renumberedMigrations`, `{ from, to }`). The
+combined plan replays the published ledger, the repairs and the renumbered pending migrations: each candidate and each
+Draft table the Draft ledger reproduced before must reproduce its Draft schema row, and no step of any table, closed and
+transient ones included, may fail that did not fail in the replay without repairs; other tables may keep failing as
+before. A failing candidate is rejected, a broken table or a newly failing step rejects the candidates coupled to it (a
+pending migration of one reads the other: a foreign key it names, a removal refused while referenced, a rename that
+rewrites referrers), and planning repeats with the rest. The plan carries a fingerprint of what it validated: per
+validated Draft table version its row count and a digest of row version ids and hashes, and per table version that a
+foreign key of a validated row references a digest of its row ids.
 
 ### How is the schema ledger repaired?
 
 `repairSchemaLedger({ projectId, branchName, tableIds?, dryRun? })` on the engine facade (and `MigrationApiService`)
 writes the planned repair into the Draft
 ([async-row-migration-v2 §6.4](specs/async-row-migration-v2.spec.md#64-writing-verification-and-concurrency)); the
-host exposes it to administrators. It returns `{ headRevisionId, draftRevisionId, dryRun, tables, renumbered }`: the
-planned table entries and renumbering of the previous section, or `stale` for every planned table when the Draft
-changed before the write. Errors are those of planning: unknown project or branch, an unknown Head table id,
-`MIGRATION_LOCKED` before any work.
+host exposes it to administrators. It returns
+`{ headRevisionId, draftRevisionId, dryRun, tables, renumberedMigrations }`: the planned table entries and renumbering
+of the previous section, or `stale` for every planned table when the Draft changed before the write. A dry run reports
+a table it would repair as `planned` instead of `repaired`. Errors are those of planning: unknown project or branch, an
+unknown Head table id, `MIGRATION_LOCKED` before any work.
 
 1. **Plan** in one `READ ONLY` RepeatableRead snapshot, as `planSchemaLedgerRepair`. `dryRun: true` returns that plan
    and writes nothing; so does a plan without a `repaired` table.
@@ -448,13 +449,15 @@ repair, `notDamaged`. Head-synced replicas apply the published repair like any `
   ledgered (a table created as `A` and renamed to `B` by recorded migrations is ledgered), whether or not the table
   has a schema row, and predicate (b) compares the replayed schema with the schema row; a ledgered table without a
   schema row fails (b). Predicate (a) compares the rows' `schemaHash` with the schema row's `hash` where
-  `rowDiagnostics` selects: `none`, `headAndDraft` (default) or `all` (every revision). Per call, each migration-table
+  `rowDiagnostics` selects: `none` (default), `headAndDraft` or `all` (every revision). Per call, each migration-table
   version is replayed once (repair planning reuses that replay and replays only its own hypothetical ledgers), each
   schema-table version is read once, (b) runs once per migration-table version, table id and schema row version, one
   `GROUP BY "schemaHash"` statement runs per table version, (a) runs once per table version and schema row hash, and
   its row hashes are classified once per migration-table version, table version and schema row hash; `stats` counts
   branches, revisions, replays, schema-table reads, (b) checks and row-hash reads as they happen. A finding lists
-  every revision of the branch that shares its evaluation.
+  every revision of the branch that shares its evaluation (`revisionIds`), except an `unledgeredTable` finding with
+  reason `noMigrationTable` and role `history`: it gives their number (`revisionCount`) and the earliest
+  (`firstRevisionId`), because such history is never rewritten and would list every commit of the branch.
 
 | Code | Role | When; `detail` |
 | --- | --- | --- |
@@ -519,12 +522,12 @@ it to administrators. Input types are checked before any transaction; `null` mea
 Afterwards:
 
 - The scan reports no `noMigrationTable` finding with role `head` or `draft`; the revisions before the backfill keep
-  theirs with role `history`, because history is not rewritten. A branch still to backfill has such findings with role
-  `head`, except a Head without user tables: it has no finding, yet still needs the run (it returns `backfilled` with
-  `entries: []`), because without it tables created later are not recorded.
-- Row diagnostics now run for the backfilled tables: a row whose `schemaHash` is not the table's schema hash (written
-  under an earlier schema, or `''` from the low-level row API) is reported as `rowSchemaHashMismatch` with
-  `unknownHash`. It refuses no partial operation.
+  theirs with role `history` (counted, with the earliest revision), because history is not rewritten. A branch still to
+  backfill has such findings with role `head`, except a Head without user tables: it has no finding, yet still needs the
+  run (it returns `backfilled` with `entries: []`), because without it tables created later are not recorded.
+- Row diagnostics, when a scan asks for them, now run for the backfilled tables: a row whose `schemaHash` is not the
+  table's schema hash (written under an earlier schema, or `''` from the low-level row API) is reported as
+  `rowSchemaHashMismatch` with `unknownHash`. It refuses no partial operation.
 - `getMigrations` of the Head returns the entries, and a Head-synced replica built from scratch reproduces the Head
   schemas. A replica whose tables were created by hand fails at the first `init`.
 - Each branch is backfilled separately; a branch created later from a revision before the backfill needs its own run.

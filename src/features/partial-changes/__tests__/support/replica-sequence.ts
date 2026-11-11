@@ -5,10 +5,8 @@ import type {
   ApplyChangesInput,
   ApplyStatus,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
-import type {
-  CommitChangesResult,
-  MigrationRenumbering,
-} from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
+import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
+import type { MigrationRenumbering } from 'src/features/share/ledger/native-migration-id';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';

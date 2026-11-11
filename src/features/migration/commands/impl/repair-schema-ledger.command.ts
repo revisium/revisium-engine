@@ -1,8 +1,8 @@
 import {
   type PlannedTableRepair,
-  type RenumberedMigration,
   REPAIR_OUTCOMES,
 } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
+import type { MigrationRenumbering } from 'src/features/share/ledger/native-migration-id';
 
 export interface RepairSchemaLedgerData {
   readonly projectId: string;
@@ -15,7 +15,12 @@ export class RepairSchemaLedgerCommand {
   constructor(public readonly data: RepairSchemaLedgerData) {}
 }
 
-export const TABLE_REPAIR_OUTCOMES = [...REPAIR_OUTCOMES, 'stale'] as const;
+// A dry run reports `planned` where a written repair reports `repaired`.
+export const TABLE_REPAIR_OUTCOMES = [
+  ...REPAIR_OUTCOMES,
+  'planned',
+  'stale',
+] as const;
 
 export type TableRepairOutcome = (typeof TABLE_REPAIR_OUTCOMES)[number];
 
@@ -28,5 +33,5 @@ export interface SchemaLedgerRepair {
   readonly draftRevisionId: string;
   readonly dryRun: boolean;
   readonly tables: readonly TableRepair[];
-  readonly renumbered: readonly RenumberedMigration[];
+  readonly renumberedMigrations: readonly MigrationRenumbering[];
 }

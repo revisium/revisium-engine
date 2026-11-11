@@ -4,14 +4,13 @@ import type {
   ApplyResult,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
+import type { MigrationRenumbering } from 'src/features/share/ledger/native-migration-id';
+
+// The repair of the schema ledger reports its renumbering with the same type.
+export type { MigrationRenumbering };
 
 export interface CommitChangesInput extends ApplyChangesInput {
   readonly comment?: string | null;
-}
-
-export interface MigrationRenumbering {
-  readonly from: string;
-  readonly to: string;
 }
 
 export interface CommittedDraft extends ApplyResult, AppliedOutcome {

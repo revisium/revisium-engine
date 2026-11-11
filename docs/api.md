@@ -953,8 +953,8 @@ list types, and how a typed transport maps the unions:
     refresh the moved endpoints;
   - after an `applied` `changes.revert`, refresh the endpoints bound to `draftRevisionId` (the Draft keeps its id),
     as after native `revertChanges`;
-  - after a [`repairSchemaLedger`](#repairschemaledger) call with `dryRun: false` that returns a table with the
-    outcome `repaired`, refresh the endpoints bound to `draftRevisionId`;
+  - after a [`repairSchemaLedger`](#repairschemaledger) call that returns a table with the outcome `repaired`,
+    refresh the endpoints bound to `draftRevisionId` (a dry run reports `planned` instead and changes nothing);
   - after an async migration swap, refresh the Draft's endpoints once you see it finished: `applyMigrations`
     returned `applied` for that update, or `getMigrationStatus` returns `null` (after a `failed` result from
     `applyMigrations`, a worker may still swap later, so poll). The swap changes the Draft's schema and rows, and
@@ -1328,8 +1328,8 @@ results hold, so a host maps them without copying shapes:
 
 | Operation | Input | Result and its parts |
 | --- | --- | --- |
-| `scanSchemaLedger` | `ScanSchemaLedgerData` | `SchemaLedgerScan`, `SchemaLedgerFinding`, `SchemaLedgerScanStats`; the finding details `UnledgeredDetail` (`BrokenLineage`), `ReplayFailure`, `DamagedTableDetail`, `RowSchemaHashMismatchDetail` (`MismatchedRowHash`) |
-| `repairSchemaLedger` | `RepairSchemaLedgerData` | `SchemaLedgerRepair`, `TableRepair`, `InvalidRows`, `RenumberedMigration` |
+| `scanSchemaLedger` | `ScanSchemaLedgerData` | `SchemaLedgerScan`, `SchemaLedgerFinding` (`ListedRevisions` or `CountedRevisions`), `SchemaLedgerScanStats`; the finding details `UnledgeredDetail` (`BrokenLineage`), `ReplayFailure`, `DamagedTableDetail`, `RowSchemaHashMismatchDetail` (`MismatchedRowHash`) |
+| `repairSchemaLedger` | `RepairSchemaLedgerData` | `SchemaLedgerRepair`, `TableRepair`, `InvalidRows`, `MigrationRenumbering` (shared with `changes.commit`) |
 | `backfillSchemaLedger` | `BackfillSchemaLedgerData` | `SchemaLedgerBackfill` (`BackfillNotNeeded`, `BackfillPlanned`, `BackfillCommitted`, `BackfillRefused`), `BackfillEntry`, `BackfillRefusal` |
 
 Every code union of the results has a runtime list exported with the union type derived from it (`FINDING_CODES` and
@@ -1343,9 +1343,11 @@ engine.scanSchemaLedger({ // the argument is optional
   branchName?: string | null; // requires projectId
   cursor?: string | null;
   limit?: number | null; // 1–1,000, default 50
-  rowDiagnostics?: 'none' | 'headAndDraft' | 'all' | null; // default 'headAndDraft'
+  rowDiagnostics?: 'none' | 'headAndDraft' | 'all' | null; // default 'none'
 }): Promise<SchemaLedgerScan>
 // { findings: SchemaLedgerFinding[]; nextCursor: string | null; stats: SchemaLedgerScanStats }
+// SchemaLedgerFinding: { code, projectId, branchName, tableId, role, detail }
+//   & ({ revisionIds: string[] } | { revisionCount: number; firstRevisionId: string })
 ```
 
 Reports, read-only, where a revision's ledger does not reproduce its schema rows: one branch, the branches of a
@@ -1353,7 +1355,13 @@ project, or every branch, paged by branch. Codes: `FINDING_CODES`, `FINDING_ROLE
 `DAMAGE_SHAPES`, `DAMAGED_TABLE_REPAIRS`, `ROW_HASH_REASONS`, `ROW_DIAGNOSTICS`, and `MIGRATION_CHANGE_TYPES` for the
 `step` of an `unreplayableLedger` finding. Errors: a validation error (400) for wrong input types (`projectId must be a
 string`, `cursor must be a string`, …), `branchName` without `projectId`, a malformed `cursor` or `limit`, or an
-unknown `rowDiagnostics`; unknown project or branch. See
+unknown `rowDiagnostics`; unknown project or branch.
+
+Row diagnostics (`rowSchemaHashMismatch`) run only when `rowDiagnostics` asks for them: they read every row link of the
+selected tables and report healthy tables too (`renamedReference`, `unknownHash`). A finding lists the revisions that
+share it in `revisionIds`, except an `unledgeredTable` finding with reason `noMigrationTable` and role `history`: it
+gives `revisionCount` and `firstRevisionId` (the earliest), because the history of a branch created before core v2.0.0
+keeps these findings after a backfill and would otherwise list every commit. See
 [How does the schema ledger scan report damage?](migration.md#how-does-the-schema-ledger-scan-report-damage)
 
 ### repairSchemaLedger
@@ -1366,12 +1374,13 @@ engine.repairSchemaLedger({
   dryRun?: boolean | null;
 }): Promise<SchemaLedgerRepair>
 // { headRevisionId: string; draftRevisionId: string; dryRun: boolean; tables: TableRepair[];
-//   renumbered: RenumberedMigration[] }
+//   renumberedMigrations: MigrationRenumbering[] } // { from: string; to: string }, as changes.commit returns
 ```
 
-Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. A call with
-`dryRun: false` that returns a `repaired` table has changed the Draft, so the host refreshes the Draft's endpoints
-([Host integration](#host-integration)). Outcomes: `REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. Errors: a validation
+Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. A call that returns a
+`repaired` table has changed the Draft, so the host refreshes the Draft's endpoints
+([Host integration](#host-integration)); a dry run reports such a table as `planned` and writes nothing. Outcomes:
+`REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. Errors: a validation
 error (400) for wrong input types, before any transaction (`projectId must be a string`, `branchName must be a string`,
 `tableIds must be an array of strings`, `dryRun must be a boolean`), or for an unknown table id; unknown project or
 branch; `MIGRATION_LOCKED` (423) while an async migration is active. Each call logs one structured entry

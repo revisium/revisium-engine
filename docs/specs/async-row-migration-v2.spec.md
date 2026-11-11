@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.6 |
+| Version | 2.7 |
 | Status | Accepted |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), delivery stage 0 |
@@ -353,7 +353,7 @@ no permission layer in the engine.
 | `projectId` | string, optional | One project; omitted → every project with a branch. |
 | `branchName` | string, optional | One branch; requires `projectId`. |
 | `cursor`, `limit` | string; integer 1–1,000, default 50 | Paging by (`projectId`, `branchName`). |
-| `rowDiagnostics` | `'none' \| 'headAndDraft' \| 'all'`, default `'headAndDraft'` | Where predicate (a) runs. |
+| `rowDiagnostics` | `'none' \| 'headAndDraft' \| 'all'`, default `'none'` | Where predicate (a) runs. |
 
 Every input is optional, and one given as `null` is treated as absent, so a transport that sends `null` for an omitted
 argument (as GraphQL clients do) needs no mapping: `cursor: null` starts at the first page, and `branchName` with a
@@ -361,7 +361,12 @@ argument (as GraphQL clients do) needs no mapping: `cursor: null` starts at the 
 
 Output `{ findings, nextCursor, stats }`; **Finding**
 `{ code, projectId, branchName, tableId, role: 'head' | 'draft' | 'history', revisionIds, detail }`, one per distinct
-evaluation with every revision of the branch that shares it.
+evaluation with every revision of the branch that shares it. An `unledgeredTable` finding with reason
+`noMigrationTable` and role `history` carries `revisionCount` and `firstRevisionId` (the earliest of them) instead of
+`revisionIds`: history before a backfill is never rewritten, and listing it would return every revision of every table
+of a branch created before core v2.0.0 (about 100,000 ids for 50 tables and 2,000 commits), on every scan, forever.
+The other history findings keep `revisionIds`: they need damage or a manual edit, which production data does not
+have.
 
 | Code (precedence for one table and role) | Meaning and `detail` |
 | --- | --- |
@@ -388,8 +393,9 @@ them instead of a hand-kept copy:
 | `MIGRATION_CHANGE_TYPES` | `detail.step` of `unreplayableLedger`: the change type of the failing migration |
 
 The package also exports the scan's input and result types: `ScanSchemaLedgerData`, `SchemaLedgerScan`,
-`SchemaLedgerFinding`, `SchemaLedgerScanStats`, and the details `UnledgeredDetail` (`BrokenLineage`), `ReplayFailure`,
-`DamagedTableDetail` and `RowSchemaHashMismatchDetail` (`MismatchedRowHash`).
+`SchemaLedgerFinding`, `SchemaLedgerScanStats`, the two revision forms of a finding `ListedRevisions` (`revisionIds`)
+and `CountedRevisions` (`revisionCount`, `firstRevisionId`), and the details `UnledgeredDetail` (`BrokenLineage`),
+`ReplayFailure`, `DamagedTableDetail` and `RowSchemaHashMismatchDetail` (`MismatchedRowHash`).
 
 ### 5.3 Algorithm and cost
 
@@ -404,8 +410,10 @@ The package also exports the scan's input and result types: `ScanSchemaLedgerDat
 
 Predicate (b) grows with the number of system-table versions, not with data. Predicate (a) reads every row link of each
 selected table version (the Head and Draft tables with `'headAndDraft'`, up to all of `_RowToTable` with `'all'`); it
-dominates and runs off-peak. The repair planner adds row validation of damaged tables (§6.3). Errors: unknown project or
-branch → not found; `projectId`, `branchName` or `cursor` that is not a string (`projectId must be a string`),
+dominates and runs off-peak. It runs only on request: on healthy data it reports `renamedReference` and `unknownHash`,
+and after a backfill every row written under an earlier schema is `unknownHash`. The repair planner adds row validation
+of damaged tables (§6.3). Errors: unknown project or branch → not found; `projectId`, `branchName` or `cursor` that is
+not a string (`projectId must be a string`),
 `branchName` without `projectId`, a malformed `cursor` or `limit` → validation error. No retries; a
 failed call is repeated from its `cursor`. Causes other than async migrations also fail (b), for example referrers left
 by the 100-referrer rename limit before #88; they are reported and repaired the same way.
@@ -430,16 +438,20 @@ validation error before any transaction: `projectId must be a string`, `branchNa
 an array of strings`, `dryRun must be a boolean`. Each call logs one structured entry (`Schema ledger operation
 finished`, [partial-changes-v1](partial-changes-v1.spec.md) §11.1).
 
-Output `{ headRevisionId, draftRevisionId, dryRun, tables, renumbered }`; each table entry is
-`{ tableId, outcome, migrationId?, patches?, removedPaths?, invalidRows?, blockedBy? }`; `renumbered` lists every
-pending migration the plan renumbers, branch-wide (§6.3 step 4), including those of tables not requested. Errors: unknown
+Output `{ headRevisionId, draftRevisionId, dryRun, tables, renumberedMigrations }`; each table entry is
+`{ tableId, outcome, migrationId?, patches?, removedPaths?, invalidRows?, blockedBy? }`; `renumberedMigrations` lists
+every pending migration the plan renumbers, branch-wide (§6.3 step 4), including those of tables not requested, as
+`{ from, to }` (its id before and after), the shape and name of a partial commit's `renumberedMigrations`
+(partial-changes §5.4). A dry run reports `planned` where a written repair reports `repaired`, so a host tells from the
+outcome alone whether the Draft changed. Errors: unknown
 project or branch → not found; an unknown table id → validation error; an active async migration on the branch →
 `MigrationLockedException` before any work.
 
 The outcomes (§6.2) have runtime lists exported like those of the scan: `REPAIR_OUTCOMES`, the planner's outcomes
-(every outcome but `stale`), and `TABLE_REPAIR_OUTCOMES`, the values of a table entry's `outcome`: `REPAIR_OUTCOMES`
-and `stale`. The package exports the repair's input and result types under their names: `RepairSchemaLedgerData`,
-`SchemaLedgerRepair`, `TableRepair`, `InvalidRows` and `RenumberedMigration` (an entry of `renumbered`).
+(every outcome but `planned` and `stale`), and `TABLE_REPAIR_OUTCOMES`, the values of a table entry's `outcome`:
+`REPAIR_OUTCOMES`, `planned` and `stale`. The package exports the repair's input and result types under their names:
+`RepairSchemaLedgerData`, `SchemaLedgerRepair`, `TableRepair`, `InvalidRows` and `MigrationRenumbering` (an entry of
+`renumberedMigrations`, shared with the partial commit).
 
 ### 6.2 Outcomes, first match wins
 
@@ -451,6 +463,7 @@ and `stale`. The package exports the repair's input and result types under their
 | `ledgerInconsistent` | The Draft lacks or alters a published Head migration row, a pending migration cannot be attributed (partial-changes §10.1), or a Draft history does not extend its Head history. | Revert the Draft natively. |
 | `alreadyRepaired` | Replaying the pending migrations `P` from the Head schemas with `RS` reproduces the Draft schemas, and the Draft rows pass validation (§6.3 step 3). | Publish with a native or `{ all: true }` commit. |
 | `repaired` | The `HS` baseline reproduces the Draft schema; the plan is accepted, verified and written. | Publish. |
+| `planned` | A dry run: the table would be `repaired`. | Run without `dryRun`. |
 | `rowsNeedMigration` | The schemas are consistent from one of the baselines, but Draft rows fail native data validation (for example shape (i) after a native revert relinked the Head's unmigrated rows, `draft-revision/commands/handlers/draft-revision-revert.handler.ts:27-50`). Nothing is written; the table stays refused. | Fix the rows natively; a remediation is designed only if a host's scan finds such tables (§7). |
 | `patchNotReproducible` | The generated patch does not turn `RS` into `HS` or fails validation (§6.3). | Not repairable by this tool. |
 | `blockedByDependency` | The plan of the table fails only because a damaged table coupled to it (§6.3) is not repaired in this call (not requested, or itself rejected); `blockedBy` lists them. | Repair them together, or resolve the blocking table first. |
@@ -494,7 +507,8 @@ evaluated together, in one plan, never one by one:
    rejected repair fails in the next round and is rejected with `blockedByDependency` naming it. Each round removes at
    least one candidate, so planning ends after at most as many rounds as there were candidates.
 
-`dryRun` and the scan stop here and report the planned outcomes.
+`dryRun` and the scan stop here and report the planned outcomes; a dry run reports `repaired` as `planned`, while the
+scan's `damagedTable` detail keeps the planner's outcome.
 
 ### 6.4 Writing, verification and concurrency
 
@@ -816,5 +830,16 @@ async swap can still rewrite committed rows during the scan.
   (`tableIds: 'orders'`) used to fail with a `TypeError` after planning had started, and a `dryRun` that is not a
   boolean was taken by its truthiness (`0` wrote the repair).
 - §6.1: the repair logs one structured entry per call (partial-changes §11.1).
+
+### Version 2.7 (2026-11-11)
+
+- §5.2, §5.3: `rowDiagnostics` defaults to `'none'`. A default scan read every row link of every Head and Draft table
+  and reported `rowSchemaHashMismatch` for healthy tables (`renamedReference`, `unknownHash`); the explicit values work
+  as before.
+- §5.2: an `unledgeredTable` finding with reason `noMigrationTable` and role `history` carries `revisionCount` and
+  `firstRevisionId` instead of `revisionIds`; the package exports `ListedRevisions` and `CountedRevisions`.
+- §6.1, §6.2: the repair returns `renumberedMigrations: { from, to }[]` instead of `renumbered: { previousId, id }[]`,
+  as a partial commit does, and the package exports `MigrationRenumbering` instead of `RenumberedMigration`. A dry run
+  reports the new outcome `planned` instead of `repaired`.
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

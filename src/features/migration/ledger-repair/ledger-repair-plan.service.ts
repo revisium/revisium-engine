@@ -66,7 +66,7 @@ export class LedgerRepairPlanService {
       headRevisionId: state.headRevisionId,
       draftRevisionId: state.draftRevisionId,
       tables: decided.tables,
-      renumbered: decided.renumbered,
+      renumberedMigrations: decided.renumberedMigrations,
       fingerprint: await this.draftRows.fingerprintOf(
         [...draftTables.values()].map(({ versionId }) => versionId),
         consultedTableVersionIdsOf(state, validatedRows),

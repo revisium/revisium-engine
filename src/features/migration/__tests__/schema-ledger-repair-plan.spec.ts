@@ -149,13 +149,13 @@ describe('Schema ledger repair planning', () => {
           removedPaths: [],
         },
       ]);
-      expect(plan.renumbered).toEqual([
-        { previousId: pendingId, id: expect.any(String) },
+      expect(plan.renumberedMigrations).toEqual([
+        { from: pendingId, to: expect.any(String) },
       ]);
       expectStrictlyAscending([
         lastPublishedId,
         repairOf(plan, PRODUCTS).migrationId,
-        plan.renumbered.at(0)?.id,
+        plan.renumberedMigrations.at(0)?.to,
       ]);
     });
 
@@ -175,8 +175,8 @@ describe('Schema ledger repair planning', () => {
           removedPaths: [],
         },
       ]);
-      expect(plan.renumbered).toEqual([
-        { previousId: pendingId, id: expect.any(String) },
+      expect(plan.renumberedMigrations).toEqual([
+        { from: pendingId, to: expect.any(String) },
       ]);
     });
 
@@ -293,7 +293,7 @@ describe('Schema ledger repair planning', () => {
       expect(plan.tables).toEqual([
         { tableId: PRODUCTS, outcome: 'alreadyRepaired' },
       ]);
-      expect(plan.renumbered).toEqual([]);
+      expect(plan.renumberedMigrations).toEqual([]);
     });
 
     it('refuses a repair whose patch the synchronous path rejects where it would be inserted', async () => {
@@ -339,7 +339,7 @@ describe('Schema ledger repair planning', () => {
             },
           },
         ]);
-        expect(plan.renumbered).toEqual([]);
+        expect(plan.renumberedMigrations).toEqual([]);
       },
     );
 
@@ -459,7 +459,7 @@ describe('Schema ledger repair planning', () => {
       const plan = await planRepair(kit, draft, [tableId]);
 
       expect(plan.tables).toEqual([{ tableId, outcome }]);
-      expect(plan.renumbered).toEqual([]);
+      expect(plan.renumberedMigrations).toEqual([]);
     });
   });
 
@@ -486,10 +486,10 @@ describe('Schema ledger repair planning', () => {
           removedPaths: [],
         },
       ]);
-      expect(plan.renumbered).toEqual([
+      expect(plan.renumberedMigrations).toEqual([
         {
-          previousId: '2999-01-01T00:00:00.001Z',
-          id: '2999-01-01T00:00:00.003Z',
+          from: '2999-01-01T00:00:00.001Z',
+          to: '2999-01-01T00:00:00.003Z',
         },
       ]);
     });
@@ -505,7 +505,7 @@ describe('Schema ledger repair planning', () => {
         [ALPHAS, 'repaired'],
         [BETAS, 'repaired'],
       ]);
-      expect(plan.renumbered).toHaveLength(4);
+      expect(plan.renumberedMigrations).toHaveLength(4);
     });
 
     it('blocks the repair of a table whose coupled damaged table is not requested', async () => {
@@ -516,7 +516,7 @@ describe('Schema ledger repair planning', () => {
       expect(plan.tables).toEqual([
         { tableId: ALPHAS, outcome: 'blockedByDependency', blockedBy: [BETAS] },
       ]);
-      expect(plan.renumbered).toEqual([]);
+      expect(plan.renumberedMigrations).toEqual([]);
     });
 
     it('repairs a table while an unrelated damaged table keeps failing and only has its pending migrations renumbered', async () => {
@@ -531,8 +531,8 @@ describe('Schema ledger repair planning', () => {
       expect(plan.tables).toEqual([
         expect.objectContaining({ tableId: PRODUCTS, outcome: 'repaired' }),
       ]);
-      expect(plan.renumbered).toEqual([
-        { previousId: tagsPendingId, id: expect.any(String) },
+      expect(plan.renumberedMigrations).toEqual([
+        { from: tagsPendingId, to: expect.any(String) },
       ]);
     });
 
@@ -544,7 +544,7 @@ describe('Schema ledger repair planning', () => {
       expect(plan.tables).toEqual([
         { tableId: NOTES, outcome: 'needsDraftStructureRevert' },
       ]);
-      expect(plan.renumbered).toEqual([]);
+      expect(plan.renumberedMigrations).toEqual([]);
     });
 
     it('repairs a table while a pending removal it also blocks already failed before the repair', async () => {

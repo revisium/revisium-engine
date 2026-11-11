@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.3 |
+| Version | 2.4 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -1833,7 +1833,7 @@ facility, with `message` `Schema ledger operation finished`, the same rules and 
 | `outcome` | Backfill: the result's `status`. Repair: `planned` (dry run), `repaired` (written), `stale` (the plan was stale at write time) or `unchanged` (no table to repair). |
 | `attempts` | Backfill: the attempts of its one transaction. Repair: its planning transaction plus each attempt of its write transaction, counted when the transaction starts, before the fence and migration-lock admission, so an attempt that admission refuses counts too. |
 | `entries` | Backfill, `planned` or `backfilled`: the number of entries. |
-| `tables`, `repairedTables`, `renumbered` | Repair: the tables in the result, those whose outcome is `repaired`, and the renumbered pending migrations. |
+| `tables`, `repairedTables`, `renumbered` | Repair: the tables in the result, those whose outcome is `repaired` (`planned` in a dry run), and the renumbered pending migrations (`renumberedMigrations`). |
 
 ## 12. Native prerequisites (stage 0)
 
@@ -2387,6 +2387,11 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.4 (2026-11-11)
+
+- §11.1: the repair's log fields keep their names. `repairedTables` of a dry run counts the tables with the new outcome
+  `planned`, and `renumbered` counts the result's `renumberedMigrations` (async-row-migration-v2 §6.1).
 
 ### Version 2.3 (2026-11-11)
 

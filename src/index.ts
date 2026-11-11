@@ -211,11 +211,13 @@ export {
   ROW_HASH_REASONS,
   UNLEDGERED_REASONS,
   type BrokenLineage,
+  type CountedRevisions,
   type DamagedTableDetail,
   type DamagedTableRepair,
   type DamageShape,
   type FindingCode,
   type FindingRole,
+  type ListedRevisions,
   type MismatchedRowHash,
   type RowDiagnostics,
   type RowHashReason,
@@ -235,7 +237,6 @@ export {
 export {
   REPAIR_OUTCOMES,
   type InvalidRows,
-  type RenumberedMigration,
   type RepairOutcome,
 } from './features/migration/queries/impl/plan-schema-ledger-repair.query';
 export {

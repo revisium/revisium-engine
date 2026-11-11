@@ -95,9 +95,18 @@ export function repairOfPlan(
     headRevisionId: plan.headRevisionId,
     draftRevisionId: plan.draftRevisionId,
     dryRun,
-    tables: plan.tables,
-    renumbered: plan.renumbered,
+    tables: dryRun ? plan.tables.map(plannedTableOf) : plan.tables,
+    renumberedMigrations: plan.renumberedMigrations,
   };
+}
+
+// A dry run reports a table it would repair as planned.
+function plannedTableOf(table: TableRepair): TableRepair {
+  if (table.outcome !== 'repaired') {
+    return table;
+  }
+
+  return { ...table, outcome: 'planned' };
 }
 
 export async function repairUntilPlanned(

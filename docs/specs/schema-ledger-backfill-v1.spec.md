@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.6 |
+| Version | 1.7 |
 | Status | Accepted |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
@@ -213,14 +213,16 @@ created later would go unrecorded.
 **What the scan reports afterwards.** The scan reads every history revision of the branch
 (`ScanRevisionReader.readHistoryRevisionIds`, `scan-schema-ledger.handler.ts:70-77`). The former Head `H` and older
 revisions keep no migration table, and history is never rewritten, so their `unledgeredTable` findings with
-`reason: 'noMigrationTable'` and role `history` remain. An operator tells the branches apart by role: a branch still to
-backfill has such findings with role `head`; a backfilled one has them only with role `history`.
+`reason: 'noMigrationTable'` and role `history` remain. Such a finding carries `revisionCount` and `firstRevisionId`
+(the earliest revision) instead of a list of every revision, so its size does not grow with the commits
+(async-row-migration-v2 §5.2). An operator tells the branches apart by role: a branch still to backfill has such
+findings with role `head`; a backfilled one has them only with role `history`.
 
-Row diagnostics start for the backfilled tables. They are skipped for unledgered tables
-(`migration/ledger-scan/branch-scan.ts:106-111`) and run by default for Head and Draft (`rowDiagnostics:
-'headAndDraft'`). The trail of a backfilled table holds only its `init` (and `update`), so a row whose `schemaHash`
-differs from the table's schema hash is reported as `rowSchemaHashMismatch` with reason `unknownHash`: for example a
-row written under an earlier schema, or `''` from the low-level row API. This is a diagnostic only
+Row diagnostics can start for the backfilled tables. They are skipped for unledgered tables
+(`migration/ledger-scan/branch-scan.ts:106-111`) and run only on request (`rowDiagnostics: 'headAndDraft'` or `'all'`;
+the default is `'none'`). The trail of a backfilled table holds only its `init` (and `update`), so a row whose
+`schemaHash` differs from the table's schema hash is reported as `rowSchemaHashMismatch` with reason `unknownHash`: for
+example a row written under an earlier schema, or `''` from the low-level row API. This is a diagnostic only
 (async-row-migration-v2 §5) and refuses no partial operation.
 
 **Replicas.** No Head-synced replica of such a project can exist through migrations, because there was nothing to
@@ -280,7 +282,7 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
   schemas and stored ledger, including a split cycle.
 - BF-12 Native `updateTable` after the backfill records an `update` with an id after the backfilled ones. The scan of
   the branch reports no finding with role `head` or `draft`, and `unledgeredTable` (`noMigrationTable`) with role
-  `history` for the former Head.
+  `history`, `revisionCount: 1` and `firstRevisionId` the former Head.
 - BF-13 Other branches of the project are unchanged. A branch created from a pre-backfill revision → its own
   `backfilled`; a branch created from the new Head → `notNeeded`.
 - BF-14 Wrong input types and a `null` `dryRun` / `comment` are handled as §2 says, before any transaction; without
@@ -292,9 +294,9 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
   instead; when neither survives the split → `refused` with `schemaNotReproducible` naming both, and a table that only
   references the cycle is not named; after a native `updateTable` of `a` and a native commit, a run → `backfilled`.
 - BF-17 A Head without user tables → `backfilled` with `entries: []`; a later native `createTable` records its `init`.
-- BF-18 A Head row whose `schemaHash` differs from its table's schema hash: after the backfill the scan reports
-  `rowSchemaHashMismatch` with `unknownHash` for the table (role `head`), and a partial commit of a change in that table
-  is not refused.
+- BF-18 A Head row whose `schemaHash` differs from its table's schema hash: after the backfill the scan with
+  `rowDiagnostics: 'headAndDraft'` reports `rowSchemaHashMismatch` with `unknownHash` for the table (role `head`), and a
+  partial commit of a change in that table is not refused.
 - BF-19 Endpoints of the new Head and the new Draft are notified after `backfilled`; none after `planned`,
   `notNeeded` or `refused`.
 
@@ -316,6 +318,11 @@ No question is open.
 | 4 | `docs/api.md` and `docs/migration.md`. | — |
 
 ## Changelog
+
+### Version 1.7 (2026-11-11)
+
+- §4, BF-12, BF-18: the `history` findings that stay after a backfill carry `revisionCount` and `firstRevisionId`
+  instead of every revision id, and row diagnostics run only on request (async-row-migration-v2 version 2.7).
 
 ### Version 1.6 (2026-11-11)
 

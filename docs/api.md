@@ -677,6 +677,12 @@ total. Each page reads its own snapshot, so units can move between pages under c
 is bound by `expected`, not by the listing. A structure unit carries `structureChange` (what the table's structure
 change consists of, field by field), and another unit of a table with a structure unit names it in `structure`.
 
+Pass as `cursor` only the `nextCursor` of an earlier listing page. The cursors of the Draft reads have another format,
+and the listing does not yet refuse them all: a known defect lets a row or table cursor of the Draft reads through, and
+the listing then pages from a wrong position. The `tableId` filter resolves the id to one table, the Draft table
+first, so a removed table whose id a rename took over (its structure unit has `side: 'head'`) is not listed under that
+id; only the unfiltered listing shows its unit.
+
 ### changes.preview
 
 ```typescript
@@ -715,6 +721,22 @@ A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts` 
   "sample": [], "refusedTables": [], "blockers": [{ "code": "tooLarge", "message": "…" }],
   "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] } }
 ```
+
+Each call plans anew from the current Draft, so a transport that serves `preview` as a query keeps it out of client
+caches: a caching client fetches it from the network on every call, or it shows an old plan and applies with an old
+fingerprint.
+
+A reason's `site` says where the requirement arises, and its `kind` fixes which ids it carries
+([SPEC §5.1](specs/partial-changes-v1.spec.md#51-common-types)). At `selector`, `row` and `schema` sites, and for the
+table of a `rowId` site, the ids are public ids, so a client joins the site to the Draft items by `tableId` and
+`rowId`. The `rowId` of a `rowId` site and the `tableId` of a `tableId` site without `migrationId` are the id that two
+rows or tables would hold in the target. At a `migration` site, and at a `tableId` site with `migrationId`, the ids are
+those of the ledger at the migration's step: such a `tableId` can name a table that no longer exists, or another
+current table. When the Draft creates `tx`, renames it to `ty` and creates another `tx`, committing the new `tx`
+requires `ty` at a `tableId` site with `tableId: 'tx'`, the id of the new table; `because` names the ledger ids too. A
+client links a reason at these two sites through public ids: the required `unit` and `cause.unit` carry them, and
+`migrationId` is the `migrationId` of an entry of `schemaMigrations` of the table item whose pending migration it is
+(`ty` here; a table created and removed in the Draft has no item, only its unit).
 
 ### changes.commit / changes.revert
 
@@ -761,6 +783,9 @@ Decided in this order ([SPEC §5.6](specs/partial-changes-v1.spec.md#56-statuses
 4. a blocker, or a selector that matched nothing (`unmatchedSelector`) → `blocked`;
 5. required additions exist and `includeRequired` is not set → `required`;
 6. otherwise → `applied` (`ready` for a preview).
+
+`empty` comes before `stale`: a selection that no longer matches anything is `empty` even when `expected` is outdated,
+for example when the Draft was committed natively between preview and apply.
 
 Blockers ([SPEC §5.8](specs/partial-changes-v1.spec.md#58-blockers)):
 
@@ -840,7 +865,8 @@ engine.changes.summary({
   that carries it (`reason`: `tableExistence`, `structureBound`, `rowExistence`), `computed` (only computed values
   differ) or `refused`. A field or column is `unit`, `goesWith`, `computed` or `refused`.
 - **Paging.** Keyset pages: pass `pageInfo.endCursor` as `after` while `pageInfo.hasNextPage`. Each page reads its own
-  snapshot. The two items of one row id are never split, so a row page can hold a few more items than `first`.
+  snapshot. The two items of one row id are never split, so a row page can hold a few more items than `first`. A read
+  refuses a cursor of the other read or of `changes.list` as malformed (400).
 - **Totals.** `tableChanges` returns `totalCount` of the tables matching its filters. `rowChanges` returns no
   `totalCount`: it reads only the tables it needs for the page. Row totals come from `summary` (`rowsSummary` by
   change type, `rowsWithUnits`) or from a table item (`rowsSummary`, `tableData.rows`). The summary's counts are the
@@ -945,6 +971,11 @@ list types, and how a typed transport maps the unions:
   renumbered stay in the database until the host runs `cleanOrphanedData`
   ([Cleanup](integration.md#cleanup-orphaned-data)). Until then, files of reverted rows stay counted in the file
   usage, as after a native `revertChanges`.
+- **Database index.** The id-exchange and followed-rename queries of `changes.rowChanges` join `Row` by `createdId`
+  and rely on the index `Row_createdId_idx` to find the other row versions of an identity. The index comes with the
+  engine migration `20260815120000_add_row_history_indexes`, which no stable engine release contains yet. A host that
+  carries its own database migrations, as revisium-core does, adds that migration before it serves the Draft reads
+  ([integration.md](integration.md#prismaclient-injection)).
 - **Limits.** Each operation reads only the tables its selection affects (`all: true` reads every table) and refuses
   work above its limits with `tooLarge`. The defaults are conservative; a host raises them through the environment
   once the operation logs show the real costs ([ENV.md](../ENV.md),

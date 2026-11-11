@@ -112,7 +112,7 @@ export class RowMerger {
     { headSchema, pendingHistory }: DraftStructureMigration,
   ): Row[] {
     let schema = headSchema;
-    let migrated = [...rows];
+    let migrated = rows.map((row) => ({ ...row }));
 
     // As in native updateTable, every history entry patches a table of its own: the schema toolkit cannot patch a
     // field that an earlier entry moved in the same SchemaTable.

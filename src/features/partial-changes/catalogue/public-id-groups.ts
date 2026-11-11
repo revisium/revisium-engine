@@ -1,5 +1,6 @@
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
+import { groupConnected } from 'src/features/share/utils/group-connected';
 
 interface VersionPair {
   readonly identity: string;
@@ -36,16 +37,10 @@ function groupLinkedPairs<T extends VersionPair>(
   const alone = pairs
     .filter((pair) => !linksByPublicId(pair))
     .map((pair) => [pair]);
-  let linked: T[][] = [];
-
-  for (const pair of pairs.filter(linksByPublicId)) {
-    const sharing = linked.filter((group) =>
-      group.some((member) => holdCommonPublicId(member, pair)),
-    );
-    const separate = linked.filter((group) => !sharing.includes(group));
-
-    linked = [...separate, [...sharing.flat(), pair]];
-  }
+  const linked = groupConnected(
+    pairs.filter(linksByPublicId),
+    holdCommonPublicId,
+  );
 
   return [...alone, ...linked.map(inIdentityOrder)];
 }

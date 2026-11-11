@@ -1,9 +1,9 @@
 import type { Migration } from '@revisium/schema-toolkit/types';
-import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import type {
   ChangesSnapshot,
   TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { tableIdentitiesOf } from 'src/features/partial-changes/snapshot/table-side';
 import {
   type LedgerEntry,
   migrationsOf,
@@ -15,6 +15,7 @@ import {
   type PendingSlotOwner,
 } from 'src/features/share/ledger/pending-attribution';
 import type { TableSlot } from 'src/features/share/ledger-replay/table-slots';
+import { groupConnected } from 'src/features/share/utils/group-connected';
 
 export interface TableHistory {
   readonly tableIds: readonly string[];
@@ -70,8 +71,9 @@ class PendingAttribution {
     tables: readonly TablePair[],
     private readonly pending: readonly LedgerEntry[],
   ) {
-    this.headIdentities = identitiesByTableId(tables, 'head');
-    this.draftIdentities = identitiesByTableId(tables, 'draft');
+    const { head, draft } = tableIdentitiesOf(tables);
+    this.headIdentities = head;
+    this.draftIdentities = draft;
   }
 
   public attribute(): Omit<LedgerAttribution, 'published' | 'pending'> {
@@ -137,16 +139,7 @@ class PendingAttribution {
   }
 
   private groupByTableIds(slots: readonly TableSlot[]): TableHistory[] {
-    let groups: TableSlot[][] = [];
-
-    for (const slot of slots) {
-      const sharing = groups.filter((group) => sharesTableId(group, slot));
-      const separate = groups.filter((group) => !sharing.includes(group));
-
-      groups = [...separate, [...sharing.flat(), slot]];
-    }
-
-    return groups.map((group) =>
+    return groupConnected(slots, sharesTableId).map((group) =>
       this.historyOf(slots.filter((slot) => group.includes(slot))),
     );
   }
@@ -163,23 +156,6 @@ class PendingAttribution {
 
     return this.pending.filter(({ migration }) => migrations.has(migration));
   }
-}
-
-function identitiesByTableId(
-  tables: readonly TablePair[],
-  side: RevisionSide,
-): ReadonlyMap<string, string> {
-  const identities = new Map<string, string>();
-
-  for (const pair of tables) {
-    const version = pair[side];
-
-    if (version) {
-      identities.set(version.id, pair.identity);
-    }
-  }
-
-  return identities;
 }
 
 function tableOwner(tableIdentity: string | undefined): SlotOwner {
@@ -201,8 +177,6 @@ function appendTo(
   ]);
 }
 
-function sharesTableId(group: readonly TableSlot[], slot: TableSlot): boolean {
-  return group.some(({ tableIds }) =>
-    tableIds.some((tableId) => slot.tableIds.includes(tableId)),
-  );
+function sharesTableId(left: TableSlot, right: TableSlot): boolean {
+  return left.tableIds.some((tableId) => right.tableIds.includes(tableId));
 }

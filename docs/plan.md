@@ -12,7 +12,7 @@ Design: Accepted on 2026-10-31.
 | [partial-changes-v1](specs/partial-changes-v1.spec.md) | Accepted; v2.0 (the API revision) implemented (ADR-002 PRs 1–7, 12 and 13) |
 | [draft-reads-v1](specs/draft-reads-v1.spec.md) | Accepted; implemented: the table reads, the summary, the row items, id takeovers, id exchanges, followed renames and row filters (#177, #179, #180, PR 11); on the facade since ADR-002 PR 12 (#145) |
 | [async-row-migration-v2](specs/async-row-migration-v2.spec.md) | Accepted |
-| [schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md) | Accepted |
+| [schema-ledger-backfill-v1](specs/schema-ledger-backfill-v1.spec.md) | Accepted; no open question since 2026-11-11 |
 | [PoC v2 summary](research/partial-changes-poc-v2.md) | Evidence for ADR-001 |
 
 ### Work order
@@ -26,7 +26,7 @@ The stages run in the order 0–4; stages 1–3 may be developed in parallel wit
 | 1 | Partial revert, `listChanges`, `previewChanges`, Head schema check | Done (#104, #125, #129, #133) | [SPEC §5.2](specs/partial-changes-v1.spec.md#52-listchanges), [§5.3](specs/partial-changes-v1.spec.md#53-previewchanges), [§5.5](specs/partial-changes-v1.spec.md#55-revertchanges), [§6.10](specs/partial-changes-v1.spec.md#610-checkheadschema), [§6.14](specs/partial-changes-v1.spec.md#614-writerevert) |
 | 2 | Partial commit of data units | Done (#130, #137) | [SPEC §5.4](specs/partial-changes-v1.spec.md#54-commitchanges), [§6.13](specs/partial-changes-v1.spec.md#613-writecommit) |
 | 3 | Partial commit of structure units, ledger renumbering, replica guarantee | Done (#142, #144) | [SPEC §6.8](specs/partial-changes-v1.spec.md#68-planledger), [§10](specs/partial-changes-v1.spec.md#10-migration-history-and-replicas) |
-| 4 | Public API, CLI and MCP | In progress: the engine part is done: the API revision, the Draft reads, the engine facade and its documentation ([ADR-002, Delivery](adr/ADR-002-draft-reads-and-public-changes-api.md#delivery), PRs 1–13: PR 1 in #175, PR 2 in #178, PR 3 in #181, PR 4 in #184, PR 5 in #185, PR 6 in #186, PR 7 in #187; PR 8, the table reads and the summary, in #177; PR 9, the row items, in #179; PR 10, id takeovers, id exchanges and followed renames, in #180; PR 11, the row filters, implemented; PR 12, the facade and the package exports, in #145; PR 13, `docs/api.md`, in #188); the host transports (GraphQL, REST, MCP) are not started; stabilization and the review of the whole epic remain | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports), [draft-reads-v1](specs/draft-reads-v1.spec.md) |
+| 4 | Public API, CLI and MCP | In progress: the engine part is done: the API revision, the Draft reads, the engine facade and its documentation ([ADR-002, Delivery](adr/ADR-002-draft-reads-and-public-changes-api.md#delivery), PRs 1–13: PR 1 in #175, PR 2 in #178, PR 3 in #181, PR 4 in #184, PR 5 in #185, PR 6 in #186, PR 7 in #187; PR 8, the table reads and the summary, in #177; PR 9, the row items, in #179; PR 10, id takeovers, id exchanges and followed renames, in #180; PR 11, the row filters, implemented; PR 12, the facade and the package exports, in #145; PR 13, `docs/api.md`, in #188); the host transports (GraphQL, REST, MCP) are not started; the review of the whole epic was done on 2026-11-11 (see below); stabilization remains | [SPEC §5.10](specs/partial-changes-v1.spec.md#510-facade-and-transports), [draft-reads-v1](specs/draft-reads-v1.spec.md) |
 
 ### Stage 0 items
 
@@ -53,6 +53,11 @@ Each item is delivered by its own pull requests, in this order.
 Acceptance scenarios for every stage: [SPEC §13](specs/partial-changes-v1.spec.md#13-acceptance-scenarios).
 After stages 1–3, an audit of master (2026-11-08) led to #162–#167: input types, database errors in lookups, the
 fingerprint, and tests for AS-36, AS-38, AS-39, AS-41 and AS-54.
+After stage 4's engine part, the review of the whole epic (2026-11-11) led to #190, #191, #192 and #194: one
+`requiredExcluded` blocker per cause (#190), the exported names and code lists a host maps (#191), races of partial
+commit and revert against native structural writes, commit and whole revert, with the host's duties for low-level
+Draft writes and orphan cleanup (#192), and a Draft snapshot read without duplicate table and system-table reads
+(#194). The API decisions the review raised are open.
 
 ### Release gate
 

@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.5 |
+| Version | 1.6 |
 | Status | Accepted |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
@@ -226,9 +226,9 @@ row written under an earlier schema, or `''` from the low-level row API. This is
 **Replicas.** No Head-synced replica of such a project can exist through migrations, because there was nothing to
 export. After the backfill, a replica synced from scratch receives the entries and reproduces the Head schemas. A
 replica whose tables were created by hand fails at the first `init` (`applyMigrations` refuses an `init` of an existing
-table) and stops; making `applyMigrations` skip an `init` whose table exists with an equal schema is not part of this
-version (§8, question 1). A replica stores the schemas the replay produces: for a table split by §3 step 3, that is the
-schema after the `update`, equal to the Head schema because the table survives the split.
+table) and stops; `applyMigrations` does not skip an `init` whose table exists with an equal schema, because no such
+replica exists (§8, question 1, closed). A replica stores the schemas the replay produces: for a table split by §3
+step 3, that is the schema after the `update`, equal to the Head schema because the table survives the split.
 
 ## 5. Storage
 
@@ -300,9 +300,11 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 
 ## 8. Open questions
 
-1. **Replicas with tables created by hand.** If such replicas of pre-v2.0.0 projects exist, `applyMigrations` could
-   return `skipped` for an `init` whose table exists with an equal schema hash, instead of failing. Decided only if the
-   user reports such replicas.
+1. **Replicas with tables created by hand** — closed: no replica of a pre-v2.0.0 project has tables created by hand,
+   so the backfill stays strict and `applyMigrations` keeps refusing an `init` of a table that exists (it returns
+   `failed` for such an `init`); a replica built that way would stop at its first `init` (§4). Confirmed on 2026-11-11.
+
+No question is open.
 
 ## 9. Delivery
 
@@ -315,9 +317,14 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 
 ## Changelog
 
-### Version 1.5 (2026-11-11)
+### Version 1.6 (2026-11-11)
 
 - §2: each call logs one structured entry (partial-changes §11.1).
+
+### Version 1.5 (2026-11-11)
+
+- §8: question 1 is closed; no replica has tables created by hand, the backfill stays strict and `applyMigrations`
+  keeps refusing an `init` of a table that exists.
 
 ### Version 1.4 (2026-11-11)
 

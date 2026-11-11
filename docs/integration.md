@@ -212,6 +212,8 @@ At runtime, the consumer provides the full `PrismaClient` (with all models inclu
 
 The engine's own Prisma schema (4 models, no FKs to Project) exists solely for running the engine's test suite in CI.
 
+The host's database migrations must create the indexes the engine's queries rely on. The engine migration `20260815120000_add_row_history_indexes` adds `Row_createdId_idx`, which the Draft reads need to follow renamed rows ([api.md](api.md#host-integration)), with `Table_createdId_idx` and three `Revision` indexes for the history reads. No stable engine release contains it yet (the prerelease `v0.8.0-alpha.0` created the two `createdId` indexes under the migration it replaces), so a host that carries its own migrations, such as revisium-core, adds it when it moves to an engine version with the Draft changes API.
+
 ## Storage
 
 The engine does not include storage implementations (no S3, no local filesystem). Instead, it accepts an `IStorageService` via `EngineModule.forRoot({ storage })`.

@@ -30,6 +30,8 @@ import {
   BranchRevisionReader,
   type HeadAndDraft,
   type StoredSystemTables,
+  type StoredTable,
+  systemTableOf,
 } from 'src/features/share/branch-revisions/branch-revision-reader';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
@@ -253,9 +255,14 @@ export class ChangesSnapshotReader {
     headRevisionId,
     draftRevisionId,
   }: HeadAndDraft): Promise<HeadAndDraftTables> {
+    const tables = await this.revisionReader.readTablesOfRevisions([
+      headRevisionId,
+      draftRevisionId,
+    ]);
+
     return {
-      head: await this.revisionReader.readTables(headRevisionId),
-      draft: await this.revisionReader.readTables(draftRevisionId),
+      head: tables.get(headRevisionId) ?? [],
+      draft: tables.get(draftRevisionId) ?? [],
     };
   }
 
@@ -266,10 +273,7 @@ export class ChangesSnapshotReader {
       tables.head,
       SNAPSHOT_SYSTEM_TABLES,
     );
-    const draft = await this.revisionReader.readSystemRows(
-      tables.draft,
-      SNAPSHOT_SYSTEM_TABLES,
-    );
+    const draft = await this.readDraftSystemRows(tables.draft, head);
 
     return {
       schemas: systemTableRowsOf(head, draft, SystemTables.Schema),
@@ -277,6 +281,23 @@ export class ChangesSnapshotReader {
       views: systemTableRowsOf(head, draft, SystemTables.Views),
       sharedSchemas: systemTableRowsOf(head, draft, SystemTables.SharedSchemas),
     };
+  }
+
+  private async readDraftSystemRows(
+    draftTables: readonly StoredTable[],
+    head: StoredSystemTables<SystemTables>,
+  ): Promise<StoredSystemTables<SystemTables>> {
+    const changedTableIds = SNAPSHOT_SYSTEM_TABLES.filter(
+      (tableId) =>
+        systemTableOf(draftTables, tableId)?.versionId !==
+        head[tableId].version?.versionId,
+    );
+    const changed = await this.revisionReader.readSystemRows(
+      draftTables,
+      changedTableIds,
+    );
+
+    return { ...head, ...changed };
   }
 }
 

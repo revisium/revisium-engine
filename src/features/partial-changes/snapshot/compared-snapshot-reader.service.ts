@@ -15,7 +15,10 @@ import {
   pendingMigrationsOf,
 } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SourceReplays } from 'src/features/partial-changes/snapshot/source-replays';
-import { tableSideOf } from 'src/features/partial-changes/snapshot/table-side';
+import {
+  tableIdentitiesOf,
+  tableSideOf,
+} from 'src/features/partial-changes/snapshot/table-side';
 import { analyzeTableStructure } from 'src/features/partial-changes/structure/table-structure';
 import { LedgerReplayer } from 'src/features/share/ledger-replay/ledger-replayer';
 import { NativeSchemaRules } from 'src/features/share/ledger-replay/native-schema-rules';
@@ -64,6 +67,8 @@ export class ComparedSnapshotReader {
     ledger: LedgerAttribution,
     headSchema: HeadSchemaCheck,
   ): ComparedTable[] {
+    const tableIdentities = tableIdentitiesOf(snapshot.tables);
+
     return snapshot.tables.flatMap(({ identity, head, draft }) => {
       if (!head || !draft) {
         return [];
@@ -71,8 +76,8 @@ export class ComparedSnapshotReader {
 
       const structure = analyzeTableStructure(
         {
-          head: tableSideOf(snapshot.tables, head, 'head'),
-          draft: tableSideOf(snapshot.tables, draft, 'draft'),
+          head: tableSideOf(tableIdentities, head, 'head'),
+          draft: tableSideOf(tableIdentities, draft, 'draft'),
           pendingMigrations: pendingMigrationsOf(ledger, identity),
           replayedHeadSchema: headSchema.replayedHeadSchemas.get(identity),
         },

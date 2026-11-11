@@ -673,15 +673,14 @@ engine.changes.list({
 ```
 
 A page can hold fewer units than `pageSize`, or none; only `nextCursor: null` ends the listing. The listing has no
-total. Each page reads its own snapshot, so units can move between pages under concurrent edits; what a commit applies
-is bound by `expected`, not by the listing. A structure unit carries `structureChange` (what the table's structure
-change consists of, field by field), and another unit of a table with a structure unit names it in `structure`.
+total. A cursor belongs to the operation that issued it: `changes.list` refuses the `endCursor` of `tableChanges` or
+`rowChanges`, and they refuse its `nextCursor`, with a 400. Each page reads its own snapshot, so units can move between
+pages under concurrent edits; what a commit applies is bound by `expected`, not by the listing. A structure unit
+carries `structureChange` (what the table's structure change consists of, field by field), and another unit of a table
+with a structure unit names it in `structure`.
 
-Pass as `cursor` only the `nextCursor` of an earlier listing page. The cursors of the Draft reads have another format,
-and the listing does not yet refuse them all: a known defect lets a row or table cursor of the Draft reads through, and
-the listing then pages from a wrong position. The `tableId` filter resolves the id to one table, the Draft table
-first, so a removed table whose id a rename took over (its structure unit has `side: 'head'`) is not listed under that
-id; only the unfiltered listing shows its unit.
+The `tableId` filter resolves the id to one table, the Draft table first, so a removed table whose id a rename took
+over (its structure unit has `side: 'head'`) is not listed under that id; only the unfiltered listing shows its unit.
 
 ### changes.preview
 
@@ -911,7 +910,7 @@ native `createRevision` and `revertChanges` still work.
 
 | Condition | Error |
 | --- | --- |
-| Malformed input: an unknown selection field, a wrong type, an empty id, a `path` that is not a JSON Pointer, `includeRequired: true` without `expected`, a `pageSize` or `first` out of range, a malformed cursor, a filter of a wrong type | `BadRequestException` (400), before any transaction |
+| Malformed input: an unknown selection field, a wrong type, an empty id, a `path` that is not a JSON Pointer, `includeRequired: true` without `expected`, a `pageSize` or `first` out of range, a malformed cursor or a cursor of another operation, a filter of a wrong type | `BadRequestException` (400), before any transaction |
 | A malformed `expected`, including the bare SHA-256 hex fingerprints of engines before this API | `BadRequestException` (400): `expected must be a fingerprint` |
 | `changes.list` with a `tableId` that names no Head or Draft table | `BadRequestException` (400) |
 | Unknown project or branch | The native `BadRequestException`: `A branch with this name does not exist in the project` |

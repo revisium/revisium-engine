@@ -22,28 +22,53 @@ export function listingRequestOf({
   cursor,
   pageSize,
 }: ListChangesInput): ListingRequest {
-  const size = pageSize ?? DEFAULT_PAGE_SIZE;
+  return {
+    branch,
+    tableId: tableIdOf(tableId),
+    cursor: cursorOf(cursor),
+    pageSize: pageSizeOf(pageSize),
+  };
+}
 
-  if (!Number.isInteger(size) || size < 1 || size > MAX_PAGE_SIZE) {
+function tableIdOf(tableId: unknown): string | undefined {
+  if (tableId === undefined || tableId === null) {
+    return undefined;
+  }
+
+  if (typeof tableId !== 'string') {
+    throw new ListingValidationError('tableId must be a string');
+  }
+
+  return tableId;
+}
+
+function cursorOf(cursor: unknown): ListingCursor | undefined {
+  if (cursor === undefined || cursor === null) {
+    return undefined;
+  }
+
+  if (typeof cursor !== 'string') {
+    throw new ListingValidationError('cursor must be a string');
+  }
+
+  return decodeListingCursor(cursor);
+}
+
+function pageSizeOf(pageSize: unknown): number {
+  if (pageSize === undefined || pageSize === null) {
+    return DEFAULT_PAGE_SIZE;
+  }
+
+  if (
+    typeof pageSize !== 'number' ||
+    !Number.isInteger(pageSize) ||
+    pageSize < 1 ||
+    pageSize > MAX_PAGE_SIZE
+  ) {
     throw new ListingValidationError(
       `pageSize must be an integer from 1 to ${MAX_PAGE_SIZE}`,
     );
   }
 
-  return {
-    branch,
-    tableId: tableId ?? undefined,
-    cursor: decodedCursorOf(cursor),
-    pageSize: size,
-  };
-}
-
-function decodedCursorOf(
-  cursor: string | null | undefined,
-): ListingCursor | undefined {
-  if (cursor === undefined || cursor === null) {
-    return undefined;
-  }
-
-  return decodeListingCursor(cursor);
+  return pageSize;
 }

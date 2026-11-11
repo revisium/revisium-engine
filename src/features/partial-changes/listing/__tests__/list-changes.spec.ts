@@ -9,6 +9,8 @@ import {
   type Unit,
   type UnitKind,
 } from 'src/features/partial-changes/catalogue/unit';
+import { MAX_CURSOR_LENGTH } from 'src/features/partial-changes/input/cursor-codec';
+import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type {
@@ -22,6 +24,7 @@ import {
   unitsOfPages,
 } from '../../__tests__/support/change-listing';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { deeplyNestedCursor } from '../../__tests__/support/hostile-cursors';
 import {
   sourceLedgersOf,
   sourceReplaysDuring,
@@ -389,6 +392,92 @@ describe('listChanges', () => {
         );
       },
     );
+
+    it.each([
+      [
+        'tableId',
+        { tableId: malformed<string>(5) },
+        'tableId must be a string',
+      ],
+      ['cursor', { cursor: malformed<string>(5) }, 'cursor must be a string'],
+      [
+        'pageSize',
+        { pageSize: malformed<number>('10') },
+        'pageSize must be an integer from 1 to 5000',
+      ],
+    ])(
+      'refuses a %s of a wrong type before reading the snapshot',
+      async (_input, options, message) => {
+        const draft = await givenOneEditedCategory();
+        const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');
+
+        try {
+          await expect(draft.listChanges(options)).rejects.toThrow(
+            new ListingValidationError(message),
+          );
+          expect(readSnapshot).not.toHaveBeenCalled();
+        } finally {
+          readSnapshot.mockRestore();
+        }
+      },
+    );
+
+    it('refuses the end cursor of a row read page as a malformed cursor', async () => {
+      const draft = await givenTwoEditedCategories();
+      const { pageInfo } = await draft.readDraftRowChanges({ first: 1 });
+
+      await expect(
+        draft.listChanges({ cursor: pageInfo.endCursor, pageSize: 5 }),
+      ).rejects.toThrow(new ListingValidationError('cursor is malformed'));
+    });
+
+    it('refuses the end cursor of a table read page as a malformed cursor', async () => {
+      const draft = await givenTwoEditedCategories();
+      const { pageInfo } = await draft.readDraftTableChanges({ first: 1 });
+
+      await expect(
+        draft.listChanges({ cursor: pageInfo.endCursor, pageSize: 5 }),
+      ).rejects.toThrow(new ListingValidationError('cursor is malformed'));
+    });
+
+    it.each([
+      ['deeply nested', () => deeplyNestedCursor('units')],
+      [
+        'longer than the limit',
+        () =>
+          encodeListingCursor({
+            tableId: CATEGORIES,
+            rows: { rowId: 'c'.repeat(MAX_CURSOR_LENGTH), inclusive: false },
+          }),
+      ],
+    ])(
+      'refuses a cursor %s as a malformed cursor before reading the snapshot',
+      async (_cursor, cursorOf) => {
+        const draft = await givenOneEditedCategory();
+        const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');
+
+        try {
+          await expect(
+            draft.listChanges({ cursor: cursorOf() }),
+          ).rejects.toThrow(new ListingValidationError('cursor is malformed'));
+          expect(readSnapshot).not.toHaveBeenCalled();
+        } finally {
+          readSnapshot.mockRestore();
+        }
+      },
+    );
+
+    it('refuses a cursor whose row id holds the NUL character as a malformed cursor, not a database error', async () => {
+      const draft = await givenTwoEditedCategories();
+      const cursor = encodeListingCursor({
+        tableId: CATEGORIES,
+        rows: { rowId: 'c1\u0000', inclusive: false },
+      });
+
+      await expect(draft.listChanges({ cursor })).rejects.toThrow(
+        new ListingValidationError('cursor is malformed'),
+      );
+    });
   });
 
   async function givenDraftWithEveryUnitKind(): Promise<ChangesScenario> {
@@ -520,7 +609,24 @@ describe('listChanges', () => {
 
     return draft;
   }
+
+  async function givenTwoEditedCategories(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: {
+        schema: categorySchema,
+        rows: { c1: { title: 'one' }, c2: { title: 'two' } },
+      },
+    });
+    await draft.updateRow(CATEGORIES, 'c1', { title: 'edited' });
+    await draft.updateRow(CATEGORIES, 'c2', { title: 'edited' });
+
+    return draft;
+  }
 });
+
+function malformed<T>(value: unknown): T {
+  return value as T;
+}
 
 type SidedUnit = Unit & { readonly side?: SelectorSide };
 

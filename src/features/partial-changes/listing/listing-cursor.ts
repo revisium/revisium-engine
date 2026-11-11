@@ -3,6 +3,15 @@ import {
   UNIT_KINDS,
   type UnitAddress,
 } from 'src/features/partial-changes/catalogue/unit';
+import {
+  cursorPartsOf,
+  encodeCursor,
+} from 'src/features/partial-changes/input/cursor-codec';
+import {
+  type Fields,
+  hasOnlyFields,
+  isFields,
+} from 'src/features/partial-changes/input/fields';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import type { RowBound } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
@@ -14,14 +23,6 @@ export interface ListingCursor {
   readonly last?: ListedPosition;
 }
 
-interface CursorPayload extends ListingCursor {
-  readonly v: number;
-}
-
-type Fields = Readonly<Record<string, unknown>>;
-
-const CURSOR_VERSION = 1;
-const BASE64URL = /^[\w-]+$/;
 const UNIT_KIND_NAMES: ReadonlySet<unknown> = new Set(UNIT_KINDS);
 const OPTIONAL_SORT_PARTS = [
   'rowId',
@@ -29,30 +30,35 @@ const OPTIONAL_SORT_PARTS = [
   'previousTableId',
   'previousRowId',
 ] as const;
+const CURSOR_PARTS: ReadonlySet<string> = new Set(['tableId', 'rows', 'last']);
+const ROW_BOUND_PARTS: ReadonlySet<string> = new Set(['rowId', 'inclusive']);
+const POSITION_PARTS: ReadonlySet<string> = new Set(['key', 'unit']);
+const UNIT_ADDRESS_PARTS: ReadonlySet<string> = new Set([
+  'kind',
+  'tableId',
+  ...OPTIONAL_SORT_PARTS,
+]);
 
 export function encodeListingCursor({
   tableId,
   rows,
   last,
 }: ListingCursor): string {
-  const payload: CursorPayload = {
-    v: CURSOR_VERSION,
+  return encodeCursor('units', {
     tableId,
     rows,
     last: sortKeyPositionOf(last),
-  };
-
-  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+  });
 }
 
 export function decodeListingCursor(text: string): ListingCursor {
-  const payload = payloadOf(text);
+  const parts = cursorPartsOf(text, 'units', CURSOR_PARTS);
 
-  if (!isCursorPayload(payload)) {
+  if (!parts || !isListingCursor(parts)) {
     throw malformedCursor();
   }
 
-  const { tableId, rows, last } = payload;
+  const { tableId, rows, last } = parts;
 
   return { tableId, rows, last };
 }
@@ -78,31 +84,18 @@ function sortKeyOf({
   return { kind, tableId, rowId, path, previousTableId, previousRowId };
 }
 
-function payloadOf(text: string): unknown {
-  if (!BASE64URL.test(text)) {
-    throw malformedCursor();
-  }
-
-  try {
-    return JSON.parse(Buffer.from(text, 'base64url').toString());
-  } catch {
-    throw malformedCursor();
-  }
-}
-
-function isCursorPayload(value: unknown): value is CursorPayload {
+function isListingCursor(parts: Fields): parts is Fields & ListingCursor {
   return (
-    isFields(value) &&
-    value.v === CURSOR_VERSION &&
-    typeof value.tableId === 'string' &&
-    (value.rows === undefined || isRowBound(value.rows)) &&
-    (value.last === undefined || isPosition(value.last))
+    typeof parts.tableId === 'string' &&
+    (parts.rows === undefined || isRowBound(parts.rows)) &&
+    (parts.last === undefined || isPosition(parts.last))
   );
 }
 
 function isPosition(value: unknown): value is ListedPosition {
   return (
     isFields(value) &&
+    hasOnlyFields(value, POSITION_PARTS) &&
     typeof value.key === 'string' &&
     isUnitAddress(value.unit)
   );
@@ -111,6 +104,7 @@ function isPosition(value: unknown): value is ListedPosition {
 function isUnitAddress(value: unknown): value is UnitAddress {
   return (
     isFields(value) &&
+    hasOnlyFields(value, UNIT_ADDRESS_PARTS) &&
     UNIT_KIND_NAMES.has(value.kind) &&
     typeof value.tableId === 'string' &&
     OPTIONAL_SORT_PARTS.every((part) => isOptionalText(value[part]))
@@ -120,13 +114,10 @@ function isUnitAddress(value: unknown): value is UnitAddress {
 function isRowBound(value: unknown): value is RowBound {
   return (
     isFields(value) &&
+    hasOnlyFields(value, ROW_BOUND_PARTS) &&
     typeof value.rowId === 'string' &&
     typeof value.inclusive === 'boolean'
   );
-}
-
-function isFields(value: unknown): value is Fields {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isOptionalText(value: unknown): boolean {

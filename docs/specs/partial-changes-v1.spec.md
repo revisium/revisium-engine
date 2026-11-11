@@ -434,7 +434,7 @@ Input:
 | --- | --- | --- | --- |
 | `branch` | ChangesBranch | yes | |
 | `tableId` | string | no | Only units of this table (Draft id, else Head id); an id of neither side is a validation error. |
-| `cursor` | string | no | Opaque cursor from the previous page; a malformed cursor is a validation error. |
+| `cursor` | string | no | Opaque cursor from the previous page of `listChanges`; a malformed cursor, or a cursor that another operation issued (the `endCursor` of a Draft read), is a validation error. A cursor of any operation holds at most 16,384 characters and nests at most three levels; a longer or deeper text is malformed. The longest legitimate cursor, a position after a field, holds ids of at most 64 characters and the field path twice, which leaves room for a path of over 5,000 characters. |
 | `pageSize` | integer 1–5,000 | no | Units per page; default 500. |
 
 Output:
@@ -780,7 +780,7 @@ added (§6.9).
 | `includeRequired` other than a boolean, `expected` other than a non-empty string, or `comment` other than a string (`null` in any of them is absent, §5) | Validation error before any transaction. |
 | `expected` that is malformed: no `pcf<n>.` prefix with a base64url body, or a `pcf2.` body that is not exactly the engine's encoding of five strings (§9.1) | Validation error before any transaction. |
 | A malformed selection: an unknown field (also the pre-v2.0 `tables` and `renames`), a wrong type (`null` in an optional field is absent, §5), an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
-| Invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
+| Invalid `pageSize`, `cursor` (a cursor of another operation included) or `tableId`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
 | Unknown project or branch | The native lookup error: a `BadRequestException` (400) with the message `A branch with this name does not exist in the project`, the same class as a validation error. |
 | Commit or revert while an async migration is active on the branch | `MigrationLocked` error (native lock). |
 | Operation or statement timeout, attempts exhausted, any write failure | Error; the transaction is rolled back; nothing is persisted, including file references and ledger rows. A retry is safe (§9). |
@@ -2146,8 +2146,8 @@ versions unchanged" (§14) holds in every scenario.
 - AS-66 `listChanges` reads changed rows only of the tables a page lists, continues from the cursor's table, and with
   `tableId` lists and reads only that table; paging until `nextCursor = null` returns the same units as a full
   listing, also when a page is empty. Keyset paging inside one large table returns the same units, reads at most
-  `pageSize` changed rows per page, and continues a row whose units did not fit; an unknown `tableId` or a malformed
-  cursor is a validation error.
+  `pageSize` changed rows per page, and continues a row whose units did not fit; an unknown `tableId`, a malformed
+  cursor, a cursor of a Draft read or one holding the NUL character is a validation error.
 - AS-67 Required, deferred and blocking units carry exact selectors: adding each required unit's `selector` to the
   selection (also a Head-side unit addressed with `side: 'head'`) previews `ready` with no required units; the
   `unit` of a `requiredExcluded` blocker names the excluded unit and its `reason`.

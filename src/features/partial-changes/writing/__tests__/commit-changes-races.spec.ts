@@ -1,4 +1,5 @@
 import { num, obj, str } from '@revisium/schema-toolkit/mocks';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -18,10 +19,12 @@ import {
   commitOvertakenBy,
   commitWhileNativeWriteLands,
 } from '../../__tests__/support/commit-races';
+import { expectConsistentRevisions } from '../../__tests__/support/revision-consistency';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const PRODUCTS = 'products';
 const TAGS = 'tags';
+const LABELS = 'labels';
 
 const pricedSchema = obj({ title: str(), price: num() });
 const tagSchema = obj({ title: str() });
@@ -109,6 +112,139 @@ describe('commitChanges racing other writers', () => {
         { revisionId: result.headRevisionId, seenOutsideTheTransaction },
         { revisionId: result.draftRevisionId, seenOutsideTheTransaction },
       ]);
+    });
+  });
+
+  describe('a native structural write while the commit planned', () => {
+    it('creating a table: the attempt is retried, Head stays without the table and the new Draft keeps it', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.createTable(TAGS, tagSchema),
+      );
+
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(attempts).toBe(2);
+      await expectTables(draft, { head: [PRODUCTS], draft: [PRODUCTS, TAGS] });
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'uno',
+        price: 1,
+      });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('removing an untouched table: the attempt is retried, Head keeps the table and the new Draft stays without it', async () => {
+      const draft = await givenEditedPricesNextToTags();
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.removeTable(TAGS),
+      );
+
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(attempts).toBe(2);
+      await expectTables(draft, { head: [PRODUCTS, TAGS], draft: [PRODUCTS] });
+      await expectData(draft, 'head', TAGS, 't1', { title: 'one' });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('renaming an untouched table: the attempt is retried, Head keeps the old name and the new Draft the new one', async () => {
+      const draft = await givenEditedPricesNextToTags();
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.renameTable(TAGS, LABELS),
+      );
+
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(attempts).toBe(2);
+      await expectTables(draft, {
+        head: [PRODUCTS, TAGS],
+        draft: [LABELS, PRODUCTS],
+      });
+      await expectData(draft, 'draft', LABELS, 't1', { title: 'one' });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('patching the schema of the committed table: the attempt is retried, Head keeps its schema and the new Draft the new field', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.updateTable(PRODUCTS, [addField('stock', num())]),
+      );
+
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(attempts).toBe(2);
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'uno',
+        price: 1,
+      });
+      await expectData(draft, 'draft', PRODUCTS, 'p1', {
+        title: 'uno',
+        price: 10,
+        stock: 0,
+      });
+      await expectConsistentRevisions(draft);
+    });
+  });
+
+  describe('a native commit or whole revert while the commit planned', () => {
+    it('a native commit: the attempt is retried and finds nothing left to commit in the next Draft', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.commit(),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toEqual<CommitChangesResult>({
+        status: 'empty',
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: titleOfP1,
+      });
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'uno',
+        price: 10,
+      });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('a native whole revert: the attempt is retried and finds nothing left to commit, Head stays as it was', async () => {
+      const draft = await givenEditedPrices();
+      const headRevisionId = await draft.revisionId('head');
+
+      const { result, attempts } = await commitWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.revertNatively(),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toMatchObject({ status: 'empty', headRevisionId });
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'one',
+        price: 1,
+      });
+      await expectData(draft, 'draft', PRODUCTS, 'p1', {
+        title: 'one',
+        price: 1,
+      });
+      await expectConsistentRevisions(draft);
     });
   });
 
@@ -216,6 +352,17 @@ describe('commitChanges racing other writers', () => {
     result: CommitChangesResult,
   ): asserts result is CommittedDraft {
     expect(result).toMatchObject({ status: 'applied' });
+  }
+
+  async function expectTables(
+    draft: ChangesScenario,
+    tables: Readonly<Record<RevisionSide, readonly string[]>>,
+  ): Promise<void> {
+    for (const side of ['head', 'draft'] as const) {
+      const identities = await draft.userTables(side);
+
+      expect(identities.map(({ id }) => id)).toEqual(tables[side]);
+    }
   }
 
   async function expectData(

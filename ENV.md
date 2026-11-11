@@ -24,6 +24,7 @@ conservative: raise them once the operation logs show what operations really cos
 | `PARTIAL_CHANGES_MAX_CHANGED_ROWS` | `20000` | 1 or more | Changed rows of the tables an operation affects (an affected table counts in full). Above it a preview, commit or revert is refused with `tooLarge` before any unit is computed. |
 | `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | `2000` | 1 or more | Merged or converted rows in tables whose target schema has formula or File fields. Above it the plan stops with `tooLarge`. |
 | `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | `100000` | 1 or more | Row links copied into one new table version of a partly applied table. Above it for any table the plan stops with `tooLarge` naming the table. |
+| `PARTIAL_CHANGES_MAX_LISTED_DETAILS` | `200` | 1 or more | Entries of `required` and, separately, of `blockers` that a preview, commit or revert result lists; `requiredTotal` and `blockersTotal` count them all. It bounds the size of a result and changes nothing else: `includeRequired` applies every required addition. |
 | `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | `180000` | 1 to 2147453647 | Lifetime of one listing page, Draft read, preview, or commit or revert attempt; it also bounds the Head and Draft read of each branch in the schema ledger scan, the planning of a repair, and the backfill. Past it the operation fails with `OPERATION_TIMEOUT` and is rolled back. |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | `3` | 1 or more | Serializable attempts of a commit or revert, and of the schema ledger backfill, on serialization failures. |
 

@@ -36,14 +36,18 @@ export interface AppliedOutcome {
 
 export interface ChangesRequireAdditions extends ApplyResult {
   readonly status: 'required';
+  // At most PARTIAL_CHANGES_MAX_LISTED_DETAILS entries of each list; the totals count them all (SPEC §5.1).
   readonly required: readonly RequiredUnit[];
+  readonly requiredTotal: number;
 }
 
 export interface PlannedChangesBlocked extends ApplyResult {
   readonly status: 'blocked';
   readonly planned: true;
   readonly blockers: readonly PlanBlocker[];
+  readonly blockersTotal: number;
   readonly required: readonly RequiredUnit[];
+  readonly requiredTotal: number;
   readonly unmatched: UnmatchedSelectors;
 }
 
@@ -52,7 +56,9 @@ export interface StoppedChangesBlocked extends ApplyResult {
   readonly status: 'blocked';
   readonly planned: false;
   readonly blockers: readonly PlanBlocker[];
+  readonly blockersTotal: number;
   readonly required: readonly [];
+  readonly requiredTotal: 0;
 }
 
 export type ChangesBlocked = PlannedChangesBlocked | StoppedChangesBlocked;

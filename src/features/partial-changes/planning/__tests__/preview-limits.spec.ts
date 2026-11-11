@@ -102,7 +102,9 @@ describe('previewChanges refused by a limit', () => {
         coverage: [],
         refusedTables: [],
         required: [],
+        requiredTotal: 0,
         blockers: [{ code: 'tooLarge', message: CHANGED_ROWS_TOO_LARGE }],
+        blockersTotal: 1,
         deferred: [],
         sample: [],
         unmatched: null,
@@ -136,7 +138,9 @@ describe('previewChanges refused by a limit', () => {
         coverage: [],
         refusedTables: [],
         required: [],
+        requiredTotal: 0,
         blockers: [{ code: 'tooLarge', message: PER_ROW_WORK_TOO_LARGE }],
+        blockersTotal: 1,
         deferred: [],
         sample: [],
         unmatched: null,
@@ -244,7 +248,9 @@ describe('previewChanges refused by a limit', () => {
           message: PRODUCT_LINKS_TOO_LARGE,
         },
       ],
+      blockersTotal: 1,
       required: [],
+      requiredTotal: 0,
     });
   });
 
@@ -262,7 +268,9 @@ describe('previewChanges refused by a limit', () => {
         status: 'blocked',
         planned: false,
         blockers: [{ code: 'tooLarge', message: PER_ROW_WORK_TOO_LARGE }],
+        blockersTotal: 1,
         required: [],
+        requiredTotal: 0,
       });
     },
   );
@@ -284,7 +292,9 @@ describe('previewChanges refused by a limit', () => {
         status: 'blocked',
         planned: false,
         blockers: [{ code: 'tooLarge', message: CHANGED_ROWS_TOO_LARGE }],
+        blockersTotal: 1,
         required: [],
+        requiredTotal: 0,
       });
     },
   );

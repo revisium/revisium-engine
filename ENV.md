@@ -30,6 +30,12 @@ conservative: raise them once the operation logs show what operations really cos
 Each setting is read once at startup, and the effective values are logged (`Partial changes limits: …`,
 `Partial operation settings: …`), with the variable each value came from when it is not the default.
 
+Each listing page, Draft read, preview, commit and revert, and each schema ledger backfill and repair, logs one
+structured entry through the NestJS logger with the context `OperationLog` (messages `Partial changes operation
+finished` and `Schema ledger operation finished`): duration, outcome, attempts and counts, never row data
+([partial-changes-v1 §11.1](docs/specs/partial-changes-v1.spec.md#111-operation-logs)). These are the entries to read
+before raising a limit.
+
 Draft changes also follow three of the transaction settings below: `TRANSACTION_MAX_WAIT` bounds the wait to start
 each transaction, the retry backoff of a commit or revert uses `TRANSACTION_BASE_DELAY_MS` and
 `TRANSACTION_MAX_DELAY_MS`, and a commit or revert waits at most half of `TRANSACTION_TIMEOUT` for the branch write

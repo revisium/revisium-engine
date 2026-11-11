@@ -4,6 +4,7 @@ import {
   type RowDiagnostics,
   type ScanSchemaLedgerData,
 } from 'src/features/migration/queries/impl/scan-schema-ledger.query';
+import { optionalStringOf } from 'src/features/migration/ledger-request-fields';
 import type { BranchRef } from 'src/features/share/branch-revisions/branch-revision-reader';
 
 const DEFAULT_LIMIT = 50;
@@ -21,8 +22,8 @@ export interface ScanRequest {
 }
 
 export function scanRequestOf(data: ScanSchemaLedgerData): ScanRequest {
-  const projectId = data.projectId ?? undefined;
-  const branchName = data.branchName ?? undefined;
+  const projectId = optionalStringOf(data.projectId, 'projectId');
+  const branchName = optionalStringOf(data.branchName, 'branchName');
 
   if (branchName !== undefined && projectId === undefined) {
     throw new BadRequestException('branchName requires projectId');
@@ -31,7 +32,7 @@ export function scanRequestOf(data: ScanSchemaLedgerData): ScanRequest {
   return {
     projectId,
     branchName,
-    after: positionOf(data.cursor ?? undefined),
+    after: positionOf(optionalStringOf(data.cursor, 'cursor')),
     limit: limitOf(data.limit ?? DEFAULT_LIMIT),
     rowDiagnostics: rowDiagnosticsOf(
       data.rowDiagnostics ?? DEFAULT_ROW_DIAGNOSTICS,

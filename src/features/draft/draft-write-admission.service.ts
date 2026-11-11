@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import { BranchWriteFenceService } from 'src/infrastructure/database/branch-write-fence.service';
+import type { AttemptObserver } from 'src/infrastructure/database/operation-transaction-runner';
 import { EscalatingTransactionRunner } from 'src/infrastructure/database/escalating-transaction-runner';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
@@ -13,11 +14,14 @@ export class DraftWriteAdmissionService {
     private readonly escalatingTransactionRunner: EscalatingTransactionRunner,
   ) {}
 
+  // The observer hears each transaction attempt as it starts, before admission, so a refused attempt is counted too.
   runSerializableRevisionWrite<T>(
     revisionId: string,
     write: () => Promise<T>,
+    observer?: AttemptObserver,
   ): Promise<T> {
     return this.transactionService.runSerializable(async () => {
+      observer?.attempted(false);
       await this.admitRevisionWrite(revisionId);
 
       return write();

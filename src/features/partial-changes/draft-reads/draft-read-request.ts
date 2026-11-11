@@ -45,6 +45,11 @@ export interface DraftChangesSummaryRequest {
 
 const MAX_PAGE_SIZE = 5_000;
 const CHANGE_TYPES: ReadonlySet<unknown> = new Set(Object.values(ChangeType));
+const FILTER_NAMES: readonly (keyof RowFilters)[] = [
+  'changeTypes',
+  'search',
+  'tableId',
+];
 
 export function tableChangesRequestOf({
   branch,
@@ -79,6 +84,11 @@ export function summaryRequestOf({
   filters,
 }: DraftChangesSummaryInput): DraftChangesSummaryRequest {
   return { branch, filters: tableFiltersOf(filters) };
+}
+
+// The names of the filters a request applies, for its log entry.
+export function presentFiltersOf(filters: RowFilters): string[] {
+  return FILTER_NAMES.filter((name) => filters[name] !== undefined);
 }
 
 function pageSizeOf(first: unknown): number {

@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.5 |
+| Version | 1.6 |
 | Status | Accepted |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
@@ -60,7 +60,8 @@ A facade method of `EngineApiService` beside `scanSchemaLedger` and `repairSchem
 | `comment` | string | no | The commit comment; default `Backfill the schema ledger`. |
 
 An optional input given as `null` is treated as absent (as in async-row-migration-v2 §5.2). Wrong input types are
-refused before any transaction, as partial-changes §5.9 does.
+refused before any transaction, as partial-changes §5.9 does. Each call logs one structured entry (`Schema ledger
+operation finished`, partial-changes §11.1).
 
 **Result** — one of:
 
@@ -315,6 +316,10 @@ No question is open.
 | 4 | `docs/api.md` and `docs/migration.md`. | — |
 
 ## Changelog
+
+### Version 1.6 (2026-11-11)
+
+- §2: each call logs one structured entry (partial-changes §11.1).
 
 ### Version 1.5 (2026-11-11)
 

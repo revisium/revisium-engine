@@ -5,7 +5,8 @@ import type {
   StoppedChangesBlocked,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
-import type { OperationTrace } from 'src/features/partial-changes/logging/partial-operation-log';
+import { plannedFieldsOf } from 'src/features/partial-changes/logging/partial-operation-fields';
+import type { OperationTrace } from 'src/infrastructure/database/operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { ExpectedFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {
@@ -76,7 +77,7 @@ export class ChangeApplier {
     await this.admitDraftWrite(request.branch);
 
     const plan = await this.plan(request, deadline);
-    trace.planned(plan);
+    trace.planned(() => plannedFieldsOf(plan));
 
     if (!plan.planned) {
       return stoppedByLimit(plan);

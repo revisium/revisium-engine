@@ -2,9 +2,9 @@ import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import type { MigrationLockedDetails } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
 import {
-  type OperationTrace,
-  PartialOperationLog,
-} from 'src/features/partial-changes/logging/partial-operation-log';
+  partialOperation,
+  plannedFieldsOf,
+} from 'src/features/partial-changes/logging/partial-operation-fields';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {
@@ -32,6 +32,10 @@ import type {
   ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
+import {
+  OperationLog,
+  type OperationTrace,
+} from 'src/infrastructure/database/operation-log';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 
 interface PreviewRequest {
@@ -50,20 +54,23 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly migrationLock: MigrationLockService,
     private readonly planner: ChangePlanner,
-    private readonly operationLog: PartialOperationLog,
+    private readonly operationLog: OperationLog,
   ) {}
 
   public execute({
     data,
   }: PreviewDraftChangesQuery): Promise<PreviewChangesResult> {
-    return this.operationLog.track('preview', data.branch, (trace) => {
-      const request = previewRequestOf(data);
+    return this.operationLog.track(
+      partialOperation('preview', data.branch),
+      (trace) => {
+        const request = previewRequestOf(data);
 
-      return this.transactionRunner.runPlanning(
-        (deadline) => this.preview(request, deadline, trace),
-        trace,
-      );
-    });
+        return this.transactionRunner.runPlanning(
+          (deadline) => this.preview(request, deadline, trace),
+          trace,
+        );
+      },
+    );
   }
 
   private async preview(
@@ -78,7 +85,7 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
       ...plan,
       blockers: [...migrationBlockers, ...plan.blockers],
     };
-    trace.planned(preview);
+    trace.planned(() => plannedFieldsOf(preview));
 
     return previewResultOf(preview, decidePlanStatus(preview, request));
   }

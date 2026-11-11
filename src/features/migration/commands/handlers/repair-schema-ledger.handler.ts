@@ -7,6 +7,10 @@ import {
 } from 'src/features/migration/commands/impl/repair-schema-ledger.command';
 import { RepairFreshness } from 'src/features/migration/ledger-repair/repair-freshness';
 import {
+  type RepairRequest,
+  repairRequestOf,
+} from 'src/features/migration/ledger-repair/repair-request';
+import {
   LedgerRepairPlanService,
   type PlannedRepair,
   repairedTablesOf,
@@ -15,13 +19,22 @@ import { RepairStateReader } from 'src/features/migration/ledger-repair/repair-s
 import { RepairWriter } from 'src/features/migration/ledger-repair/repair-writer';
 import { StoredLedgerVerification } from 'src/features/migration/ledger-repair/stored-ledger-verification';
 import type { SchemaLedgerRepairPlan } from 'src/features/migration/queries/impl/plan-schema-ledger-repair.query';
-import type { BranchRef } from 'src/features/share/branch-revisions/branch-revision-reader';
+import {
+  ledgerOperation,
+  repairFieldsOf,
+  repairOutcomeOf,
+} from 'src/features/migration/ledger-operation-log';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
+import {
+  OperationLog,
+  type OperationTrace,
+} from 'src/infrastructure/database/operation-log';
 
-interface RepairRequest extends BranchRef {
-  readonly tableIds?: readonly string[];
-  readonly dryRun: boolean;
+// Whether the repair wrote, so that the Draft endpoints are notified after its log entry, as after a commit.
+interface FinishedRepair {
+  readonly repair: SchemaLedgerRepair;
+  readonly written: boolean;
 }
 
 @CommandHandler(RepairSchemaLedgerCommand)
@@ -38,21 +51,51 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
     private readonly writer: RepairWriter,
     private readonly verification: StoredLedgerVerification,
     private readonly shareCommands: ShareCommands,
+    private readonly operationLog: OperationLog,
   ) {}
 
   public async execute({
     data,
   }: RepairSchemaLedgerCommand): Promise<SchemaLedgerRepair> {
+    const { repair, written } = await this.operationLog.track(
+      ledgerOperation('repair', data),
+      async (trace) => {
+        const result = await this.repair(data, trace);
+        trace.described(() => repairFieldsOf(result.repair));
+        trace.concluded(() => repairOutcomeOf(result.repair, result.written));
+
+        return result;
+      },
+    );
+
+    if (written) {
+      await this.shareCommands.notifyEndpoints({
+        revisionId: repair.draftRevisionId,
+      });
+    }
+
+    return repair;
+  }
+
+  private async repair(
+    data: RepairSchemaLedgerData,
+    trace: OperationTrace,
+  ): Promise<FinishedRepair> {
     const request = repairRequestOf(data);
-    const planned = await this.transactionRunner.runPlanning(() =>
-      this.planRepair(request),
+    trace.described(() => ({ dryRun: request.dryRun }));
+    const planned = await this.transactionRunner.runPlanning(
+      () => this.planRepair(request),
+      trace,
     );
 
     if (request.dryRun || repairedTablesOf(planned.plan).length === 0) {
-      return repairResultOf(planned.plan, request.dryRun);
+      return {
+        repair: repairResultOf(planned.plan, request.dryRun),
+        written: false,
+      };
     }
 
-    return this.writeRepair(request, planned);
+    return this.writeRepair(request, planned, trace);
   }
 
   private async planRepair(request: RepairRequest): Promise<PlannedRepair> {
@@ -69,20 +112,19 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
   private async writeRepair(
     request: RepairRequest,
     planned: PlannedRepair,
-  ): Promise<SchemaLedgerRepair> {
-    const { draftRevisionId } = planned.state;
+    trace: OperationTrace,
+  ): Promise<FinishedRepair> {
     const written = await this.writeAdmission.runSerializableRevisionWrite(
-      draftRevisionId,
+      planned.state.draftRevisionId,
       () => this.recordFreshRepair(request, planned),
+      trace,
     );
 
     if (!written) {
-      return staleRepairOf(planned.plan);
+      return { repair: staleRepairOf(planned.plan), written: false };
     }
 
-    await this.shareCommands.notifyEndpoints({ revisionId: draftRevisionId });
-
-    return repairResultOf(planned.plan, false);
+    return { repair: repairResultOf(planned.plan, false), written: true };
   }
 
   private async recordFreshRepair(
@@ -98,20 +140,6 @@ export class RepairSchemaLedgerHandler implements ICommandHandler<
 
     return true;
   }
-}
-
-function repairRequestOf({
-  projectId,
-  branchName,
-  tableIds,
-  dryRun,
-}: RepairSchemaLedgerData): RepairRequest {
-  return {
-    projectId,
-    branchName,
-    tableIds: tableIds ?? undefined,
-    dryRun: dryRun ?? false,
-  };
 }
 
 function repairResultOf(

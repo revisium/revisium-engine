@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.2 |
+| Version | 2.3 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -1795,27 +1795,45 @@ variable it came from.
 
 ### 11.1 Operation logs
 
-Each listing page, preview, commit and revert logs one structured entry when it ends (`PartialOperationLog`, through
-the engine's NestJS logger): `log` when it returns, `warn` when it throws. The entry has `message`
-`Partial changes operation finished` and these fields:
+Each listing page, Draft read ([draft-reads-v1]), preview, commit and revert logs one structured entry when it ends
+(`OperationLog` in `src/infrastructure/database/operation-log.ts`, through the engine's NestJS logger with the context
+`OperationLog`): `log` when it returns, `warn` when it throws. The entry has `message` `Partial changes operation finished` and these fields:
 
 | Field | Value |
 | --- | --- |
-| `operation` | `list`, `preview`, `commit` or `revert`. |
+| `operation` | `list`, `tableChanges`, `rowChanges`, `summary`, `preview`, `commit` or `revert`. |
 | `projectId`, `branchName` | From the input, when they are strings. |
-| `headRevisionId`, `draftRevisionId` | The revisions the plan of the last attempt (or the listing page) read; absent when the last attempt failed before planning. |
+| `headRevisionId`, `draftRevisionId` | The revisions the plan of the last attempt (or the listing page or Draft read) read; absent when the last attempt failed before planning. |
 | `durationMs` | From the start of the operation to its result, endpoint notification excluded. |
-| `outcome` | The result's `status` (`ready`, `applied`, `blocked`, `required`, `stale`, `empty`), `listed` for a listing page, or `error`. |
+| `outcome` | The result's `status` (`ready`, `applied`, `blocked`, `required`, `stale`, `empty`), `listed` for a listing page, `read` for a Draft read, or `error`. |
 | `attempts`, `escalations` | Attempts started, and how many of them were escalated to the exclusive fence (§8.1, §8.4), counted even when one ends waiting for the fence; `0` when the input, a commit comment included, was refused before any. |
 | `tooLarge` | Preview, commit and revert: whether a limit stopped the plan. |
 | `estimate` | Only when `tooLarge`: `changedRows`, `mergedRows`, `perRowWorkRows`, the number of `mixedTables` and the largest `linksCopied` (`maxLinksCopied`). |
 | `refusedTables`, `refusedTableIds` | The number of refused tables (§6.10) and the first five of their ids. |
+| `pageSize`, `returned` | `tableChanges` and `rowChanges`: the `first` the caller asked for and the number of items on the page. |
+| `filters` | Draft reads: the names of the filters given (`changeTypes`, `search`, `tableId`), never their values. |
 | `error`, `errorCode` | Only on `warn`: the error's name and its code (an engine code such as `OPERATION_TIMEOUT`, or a database code such as `P2034`). |
 
 An entry never holds row data, values, selectors or an error message, since a message can quote them. The
 endpoint notification after a commit or revert (the internal hook, a no-op in this package) is outside the entry: a
 failing notification is the caller's error, not the operation's outcome. Logging is best effort: a logger that throws
-changes neither the result nor the error the caller gets.
+changes neither the result nor the error the caller gets. Every field is computed while the entry is written, inside
+that boundary: a field that cannot be computed loses the entry, never the operation's result or error.
+
+The schema ledger backfill and repair ([async-row-migration-v2] §6, [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md)) log through the same
+facility, with `message` `Schema ledger operation finished`, the same rules and the fields above that apply
+(`operation`, branch, `durationMs`, `outcome`, `attempts`, `escalations`, `error`, `errorCode`), plus:
+
+| Field | Value |
+| --- | --- |
+| `operation` | `backfill` or `repair`. |
+| `dryRun` | The input's `dryRun`; absent when the input was refused. |
+| `headRevisionId`, `draftRevisionId` | From the result: after `backfilled`, the new Head and Draft. |
+| `previousHeadRevisionId` | `backfilled` only: the Head the backfill replaced. |
+| `outcome` | Backfill: the result's `status`. Repair: `planned` (dry run), `repaired` (written), `stale` (the plan was stale at write time) or `unchanged` (no table to repair). |
+| `attempts` | Backfill: the attempts of its one transaction. Repair: its planning transaction plus each attempt of its write transaction, counted when the transaction starts, before the fence and migration-lock admission, so an attempt that admission refuses counts too. |
+| `entries` | Backfill, `planned` or `backfilled`: the number of entries. |
+| `tables`, `repairedTables`, `renumbered` | Repair: the tables in the result, those whose outcome is `repaired`, and the renumbered pending migrations. |
 
 ## 12. Native prerequisites (stage 0)
 
@@ -2369,6 +2387,17 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.3 (2026-11-11)
+
+Additive operation logs; no behaviour or shape changes.
+
+- §11.1: the Draft reads `changes.tableChanges`, `changes.rowChanges` and `changes.summary` log one entry each, with
+  outcome `read`, the page size asked and returned and the names of the filters given. The schema ledger backfill and
+  repair log through the same facility as `Schema ledger operation finished`; the facility moves from `partial-changes`
+  to `src/infrastructure/database` as `OperationLog`, so `migration` does not import `partial-changes`. The logger
+  context of every entry, those of preview, commit and revert included, is `OperationLog` (it was
+  `PartialOperationLog`). Every field is computed under the log's best-effort boundary.
 
 ### Version 2.2 (2026-11-11)
 

@@ -8,6 +8,7 @@ import { EscalatingTransactionRunner } from 'src/infrastructure/database/escalat
 import { EscalationSlots } from 'src/infrastructure/database/escalation-slots';
 import { HashService } from 'src/infrastructure/database/hash.service';
 import { IdService } from 'src/infrastructure/database/id.service';
+import { OperationLog } from 'src/infrastructure/database/operation-log';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 import { PostgresqlNotificationService } from 'src/infrastructure/database/postgresql-notification.service';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
@@ -29,6 +30,7 @@ import { TransactionTimeoutSupport } from 'src/infrastructure/database/transacti
     EscalatingTransactionRunner,
     TransactionTimeoutSupport,
     OperationTransactionRunner,
+    OperationLog,
   ],
   exports: [
     PrismaService,
@@ -40,6 +42,7 @@ import { TransactionTimeoutSupport } from 'src/infrastructure/database/transacti
     BranchWriteFenceService,
     EscalatingTransactionRunner,
     OperationTransactionRunner,
+    OperationLog,
   ],
 })
 export class DatabaseModule {}

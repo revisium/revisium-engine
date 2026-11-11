@@ -702,24 +702,26 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | `planned` | `false` only when a limit stopped the plan; then `status` is `blocked` with a `tooLarge` blocker. |
 | `headRevisionId`, `draftRevisionId` | The revisions the plan was made on. |
 | `fingerprint` | Pass it as `expected` to `commit` or `revert`; `null` when not `planned`. |
-| `counts` | `{ selected, required }`: selected units and required additions; `null` when not `planned`. |
+| `counts` | `{ selected, required }`: selected units and required additions (`counts.required` equals `requiredTotal`); `null` when not `planned`. |
 | `coverage` | Per user table with an applied unit: `rows`, `appliedRows`, `partlyAppliedRows`, and whether its `structure` and `views` are applied. |
-| `required` | Each required addition: `unit` (with its `selector`) and `reason` (`code`, `site`, `references`, `cause`, `because`). |
-| `blockers` | What prevents the operation, each with a `code` and a `message`; `migrationInProgress` while an async migration runs on the branch. |
+| `required` | The required additions, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` (see [Listed details](#listed-details)): `unit` (with its `selector`) and `reason` (`code`, `site`, `references`, `cause`, `because`). |
+| `requiredTotal` | Every required addition, listed or not; 0 when not `planned`. |
+| `blockers` | What prevents the operation, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS`, each with a `code` and a `message`; `migrationInProgress` while an async migration runs on the branch. |
+| `blockersTotal` | Every blocker, listed or not. |
 | `deferred` | Commit only: created or replaced rows committed without their table's structure, with the values the commit writes (`defaulted`) and the paths it leaves out (`omitted`). |
 | `sample` | The first 20 applied units in listing order, for display (`changes.list` is the complete list). |
 | `unmatched` | The selectors that matched no unit; `{}` when every selector matched, `null` when not `planned`. |
 | `refusedTables` | Tables that partial operations refuse on this branch (see [Refused tables](#refused-tables)); empty for exactly `{ all: true }`. |
 | `estimate` | What the plan measured against the limits. |
 
-A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts` and `unmatched` are `null`, and
-`coverage`, `required`, `deferred` and `sample` are empty.
+A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts` and `unmatched` are `null`,
+`coverage`, `required`, `deferred` and `sample` are empty, and `requiredTotal` is 0.
 
 ```json
 { "status": "blocked", "planned": false, "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
-  "fingerprint": null, "counts": null, "coverage": [], "unmatched": null, "required": [], "deferred": [],
-  "sample": [], "refusedTables": [], "blockers": [{ "code": "tooLarge", "message": "…" }],
-  "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] } }
+  "fingerprint": null, "counts": null, "coverage": [], "unmatched": null, "required": [], "requiredTotal": 0,
+  "deferred": [], "sample": [], "refusedTables": [], "blockers": [{ "code": "tooLarge", "message": "…" }],
+  "blockersTotal": 1, "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] } }
 ```
 
 Each call plans anew from the current Draft, so a transport that serves `preview` as a query keeps it out of client
@@ -763,14 +765,24 @@ status is `applied`. Results by `status`:
 | `status` | Fields |
 | --- | --- |
 | `applied` | `headRevisionId`, `draftRevisionId`, `applied` (`{ selected, required }`), `draftHasChanges` (whether the Draft still differs from Head). A commit also returns `previousHeadRevisionId` and `renumberedMigrations` (`{ from, to }[]`, pending migration ids it renumbered). |
-| `required` | `required`: additions to accept with `includeRequired: true`, or to add to the selection by their `selector`. |
-| `blocked` | `planned`, `blockers`, `required`; `unmatched` when `planned`. |
+| `required` | `required`: additions to accept with `includeRequired: true`, or to add to the selection by their `selector`; `requiredTotal` (see [Listed details](#listed-details)). |
+| `blocked` | `planned`, `blockers`, `blockersTotal`, `required`, `requiredTotal`; `unmatched` when `planned`. |
 | `stale` | `changed`, the current `headRevisionId` and `draftRevisionId`, and the current `unmatched` (see [The fingerprint](#the-fingerprint-and-stale)). |
 | `empty` | The current `headRevisionId` and `draftRevisionId`; `unmatched` when some selectors matched nothing. A repeat of an applied operation is `empty`. |
 
 A commit turns the Draft revision into the new Head (`headRevisionId` is the former Draft revision id) and creates a
 new Draft (`draftRevisionId`); later writes must use the new Draft id. A revert keeps both revisions: its
 `headRevisionId` and `draftRevisionId` are those of the branch.
+
+### Listed details
+
+A preview, commit or revert result lists at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` (default 200,
+[ENV.md](../ENV.md)) entries of `required` and as many of `blockers`; `requiredTotal` and `blockersTotal` count every
+entry, and equal the list lengths when nothing is cut. `required` lists the first additions in the plan's order;
+`blockers` lists the first blocker of each `code` before the repeats of a code, so a cut list shows every kind of
+blocker it has room for. A client shows the entries and the totals. Only the result is cut: `includeRequired: true`
+applies every required addition, the fingerprint covers them all, and `counts`, `coverage`, `deferred` and `sample`
+come from the whole plan ([SPEC §5.1](specs/partial-changes-v1.spec.md#51-common-types)).
 
 ### Statuses
 

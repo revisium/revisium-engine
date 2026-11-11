@@ -27,7 +27,9 @@ export interface PreviewBase {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly refusedTables: readonly RefusedTable[];
+  // At most PARTIAL_CHANGES_MAX_LISTED_DETAILS blockers; blockersTotal counts them all (SPEC §5.1).
   readonly blockers: readonly PlanBlocker[];
+  readonly blockersTotal: number;
   readonly estimate: PlanEstimate;
 }
 
@@ -37,7 +39,9 @@ export interface PlannedPreview extends PreviewBase {
   readonly fingerprint: string;
   readonly counts: PlanCounts;
   readonly coverage: readonly TableCoverage[];
+  // At most PARTIAL_CHANGES_MAX_LISTED_DETAILS entries; requiredTotal counts them all, as counts.required does.
   readonly required: readonly RequiredUnit[];
+  readonly requiredTotal: number;
   readonly deferred: readonly DeferredRow[];
   readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
@@ -51,6 +55,7 @@ export interface StoppedPreview extends PreviewBase {
   readonly counts: null;
   readonly coverage: readonly [];
   readonly required: readonly [];
+  readonly requiredTotal: 0;
   readonly deferred: readonly [];
   readonly sample: readonly [];
   readonly unmatched: null;

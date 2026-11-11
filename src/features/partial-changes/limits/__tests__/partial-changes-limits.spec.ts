@@ -14,6 +14,7 @@ describe('PartialChangesLimits', () => {
       maxChangedRows: DEFAULT_MAX_CHANGED_ROWS,
       maxPerRowWork: 2_000,
       maxMixedTableLinks: 100_000,
+      maxListedDetails: 200,
     });
   });
 
@@ -23,11 +24,13 @@ describe('PartialChangesLimits', () => {
         PARTIAL_CHANGES_MAX_CHANGED_ROWS: '500',
         PARTIAL_CHANGES_MAX_PER_ROW_WORK: '50',
         PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS: '5000',
+        PARTIAL_CHANGES_MAX_LISTED_DETAILS: '1',
       }),
     ).toEqual({
       maxChangedRows: 500,
       maxPerRowWork: 50,
       maxMixedTableLinks: 5000,
+      maxListedDetails: 1,
     });
   });
 
@@ -54,6 +57,22 @@ describe('PartialChangesLimits', () => {
     },
   );
 
+  it.each(['0', '-1', 'all'])(
+    'keeps the default number of listed details for the invalid setting %p with a warning',
+    (value) => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      const limits = limitsConfiguredWith({
+        PARTIAL_CHANGES_MAX_LISTED_DETAILS: value,
+      });
+
+      expect(limits.maxListedDetails).toBe(200);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid PARTIAL_CHANGES_MAX_LISTED_DETAILS'),
+      );
+    },
+  );
+
   it('logs the effective limits at startup and names the variables of the non-default ones', () => {
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     const limits = new PartialChangesLimits(
@@ -63,14 +82,23 @@ describe('PartialChangesLimits', () => {
     limits.onModuleInit();
 
     expect(log).toHaveBeenCalledWith(
-      'Partial changes limits: maxChangedRows=20000, maxPerRowWork=50 (from PARTIAL_CHANGES_MAX_PER_ROW_WORK), maxMixedTableLinks=100000',
+      'Partial changes limits: maxChangedRows=20000, maxPerRowWork=50 (from PARTIAL_CHANGES_MAX_PER_ROW_WORK), maxMixedTableLinks=100000, maxListedDetails=200',
     );
   });
 });
 
 function limitsConfiguredWith(settings: Record<string, string>) {
-  const { maxChangedRows, maxPerRowWork, maxMixedTableLinks } =
-    new PartialChangesLimits(new ConfigService(settings));
+  const {
+    maxChangedRows,
+    maxPerRowWork,
+    maxMixedTableLinks,
+    maxListedDetails,
+  } = new PartialChangesLimits(new ConfigService(settings));
 
-  return { maxChangedRows, maxPerRowWork, maxMixedTableLinks };
+  return {
+    maxChangedRows,
+    maxPerRowWork,
+    maxMixedTableLinks,
+    maxListedDetails,
+  };
 }

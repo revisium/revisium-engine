@@ -1,3 +1,8 @@
+import {
+  cursorPartsOf,
+  encodeCursor,
+} from 'src/features/partial-changes/input/cursor-codec';
+import type { Fields } from 'src/features/partial-changes/input/fields';
 import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
@@ -13,27 +18,12 @@ export interface RowPosition {
   readonly rowId: string;
 }
 
-interface TableCursorPayload {
-  readonly v: number;
-  readonly tableId: string;
-  readonly headOnly: boolean;
-}
-
-interface RowCursorPayload extends TableCursorPayload {
-  readonly rowId: string;
-}
-
-type Fields = Readonly<Record<string, unknown>>;
-
-const CURSOR_VERSION = 1;
-const BASE64URL = /^[\w-]+$/;
-const TABLE_CURSOR_FIELDS: ReadonlySet<string> = new Set([
-  'v',
+const TABLE_CURSOR_PARTS: ReadonlySet<string> = new Set([
   'tableId',
   'headOnly',
 ]);
-const ROW_CURSOR_FIELDS: ReadonlySet<string> = new Set([
-  ...TABLE_CURSOR_FIELDS,
+const ROW_CURSOR_PARTS: ReadonlySet<string> = new Set([
+  ...TABLE_CURSOR_PARTS,
   'rowId',
 ]);
 
@@ -51,93 +41,44 @@ export function encodeTableCursor({
   tableId,
   headOnly,
 }: TablePosition): string {
-  const payload: TableCursorPayload = { v: CURSOR_VERSION, tableId, headOnly };
-
-  return encoded(payload);
+  return encodeCursor('tables', { tableId, headOnly });
 }
 
 export function decodeTableCursor(text: string): TablePosition {
-  const payload = payloadOf(text);
+  const parts = cursorPartsOf(text, 'tables', TABLE_CURSOR_PARTS);
 
-  if (!isTableCursorPayload(payload)) {
+  if (!parts || !isTablePosition(parts)) {
     throw malformedCursor();
   }
 
-  return { tableId: payload.tableId, headOnly: payload.headOnly };
+  return { tableId: parts.tableId, headOnly: parts.headOnly };
 }
 
 export function encodeRowCursor({ table, rowId }: RowPosition): string {
-  const payload: RowCursorPayload = {
-    v: CURSOR_VERSION,
+  return encodeCursor('rows', {
     tableId: table.tableId,
     headOnly: table.headOnly,
     rowId,
-  };
-
-  return encoded(payload);
+  });
 }
 
 export function decodeRowCursor(text: string): RowPosition {
-  const payload = payloadOf(text);
+  const parts = cursorPartsOf(text, 'rows', ROW_CURSOR_PARTS);
 
-  if (!isRowCursorPayload(payload)) {
+  if (!parts || !isTablePosition(parts) || typeof parts.rowId !== 'string') {
     throw malformedCursor();
   }
 
   return {
-    table: { tableId: payload.tableId, headOnly: payload.headOnly },
-    rowId: payload.rowId,
+    table: { tableId: parts.tableId, headOnly: parts.headOnly },
+    rowId: parts.rowId,
   };
 }
 
-function encoded(payload: TableCursorPayload): string {
-  return Buffer.from(JSON.stringify(payload)).toString('base64url');
-}
-
-function payloadOf(text: string): unknown {
-  if (!BASE64URL.test(text)) {
-    throw malformedCursor();
-  }
-
-  try {
-    return JSON.parse(Buffer.from(text, 'base64url').toString());
-  } catch {
-    throw malformedCursor();
-  }
-}
-
-function isTableCursorPayload(value: unknown): value is TableCursorPayload {
+function isTablePosition(parts: Fields): parts is Fields & TablePosition {
   return (
-    isFields(value) &&
-    hasOnlyFields(value, TABLE_CURSOR_FIELDS) &&
-    hasTablePosition(value)
+    typeof parts.tableId === 'string' && typeof parts.headOnly === 'boolean'
   );
-}
-
-function isRowCursorPayload(value: unknown): value is RowCursorPayload {
-  return (
-    isFields(value) &&
-    hasOnlyFields(value, ROW_CURSOR_FIELDS) &&
-    hasTablePosition(value) &&
-    typeof value.rowId === 'string' &&
-    !value.rowId.includes('\u0000')
-  );
-}
-
-function hasOnlyFields(value: Fields, fields: ReadonlySet<string>): boolean {
-  return Object.keys(value).every((field) => fields.has(field));
-}
-
-function hasTablePosition(value: Fields): boolean {
-  return (
-    value.v === CURSOR_VERSION &&
-    typeof value.tableId === 'string' &&
-    typeof value.headOnly === 'boolean'
-  );
-}
-
-function isFields(value: unknown): value is Fields {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function malformedCursor(): ListingValidationError {

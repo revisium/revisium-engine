@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.4 |
+| Version | 2.5 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -393,6 +393,19 @@ count the units that stay in the Draft: an operation reads only its affected tab
 partial. A client reads what stays from the Draft reads ([draft-reads-v1](draft-reads-v1.spec.md) §6); an applied
 result says whether the Draft still has changes (§5.4).
 
+**Listed details.** A result lists at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` (default 200, §11) entries of
+`required` and at most as many of `blockers`, and counts every entry in `requiredTotal` and `blockersTotal` next to
+the lists; when a list is not cut, its total equals its length. A client shows a few entries and the totals; it
+narrows the selection, or accepts the additions with `includeRequired`, to act on the rest. `required` keeps the order
+of the plan and lists its first entries. `blockers` lists the first blocker of each `code`, in the order of the plan,
+then the other blockers in that order, and lists the first entries of that sequence: a cut list shows every kind of
+blocker the limit leaves room for. The rule orders `blockers` also when nothing is cut. Only the result is cut:
+`status`, the units applied with `includeRequired`, the fingerprint (§9.1), `counts`, `coverage`, `deferred`,
+`sample` and the operation log (§11.1) are computed from the whole plan. In a planned preview `counts.required` equals
+`requiredTotal`; a stopped preview has `counts: null` and `requiredTotal: 0`, and an apply result other than
+`applied` has no `counts`. Before v2.4 the lists were complete: on a project with 400–600 required units and 400
+`requiredExcluded` blockers a preview took 0.8–1.2 MB.
+
 **TableCoverage** `{ tableId: string; previousTableId?: string; side?: 'head'; structure?: boolean; views?: boolean;
 rows: integer; appliedRows: integer; partlyAppliedRows: integer }`: how much of one user table a plan applies,
 counting selected and required units alike, for every user table with an applied unit, ordered by `tableId` in
@@ -421,7 +434,7 @@ Input:
 | --- | --- | --- | --- |
 | `branch` | ChangesBranch | yes | |
 | `tableId` | string | no | Only units of this table (Draft id, else Head id); an id of neither side is a validation error. |
-| `cursor` | string | no | Opaque cursor from the previous page; a malformed cursor is a validation error. |
+| `cursor` | string | no | Opaque cursor from the previous page of `listChanges`; a malformed cursor, or a cursor that another operation issued (the `endCursor` of a Draft read), is a validation error. A cursor of any operation holds at most 16,384 characters and nests at most three levels; a longer or deeper text is malformed. The longest legitimate cursor, a position after a field, holds ids of at most 64 characters and the field path twice, which leaves room for a path of over 5,000 characters. |
 | `pageSize` | integer 1–5,000 | no | Units per page; default 500. |
 
 Output:
@@ -608,8 +621,10 @@ Output:
 | `counts` | PlanCounts, or `null` when not `planned` | §5.1. |
 | `coverage` | TableCoverage[] | §5.1; empty when not `planned`. |
 | `refusedTables` | `{ tableId: string; code: 'headSchemaInconsistent' \| 'unledgeredTable' }[]` | Every refused table of the branch (§6.10); empty for exactly `{ all: true }`. Their units are not computed or counted. |
-| `required` | RequiredUnit[] | Every required addition with its reason; empty when not `planned`. |
-| `blockers` | PlanBlocker[] | Every blocker, including `migrationInProgress`; when not `planned`, the `tooLarge` blockers and `migrationInProgress` when an async migration is active. |
+| `required` | RequiredUnit[] | The required additions with their reasons, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` (§5.1 listed details); empty when not `planned`. |
+| `requiredTotal` | integer | Every required addition of the plan, listed or not; equal to `counts.required`; 0 when not `planned`. |
+| `blockers` | PlanBlocker[] | The blockers, including `migrationInProgress`, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS`, the first of each code first (§5.1 listed details); when not `planned`, the `tooLarge` blockers and `migrationInProgress` when an async migration is active. |
+| `blockersTotal` | integer | Every blocker of the plan, listed or not. |
 | `deferred` | DeferredRow[] | Commit only, in the listing order of their units; empty when not `planned`. |
 | `sample` | DescribedUnitRef[] | The first `min(20, counts.selected + counts.required)` applied units in listing order (display only; `listChanges` is the complete list); empty when not `planned`. |
 | `unmatched` | UnmatchedSelectors, or `null` when not `planned` | §4.5; an empty object when every selector matched. |
@@ -638,8 +653,8 @@ Output by status:
 | Status | Fields |
 | --- | --- |
 | `applied` | `previousHeadRevisionId`; `headRevisionId` (the former Draft revision, now Head); `draftRevisionId` (new Draft); `applied: PlanCounts` (the units applied); `draftHasChanges` (the new Draft's `hasChanges`, which the writer recomputes from the table versions, §6.13 step 7: `false` when the commit took every difference, `true` while a unit, a refused table or a content-equal version of an unread table remains, §3.8); `renumberedMigrations: { from: string; to: string }[]` (the pending migrations the commit renumbered, §6.8; empty when none). |
-| `required` | `required`. |
-| `blocked` | `planned` (as in a preview), `blockers`, `required`, `unmatched` (an empty object when every selector matched); when a limit stopped the plan (`planned: false`), `required` is empty and `unmatched` absent, as in §5.3. |
+| `required` | `required`, `requiredTotal` (§5.1 listed details). |
+| `blocked` | `planned` (as in a preview), `blockers`, `blockersTotal`, `required`, `requiredTotal`, `unmatched` (an empty object when every selector matched); when a limit stopped the plan (`planned: false`), `required` is empty, `requiredTotal` is 0 and `unmatched` absent, as in §5.3. |
 | `stale` | `changed`, `headRevisionId`, `draftRevisionId` (current), `unmatched` (§9.2). |
 | `empty` | `headRevisionId`, `draftRevisionId` (current), `unmatched` (when some selectors did not match). |
 
@@ -765,7 +780,7 @@ added (§6.9).
 | `includeRequired` other than a boolean, `expected` other than a non-empty string, or `comment` other than a string (`null` in any of them is absent, §5) | Validation error before any transaction. |
 | `expected` that is malformed: no `pcf<n>.` prefix with a base64url body, or a `pcf2.` body that is not exactly the engine's encoding of five strings (§9.1) | Validation error before any transaction. |
 | A malformed selection: an unknown field (also the pre-v2.0 `tables` and `renames`), a wrong type (`null` in an optional field is absent, §5), an empty id, a `path` that is not a JSON Pointer (RFC 6901, including invalid `~` escapes), `side` other than `'head'`, `all` or `exclude` inside `exclude` | Validation error before any transaction. (A well-formed selector that matches nothing is `unmatched`, §4.5.) |
-| Invalid `pageSize` or `cursor`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
+| Invalid `pageSize`, `cursor` (a cursor of another operation included) or `tableId`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
 | Unknown project or branch | The native lookup error: a `BadRequestException` (400) with the message `A branch with this name does not exist in the project`, the same class as a validation error. |
 | Commit or revert while an async migration is active on the branch | `MigrationLocked` error (native lock). |
 | Operation or statement timeout, attempts exhausted, any write failure | Error; the transaction is rolled back; nothing is persisted, including file references and ledger rows. A retry is safe (§9). |
@@ -953,12 +968,12 @@ type ChangeOperation = 'commit' | 'revert';
 type PreviewChangesInput = { branch: ChangesBranch; operation: ChangeOperation; selection: SelectionInput;
   includeRequired?: boolean | null };
 type PreviewBase = { headRevisionId: string; draftRevisionId: string; refusedTables: RefusedTable[];
-  blockers: PlanBlocker[]; estimate: PlanEstimate };
+  blockers: PlanBlocker[]; blockersTotal: number; estimate: PlanEstimate };
 type PlannedPreview = PreviewBase & { status: 'ready' | 'required' | 'blocked' | 'empty'; planned: true;
   fingerprint: string; counts: PlanCounts; coverage: TableCoverage[]; required: RequiredUnit[];
-  deferred: DeferredRow[]; sample: DescribedUnitRef[]; unmatched: UnmatchedSelectors };
+  requiredTotal: number; deferred: DeferredRow[]; sample: DescribedUnitRef[]; unmatched: UnmatchedSelectors };
 type StoppedPreview = PreviewBase & { status: 'blocked'; planned: false; fingerprint: null; counts: null;
-  coverage: []; required: []; deferred: []; sample: []; unmatched: null };
+  coverage: []; required: []; requiredTotal: 0; deferred: []; sample: []; unmatched: null };
 type PreviewChangesResult = PlannedPreview | StoppedPreview;
 
 type CommitChangesInput = { branch: ChangesBranch; selection: SelectionInput; includeRequired?: boolean | null;
@@ -966,11 +981,12 @@ type CommitChangesInput = { branch: ChangesBranch; selection: SelectionInput; in
 type RevertChangesInput = Omit<CommitChangesInput, 'comment'>;
 type MigrationRenumbering = { from: string; to: string };
 type StaleChange = 'version' | 'operation' | 'revisions' | 'units' | 'content';
-type ChangesRequireAdditions = { status: 'required'; required: RequiredUnit[] };
+type ChangesRequireAdditions = { status: 'required'; required: RequiredUnit[]; requiredTotal: number };
 type ChangesBlocked = PlannedChangesBlocked | StoppedChangesBlocked;
-type PlannedChangesBlocked = { status: 'blocked'; planned: true; blockers: PlanBlocker[]; required: RequiredUnit[];
-  unmatched: UnmatchedSelectors };
-type StoppedChangesBlocked = { status: 'blocked'; planned: false; blockers: PlanBlocker[]; required: [] };  // a limit
+type PlannedChangesBlocked = { status: 'blocked'; planned: true; blockers: PlanBlocker[]; blockersTotal: number;
+  required: RequiredUnit[]; requiredTotal: number; unmatched: UnmatchedSelectors };
+type StoppedChangesBlocked = { status: 'blocked'; planned: false; blockers: PlanBlocker[]; blockersTotal: number;
+  required: []; requiredTotal: 0 };  // a limit
 type ChangesStale = { status: 'stale'; changed: StaleChange[]; headRevisionId: string; draftRevisionId: string;
   unmatched: UnmatchedSelectors };
 type NothingToApply = { status: 'empty'; headRevisionId: string; draftRevisionId: string;
@@ -1015,7 +1031,7 @@ created in the Draft.
                                      "selector": { "fields": [
                                        { "tableId": "products", "rowId": "p1", "path": "/category" }] } } },
                 "because": "products/p1/category references categories/c9, which exists only in the Draft" } }],
-  "blockers": [], "deferred": [], "unmatched": {}, "refusedTables": [],
+  "requiredTotal": 1, "blockers": [], "blockersTotal": 0, "deferred": [], "unmatched": {}, "refusedTables": [],
   "sample": [
     { "kind": "rowCreate", "tableId": "categories", "rowId": "c9",
       "selector": { "rows": [{ "tableId": "categories", "rowId": "c9" }] } },
@@ -1042,7 +1058,7 @@ The caller commits the same selection with `"includeRequired": true, "expected":
                   "path": "/category", "selector": { "fields": [
                     { "tableId": "products", "rowId": "p1", "path": "/category" }] } } },
                 "because": "products/p1/category references categories/c9, which exists only in the Draft" } }],
-  "required": [], "unmatched": {} }
+  "blockersTotal": 1, "required": [], "requiredTotal": 0, "unmatched": {} }
 ```
 
 **`stale`: a selected field was edited again after the preview.**
@@ -1056,9 +1072,9 @@ The caller commits the same selection with `"includeRequired": true, "expected":
 
 ```json
 { "status": "blocked", "planned": false, "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
-  "fingerprint": null, "counts": null, "coverage": [], "unmatched": null, "required": [], "deferred": [],
-  "sample": [], "refusedTables": [],
-  "blockers": [{ "code": "tooLarge", "message": "…" }],
+  "fingerprint": null, "counts": null, "coverage": [], "unmatched": null, "required": [], "requiredTotal": 0,
+  "deferred": [], "sample": [], "refusedTables": [],
+  "blockers": [{ "code": "tooLarge", "message": "…" }], "blockersTotal": 1,
   "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] } }
 ```
 
@@ -1684,7 +1700,9 @@ the preview does not fix them.
 ### 9.2 Rules
 
 - `expected` is optional in the engine and required at the public API and MCP for partial operations (§5.10).
-- `includeRequired: true` requires `expected`: required additions are applied only as reviewed.
+- `includeRequired: true` requires `expected`: required additions are applied only as reviewed. It applies every
+  required addition of the plan, also those beyond the listed ones (§5.1 listed details); the fingerprint covers them
+  all, so a preview whose list was cut and the operation that accepts it agree on the same units.
 - A commit fingerprint never matches a revert, and the reverse.
 - A repeat of an applied commit or revert resolves to no unit → `empty` with the current ids; if part of the
   selection still resolves, `expected` gives `stale` and a selection with some unmatched selectors is `blocked`.
@@ -1772,6 +1790,7 @@ query alone on a synthetic table version; 2026-11-10). No limit bounds it; the o
 | `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 100,000 | Links copied into one new table version (an in-place revert copies none) | Above for any table → `tooLarge` with `tableId`, before that assembly (§6.5). |
 | `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | 180,000 | Lifetime of one preview, one listing page, or one commit or revert attempt | Expired → error, rollback; the callback settles at the deadline and COMMIT never starts after it; a statement is cut at the deadline by `transaction_timeout` on PostgreSQL 17, and within the budget left at the last checkpoint on older servers (§8.1). |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | 3 | Serializable attempts of the operation's own loop (§8.1) | Exhausted → error. |
+| `PARTIAL_CHANGES_MAX_LISTED_DETAILS` | 200 | Entries of `required` and, separately, of `blockers` that a preview, commit or revert result lists (§5.1 listed details) | Above → the list is cut; `requiredTotal` and `blockersTotal` count every entry. Nothing else depends on it. |
 | `listChanges` `pageSize` | 500 (max 5,000) | Units per page, and changed row ids read per page (§5.2) | — |
 | Draft reads `first` | none (1 to 5,000) | Table or row items per page of `changes.tableChanges` and `changes.rowChanges` ([draft-reads-v1](draft-reads-v1.spec.md) §1), the maximum of `pageSize` | Outside → validation error, before the snapshot. |
 
@@ -2127,8 +2146,8 @@ versions unchanged" (§14) holds in every scenario.
 - AS-66 `listChanges` reads changed rows only of the tables a page lists, continues from the cursor's table, and with
   `tableId` lists and reads only that table; paging until `nextCursor = null` returns the same units as a full
   listing, also when a page is empty. Keyset paging inside one large table returns the same units, reads at most
-  `pageSize` changed rows per page, and continues a row whose units did not fit; an unknown `tableId` or a malformed
-  cursor is a validation error.
+  `pageSize` changed rows per page, and continues a row whose units did not fit; an unknown `tableId`, a malformed
+  cursor, a cursor of a Draft read or one holding the NUL character is a validation error.
 - AS-67 Required, deferred and blocking units carry exact selectors: adding each required unit's `selector` to the
   selection (also a Head-side unit addressed with `side: 'head'`) previews `ready` with no required units; the
   `unit` of a `requiredExcluded` blocker names the excluded unit and its `reason`.
@@ -2239,6 +2258,15 @@ versions unchanged" (§14) holds in every scenario.
   transaction; `pcf3.` with any body of base64url characters → `stale`, `changed: ['version']`.
 - AS-92 Facade: `changes.list`, `preview`, `commit`, `revert`, `tableChanges`, `rowChanges` and `summary` on the
   engine facade behave as these specifications say, through the package exports (e2e).
+- AS-93 Listed details (`maxListedDetails` = 2): a commit or revert preview with three required units, and a commit
+  or revert refused as `required`, list the first two in the plan's order with `requiredTotal: 3` (the preview with
+  `counts.required: 3`); a preview, commit or revert `blocked` by one `unmatchedSelector` and three
+  `requiredExcluded` blockers lists `unmatchedSelector` and one `requiredExcluded` with `blockersTotal: 4`; a
+  stopped result has `requiredTotal: 0` and `blockersTotal` equal to its `tooLarge` blockers; the first blocker of
+  each code comes before the repeats of a code, also in a list that is not cut.
+- AS-94 Apply beyond the listed details (`maxListedDetails` = 2): a commit, and a revert, with `includeRequired` and
+  the fingerprint of a preview that listed two of its three required units applies all three (`applied:
+  { selected: 3, required: 3 }`) and leaves no difference in the Draft.
 
 ## 14. Test strategy
 
@@ -2388,10 +2416,22 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 
 ## Changelog
 
-### Version 2.4 (2026-11-11)
+### Version 2.5 (2026-11-11)
 
 - §11.1: the repair's log fields keep their names. `repairedTables` of a dry run counts the tables with the new outcome
   `planned`, and `renumbered` counts the result's `renumberedMigrations` (async-row-migration-v2 §6.1).
+
+### Version 2.4 (2026-11-11)
+
+Bounded plan details. The API is unreleased, so the result shape changes without a new major version.
+
+- §5.1, §5.3 – §5.5, §5.11, §5.12: a preview, commit or revert result lists at most
+  `PARTIAL_CHANGES_MAX_LISTED_DETAILS` entries of `required` and of `blockers`, and counts them all in the new fields
+  `requiredTotal` and `blockersTotal`; `blockers` lists the first blocker of each code before the repeats. Before, a
+  preview of 400–600 required units and 400 `requiredExcluded` blockers took 0.8–1.2 MB.
+- §9.2: `includeRequired` applies every required addition, also those beyond the listed ones.
+- §11: the setting `PARTIAL_CHANGES_MAX_LISTED_DETAILS` (default 200, at least 1).
+- §13: AS-93, AS-94.
 
 ### Version 2.3 (2026-11-11)
 

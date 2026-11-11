@@ -5,6 +5,7 @@ import type {
   StoppedChangesBlocked,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
+import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import { plannedFieldsOf } from 'src/features/partial-changes/logging/partial-operation-fields';
 import type { OperationTrace } from 'src/infrastructure/database/operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
@@ -15,6 +16,10 @@ import {
   type CompletePlan,
   type StoppedPlan,
 } from 'src/features/partial-changes/planning/change-planner';
+import {
+  listedBlockersOf,
+  listedRequiredOf,
+} from 'src/features/partial-changes/planning/listed-details';
 import {
   changesSincePreview,
   decidePlanStatus,
@@ -51,6 +56,7 @@ export class ChangeApplier {
     private readonly transactionRunner: OperationTransactionRunner,
     private readonly draftWriteAdmission: DraftWriteAdmissionService,
     private readonly planner: ChangePlanner,
+    private readonly limits: PartialChangesLimits,
   ) {}
 
   public apply<Applied>(
@@ -79,18 +85,21 @@ export class ChangeApplier {
     const plan = await this.plan(request, deadline);
     trace.planned(() => plannedFieldsOf(plan));
 
+    const { maxListedDetails } = this.limits;
+
     if (!plan.planned) {
-      return stoppedByLimit(plan);
+      return stoppedByLimit(plan, maxListedDetails);
     }
 
     const status = decidePlanStatus(plan, request);
 
     if (status !== 'ready') {
-      return unappliedChangesOf(plan, status, request);
+      return unappliedChangesOf(plan, status, request, maxListedDetails);
     }
 
     await deadline.checkpoint();
 
+    // The write takes the whole plan; only a refusal lists its details cut (SPEC §5.1).
     return writeTarget(plan);
   }
 
@@ -131,24 +140,34 @@ function applyRequestOf(
   };
 }
 
-function stoppedByLimit({ blockers }: StoppedPlan): StoppedChangesBlocked {
-  return { status: 'blocked', planned: false, blockers, required: [] };
+function stoppedByLimit(
+  { blockers }: StoppedPlan,
+  maxListedDetails: number,
+): StoppedChangesBlocked {
+  return {
+    status: 'blocked',
+    planned: false,
+    ...listedBlockersOf(blockers, maxListedDetails),
+    required: [],
+    requiredTotal: 0,
+  };
 }
 
 function unappliedChangesOf(
   plan: CompletePlan,
   status: RefusalStatus,
   request: ApplyRequest,
+  maxListedDetails: number,
 ): UnappliedChanges {
   switch (status) {
     case 'required':
-      return { status, required: plan.required };
+      return { status, ...listedRequiredOf(plan.required, maxListedDetails) };
     case 'blocked':
       return {
         status,
         planned: true,
-        blockers: plan.blockers,
-        required: plan.required,
+        ...listedBlockersOf(plan.blockers, maxListedDetails),
+        ...listedRequiredOf(plan.required, maxListedDetails),
         unmatched: plan.unmatched,
       };
     case 'stale':

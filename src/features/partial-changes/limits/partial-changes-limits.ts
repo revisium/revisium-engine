@@ -26,6 +26,13 @@ const MAX_MIXED_TABLE_LINKS: NumericSetting = {
   minValue: 1,
 };
 
+// How many entries of required and of blockers a result lists (SPEC §5.1); the totals count the rest.
+const MAX_LISTED_DETAILS: NumericSetting = {
+  envKey: 'PARTIAL_CHANGES_MAX_LISTED_DETAILS',
+  defaultValue: 200,
+  minValue: 1,
+};
+
 @Injectable()
 export class PartialChangesLimits implements OnModuleInit {
   public readonly maxChangedRows: number;
@@ -34,12 +41,15 @@ export class PartialChangesLimits implements OnModuleInit {
 
   public readonly maxMixedTableLinks: number;
 
+  public readonly maxListedDetails: number;
+
   private readonly logger = new Logger(PartialChangesLimits.name);
 
   constructor(configService: ConfigService) {
     this.maxChangedRows = this.read(configService, MAX_CHANGED_ROWS);
     this.maxPerRowWork = this.read(configService, MAX_PER_ROW_WORK);
     this.maxMixedTableLinks = this.read(configService, MAX_MIXED_TABLE_LINKS);
+    this.maxListedDetails = this.read(configService, MAX_LISTED_DETAILS);
   }
 
   onModuleInit() {
@@ -58,6 +68,11 @@ export class PartialChangesLimits implements OnModuleInit {
         name: 'maxMixedTableLinks',
         value: this.maxMixedTableLinks,
         setting: MAX_MIXED_TABLE_LINKS,
+      },
+      {
+        name: 'maxListedDetails',
+        value: this.maxListedDetails,
+        setting: MAX_LISTED_DETAILS,
       },
     ]);
 

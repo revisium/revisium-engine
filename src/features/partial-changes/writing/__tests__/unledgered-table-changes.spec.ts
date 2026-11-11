@@ -173,7 +173,9 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
         status: 'blocked',
         planned: true,
         blockers: [unledgeredProducts],
+        blockersTotal: 1,
         required: [],
+        requiredTotal: 0,
         unmatched: {},
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
@@ -233,7 +235,9 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
         status: 'blocked',
         planned: true,
         blockers: [unledgeredProducts],
+        blockersTotal: 1,
         required: [],
+        requiredTotal: 0,
         unmatched: {},
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
@@ -371,7 +375,9 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
           status: 'blocked',
           planned: true,
           blockers: refused.map(unledgered),
+          blockersTotal: refused.length,
           required: [],
+          requiredTotal: 0,
           unmatched: {},
         });
         expect(await branchContentsOf(kit, draft)).toEqual(contents);

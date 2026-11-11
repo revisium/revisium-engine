@@ -174,6 +174,7 @@ describe('commitChanges', () => {
             reason: expect.objectContaining({ code: 'referencedRowMissing' }),
           },
         ],
+        requiredTotal: 1,
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
@@ -321,7 +322,9 @@ describe('commitChanges', () => {
         status: 'blocked',
         planned: true,
         blockers: [expect.objectContaining({ code: 'unmatchedSelector' })],
+        blockersTotal: 1,
         required: [],
+        requiredTotal: 0,
         unmatched: missingRow,
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
@@ -347,7 +350,9 @@ describe('commitChanges', () => {
             tableId: BRANDS,
           }),
         ],
+        blockersTotal: 1,
         required: [],
+        requiredTotal: 0,
         unmatched: {},
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
@@ -946,7 +951,9 @@ describe('commitChanges', () => {
               rowId: 'p1',
             }),
           ],
+          blockersTotal: 1,
           required: [],
+          requiredTotal: 0,
           unmatched: {},
         });
         expect(await branchContentsOf(kit, draft)).toEqual(contents);

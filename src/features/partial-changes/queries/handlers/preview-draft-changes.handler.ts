@@ -1,6 +1,7 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import type { MigrationLockedDetails } from 'src/features/migration/exceptions/migration-locked.exception';
 import { MigrationLockService } from 'src/features/migration/services/migration-lock.service';
+import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import {
   partialOperation,
   plannedFieldsOf,
@@ -11,6 +12,10 @@ import {
   type ChangePlan,
   ChangePlanner,
 } from 'src/features/partial-changes/planning/change-planner';
+import {
+  listedBlockersOf,
+  listedRequiredOf,
+} from 'src/features/partial-changes/planning/listed-details';
 import {
   decidePlanStatus,
   type PreviewStatus,
@@ -55,6 +60,7 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
     private readonly migrationLock: MigrationLockService,
     private readonly planner: ChangePlanner,
     private readonly operationLog: OperationLog,
+    private readonly limits: PartialChangesLimits,
   ) {}
 
   public execute({
@@ -87,7 +93,11 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
     };
     trace.planned(() => plannedFieldsOf(preview));
 
-    return previewResultOf(preview, decidePlanStatus(preview, request));
+    return previewResultOf(
+      preview,
+      decidePlanStatus(preview, request),
+      this.limits.maxListedDetails,
+    );
   }
 
   private async readMigrationLock({
@@ -125,15 +135,17 @@ function migrationInProgress({ tableId }: MigrationLockedDetails): PlanBlocker {
   };
 }
 
+// The status and every other field come from the whole plan; only the listed details are cut (SPEC §5.1).
 function previewResultOf(
   plan: ChangePlan,
   status: PreviewStatus,
+  maxListedDetails: number,
 ): PreviewChangesResult {
   const base = {
     headRevisionId: plan.headRevisionId,
     draftRevisionId: plan.draftRevisionId,
     refusedTables: plan.refusedTables,
-    blockers: plan.blockers,
+    ...listedBlockersOf(plan.blockers, maxListedDetails),
     estimate: plan.estimate,
   };
 
@@ -146,6 +158,7 @@ function previewResultOf(
       counts: null,
       coverage: [],
       required: [],
+      requiredTotal: 0,
       deferred: [],
       sample: [],
       unmatched: null,
@@ -159,7 +172,7 @@ function previewResultOf(
     fingerprint: encodeFingerprint(plan.fingerprint),
     counts: plan.counts,
     coverage: plan.coverage,
-    required: plan.required,
+    ...listedRequiredOf(plan.required, maxListedDetails),
     deferred: plan.deferred,
     sample: plan.sample,
     unmatched: plan.unmatched,

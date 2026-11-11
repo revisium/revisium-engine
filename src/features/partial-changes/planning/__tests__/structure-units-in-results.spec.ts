@@ -153,6 +153,7 @@ describe('structure units in preview and apply results', () => {
             reason: expect.objectContaining({ code: 'structureBoundData' }),
           },
         ],
+        requiredTotal: 1,
       });
     });
 
@@ -173,7 +174,9 @@ describe('structure units in preview and apply results', () => {
             unit: structure,
           }),
         ],
+        blockersTotal: 1,
         required: [],
+        requiredTotal: 0,
         unmatched: {},
       });
     });

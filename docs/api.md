@@ -935,6 +935,16 @@ list types, and how a typed transport maps the unions:
     nothing tells the host when it commits.
 
   A failure there does not undo the operation, which is already committed.
+- **Low-level Draft writes.** Partial commit and revert rely on every other Draft writer running Serializable, as the
+  facade writers do: PostgreSQL then aborts the side that read stale data, and the operation retries. A host that
+  writes through the exported `DraftRevisionApiService` or its own `TransactionPrismaService` transaction must run
+  that write Serializable (`TransactionPrismaService.runSerializable`); a write below Serializable isolation is
+  unsupported next to partial operations, and a partial commit or revert running at the same time can lose it.
+- **Orphan cleanup.** Partial commit and revert do not delete the row and table versions they unlink: reverted row
+  versions, a Draft table version that a revert replaced, and a Draft migration table version that a commit
+  renumbered stay in the database until the host runs `cleanOrphanedData`
+  ([Cleanup](integration.md#cleanup-orphaned-data)). Until then, files of reverted rows stay counted in the file
+  usage, as after a native `revertChanges`.
 - **Limits.** Each operation reads only the tables its selection affects (`all: true` reads every table) and refuses
   work above its limits with `tooLarge`. The defaults are conservative; a host raises them through the environment
   once the operation logs show the real costs ([ENV.md](../ENV.md),

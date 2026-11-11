@@ -1,4 +1,5 @@
 import { num, obj, str } from '@revisium/schema-toolkit/mocks';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -20,10 +21,15 @@ import {
   revertOvertakenByAnotherRevert,
   revertWhileNativeWriteLands,
 } from '../../__tests__/support/revert-races';
+import { expectConsistentRevisions } from '../../__tests__/support/revision-consistency';
+import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 
 const PRODUCTS = 'products';
+const TAGS = 'tags';
+const ITEMS = 'items';
 
 const pricedSchema = obj({ title: str(), price: num() });
+const tagSchema = obj({ title: str() });
 
 const titleOf = (rowId: string): FieldRef => ({
   tableId: PRODUCTS,
@@ -87,6 +93,155 @@ describe('revertChanges racing other writers', () => {
           seenOutsideTheTransaction: { title: 'one', price: 11 },
         },
       ]);
+    });
+  });
+
+  describe('a native structural write while the revert planned', () => {
+    it('creating a table: the attempt is retried and the Draft keeps the table', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.createTable(TAGS, tagSchema),
+      );
+
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(attempts).toBe(2);
+      await expectTables(draft, { head: [PRODUCTS], draft: [PRODUCTS, TAGS] });
+      await expectDraftData(draft, 'p1', { title: 'one', price: 10 });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('removing an untouched table: the attempt is retried and the Draft stays without the table', async () => {
+      const draft = await givenEditedPricesNextToTags();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.removeTable(TAGS),
+      );
+
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(attempts).toBe(2);
+      await expectTables(draft, { head: [PRODUCTS, TAGS], draft: [PRODUCTS] });
+      await expectDraftData(draft, 'p1', { title: 'one', price: 10 });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('patching the schema of the reverted table: the attempt is retried and the Draft keeps the new field', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.updateTable(PRODUCTS, [addField('stock', num())]),
+      );
+
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(attempts).toBe(2);
+      await expectDraftData(draft, 'p1', { title: 'one', price: 10, stock: 0 });
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'one',
+        price: 1,
+      });
+      await expectConsistentRevisions(draft);
+    });
+  });
+
+  describe('a native structural write to the selected table while the revert planned', () => {
+    it('removing it: the attempt is retried and the selected field now requires the removal, nothing is written', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.removeTable(PRODUCTS),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toMatchObject({
+        status: 'required',
+        required: [
+          {
+            unit: { kind: 'structure', tableId: PRODUCTS },
+            reason: { code: 'structureBoundData' },
+          },
+        ],
+      });
+      await expectTables(draft, { head: [PRODUCTS], draft: [] });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('renaming it: the attempt is retried, the selector resolves through the Head id and the field is reverted', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.renameTable(PRODUCTS, ITEMS),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toMatchObject({
+        status: 'applied',
+        applied: { selected: 1, required: 0 },
+        draftHasChanges: true,
+      });
+      await expectTables(draft, { head: [PRODUCTS], draft: [ITEMS] });
+      await expectData(draft, 'draft', ITEMS, 'p1', {
+        title: 'one',
+        price: 10,
+      });
+      await expectConsistentRevisions(draft);
+    });
+  });
+
+  describe('a native commit or whole revert while the revert planned', () => {
+    it('a native commit: the attempt is retried, finds nothing left to revert and leaves the new Head as committed', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.commit(),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toEqual<RevertChangesResult>({
+        status: 'empty',
+        headRevisionId: await draft.revisionId('head'),
+        draftRevisionId: await draft.revisionId('draft'),
+        unmatched: titleOfP1,
+      });
+      await expectData(draft, 'head', PRODUCTS, 'p1', {
+        title: 'uno',
+        price: 10,
+      });
+      await expectConsistentRevisions(draft);
+    });
+
+    it('a native whole revert: the attempt is retried and finds nothing left to revert', async () => {
+      const draft = await givenEditedPrices();
+
+      const { result, attempts } = await revertWhileNativeWriteLands(
+        kit,
+        draft,
+        { selection: titleOfP1 },
+        () => draft.revertNatively(),
+      );
+
+      expect(attempts).toBe(2);
+      expect(result).toMatchObject({ status: 'empty' });
+      await expectDraftData(draft, 'p1', { title: 'one', price: 1 });
+      await expectDraftData(draft, 'p2', { title: 'two', price: 2 });
+      await expectConsistentRevisions(draft);
     });
   });
 
@@ -268,6 +423,29 @@ describe('revertChanges racing other writers', () => {
     });
   });
 
+  async function expectTables(
+    draft: ChangesScenario,
+    tables: Readonly<Record<RevisionSide, readonly string[]>>,
+  ): Promise<void> {
+    for (const side of ['head', 'draft'] as const) {
+      const identities = await draft.userTables(side);
+
+      expect(identities.map(({ id }) => id)).toEqual(tables[side]);
+    }
+  }
+
+  async function expectData(
+    draft: ChangesScenario,
+    side: RevisionSide,
+    tableId: string,
+    rowId: string,
+    data: JsonValue,
+  ): Promise<void> {
+    const row = await draft.row(side, tableId, rowId);
+
+    expect(row.data).toEqual(data);
+  }
+
   async function expectDraftData(
     draft: ChangesScenario,
     rowId: string,
@@ -293,12 +471,32 @@ describe('revertChanges racing other writers', () => {
     return draft;
   }
 
-  async function givenEditedPrices(): Promise<ChangesScenario> {
-    const draft = await givenCommittedPrices();
-    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
-    await draft.updateRow(PRODUCTS, 'p2', { title: 'dos', price: 2 });
+  async function givenEditedPricesNextToTags(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: pricedSchema,
+        rows: {
+          p1: { title: 'one', price: 1 },
+          p2: { title: 'two', price: 2 },
+        },
+      },
+      [TAGS]: { schema: tagSchema, rows: { t1: { title: 'one' } } },
+    });
+    await editPrices(draft);
 
     return draft;
+  }
+
+  async function givenEditedPrices(): Promise<ChangesScenario> {
+    const draft = await givenCommittedPrices();
+    await editPrices(draft);
+
+    return draft;
+  }
+
+  async function editPrices(draft: ChangesScenario): Promise<void> {
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 10 });
+    await draft.updateRow(PRODUCTS, 'p2', { title: 'dos', price: 2 });
   }
 
   function givenCommittedPrices(): Promise<ChangesScenario> {

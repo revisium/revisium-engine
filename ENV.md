@@ -26,7 +26,7 @@ conservative: raise them once the operation logs show what operations really cos
 | `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | `100000` | 1 or more | Row links copied into one new table version of a partly applied table. Above it for any table the plan stops with `tooLarge` naming the table. |
 | `PARTIAL_CHANGES_MAX_LISTED_DETAILS` | `200` | 1 or more | Entries of `required` and, separately, of `blockers` that a preview, commit or revert result lists; `requiredTotal` and `blockersTotal` count them all. It bounds the size of a result and changes nothing else: `includeRequired` applies every required addition. |
 | `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | `180000` | 1 to 2147453647 | Lifetime of one listing page, Draft read, preview, or commit or revert attempt; it also bounds the Head and Draft read of each branch in the schema ledger scan, the planning of a repair, and the backfill. Past it the operation fails with `OPERATION_TIMEOUT` and is rolled back. |
-| `PARTIAL_CHANGES_MAX_ATTEMPTS` | `3` | 1 or more | Serializable attempts of a commit or revert, and of the schema ledger backfill, on serialization failures. |
+| `PARTIAL_CHANGES_MAX_ATTEMPTS` | `3` | 1 or more | Serializable attempts of a commit or revert, and of the schema ledger backfill, on serialization failures. When the last one fails serialization, the operation fails with `SERIALIZATION_CONFLICT` (409). From the third attempt on, each attempt holds the branch write fence exclusively, so with `1` or `2` no attempt is escalated. |
 
 Each setting is read once at startup, and the effective values are logged (`Partial changes limits: …`,
 `Partial operation settings: …`), with the variable each value came from when it is not the default.
@@ -40,7 +40,9 @@ before raising a limit.
 Draft changes also follow three of the transaction settings below: `TRANSACTION_MAX_WAIT` bounds the wait to start
 each transaction, the retry backoff of a commit or revert uses `TRANSACTION_BASE_DELAY_MS` and
 `TRANSACTION_MAX_DELAY_MS`, and a commit or revert waits at most half of `TRANSACTION_TIMEOUT` for the branch write
-fence (then `BRANCH_WRITE_FENCED`). `TRANSACTION_MAX_RETRIES` does not apply to them.
+fence (then `BRANCH_WRITE_FENCED`). `TRANSACTION_MAX_RETRIES` does not apply to them; it caps the attempts of the
+schema ledger repair's write, which also fails with `SERIALIZATION_CONFLICT` (409) when its last attempt fails
+serialization.
 
 ## Transactions
 

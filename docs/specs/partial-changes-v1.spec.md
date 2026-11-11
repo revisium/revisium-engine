@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.6 |
+| Version | 2.7 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -796,7 +796,8 @@ added (§6.9).
 | Invalid `pageSize`, `cursor` (a cursor of another operation included) or `tableId`, or a `tableId` that names no Head or Draft table, in `listChanges` | Validation error. |
 | Unknown project or branch | The native lookup error: a `BadRequestException` (400) with the message `A branch with this name does not exist in the project`, the same class as a validation error. |
 | Commit or revert while an async migration is active on the branch | `MigrationLocked` error (native lock). |
-| Operation or statement timeout, attempts exhausted, any write failure | Error; the transaction is rolled back; nothing is persisted, including file references and ledger rows. A retry is safe (§9). |
+| Commit or revert whose last attempt fails serialization or deadlocks (§8.1) | `SerializationConflictException` (`SERIALIZATION_CONFLICT`, HTTP 409), with the database error of that attempt as its `cause`; rolled back, nothing persisted. A retry is safe (§9). |
+| Operation or statement timeout, any other write failure | Error; the transaction is rolled back; nothing is persisted, including file references and ledger rows. A retry is safe (§9). |
 
 ### 5.10 Facade and transports
 
@@ -1538,6 +1539,16 @@ Invariants:
 - The operations run their own attempt loop, independent of the engine-wide `TRANSACTION_MAX_RETRIES` of the native
   Serializable runner: retry only on serialization failures (`40001`, `40P01`, write conflict `P2034`), with backoff, up
   to `PARTIAL_CHANGES_MAX_ATTEMPTS` (default 3). A timeout is not retried.
+- When the last attempt fails serialization, the runner throws `SerializationConflictException`
+  (`SERIALIZATION_CONFLICT`, HTTP 409) instead of the database error, which it keeps as the exception's `cause`. The
+  runner recognises the failure with the predicate its retry loop uses, and converts it in one place
+  (`OperationTransactionRunner.runWrite`). Like `BRANCH_WRITE_FENCED` (423) and `OPERATION_TIMEOUT` (408), the code is
+  a 4xx "retry later" a host maps without database messages; 409 names the conflict with concurrent writes. Other
+  failures pass unchanged, and so does every engine `HttpException` whatever its message: the predicate also matches
+  by text, which a refusal can carry in a table id (`MIGRATION_LOCKED` for a table `TransactionWriteConflict`). Native writers keep throwing the database error after their `TRANSACTION_MAX_RETRIES`
+  attempts.
+- Escalation (§8.4) starts with the third attempt, so with `PARTIAL_CHANGES_MAX_ATTEMPTS` of 1 or 2 no attempt runs
+  under the exclusive fence.
 - One operation timeout `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` per attempt (also for preview and listing, §8.2). The
   deadline starts with the attempt.
   - The runner races the operation against the deadline: the operation's callback settles with the timeout error at
@@ -1818,7 +1829,7 @@ query alone on a synthetic table version; 2026-11-10). No limit bounds it; the o
 | `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | 2,000 | Merged or converted rows in mixed tables whose target schema has formula or File fields | Above → `tooLarge` before the closure assembly that would exceed it (§6.5). |
 | `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | 100,000 | Links copied into one new table version (an in-place revert copies none) | Above for any table → `tooLarge` with `tableId`, before that assembly (§6.5). |
 | `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | 180,000 | Lifetime of one preview, one listing page, or one commit or revert attempt | Expired → error, rollback; the callback settles at the deadline and COMMIT never starts after it; a statement is cut at the deadline by `transaction_timeout` on PostgreSQL 17, and within the budget left at the last checkpoint on older servers (§8.1). |
-| `PARTIAL_CHANGES_MAX_ATTEMPTS` | 3 | Serializable attempts of the operation's own loop (§8.1) | Exhausted → error. |
+| `PARTIAL_CHANGES_MAX_ATTEMPTS` | 3 | Serializable attempts of the operation's own loop (§8.1) | Exhausted → `SERIALIZATION_CONFLICT` (409). Below 3 no attempt is escalated (§8.4). |
 | `PARTIAL_CHANGES_MAX_LISTED_DETAILS` | 200 | Entries of `required` and, separately, of `blockers` that a preview, commit or revert result lists (§5.1 listed details) | Above → the list is cut; `requiredTotal` and `blockersTotal` count every entry. Nothing else depends on it. |
 | `listChanges` `pageSize` | 500 (max 5,000) | Units per page, and changed row ids read per page (§5.2) | — |
 | Draft reads `first` | none (1 to 5,000) | Table or row items per page of `changes.tableChanges` and `changes.rowChanges` ([draft-reads-v1](draft-reads-v1.spec.md) §1), the maximum of `pageSize` | Outside → validation error, before the snapshot. |
@@ -1861,7 +1872,7 @@ Each listing page, Draft read ([draft-reads-v1]), preview, commit and revert log
 | `relinkedTables` | Commit and revert with outcome `empty`: the number of tables whose Draft link the normalisation of exactly `{ all: true }` changed to the Head version (§3.8); absent when it wrote nothing. |
 | `pageSize`, `returned` | `tableChanges` and `rowChanges`: the `first` the caller asked for and the number of items on the page. |
 | `filters` | Draft reads: the names of the filters given (`changeTypes`, `search`, `tableId`), never their values. |
-| `error`, `errorCode` | Only on `warn`: the error's name and its code (an engine code such as `OPERATION_TIMEOUT`, or a database code such as `P2034`). |
+| `error`, `errorCode` | Only on `warn`: the error's name and its code (an engine code such as `OPERATION_TIMEOUT` or `SERIALIZATION_CONFLICT`, or a database code such as `P2002`). Exhausted attempts log `SERIALIZATION_CONFLICT`, with `attempts` counting every attempt made. |
 
 An entry never holds row data, values, selectors or an error message, since a message can quote them. The
 endpoint notification after a commit or revert (the internal hook, a no-op in this package) is outside the entry: a
@@ -2460,6 +2471,18 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.7 (2026-11-11)
+
+A typed error for exhausted attempts. The API is unreleased, so the error changes without a new major version.
+
+- §5.9, §8.1, §11, §11.1: a commit or revert whose last attempt fails serialization or deadlocks throws
+  `SerializationConflictException` (`SERIALIZATION_CONFLICT`, HTTP 409) with the database error as its `cause`,
+  instead of that error. The schema ledger backfill and repair do the same. Native writers are unchanged. Before, a
+  host had to match Prisma and PostgreSQL codes or messages to map the failure to "retry later".
+- §8.1, §11: with `PARTIAL_CHANGES_MAX_ATTEMPTS` of 1 or 2 no attempt is escalated; the escalation policy is unchanged.
+- §8.1: an engine `HttpException` is never converted, also when its message carries the serialization text in a
+  table id.
 
 ### Version 2.6 (2026-11-11)
 

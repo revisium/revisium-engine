@@ -16,6 +16,7 @@ import {
   OperationDeadline,
 } from 'src/infrastructure/database/operation-deadline';
 import { PrismaService } from 'src/infrastructure/database/prisma.service';
+import { failingWithSerializationConflict } from 'src/infrastructure/database/serialization-conflict.exception';
 import {
   retryOnSerializationFailure,
   SerializationRetryLimits,
@@ -108,22 +109,24 @@ export class OperationTransactionRunner implements OnModuleInit {
     planAndWrite: Operation<T>,
     observer: AttemptObserver = UNOBSERVED,
   ): Promise<T> {
-    return retryOnSerializationFailure(this.writeRetryLimits(), {
-      run: () => {
-        observer.attempted(false);
+    return failingWithSerializationConflict(() =>
+      retryOnSerializationFailure(this.writeRetryLimits(), {
+        run: () => {
+          observer.attempted(false);
 
-        return this.runAttempt(
-          TransactionIsolationLevel.Serializable,
-          planAndWrite,
-          this.unfencedStart(),
-        );
-      },
-      runEscalated: () => {
-        observer.attempted(true);
+          return this.runAttempt(
+            TransactionIsolationLevel.Serializable,
+            planAndWrite,
+            this.unfencedStart(),
+          );
+        },
+        runEscalated: () => {
+          observer.attempted(true);
 
-        return this.runEscalatedAttempt(branch, planAndWrite);
-      },
-    });
+          return this.runEscalatedAttempt(branch, planAndWrite);
+        },
+      }),
+    );
   }
 
   public runPlanning<T>(

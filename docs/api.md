@@ -935,12 +935,19 @@ native `createRevision` and `revertChanges` still work.
 | `commit` or `revert` while an async migration runs on the branch | `MIGRATION_LOCKED` (423) |
 | `commit` or `revert` that waited too long for the branch write fence | `BRANCH_WRITE_FENCED` (423) |
 | An operation past `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | `OPERATION_TIMEOUT` (408) |
-| Serialization failures on every attempt (`PARTIAL_CHANGES_MAX_ATTEMPTS`) | The last serialization error |
+| `commit` or `revert` whose last attempt (`PARTIAL_CHANGES_MAX_ATTEMPTS`) fails serialization or deadlocks | `SERIALIZATION_CONFLICT` (409) |
 
-`MIGRATION_LOCKED`, `BRANCH_WRITE_FENCED` and `OPERATION_TIMEOUT` are NestJS `HttpException`s with the `code` in
-their response body. Exhausted attempts surface the database's serialization error (a Prisma `P2034`, the
-PostgreSQL `40001` / `40P01`, or an error whose message carries the database's serialization or deadlock text), which
-a host maps to a retryable response. A failed operation is rolled back and persists nothing, so a retry is safe.
+`MIGRATION_LOCKED`, `BRANCH_WRITE_FENCED`, `OPERATION_TIMEOUT` and `SERIALIZATION_CONFLICT` are NestJS
+`HttpException`s with the `code` in their response body. `SERIALIZATION_CONFLICT` replaces the database error of the
+last attempt (a Prisma `P2034`, the PostgreSQL `40001` / `40P01`, or an error that carries only the database's
+serialization or deadlock text), which stays available as the exception's `cause`; its message names no database
+internals. [`backfillSchemaLedger`](#backfillschemaledger) and [`repairSchemaLedger`](#repairschemaledger) fail the
+same way. A failed operation is rolled back and persists nothing, so a retry is safe: a host maps 423, 408 and 409 to
+"retry later".
+
+Native writers (the row, table and views writes, `createRevision`, `revertChanges`) are unchanged: after their
+`TRANSACTION_MAX_RETRIES` attempts they still throw the database's serialization error itself, and a host that serves
+them keeps matching it.
 
 ### Code lists
 
@@ -996,6 +1003,12 @@ list types, and how a typed transport maps the unions:
     nothing tells the host when it commits.
 
   A failure there does not undo the operation, which is already committed.
+- **Retryable errors.** `changes.commit`, `changes.revert`, `backfillSchemaLedger` and `repairSchemaLedger` refuse
+  work that may succeed later with a coded `HttpException`: `MIGRATION_LOCKED` (423), `BRANCH_WRITE_FENCED` (423),
+  `OPERATION_TIMEOUT` (408) and `SERIALIZATION_CONFLICT` (409). A host maps them by `code` to a "retry later"
+  response and needs no database error text for these operations; the operation was rolled back. The operation log
+  entry of such a failure carries the same `errorCode` and the attempts made. Native writers still throw the
+  database's serialization error after their retries ([Errors](#errors)).
 - **Low-level Draft writes.** Partial commit and revert rely on every other Draft writer running Serializable, as the
   facade writers do: PostgreSQL then aborts the side that read stale data, and the operation retries. A host that
   writes through the exported `DraftRevisionApiService` or its own `TransactionPrismaService` transaction must run
@@ -1419,8 +1432,9 @@ Records a forward-only repair of damaged Head tables in the Draft; a later commi
 `REPAIR_OUTCOMES`, `TABLE_REPAIR_OUTCOMES`. Errors: a validation
 error (400) for wrong input types, before any transaction (`projectId must be a string`, `branchName must be a string`,
 `tableIds must be an array of strings`, `dryRun must be a boolean`), or for an unknown table id; unknown project or
-branch; `MIGRATION_LOCKED` (423) while an async migration is active. Each call logs one structured entry
-(`Schema ledger operation finished`,
+branch; `MIGRATION_LOCKED` (423) while an async migration is active; `SERIALIZATION_CONFLICT` (409) when the write
+fails serialization on each of its `TRANSACTION_MAX_RETRIES` attempts ([Errors](#errors)). Each call logs one
+structured entry (`Schema ledger operation finished`,
 [partial-changes §11.1](specs/partial-changes-v1.spec.md#111-operation-logs)). See
 [How is the schema ledger repaired?](migration.md#how-is-the-schema-ledger-repaired)
 
@@ -1475,7 +1489,9 @@ applied `changes.commit` ([Host integration](#host-integration)). The variants a
 `BackfillPlanned`, `BackfillCommitted` and `BackfillRefused`. Codes: `BACKFILL_STATUSES`, `BACKFILL_REFUSAL_CODES`,
 `BACKFILL_CHANGE_TYPES`. Errors: a validation error for wrong input types (before any transaction), unknown project
 or branch, `MIGRATION_LOCKED` (423) while an async migration is active (a dry run too), `BRANCH_WRITE_FENCED` (423, a
-run only), `OPERATION_TIMEOUT` (408). Each call logs one structured entry (`Schema ledger operation finished`).
+run only), `OPERATION_TIMEOUT` (408), `SERIALIZATION_CONFLICT` (409, a run only) when every attempt
+(`PARTIAL_CHANGES_MAX_ATTEMPTS`) fails serialization ([Errors](#errors)). Each call logs one structured entry
+(`Schema ledger operation finished`).
 See [How is a missing schema ledger backfilled?](migration.md#how-is-a-missing-schema-ledger-backfilled)
 
 ---

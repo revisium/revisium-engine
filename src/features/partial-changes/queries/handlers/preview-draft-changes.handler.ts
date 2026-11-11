@@ -36,6 +36,7 @@ import type {
   ChangesBranch,
   ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import {
   OperationLog,
@@ -61,6 +62,7 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
     private readonly planner: ChangePlanner,
     private readonly operationLog: OperationLog,
     private readonly limits: PartialChangesLimits,
+    private readonly snapshotReader: ChangesSnapshotReader,
   ) {}
 
   public execute({
@@ -92,12 +94,22 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
       blockers: [...migrationBlockers, ...plan.blockers],
     };
     trace.planned(() => plannedFieldsOf(preview));
-
-    return previewResultOf(
+    const result = previewResultOf(
       preview,
       decidePlanStatus(preview, request),
       this.limits.maxListedDetails,
     );
+
+    if (!result.planned || result.status !== 'empty') {
+      return result;
+    }
+
+    return {
+      ...result,
+      draftHasChanges: await this.snapshotReader.readDraftHasChanges(
+        result.draftRevisionId,
+      ),
+    };
   }
 
   private async readMigrationLock({

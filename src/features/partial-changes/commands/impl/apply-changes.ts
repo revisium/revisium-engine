@@ -73,11 +73,14 @@ export interface ChangesStale extends ApplyResult {
   readonly unmatched: UnmatchedSelectors;
 }
 
+// No unit to apply. Exactly { all: true } still links the Head version of every content-equal Draft table version it
+// read, so draftHasChanges is the Draft's hasChanges after that relink, or as stored when nothing was written (SPEC §3.8).
 export interface NothingToApply extends ApplyResult {
   readonly status: 'empty';
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly unmatched?: UnmatchedSelectors;
+  readonly draftHasChanges: boolean;
 }
 
 export type UnappliedChanges =

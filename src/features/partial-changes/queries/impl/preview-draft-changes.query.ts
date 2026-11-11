@@ -45,6 +45,9 @@ export interface PlannedPreview extends PreviewBase {
   readonly deferred: readonly DeferredRow[];
   readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
+  // Only with status empty: the Draft's stored hasChanges. True for exactly { all: true } means that applying it links
+  // the Head versions of the content-equal Draft table versions (SPEC §3.8).
+  readonly draftHasChanges?: boolean;
 }
 
 // A preview a limit stopped returns no value of the plan (SPEC §5.3).

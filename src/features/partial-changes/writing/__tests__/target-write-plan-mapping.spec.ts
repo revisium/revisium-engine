@@ -8,12 +8,13 @@ import type { TablePlan } from 'src/features/partial-changes/assembly/target-ass
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import {
+  draftFollowsHeadPlanOf,
   targetWritePlanOf,
   type WritableTarget,
 } from '../target-write-plan-mapping';
 
-// Only the fields that no operation-level test observes when they are mapped wrongly: the commit, revert and
-// property suites guard every other field of the write plan.
+// Only the fields that no operation-level test observes when they are mapped wrongly: the commit, revert,
+// normalisation and property suites guard every other field of the write plans.
 
 const titleSchema = obj({ title: str() });
 
@@ -31,6 +32,18 @@ const renamedProducts: TablePair = {
     versionId: 'goods-draft',
     createdId: 'products-identity',
     id: 'goods',
+    readonly: false,
+    schema: titleSchema,
+    history: [],
+  },
+};
+
+const createdTags: TablePair = {
+  identity: 'tags-identity',
+  draft: {
+    versionId: 'tags-draft',
+    createdId: 'tags-identity',
+    id: 'tags',
     readonly: false,
     schema: titleSchema,
     history: [],
@@ -149,10 +162,72 @@ describe('targetWritePlanOf', () => {
   });
 });
 
+describe('draftFollowsHeadPlanOf', () => {
+  it('offers every read user and system table whose Head and Draft versions differ to relink under its identity, keeping its Draft version, and leaves out a table of one side only', () => {
+    const plan = draftFollowsHeadPlanOf(
+      writableTargetOf({
+        pairs: [renamedProducts, createdTags],
+        tables: [
+          linkedTableOf(renamedProducts.identity, 'goods-draft'),
+          linkedTableOf(createdTags.identity, 'tags-draft'),
+        ],
+        systemTables: [
+          {
+            tableId: SystemTables.Views,
+            versionIds: { head: 'views-head', draft: 'views-draft' },
+            outcome: 'other',
+            linkSide: 'draft',
+            versionId: 'views-draft',
+            editInPlace: false,
+            relinkCandidate: false,
+            removedRowVersionIds: [],
+            addedRowVersionIds: [],
+            newRows: [],
+          },
+        ],
+      }),
+    );
+
+    expect(plan.tables).toEqual<TableWritePlan[]>([
+      {
+        identity: 'products-identity',
+        headVersionId: 'products-head',
+        draftVersionId: 'goods-draft',
+        target: { kind: 'linked', versionId: 'goods-draft' },
+        relinkCandidate: true,
+      },
+      {
+        identity: SystemTables.Views,
+        headVersionId: 'views-head',
+        draftVersionId: 'views-draft',
+        target: { kind: 'linked', versionId: 'views-draft' },
+        relinkCandidate: true,
+      },
+    ]);
+  });
+});
+
+function linkedTableOf(identity: string, versionId: string): TablePlan {
+  return {
+    identity,
+    outcome: 'other',
+    structureSide: 'draft',
+    versionId,
+    editInPlace: false,
+    relinkCandidate: false,
+    rows: [],
+    removedRowVersionIds: [],
+    addedRowVersionIds: [],
+    newRows: [],
+  };
+}
+
 function writableTargetOf({
+  pairs = [renamedProducts],
   tables = [],
   systemTables = [],
 }: {
+  readonly pairs?: readonly TablePair[];
   readonly tables?: readonly TablePlan[];
   readonly systemTables?: readonly SystemTablePlan[];
 }): WritableTarget {
@@ -162,7 +237,7 @@ function writableTargetOf({
         branchId: 'branch',
         headRevisionId: 'head-revision',
         draftRevisionId: 'draft-revision',
-        tables: [renamedProducts],
+        tables: pairs,
       },
     },
     assembled: { tables, systemTables, ledger: { renumbered: [] } },

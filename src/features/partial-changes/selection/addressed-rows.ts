@@ -15,10 +15,7 @@ import type {
   TableVersion,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
-export type ExistingRowIdsReader = Pick<
-  ChangesSnapshotReader,
-  'readExistingRowIds'
->;
+type ExistingRowIdsReader = Pick<ChangesSnapshotReader, 'readExistingRowIds'>;
 
 interface AddressedRowId {
   readonly tableId: string;

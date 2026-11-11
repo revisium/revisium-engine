@@ -26,7 +26,7 @@ export interface RefusedTable {
   readonly code: RefusalCode;
 }
 
-export interface HeadSchemaCheckInput {
+interface HeadSchemaCheckInput {
   readonly snapshot: ChangesSnapshot;
   readonly replays: SourceReplays;
   readonly wholeDraft: boolean;

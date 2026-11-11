@@ -4,7 +4,7 @@ import type { TargetTable } from 'src/features/partial-changes/closure/target-ta
 import type { TableVersion } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 
-export type ReferrersById = ReadonlyMap<string, string>;
+type ReferrersById = ReadonlyMap<string, string>;
 
 export class LostIdReferrers {
   private readonly reads = new Map<string, Promise<ReferrersById>>();

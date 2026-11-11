@@ -43,7 +43,7 @@ export interface ValidationSource extends AssemblySource {
   readonly headSchema: HeadSchemaCheck;
 }
 
-export interface SlotInconsistency {
+interface SlotInconsistency {
   readonly lineage: string;
   readonly tableId: string;
   readonly inconsistency: Inconsistency;
@@ -58,7 +58,7 @@ interface ReplayedRole extends LedgerRole {
   readonly replayed: ReplayedLedger;
 }
 
-export interface ReplayedResultingRole extends ResultingRole {
+interface ReplayedResultingRole extends ResultingRole {
   readonly replayed: ReplayedLedger;
 }
 

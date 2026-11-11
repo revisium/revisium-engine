@@ -7,7 +7,7 @@ import {
 } from 'src/features/partial-changes/selection/selector-match';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
-export interface ReasonSubject {
+interface ReasonSubject {
   readonly tableId: string;
   readonly rowId?: string;
   readonly path?: string;

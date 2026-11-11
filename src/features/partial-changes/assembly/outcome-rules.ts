@@ -54,7 +54,7 @@ export interface TableUnits {
   readonly rows: readonly string[];
 }
 
-export interface OutcomeTable {
+interface OutcomeTable {
   readonly units: TableUnits;
   readonly structureDiffers: boolean;
 }

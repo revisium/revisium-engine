@@ -8,7 +8,7 @@ export interface ScannedBranch extends BranchRef {
   readonly id: string;
 }
 
-export interface BranchPage {
+interface BranchPage {
   readonly branches: readonly ScannedBranch[];
   readonly nextCursor: string | null;
 }

@@ -13,7 +13,7 @@ export const ANNOTATION_KEYWORDS = [
 
 export type AnnotationKeyword = (typeof ANNOTATION_KEYWORDS)[number];
 
-export type NormalizedLeafSchema = Readonly<Record<string, unknown>>;
+type NormalizedLeafSchema = Readonly<Record<string, unknown>>;
 
 type ReferencedTable =
   | { readonly identity: string }
@@ -71,7 +71,7 @@ export function ownAnnotationsDifferingBetween(
   );
 }
 
-export interface SchemaWithTables {
+interface SchemaWithTables {
   readonly schema: JsonSchema;
   readonly tableIdentities: ReadonlyMap<string, string>;
 }

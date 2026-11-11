@@ -11,12 +11,12 @@ import {
 } from './foreign-key-split';
 import type { HeadTableSchema } from './head-table-schemas';
 
-export interface PlannedInit {
+interface PlannedInit {
   readonly tableId: string;
   readonly schema: JsonSchema;
 }
 
-export interface PlannedUpdate {
+interface PlannedUpdate {
   readonly tableId: string;
   readonly headSchema: JsonSchema;
   readonly patches: JsonPatchReplace[];
@@ -27,7 +27,7 @@ export interface OrderedLedger {
   readonly updates: readonly PlannedUpdate[];
 }
 
-export interface UnsplittableCycles {
+interface UnsplittableCycles {
   readonly cycleTableIds: readonly string[];
 }
 

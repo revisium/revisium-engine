@@ -93,7 +93,7 @@ export class DraftTableItems {
   }
 }
 
-export function tableSelectionOf(
+function tableSelectionOf(
   table: DraftTable,
   counts: ReportedRowCounts,
   catalogue: DraftCatalogue,

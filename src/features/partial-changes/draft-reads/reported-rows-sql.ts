@@ -18,12 +18,12 @@ import {
   type ComparedRowColumn,
 } from 'src/features/share/compared-columns';
 
-export interface ComparedRows {
+interface ComparedRows {
   readonly kind: 'compared';
   readonly table: ComparedTable;
 }
 
-export interface OneSidedRows {
+interface OneSidedRows {
   readonly kind: 'oneSided';
   readonly side: RevisionSide;
   readonly tableVersionId: string;

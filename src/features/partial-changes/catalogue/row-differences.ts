@@ -6,7 +6,7 @@ import type {
 } from 'src/features/partial-changes/structure/column-owners';
 import type { ComparedRowColumn } from 'src/features/share/compared-columns';
 
-export type ContentColumns = Pick<Row, ComparedRowColumn>;
+type ContentColumns = Pick<Row, ComparedRowColumn>;
 
 const WHOLE_COLUMN_EQUALITY: Readonly<
   Record<WholeColumn, (left: ContentColumns, right: ContentColumns) => boolean>

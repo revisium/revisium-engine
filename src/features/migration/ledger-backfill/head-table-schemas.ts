@@ -17,7 +17,7 @@ export interface TableFailure {
   readonly error: string;
 }
 
-export interface HeadTableSchemas {
+interface HeadTableSchemas {
   readonly tables: readonly HeadTableSchema[];
   readonly failures: readonly TableFailure[];
 }

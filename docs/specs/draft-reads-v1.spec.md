@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.6 |
+| Version | 1.7 |
 | Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
-| Date | 2026-11-10 |
+| Date | 2026-11-11 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
 | Builds on | [partial-changes-v1](partial-changes-v1.spec.md) §3 (units), §4 (selection), §5.1–§5.2 (unit refs, listing), §6.2–§6.3 (snapshot, catalogue), §6.10 (refused tables) |
@@ -358,10 +358,10 @@ type DraftChangesSummaryInput = { branch: ChangesBranch; filters?: DraftTableCha
 
 type DraftReadState = { headRevisionId: string; draftRevisionId: string; refusedTables: RefusedTable[] };
 type DraftPageInfo = { hasNextPage: boolean; endCursor: string | null };
-type DraftTablePage = DraftReadState & { edges: Array<{ cursor: string; node: DraftTableItem }>;
-  pageInfo: DraftPageInfo; totalCount: number };
-type DraftRowPage = DraftReadState & { edges: Array<{ cursor: string; node: DraftRowItem }>;
-  pageInfo: DraftPageInfo };
+type DraftEdge<T> = { cursor: string; node: T };
+type DraftTablePage = DraftReadState & { edges: DraftEdge<DraftTableItem>[]; pageInfo: DraftPageInfo;
+  totalCount: number };
+type DraftRowPage = DraftReadState & { edges: DraftEdge<DraftRowItem>[]; pageInfo: DraftPageInfo };
 
 type DraftTableItem = {
   tableId: string;                       // Draft id, else the Head id of a removed table
@@ -377,7 +377,8 @@ type TableSelection = RefusedSelection | ContentEqualSelection | SelectableTable
 type RefusedSelection = { state: 'refused'; code: RefusalCode };
 type ContentEqualSelection = { state: 'contentEqual' };
 type SelectableTableSelection = { state: 'selectable'; structure?: DescribedUnitRef; views?: UnitRef;
-  tableData?: { selector: SelectionItems; rows: number } };
+  tableData?: TableData };
+type TableData = { selector: SelectionItems; rows: number };
 
 type DraftRowItem = {
   tableId: string; previousTableId?: string;  // as table items
@@ -405,7 +406,8 @@ type RowSelection = { units: UnitRef[] } & (   // the row's own units: empty unl
   | RefusedSelection
   | GoesWithSelection
   | ComputedSelection
-  | { state: 'selectable'; row: SelectionItems; structure?: UnitRef });
+  | SelectableRowSelection);
+type SelectableRowSelection = { state: 'selectable'; row: SelectionItems; structure?: UnitRef };
 type FieldSelection = RefusedSelection | GoesWithSelection | ComputedSelection | FieldUnitSelection;
 type GoesWithSelection = { state: 'goesWith'; unit: DescribedUnitRef; reason: GoesWithReason };
 type ComputedSelection = { state: 'computed' };
@@ -419,13 +421,14 @@ type IdExchange = { renames: UnitRef[]; termination: IdExchangeTermination };
 type IdExchangeTermination = 'cycle' | 'freeId' | 'deletedOccupant' | 'truncated';
 
 type DraftChangesSummary = DraftReadState & {
-  tablesSummary: RevisionChangeSummary & { replaced: number };
+  tablesSummary: DraftTablesSummary;
   rowsSummary: RevisionChangeSummary;
   rowsWithUnits: number;
   sharedSchemas: ChangedSharedSchema[]; sharedSchemasCount: number;
   transientTables: TransientTable[]; transientTablesCount: number;
   viewsOnlyTables: ViewsOnlyTable[]; viewsOnlyTablesCount: number;
 };
+type DraftTablesSummary = RevisionChangeSummary & { replaced: number };
 type ChangedSharedSchema = { sharedSchemaId: string; changeType: ChangeType; unit: UnitRef };
 type TransientTable = { tableId: string; changeType: ChangeType; structure: DescribedUnitRef };
 type ViewsOnlyTable = { tableId: string; changeType: ChangeType; views: UnitRef };
@@ -438,7 +441,8 @@ built of (`MigrationType`, `JsonPatchOp`, `JsonPatchOperation`, `HistoryPatch`, 
 holds the values of the native `RowChangeDetailType` that the row value diff produces, and the package exports that
 enum too. Every code union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `DRAFT_FIELD_CHANGE_TYPES`,
-`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`.
+`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`. Every type of this section is exported under its
+name, `DraftEdge`, `TableData`, `SelectableRowSelection` and `DraftTablesSummary` included.
 
 ## 10. Acceptance scenarios
 
@@ -513,6 +517,12 @@ Paging, filters, validation, snapshot:
   (`BadRequestException`, `A branch with this name does not exist in the project`).
 
 ## Changelog
+
+### Version 1.7 (2026-11-11)
+
+- §9: the result parts written inline get exported names, with no change of shape: `DraftEdge` (a page edge),
+  `TableData` (a table item's `tableData`), `SelectableRowSelection` (the selectable row selection) and
+  `DraftTablesSummary` (the summary's `tablesSummary`).
 
 ### Version 1.6 (2026-11-10)
 

@@ -551,7 +551,11 @@ The whole-Draft `createRevision` and `revertChanges` are unchanged. Every method
 branchName }` (`ChangesBranch`) and acts on that branch's Head and Draft. This section is a guide; the contract is in
 [partial-changes-v1](specs/partial-changes-v1.spec.md) (units, selection, plans, results, fingerprint, limits) and
 [draft-reads-v1](specs/draft-reads-v1.spec.md) (the three reads). Every type named here is exported from
-`@revisium/engine` under that name.
+`@revisium/engine` under that name, and so is every object type that a result holds, also where this guide writes it
+inline: a table item's `TableData`, a page's `DraftEdge`, the summary's `DraftTablesSummary`, the estimate's
+`MixedTableEstimate`, the row selection `SelectableRowSelection`, and the two `blocked` results
+`PlannedChangesBlocked` and `StoppedChangesBlocked`. Only the variants of a discriminated union (`Unit` and
+`ReasonSite` by `kind`, `ReferencedEntity` by `kind`) and the parts of an intersection have no names of their own.
 
 | Method | Does | Writes |
 | --- | --- | --- |
@@ -636,6 +640,20 @@ with a reason ([SPEC §5.7](specs/partial-changes-v1.spec.md#57-required-reasons
 - `expected` is optional in the engine. A host's public API and MCP must require it for `commit` and `revert` unless
   the selection is exactly `{ all: true }`, so that users apply only what they reviewed. `includeRequired: true`
   requires `expected` in the engine too.
+- `isWholeDraftSelection(selection: SelectionInput): boolean` tells a host whether the operations take a selection as
+  exactly `{ all: true }`, so the host enforces the rule above without a copy of it. It validates the selection as the
+  operations do and applies the planner's own rule; a malformed selection throws the operations'
+  `BadRequestException` (400). An optional field given as `null` is absent; any other field makes the selection
+  partial, even an empty list or an empty `exclude`:
+
+  | Selection | Whole Draft |
+  | --- | --- |
+  | `{ all: true }` | yes |
+  | `{ all: true, rows: null }`, `{ all: true, exclude: null }` | yes |
+  | `{ all: true, rows: [] }` | no |
+  | `{ all: true, exclude: {} }` | no |
+  | `{ all: true, exclude: { rows: [] } }`, `{ all: true, exclude: { rows: null } }` | no |
+  | `{ all: false }`, `{ all: null }`, `{}` | no |
 
 ### changes.list
 
@@ -795,7 +813,8 @@ engine.changes.tableChanges({
   after?: string | null;   // endCursor of the previous page
   filters?: { changeTypes?: ChangeType[] | null; search?: string | null } | null;
 }): Promise<DraftTablePage>
-// { edges: [{ cursor, node: DraftTableItem }], pageInfo, totalCount, headRevisionId, draftRevisionId, refusedTables }
+// { edges: DraftEdge<DraftTableItem>[] ({ cursor, node }), pageInfo, totalCount, headRevisionId, draftRevisionId,
+//   refusedTables }
 
 engine.changes.rowChanges({
   branch: ChangesBranch;
@@ -803,7 +822,7 @@ engine.changes.rowChanges({
   after?: string | null;
   filters?: { tableId?: string | null; changeTypes?: ChangeType[] | null; search?: string | null } | null;
 }): Promise<DraftRowPage>
-// { edges: [{ cursor, node: DraftRowItem }], pageInfo, headRevisionId, draftRevisionId, refusedTables }
+// { edges: DraftEdge<DraftRowItem>[], pageInfo, headRevisionId, draftRevisionId, refusedTables }
 
 engine.changes.summary({
   branch: ChangesBranch;
@@ -875,10 +894,12 @@ transport builds its enums from these lists instead of copying the values, so a 
 without a hand-kept mirror:
 
 `CHANGE_OPERATIONS`, `UNIT_KINDS`, `ROW_COLUMNS`, `SELECTOR_SIDES`, `STRUCTURE_TABLE_CHANGES`,
-`STRUCTURE_FIELD_CHANGES`, `ANNOTATION_KEYWORDS`, `REQUIRED_REASON_CODES`, `REASON_SITE_KINDS`, `CAUSE_ROLES`,
-`BLOCKER_CODES`, `REFUSAL_CODES`, `PREVIEW_STATUSES`, `APPLY_STATUSES`, `STALE_CHANGES`, and for the Draft reads
+`STRUCTURE_FIELD_CHANGES`, `ANNOTATION_KEYWORDS`, `REQUIRED_REASON_CODES`, `REASON_SITE_KINDS`,
+`REFERENCED_ENTITY_KINDS`, `CAUSE_ROLES`, `BLOCKER_CODES`, `REFUSAL_CODES`, `PREVIEW_STATUSES`, `APPLY_STATUSES`,
+`STALE_CHANGES`, and for the Draft reads
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `DRAFT_FIELD_CHANGE_TYPES`,
-`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`.
+`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`. The operations of the
+[Schema Ledger](#schema-ledger) have their own lists.
 
 The Draft read items also carry the native diff types, exported with them: `ChangeType`, `RowChangeDetailType`,
 `RevisionChangeSummary`, `SchemaMigrationDetail`, `ViewsChangeDetail` and what they are built of. Which value each
@@ -1257,9 +1278,18 @@ Returns: `{ tables: number, rows: number }` — counts of deleted entities
 ## Schema Ledger
 
 Maintenance operations on the schema migration ledger (the rows of `revisium_migration_table`). The host exposes them
-to administrators; the engine has no permission layer. How they work: [migration.md](migration.md). The result types
-named below (`SchemaLedgerFinding`, `SchemaLedgerScanStats`, `TableRepair`, `RenumberedMigration`) are not exported;
-their fields are described there. The code lists are exported.
+to administrators; the engine has no permission layer. How they work: [migration.md](migration.md), which describes
+the fields. The package exports the input and result types of the three operations and every object type their
+results hold, so a host maps them without copying shapes:
+
+| Operation | Input | Result and its parts |
+| --- | --- | --- |
+| `scanSchemaLedger` | `ScanSchemaLedgerData` | `SchemaLedgerScan`, `SchemaLedgerFinding`, `SchemaLedgerScanStats`; the finding details `UnledgeredDetail` (`BrokenLineage`), `ReplayFailure`, `DamagedTableDetail`, `RowSchemaHashMismatchDetail` (`MismatchedRowHash`) |
+| `repairSchemaLedger` | `RepairSchemaLedgerData` | `SchemaLedgerRepair`, `TableRepair`, `InvalidRows`, `RenumberedMigration` |
+| `backfillSchemaLedger` | `BackfillSchemaLedgerData` | `SchemaLedgerBackfill` (`BackfillNotNeeded`, `BackfillPlanned`, `BackfillCommitted`, `BackfillRefused`), `BackfillEntry`, `BackfillRefusal` |
+
+Every code union of the results has a runtime list exported with the union type derived from it (`FINDING_CODES` and
+`FindingCode`, and so on), named below for each operation.
 
 ### scanSchemaLedger
 
@@ -1270,16 +1300,14 @@ engine.scanSchemaLedger({ // the argument is optional
   cursor?: string | null;
   limit?: number | null; // 1–1,000, default 50
   rowDiagnostics?: 'none' | 'headAndDraft' | 'all' | null; // default 'headAndDraft'
-}): Promise<{
-  findings: SchemaLedgerFinding[];
-  nextCursor: string | null;
-  stats: SchemaLedgerScanStats;
-}>
+}): Promise<SchemaLedgerScan>
+// { findings: SchemaLedgerFinding[]; nextCursor: string | null; stats: SchemaLedgerScanStats }
 ```
 
 Reports, read-only, where a revision's ledger does not reproduce its schema rows: one branch, the branches of a
 project, or every branch, paged by branch. Codes: `FINDING_CODES`, `FINDING_ROLES`, `UNLEDGERED_REASONS`,
-`DAMAGE_SHAPES`, `DAMAGED_TABLE_REPAIRS`, `ROW_HASH_REASONS`, `ROW_DIAGNOSTICS`. See
+`DAMAGE_SHAPES`, `DAMAGED_TABLE_REPAIRS`, `ROW_HASH_REASONS`, `ROW_DIAGNOSTICS`, and `MIGRATION_CHANGE_TYPES` for the
+`step` of an `unreplayableLedger` finding. See
 [How does the schema ledger scan report damage?](migration.md#how-does-the-schema-ledger-scan-report-damage)
 
 ### repairSchemaLedger
@@ -1290,13 +1318,9 @@ engine.repairSchemaLedger({
   branchName: string;
   tableIds?: string[] | null;
   dryRun?: boolean | null;
-}): Promise<{
-  headRevisionId: string;
-  draftRevisionId: string;
-  dryRun: boolean;
-  tables: TableRepair[];
-  renumbered: RenumberedMigration[];
-}>
+}): Promise<SchemaLedgerRepair>
+// { headRevisionId: string; draftRevisionId: string; dryRun: boolean; tables: TableRepair[];
+//   renumbered: RenumberedMigration[] }
 ```
 
 Records a forward-only repair of damaged Head tables in the Draft; a later commit publishes it. A call with
@@ -1312,7 +1336,9 @@ engine.backfillSchemaLedger({
   branchName: string;
   dryRun?: boolean | null; // default false
   comment?: string | null; // default 'Backfill the schema ledger'
-}): Promise<
+}): Promise<SchemaLedgerBackfill>
+
+type SchemaLedgerBackfill =
   | { status: 'notNeeded'; headRevisionId: string; draftRevisionId: string }
   | { status: 'planned'; headRevisionId: string; draftRevisionId: string; entries: BackfillEntry[] }
   | {
@@ -1326,13 +1352,14 @@ engine.backfillSchemaLedger({
       status: 'refused';
       headRevisionId: string;
       draftRevisionId: string;
-      refusal: {
-        code: 'draftStructureChanged' | 'schemaNotReproducible';
-        tableIds: string[];
-        message: string;
-      };
-    }
->
+      refusal: BackfillRefusal;
+    };
+
+type BackfillRefusal = {
+  code: 'draftStructureChanged' | 'schemaNotReproducible';
+  tableIds: string[];
+  message: string;
+};
 
 type BackfillEntry = {
   id: string;
@@ -1348,8 +1375,9 @@ foreign-key cycles. The new Draft keeps the Draft's changes and links the same m
 revert stop refusing the branch's tables, and native writers record schema changes from then on. `dryRun: true`
 returns `planned` and writes nothing; its ids are provisional. A branch whose Head has a migration table gets
 `notNeeded`, so a repeated call is safe. `backfilled` is a commit: the host moves and refreshes endpoints as after an
-applied `changes.commit` ([Host integration](#host-integration)). Codes: `BACKFILL_STATUSES`,
-`BACKFILL_REFUSAL_CODES`. Errors: a validation error for wrong input types (before any transaction), unknown project
+applied `changes.commit` ([Host integration](#host-integration)). The variants are `BackfillNotNeeded`,
+`BackfillPlanned`, `BackfillCommitted` and `BackfillRefused`. Codes: `BACKFILL_STATUSES`, `BACKFILL_REFUSAL_CODES`,
+`BACKFILL_CHANGE_TYPES`. Errors: a validation error for wrong input types (before any transaction), unknown project
 or branch, `MIGRATION_LOCKED` (423) while an async migration is active (a dry run too), `BRANCH_WRITE_FENCED` (423, a
 run only), `OPERATION_TIMEOUT` (408).
 See [How is a missing schema ledger backfilled?](migration.md#how-is-a-missing-schema-ledger-backfilled)

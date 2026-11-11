@@ -46,6 +46,7 @@ const CHANGES_API_TYPES = [
   'DraftChangesSummary',
   'DraftChangesSummaryInput',
   'DraftColumnChange',
+  'DraftEdge',
   'DraftFieldChange',
   'DraftFieldChangeType',
   'DraftPageInfo',
@@ -58,6 +59,7 @@ const CHANGES_API_TYPES = [
   'DraftTableChangesInput',
   'DraftTableItem',
   'DraftTablePage',
+  'DraftTablesSummary',
   'FieldRef',
   'FieldSelection',
   'FieldSelectionState',
@@ -73,10 +75,12 @@ const CHANGES_API_TYPES = [
   'ListChangesResult',
   'ListedUnit',
   'MigrationRenumbering',
+  'MixedTableEstimate',
   'NothingToApply',
   'PlanBlocker',
   'PlanCounts',
   'PlanEstimate',
+  'PlannedChangesBlocked',
   'PlannedPreview',
   'PreviewBase',
   'PreviewChangesInput',
@@ -86,6 +90,7 @@ const CHANGES_API_TYPES = [
   'ReasonSite',
   'ReasonSiteKind',
   'ReferencedEntity',
+  'ReferencedEntityKind',
   'RefusalCode',
   'RefusedSelection',
   'RefusedTable',
@@ -99,17 +104,20 @@ const CHANGES_API_TYPES = [
   'RowRef',
   'RowSelection',
   'RowSelectionState',
+  'SelectableRowSelection',
   'SelectableTableSelection',
   'Selection',
   'SelectionInput',
   'SelectionItems',
   'SelectorSide',
   'StaleChange',
+  'StoppedChangesBlocked',
   'StoppedPreview',
   'StructureChange',
   'StructureFieldChange',
   'StructureTableChange',
   'TableCoverage',
+  'TableData',
   'TableRef',
   'TableSelection',
   'TableSelectionState',
@@ -163,6 +171,7 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
     'selector',
     'tableId',
   ],
+  REFERENCED_ENTITY_KINDS: ['row', 'table'],
   REFUSAL_CODES: ['headSchemaInconsistent', 'unledgeredTable'],
   REQUIRED_REASON_CODES: [
     'atomicValue',
@@ -208,6 +217,7 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
 const CHANGES_FEATURE_VALUES = [
   'PartialChangesApiService',
   'PartialChangesModule',
+  'isWholeDraftSelection',
 ];
 
 // Draft read items carry these native diff types and the types and enums they are built of (draft-reads-v1 §9).
@@ -359,6 +369,16 @@ const CODE_UNIONS_EQUAL_THEIR_LISTS = {
         Equal<engine.ReasonSite['kind'], engine.ReasonSiteKind>,
       ]
     >(),
+  REFERENCED_ENTITY_KINDS:
+    unionsEqual<
+      [
+        Equal<
+          engine.ReferencedEntityKind,
+          ListMember<typeof engine.REFERENCED_ENTITY_KINDS>
+        >,
+        Equal<engine.ReferencedEntity['kind'], engine.ReferencedEntityKind>,
+      ]
+    >(),
   REFUSAL_CODES:
     unionsEqual<
       [
@@ -446,6 +466,41 @@ const CODE_UNIONS_EQUAL_THEIR_LISTS = {
     >(),
 };
 
+type Edge<Page extends { readonly edges: readonly unknown[] }> =
+  Page['edges'][number];
+
+type Variant<Union, State> = Extract<Union, { readonly state: State }>;
+
+// Every object a result of the seven operations holds has an exported name, and the result types use it.
+const RESULT_PARTS_HAVE_THEIR_NAMES = unionsEqual<
+  [
+    Equal<
+      NonNullable<engine.SelectableTableSelection['tableData']>,
+      engine.TableData
+    >,
+    Equal<Edge<engine.DraftTablePage>, engine.DraftEdge<engine.DraftTableItem>>,
+    Equal<Edge<engine.DraftRowPage>, engine.DraftEdge<engine.DraftRowItem>>,
+    Equal<
+      engine.DraftChangesSummary['tablesSummary'],
+      engine.DraftTablesSummary
+    >,
+    Equal<
+      engine.PlanEstimate['mixedTables'][number],
+      engine.MixedTableEstimate
+    >,
+    Equal<
+      engine.ChangesBlocked,
+      engine.PlannedChangesBlocked | engine.StoppedChangesBlocked
+    >,
+    Equal<
+      Variant<engine.RowSelection, 'selectable'>,
+      {
+        readonly units: readonly engine.UnitRef[];
+      } & engine.SelectableRowSelection
+    >,
+  ]
+>();
+
 const CHANGES_OPERATIONS = [
   'commit',
   'list',
@@ -505,6 +560,10 @@ describe('package exports of the changes API (AS-81)', () => {
     expect(Object.keys(CODE_UNIONS_EQUAL_THEIR_LISTS)).toEqual(
       Object.keys(CODE_LISTS),
     );
+  });
+
+  it('names every object type that a result holds', () => {
+    expect(RESULT_PARTS_HAVE_THEIR_NAMES).toBe(true);
   });
 
   it.each(Object.entries(CODE_LISTS))(

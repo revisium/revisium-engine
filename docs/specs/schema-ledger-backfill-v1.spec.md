@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.3 |
+| Version | 1.4 |
 | Status | Accepted |
-| Date | 2026-11-10 |
+| Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-002, REQ-001.BR-004, REQ-001.BR-005 |
 | Depends on | [partial-changes-v1](partial-changes-v1.spec.md) §6.10, §6.13, §8.4, §10; [async-row-migration-v2](async-row-migration-v2.spec.md) §5, §6, §7, §13 |
@@ -74,6 +74,12 @@ refused before any transaction, as partial-changes §5.9 does.
 `entries` is the planned ledger in id order: `{ id, changeType: 'init' | 'update', tableId, hash }[]`, where `hash` is
 the entry's own `hash` (the hash of the table's schema after the entry). The ids of a `planned` result are provisional:
 they come from the clock (§3 step 3), so a later run writes the same entries under later ids.
+
+The package exports the input `BackfillSchemaLedgerData`, the result `SchemaLedgerBackfill` with its variants
+`BackfillNotNeeded`, `BackfillPlanned`, `BackfillCommitted` and `BackfillRefused`, and `BackfillEntry` and
+`BackfillRefusal`. Each code union has a runtime list from which its type is derived: `BACKFILL_STATUSES`
+(`BackfillStatus`), `BACKFILL_REFUSAL_CODES` (`BackfillRefusalCode`) and `BACKFILL_CHANGE_TYPES`
+(`BackfillChangeType`, the `changeType` of an entry).
 
 | Refusal `code` | When | What the caller does |
 | --- | --- | --- |
@@ -307,6 +313,11 @@ Each runs on a branch whose Head and Draft were stripped of the migration table 
 | 4 | `docs/api.md` and `docs/migration.md`. | — |
 
 ## Changelog
+
+### Version 1.4 (2026-11-11)
+
+- §2: the input, result and entry types are exported under names, and an entry's `changeType` gets its runtime list
+  `BACKFILL_CHANGE_TYPES`.
 
 ### Version 1.3 (2026-11-10)
 

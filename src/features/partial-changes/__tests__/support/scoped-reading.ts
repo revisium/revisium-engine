@@ -6,7 +6,7 @@ import { compareCodePoints } from 'src/features/share/utils/compare-code-points'
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
 import type { ScopedCatalogue } from 'src/features/partial-changes/scope/scoped-catalogue-reader.service';
 import {
-  isWholeDraftSelection,
+  selectsWholeDraft,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type {
@@ -66,7 +66,7 @@ export function readComparedSnapshotFor(
   selection: Selection,
 ): Promise<ComparedSnapshot> {
   return readComparedSnapshot(kit, branch, {
-    wholeDraft: isWholeDraftSelection(selection),
+    wholeDraft: selectsWholeDraft(selection),
   });
 }
 

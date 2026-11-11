@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.4 |
+| Version | 2.5 |
 | Status | Accepted |
-| Date | 2026-11-10 |
+| Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), delivery stage 0 |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-004, REQ-001.BR-005 |
 | Previous version | [async-row-migration-v1]: shadow table, batches, worker modes, statuses and branch lock are kept |
@@ -385,6 +385,11 @@ them instead of a hand-kept copy:
 | `DAMAGE_SHAPES` | `detail.shape` of `damagedTable` |
 | `DAMAGED_TABLE_REPAIRS` | `detail.repair` of `damagedTable`: `REPAIR_OUTCOMES` (§6.1) and `deferred` |
 | `ROW_HASH_REASONS` | `reason` of each row hash of `rowSchemaHashMismatch` |
+| `MIGRATION_CHANGE_TYPES` | `detail.step` of `unreplayableLedger`: the change type of the failing migration |
+
+The package also exports the scan's input and result types: `ScanSchemaLedgerData`, `SchemaLedgerScan`,
+`SchemaLedgerFinding`, `SchemaLedgerScanStats`, and the details `UnledgeredDetail` (`BrokenLineage`), `ReplayFailure`,
+`DamagedTableDetail` and `RowSchemaHashMismatchDetail` (`MismatchedRowHash`).
 
 ### 5.3 Algorithm and cost
 
@@ -429,7 +434,8 @@ project or branch → not found; an unknown table id → validation error; an ac
 
 The outcomes (§6.2) have runtime lists exported like those of the scan: `REPAIR_OUTCOMES`, the planner's outcomes
 (every outcome but `stale`), and `TABLE_REPAIR_OUTCOMES`, the values of a table entry's `outcome`: `REPAIR_OUTCOMES`
-and `stale`.
+and `stale`. The package exports the repair's input and result types under their names: `RepairSchemaLedgerData`,
+`SchemaLedgerRepair`, `TableRepair`, `InvalidRows` and `RenumberedMigration` (an entry of `renumbered`).
 
 ### 6.2 Outcomes, first match wins
 
@@ -793,5 +799,10 @@ async swap can still rewrite committed rows during the scan.
 - §3.5, §6.4, §9: the endpoint hook is the engine's internal no-op, with no supported way to replace it. A host is
   not told when an async swap commits and refreshes the Draft's endpoints once it sees the swap finished; after a
   written repair it refreshes them too.
+
+### Version 2.5 (2026-11-11)
+
+- §5.2, §6.1: the package exports the input and result types of the scan and the repair under their names, and the
+  `step` of an `unreplayableLedger` detail gets its runtime list `MIGRATION_CHANGE_TYPES`.
 
 [async-row-migration-v1]: https://github.com/revisium/architecture/blob/master/specs/async-row-migration-v1.spec.md

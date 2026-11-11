@@ -35,8 +35,12 @@ export interface ViewsOnlyTable {
   readonly views: UnitRef;
 }
 
+export interface DraftTablesSummary extends RevisionChangeSummary {
+  readonly replaced: number;
+}
+
 export interface DraftChangesSummary extends DraftReadState {
-  readonly tablesSummary: RevisionChangeSummary & { readonly replaced: number };
+  readonly tablesSummary: DraftTablesSummary;
   readonly rowsSummary: RevisionChangeSummary;
   readonly rowsWithUnits: number;
   readonly sharedSchemas: readonly ChangedSharedSchema[];

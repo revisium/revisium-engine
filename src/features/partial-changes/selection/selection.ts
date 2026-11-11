@@ -53,7 +53,7 @@ export type ItemSelector<K extends ItemKind> = NonNullable<
 
 const WHOLE_DRAFT_KEY = 'all';
 
-export function isWholeDraftSelection(selection: Selection): boolean {
+export function selectsWholeDraft(selection: Selection): boolean {
   return (
     selection.all === true &&
     Object.keys(selection).every((key) => key === WHOLE_DRAFT_KEY)

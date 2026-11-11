@@ -6,7 +6,7 @@ import {
 } from 'src/features/partial-changes/plan/plan-blocker';
 import type { CatalogueReason } from 'src/features/partial-changes/plan/reason';
 import {
-  isWholeDraftSelection,
+  selectsWholeDraft,
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type {
@@ -96,7 +96,7 @@ class SelectionResolver {
   }
 
   private refusalsOfEveryTable(): CatalogueBlocker[] {
-    if (!this.selection.all || isWholeDraftSelection(this.selection)) {
+    if (!this.selection.all || selectsWholeDraft(this.selection)) {
       return [];
     }
 

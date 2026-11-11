@@ -201,7 +201,7 @@ export type {
   TableViewsData,
 } from './features/views/types';
 
-// Schema Ledger Scan, Repair and Backfill — code lists
+// Schema Ledger Scan, Repair and Backfill — inputs, results and code lists
 export {
   DAMAGE_SHAPES,
   DAMAGED_TABLE_REPAIRS,
@@ -209,14 +209,57 @@ export {
   FINDING_ROLES,
   ROW_DIAGNOSTICS,
   ROW_HASH_REASONS,
-  type RowDiagnostics,
   UNLEDGERED_REASONS,
+  type BrokenLineage,
+  type DamagedTableDetail,
+  type DamagedTableRepair,
+  type DamageShape,
+  type FindingCode,
+  type FindingRole,
+  type MismatchedRowHash,
+  type RowDiagnostics,
+  type RowHashReason,
+  type RowSchemaHashMismatchDetail,
+  type ScanSchemaLedgerData,
+  type SchemaLedgerFinding,
+  type SchemaLedgerScan,
+  type SchemaLedgerScanStats,
+  type UnledgeredDetail,
+  type UnledgeredReason,
 } from './features/migration/queries/impl/scan-schema-ledger.query';
-export { REPAIR_OUTCOMES } from './features/migration/queries/impl/plan-schema-ledger-repair.query';
-export { TABLE_REPAIR_OUTCOMES } from './features/migration/commands/impl/repair-schema-ledger.command';
 export {
+  MIGRATION_CHANGE_TYPES,
+  type MigrationChangeType,
+  type ReplayFailure,
+} from './features/share/ledger-replay/ledger-replay';
+export {
+  REPAIR_OUTCOMES,
+  type InvalidRows,
+  type RenumberedMigration,
+  type RepairOutcome,
+} from './features/migration/queries/impl/plan-schema-ledger-repair.query';
+export {
+  TABLE_REPAIR_OUTCOMES,
+  type RepairSchemaLedgerData,
+  type SchemaLedgerRepair,
+  type TableRepair,
+  type TableRepairOutcome,
+} from './features/migration/commands/impl/repair-schema-ledger.command';
+export {
+  BACKFILL_CHANGE_TYPES,
   BACKFILL_REFUSAL_CODES,
   BACKFILL_STATUSES,
+  type BackfillChangeType,
+  type BackfillCommitted,
+  type BackfillEntry,
+  type BackfillNotNeeded,
+  type BackfillPlanned,
+  type BackfillRefusal,
+  type BackfillRefusalCode,
+  type BackfillRefused,
+  type BackfillSchemaLedgerData,
+  type BackfillStatus,
+  type SchemaLedgerBackfill,
 } from './features/migration/commands/impl/backfill-schema-ledger.command';
 
 // Draft Changes (EngineApiService.changes) — partial-changes-v1 §5.11, draft-reads-v1 §9
@@ -240,6 +283,7 @@ export type {
   SelectionItems,
   TableRef,
 } from './features/partial-changes/selection/selection';
+export { isWholeDraftSelection } from './features/partial-changes/selection/selection-validator';
 export type { UnmatchedSelectors } from './features/partial-changes/selection/selection-resolution';
 export type {
   DescribedUnitRef,
@@ -268,11 +312,13 @@ export {
 export {
   CAUSE_ROLES,
   REASON_SITE_KINDS,
+  REFERENCED_ENTITY_KINDS,
   REQUIRED_REASON_CODES,
   type CauseRole,
   type ReasonSite,
   type ReasonSiteKind,
   type ReferencedEntity,
+  type ReferencedEntityKind,
   type RequiredReasonCode,
 } from './features/partial-changes/plan/reason';
 export {
@@ -285,7 +331,10 @@ export type {
   DeferredValue,
   PlanBlocker,
 } from './features/partial-changes/planning/plan-refs';
-export type { PlanEstimate } from './features/partial-changes/limits/operation-estimator';
+export type {
+  MixedTableEstimate,
+  PlanEstimate,
+} from './features/partial-changes/limits/operation-estimator';
 export type { PlanCounts } from './features/partial-changes/planning/change-planner';
 export type { TableCoverage } from './features/partial-changes/planning/plan-coverage';
 export {
@@ -326,6 +375,8 @@ export {
   type ChangesRequireAdditions,
   type ChangesStale,
   type NothingToApply,
+  type PlannedChangesBlocked,
+  type StoppedChangesBlocked,
   type UnappliedChanges,
 } from './features/partial-changes/commands/impl/apply-changes';
 export {
@@ -339,6 +390,7 @@ export {
   ID_EXCHANGE_TERMINATIONS,
   ROW_SELECTION_STATES,
   type ComputedSelection,
+  type DraftEdge,
   type DraftPageInfo,
   type DraftReadState,
   type DraftTableChangesFilters,
@@ -359,6 +411,7 @@ export {
   type DraftTableItem,
   type DraftTablePage,
   type SelectableTableSelection,
+  type TableData,
   type TableSelection,
   type TableSelectionState,
 } from './features/partial-changes/queries/impl/get-draft-table-changes.query';
@@ -375,11 +428,13 @@ export {
   type IdExchange,
   type IdTakeover,
   type RowSelection,
+  type SelectableRowSelection,
 } from './features/partial-changes/queries/impl/get-draft-row-changes.query';
 export type {
   ChangedSharedSchema,
   DraftChangesSummary,
   DraftChangesSummaryInput,
+  DraftTablesSummary,
   TransientTable,
   ViewsOnlyTable,
 } from './features/partial-changes/queries/impl/get-draft-changes-summary.query';

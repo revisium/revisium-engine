@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.4 |
+| Version | 2.5 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-11 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -205,11 +205,23 @@ id.
 ### 3.8 Content-equal versions
 
 A Draft row version equal to its Head version on all compared columns is not a unit. Native `hasChanges` compares
-versions, so it stays `true` for such a Draft. `all: true` on a Draft whose only differences are content-equal
-versions returns `empty`, while native `createRevision` would create a revision. After an applied operation such
-versions are dropped by relinking (§6.7) only in the tables the operation read; unread tables keep them, so
-`hasChanges` can stay `true` after a partial operation leaves no unit (native semantics). `all: true` reads every
-table and normalises them. v1 adds no separate content-equality pass for unread tables.
+versions, so it stays `true` for such a Draft. After an applied operation such versions are dropped by relinking
+(§6.7) only in the tables the operation read; unread tables keep them, so `hasChanges` can stay `true` after a partial
+operation leaves no unit (native semantics). `all: true` reads every table and normalises them. v1 adds no separate
+content-equality pass for unread tables after an applied operation.
+
+**Exactly `{ all: true }` without a unit.** When a commit or revert of exactly `{ all: true }` finds no unit and no
+blocker while some table it read links different Draft and Head versions, it normalises the Draft in the same
+transaction: it links the Head version of each such table into the Draft through the relink of §6.7, with its content
+check (§6.14 step 4), and recomputes `hasChanges` (§6.12). The status stays `empty`: no unit is applied, a commit
+creates no revision, Head and the Draft keep their revision ids, and no endpoint is notified, because the content of
+the Draft does not change. The result's `draftHasChanges` is the recomputed flag, `false` unless the content check
+finds a difference that change detection missed. Every other selection, `{ all: true, exclude: {} }` included, keeps
+its scope and writes nothing when it is `empty`: normalising tables that a selection did not read would cost a content
+check per table on every operation (AS-74). A preview writes nothing; its `empty` result carries `draftHasChanges`, the
+Draft's stored flag, so `true` there for exactly `{ all: true }` says that applying it normalises the Draft. Before
+v2.5 such an operation returned `empty` and wrote nothing, and only native `createRevision` or `revertChanges` cleared
+the Draft, while `{ all: true, exclude: {…} }` applied together with a unit did (AS-52).
 
 ## 4. Selection
 
@@ -629,6 +641,7 @@ Output:
 | `sample` | DescribedUnitRef[] | The first `min(20, counts.selected + counts.required)` applied units in listing order (display only; `listChanges` is the complete list); empty when not `planned`. |
 | `unmatched` | UnmatchedSelectors, or `null` when not `planned` | §4.5; an empty object when every selector matched. |
 | `estimate` | PlanEstimate | §5.1, §6.5; limits in §11. When not `planned`, what was measured up to the stop. |
+| `draftHasChanges` | boolean, only when `status` is `empty` | The Draft's stored `hasChanges`. For exactly `{ all: true }`, `true` means that the Draft holds only content-equal versions and that a commit or revert links their Head versions (§3.8). |
 
 A plan stopped by a limit returns no value of the plan, whichever limit stopped it: the changed-row guard stops it
 before the selection is resolved, a closure estimate after (§6.5), and in both cases `fingerprint`, `counts` and
@@ -656,7 +669,7 @@ Output by status:
 | `required` | `required`, `requiredTotal` (§5.1 listed details). |
 | `blocked` | `planned` (as in a preview), `blockers`, `blockersTotal`, `required`, `requiredTotal`, `unmatched` (an empty object when every selector matched); when a limit stopped the plan (`planned: false`), `required` is empty, `requiredTotal` is 0 and `unmatched` absent, as in §5.3. |
 | `stale` | `changed`, `headRevisionId`, `draftRevisionId` (current), `unmatched` (§9.2). |
-| `empty` | `headRevisionId`, `draftRevisionId` (current), `unmatched` (when some selectors did not match). |
+| `empty` | `headRevisionId`, `draftRevisionId` (current), `unmatched` (when some selectors did not match), `draftHasChanges` (the Draft's `hasChanges`: recomputed when exactly `{ all: true }` normalised the Draft, §3.8, otherwise as stored). |
 
 ### 5.5 `revertChanges`
 
@@ -683,7 +696,7 @@ Decided in this order; preview skips step 3 and returns `ready` in step 6:
 | `required` | Required additions must be added or accepted. | nothing |
 | `blocked` | Not applicable; see `blockers`. | nothing |
 | `stale` | The state changed since the preview; `changed` says what (§9.2). | nothing |
-| `empty` | Nothing to apply (also a repeat of an applied commit). | nothing |
+| `empty` | Nothing to apply (also a repeat of an applied commit). | nothing; for exactly `{ all: true }`, the Head versions of content-equal Draft table versions (§3.8) |
 | `applied` | Commit or revert written. | §6.13, §6.14 |
 
 ### 5.7 Required reasons
@@ -971,7 +984,8 @@ type PreviewBase = { headRevisionId: string; draftRevisionId: string; refusedTab
   blockers: PlanBlocker[]; blockersTotal: number; estimate: PlanEstimate };
 type PlannedPreview = PreviewBase & { status: 'ready' | 'required' | 'blocked' | 'empty'; planned: true;
   fingerprint: string; counts: PlanCounts; coverage: TableCoverage[]; required: RequiredUnit[];
-  requiredTotal: number; deferred: DeferredRow[]; sample: DescribedUnitRef[]; unmatched: UnmatchedSelectors };
+  requiredTotal: number; deferred: DeferredRow[]; sample: DescribedUnitRef[]; unmatched: UnmatchedSelectors;
+  draftHasChanges?: boolean };  // only with status 'empty'
 type StoppedPreview = PreviewBase & { status: 'blocked'; planned: false; fingerprint: null; counts: null;
   coverage: []; required: []; requiredTotal: 0; deferred: []; sample: []; unmatched: null };
 type PreviewChangesResult = PlannedPreview | StoppedPreview;
@@ -990,7 +1004,7 @@ type StoppedChangesBlocked = { status: 'blocked'; planned: false; blockers: Plan
 type ChangesStale = { status: 'stale'; changed: StaleChange[]; headRevisionId: string; draftRevisionId: string;
   unmatched: UnmatchedSelectors };
 type NothingToApply = { status: 'empty'; headRevisionId: string; draftRevisionId: string;
-  unmatched?: UnmatchedSelectors };
+  unmatched?: UnmatchedSelectors; draftHasChanges: boolean };
 type CommittedDraft = { status: 'applied'; previousHeadRevisionId: string; headRevisionId: string;
   draftRevisionId: string; applied: PlanCounts; draftHasChanges: boolean;
   renumberedMigrations: MigrationRenumbering[] };
@@ -1419,7 +1433,12 @@ Tables that are not refused are not affected, so units of other tables still app
 
 ### 6.12 Decide
 
-§5.6. Commit and revert stop here unless the status is `applied`.
+§5.6. Commit and revert stop here unless the status is `applied`, with one exception: an `empty` plan of exactly
+`{ all: true }` whose read tables include some with different Draft and Head versions normalises the Draft (§3.8). Its
+write plan holds each such table, user or system, as a relink candidate whose target is its Draft version, and §6.14
+writes it: step 4 links the Head version where the content check finds the two versions equal, then steps 5 and 7;
+there are no new row versions to register and no endpoint to notify. Otherwise an `empty` plan writes nothing and its
+`draftHasChanges` is the Draft's stored flag.
 
 ### 6.13 WriteCommit
 
@@ -1553,6 +1572,8 @@ Invariants:
 - Why Serializable and no locks: native writers take no row locks and run Serializable; SSI aborts the partial
   operation when a native write conflicts with what it read, and the retry includes that write. A ReadCommitted
   variant loses native writes and commits stale merged values.
+- The normalisation of exactly `{ all: true }` (§3.8, §6.12) is a write of the same attempt: it runs after the
+  migration lock check, under the branch fence, the deadline and the retries, as an applied operation does.
 - Two partial operations serialise: commits become consecutive revisions; the loser re-plans and becomes `applied`
   with what is left, `empty`, `blocked` (some selectors no longer match), or `stale` with `expected`.
 - A commit turns the Draft revision into Head; native writes still addressed to that revision id fail (existing
@@ -1714,6 +1735,14 @@ the preview does not fix them.
   resolves `a` through Head and reverts the rename.
 - A plan refused by a limit returns `blocked` (`tooLarge`), never `stale`, also when the Draft grew past the limit
   after the preview.
+- **The normalisation of exactly `{ all: true }` needs no `expected`** (§3.8). `empty` is decided before `stale`
+  (§5.6), so `expected` does not change an `empty` result, also one that normalises the Draft. The normalisation
+  applies no unit and changes no content: it links a Head version only where the content check in the same
+  transaction finds it equal to the Draft version, so there is nothing a preview could have shown that the operation
+  might change, as for a native whole commit or revert. A preview of exactly `{ all: true }` returns a fingerprint
+  also when it is `empty`, as before; passed as `expected`, it neither enables nor prevents the normalisation. A
+  native write between the preview and the apply that adds a unit makes the plan non-empty: the operation then applies
+  it without `expected` and is `stale` with it.
 - **What a `stale` result says.** `changed` lists, in this order, the parts of `expected` that differ from the
   current plan's fingerprint (§9.1):
 
@@ -1829,6 +1858,7 @@ Each listing page, Draft read ([draft-reads-v1]), preview, commit and revert log
 | `tooLarge` | Preview, commit and revert: whether a limit stopped the plan. |
 | `estimate` | Only when `tooLarge`: `changedRows`, `mergedRows`, `perRowWorkRows`, the number of `mixedTables` and the largest `linksCopied` (`maxLinksCopied`). |
 | `refusedTables`, `refusedTableIds` | The number of refused tables (§6.10) and the first five of their ids. |
+| `relinkedTables` | Commit and revert with outcome `empty`: the number of tables whose Draft link the normalisation of exactly `{ all: true }` changed to the Head version (§3.8); absent when it wrote nothing. |
 | `pageSize`, `returned` | `tableChanges` and `rowChanges`: the `first` the caller asked for and the number of items on the page. |
 | `filters` | Draft reads: the names of the filters given (`changeTypes`, `search`, `tableId`), never their values. |
 | `error`, `errorCode` | Only on `warn`: the error's name and its code (an engine code such as `OPERATION_TIMEOUT`, or a database code such as `P2034`). |
@@ -2096,7 +2126,9 @@ versions unchanged" (§14) holds in every scenario.
 - AS-52 After an applied `all: true`, `hasChanges = false` even with content-equal versions in another table (it reads
   every table).
 - AS-53 Native `createRevision` and `revertChanges` suites pass unchanged.
-- AS-54 A Draft with only content-equal versions → `all: true` returns `empty` (documented, §3.8).
+- AS-54 A Draft with only content-equal versions → a preview of exactly `all: true` returns `empty` with
+  `draftHasChanges: true`; the commit or revert returns `empty` with `draftHasChanges: false`, creates no revision and
+  leaves the Draft linking the Head versions (§3.8).
 
 ### 13.6 REQ-001.BR-001, REQ-001.BR-009 — listing, preview, freshness
 
@@ -2267,6 +2299,19 @@ versions unchanged" (§14) holds in every scenario.
 - AS-94 Apply beyond the listed details (`maxListedDetails` = 2): a commit, and a revert, with `includeRequired` and
   the fingerprint of a preview that listed two of its three required units applies all three (`applied:
   { selected: 3, required: 3 }`) and leaves no difference in the Draft.
+- AS-95 After every unit was committed, or reverted, by selectors, the Draft keeps a table edited and edited back:
+  a preview of exactly `{ all: true }` is `empty` with `draftHasChanges: true`; the commit or revert (also with that
+  preview's fingerprint as `expected`) is `empty` with `draftHasChanges: false`, Head and the Draft keep their
+  revision ids, the commit writer is not called, the table's Draft version is its Head version, and the native diff
+  and the Draft reads show no change. The operation log entry carries `relinkedTables`.
+- AS-96 The scope is kept: on the Draft of AS-95, `{ all: true, exclude: {} }` and a selection that matches nothing
+  are `empty`, write nothing and carry `draftHasChanges: true` (the latter with its `unmatched`); exactly
+  `{ all: true }` on a Draft without changes is `empty` with `draftHasChanges: false` and calls no writer.
+- AS-97 The normalisation is a write: during an async migration it fails with `MIGRATION_LOCKED` and writes nothing;
+  it waits behind an exclusive holder of the branch fence; a native edit of the content-equal row that lands after
+  it planned makes the attempt retry, and the retry reverts the edit (`applied`) with consistent revisions; a Draft
+  version that the content check finds different from Head (a difference change detection missed) stays linked and
+  `draftHasChanges` stays `true`.
 
 ## 14. Test strategy
 
@@ -2415,6 +2460,21 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.5 (2026-11-11)
+
+Exactly `{ all: true }` clears content-equal versions. The API is unreleased, so the result shape changes without a
+new major version.
+
+- §3.8, §6.12, §8.1: a commit or revert of exactly `{ all: true }` that finds no unit while the Draft links
+  content-equal table versions links their Head versions in the same transaction and recomputes `hasChanges`; the
+  status stays `empty` and a commit creates no revision. Before, such a Draft had no partial operation that cleared it
+  (stand bug B2): every unit applied by selectors left the table edited and edited back, the Draft reads listed it as
+  `MODIFIED` with `contentEqual`, and `{ all: true }` returned `empty` and wrote nothing.
+- §5.3 – §5.6, §5.11: an `empty` result carries `draftHasChanges`, also from a preview (the stored flag).
+- §9.2: the normalisation needs no `expected`; `empty` still comes before `stale`.
+- §11.1: the log field `relinkedTables`.
+- §13: AS-54 reworded; AS-95 – AS-97.
 
 ### Version 2.4 (2026-11-11)
 

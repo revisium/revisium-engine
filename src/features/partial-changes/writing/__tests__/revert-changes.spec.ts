@@ -398,6 +398,7 @@ describe('revertChanges', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: titleOfP1,
+        draftHasChanges: true,
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
@@ -769,11 +770,10 @@ describe('revertChanges', () => {
       },
     );
 
-    it('is empty for exactly { all: true } of a Draft holding only content-equal versions: it writes nothing and leaves hasChanges true (AS-54)', async () => {
+    it('is empty for exactly { all: true } of a Draft holding only content-equal versions: it links the Head version into the Draft, which has no changes left (AS-54)', async () => {
       const draft = await givenOnlyContentEqualVersions();
       const headRevisionId = await draft.revisionId('head');
       const draftRevisionId = await draft.revisionId('draft');
-      const contents = await branchContentsOf(kit, draft);
 
       const result = await draft.revertChanges({ selection: { all: true } });
 
@@ -781,9 +781,10 @@ describe('revertChanges', () => {
         status: 'empty',
         headRevisionId,
         draftRevisionId,
+        draftHasChanges: false,
       });
-      expect(await branchContentsOf(kit, draft)).toEqual(contents);
-      expect(await draft.hasChanges()).toBe(true);
+      await expectDraftLinksHeadVersion(draft, PRODUCTS);
+      expect(await draft.hasChanges()).toBe(false);
     });
   });
 

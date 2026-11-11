@@ -290,6 +290,7 @@ describe('commitChanges racing other writers', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: titleOfP1,
+        draftHasChanges: false,
       });
       await expectData(draft, 'head', PRODUCTS, 'p1', {
         title: 'uno',
@@ -368,6 +369,7 @@ describe('commitChanges racing other writers', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: titleOfP1,
+        draftHasChanges: true,
       });
     });
 

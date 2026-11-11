@@ -713,6 +713,7 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | `unmatched` | The selectors that matched no unit; `{}` when every selector matched, `null` when not `planned`. |
 | `refusedTables` | Tables that partial operations refuse on this branch (see [Refused tables](#refused-tables)); empty for exactly `{ all: true }`. |
 | `estimate` | What the plan measured against the limits. |
+| `draftHasChanges` | Only when `status` is `empty`: whether the Draft still differs from Head (its stored `hasChanges`). For exactly `{ all: true }`, `true` means the Draft holds only content-equal versions, which a commit or revert clears (see [Content-equal versions](#content-equal-versions)). |
 
 A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts` and `unmatched` are `null`,
 `coverage`, `required`, `deferred` and `sample` are empty, and `requiredTotal` is 0.
@@ -760,7 +761,8 @@ engine.changes.revert({
 ```
 
 Each attempt is one Serializable transaction that plans again from a fresh snapshot; nothing is written unless the
-status is `applied`. Results by `status`:
+status is `applied`, except that an `empty` commit or revert of exactly `{ all: true }` clears content-equal versions
+(see [Content-equal versions](#content-equal-versions)). Results by `status`:
 
 | `status` | Fields |
 | --- | --- |
@@ -768,11 +770,25 @@ status is `applied`. Results by `status`:
 | `required` | `required`: additions to accept with `includeRequired: true`, or to add to the selection by their `selector`; `requiredTotal` (see [Listed details](#listed-details)). |
 | `blocked` | `planned`, `blockers`, `blockersTotal`, `required`, `requiredTotal`; `unmatched` when `planned`. |
 | `stale` | `changed`, the current `headRevisionId` and `draftRevisionId`, and the current `unmatched` (see [The fingerprint](#the-fingerprint-and-stale)). |
-| `empty` | The current `headRevisionId` and `draftRevisionId`; `unmatched` when some selectors matched nothing. A repeat of an applied operation is `empty`. |
+| `empty` | The current `headRevisionId` and `draftRevisionId`; `unmatched` when some selectors matched nothing; `draftHasChanges` (whether the Draft still differs from Head). A repeat of an applied operation is `empty`. |
 
 A commit turns the Draft revision into the new Head (`headRevisionId` is the former Draft revision id) and creates a
 new Draft (`draftRevisionId`); later writes must use the new Draft id. A revert keeps both revisions: its
 `headRevisionId` and `draftRevisionId` are those of the branch.
+
+#### Content-equal versions
+
+A table can link a Draft version that differs from Head's version while no row differs in content, for example after
+a row was edited and edited back, or after every unit was applied by selectors and the operations did not read that
+table. Such a table has no unit, yet the Draft has changes: `draftHasChanges` and the branch's `touched` stay `true`,
+and the Draft reads list the table as `MODIFIED` with selection state `contentEqual`.
+
+A commit or revert of exactly `{ all: true }` clears it: when it finds no unit, it links the Head version of each such
+table into the Draft in its transaction, after a content check, and returns `empty` with `draftHasChanges: false`. A
+commit creates no revision, and Head and the Draft keep their ids. A preview of exactly `{ all: true }` on such a Draft
+returns `empty` with `draftHasChanges: true`, which tells a client that the commit or revert will clear it. Any other
+selection, `{ all: true, exclude: {} }` included, writes nothing when it is `empty`
+([SPEC §3.8](specs/partial-changes-v1.spec.md#38-content-equal-versions)).
 
 ### Listed details
 
@@ -840,6 +856,8 @@ match anything) and previews again, so the user reviews the new plan:
 
 A request with `expected` is never applied twice: a repeat, also a concurrent one, is `empty`, or `stale` when its
 selection now resolves to other units. A request without `expected` resolves its selection again on every call.
+Clearing content-equal versions needs no `expected`: it changes no content, and `empty` comes before `stale`, so a
+fingerprint passed with exactly `{ all: true }` neither allows nor prevents it.
 
 ### Draft reads
 
@@ -965,6 +983,12 @@ list types, and how a typed transport maps the unions:
     refresh the moved endpoints;
   - after an `applied` `changes.revert`, refresh the endpoints bound to `draftRevisionId` (the Draft keeps its id),
     as after native `revertChanges`;
+  - after an `empty` `changes.commit` or `changes.revert` of exactly `{ all: true }` whose `draftHasChanges` is
+    `false`, do the same as after an applied revert: the call may have linked Head table versions into the Draft
+    ([Content-equal versions](#content-equal-versions)), so drop what you cache by the Draft's table versions and
+    refresh the endpoints bound to `draftRevisionId`. Nothing moves: there is no new revision, and the Draft's content
+    is the same, so the refresh changes no served data. The result does not say whether the call wrote: when the Draft
+    had no changes before, the same result comes without a write, and the refresh is redundant and harmless;
   - after a [`repairSchemaLedger`](#repairschemaledger) call with `dryRun: false` that returns a table with the
     outcome `repaired`, refresh the endpoints bound to `draftRevisionId`;
   - after an async migration swap, refresh the Draft's endpoints once you see it finished: `applyMigrations`
@@ -994,7 +1018,8 @@ list types, and how a typed transport maps the unions:
   [SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration)).
   Every listing page, Draft read (`tableChanges`, `rowChanges`, `summary`), preview, commit and revert logs one
   structured entry (`Partial changes operation finished`) with its duration, outcome and attempts; a Draft read adds
-  the page size asked and returned and the names of its filters. `backfillSchemaLedger` and `repairSchemaLedger` log
+  the page size asked and returned and the names of its filters, and an `empty` commit or revert that cleared
+  content-equal versions adds `relinkedTables`. `backfillSchemaLedger` and `repairSchemaLedger` log
   the same kind of entry as `Schema ledger operation finished`, with `dryRun` and what they planned or wrote. Every
   entry goes through the NestJS logger with the context `OperationLog`
   ([SPEC §11.1](specs/partial-changes-v1.spec.md#111-operation-logs)).

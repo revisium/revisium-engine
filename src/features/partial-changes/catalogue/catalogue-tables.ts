@@ -7,7 +7,11 @@ import {
   type TablePair,
   versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import { tableSideOf } from 'src/features/partial-changes/snapshot/table-side';
+import {
+  type TableIdentitiesBySide,
+  tableIdentitiesOf,
+  tableSideOf,
+} from 'src/features/partial-changes/snapshot/table-side';
 import type {
   TableSide,
   TableStructure,
@@ -22,6 +26,7 @@ export class CatalogueTables {
   public readonly pairs: readonly TablePair[];
 
   private readonly pairsByIdentity: ReadonlyMap<string, TablePair>;
+  private readonly tableIdentities: TableIdentitiesBySide;
   private readonly structures: ReadonlyMap<string, TableStructure>;
   private readonly schemaRows: RowsByTableId;
   private readonly viewsRows: RowsByTableId;
@@ -31,6 +36,7 @@ export class CatalogueTables {
     this.pairsByIdentity = new Map(
       snapshot.tables.map((pair) => [pair.identity, pair]),
     );
+    this.tableIdentities = tableIdentitiesOf(snapshot.tables);
     this.structures = new Map(
       tables.map(({ identity, structure }) => [identity, structure]),
     );
@@ -59,7 +65,7 @@ export class CatalogueTables {
   }
 
   public sideOf(pair: TablePair, side: RevisionSide): TableSide {
-    return tableSideOf(this.pairs, versionOn(pair, side), side);
+    return tableSideOf(this.tableIdentities, versionOn(pair, side), side);
   }
 
   public schemaRowsOf(pair: TablePair): SidedRows {

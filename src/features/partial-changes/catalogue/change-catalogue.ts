@@ -17,10 +17,10 @@ import type {
   HeadSchemaCheck,
   RefusedTable,
 } from 'src/features/partial-changes/head-schema/head-schema-check';
-import type {
-  ChangedRows,
-  ChangesSnapshot,
-  ComparedTable,
+import {
+  type ChangedRows,
+  type ComparedTable,
+  versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { ComparedSnapshot } from 'src/features/partial-changes/snapshot/compared-snapshot-reader.service';
 
@@ -44,7 +44,7 @@ interface RowUnitsOfTables {
 
 export function buildChangeCatalogue(source: CatalogueSource): ChangeCatalogue {
   const tables = new CatalogueTables(source.snapshot, source.tables);
-  const rowUnits = buildRowUnitsOfChangedTables(source);
+  const rowUnits = buildRowUnitsOfChangedTables(source, tables);
   const tableUnits = [
     ...buildStructureUnits(tables, source.ledger),
     ...buildViewsUnits(tables),
@@ -67,8 +67,8 @@ export function buildChangeCatalogue(source: CatalogueSource): ChangeCatalogue {
 
 function buildRowUnitsOfChangedTables(
   source: CatalogueSource,
+  tables: CatalogueTables,
 ): RowUnitsOfTables {
-  const draftTableIds = draftTableIdsOf(source.snapshot);
   const units: CatalogueUnit[] = [];
   const rows = new Map<string, readonly CatalogueRow[]>();
 
@@ -81,7 +81,7 @@ function buildRowUnitsOfChangedTables(
 
     const rowUnits = buildRowUnits({
       identity: table.identity,
-      tableId: draftTableIdOf(draftTableIds, table.identity),
+      tableId: versionOn(tables.pairOf(table.identity), 'draft').id,
       structure: table.structure,
       pairs,
     });
@@ -112,31 +112,4 @@ function holdsRefusedTable(
   return unit.tableIdentities.some((identity) =>
     headSchema.refusedTablesByIdentity.has(identity),
   );
-}
-
-function draftTableIdsOf(
-  snapshot: ChangesSnapshot,
-): ReadonlyMap<string, string> {
-  const tableIds = new Map<string, string>();
-
-  for (const { identity, draft } of snapshot.tables) {
-    if (draft) {
-      tableIds.set(identity, draft.id);
-    }
-  }
-
-  return tableIds;
-}
-
-function draftTableIdOf(
-  draftTableIds: ReadonlyMap<string, string>,
-  identity: string,
-): string {
-  const tableId = draftTableIds.get(identity);
-
-  if (tableId === undefined) {
-    throw new Error(`Table ${identity} is not in the Draft`);
-  }
-
-  return tableId;
 }

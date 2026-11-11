@@ -4,7 +4,7 @@ import {
   summaryRequestOf,
 } from 'src/features/partial-changes/draft-reads/draft-read-request';
 import { DraftChangesSummaryReader } from 'src/features/partial-changes/draft-reads/draft-changes-summary';
-import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
+import { PartialOperationLog } from 'src/infrastructure/database/operation-log';
 import {
   type DraftChangesSummary,
   GetDraftChangesSummaryQuery,

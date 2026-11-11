@@ -7,7 +7,7 @@ import {
 import {
   LEDGER_OPERATION_FINISHED,
   type OperationLogEntry,
-} from 'src/features/partial-changes/logging/partial-operation-log';
+} from 'src/infrastructure/database/operation-log';
 import {
   backfillLedger,
   backfillWhileNativeWriteLands,

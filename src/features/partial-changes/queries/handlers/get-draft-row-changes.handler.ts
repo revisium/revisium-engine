@@ -4,7 +4,7 @@ import {
   rowChangesRequestOf,
 } from 'src/features/partial-changes/draft-reads/draft-read-request';
 import { DraftRowPages } from 'src/features/partial-changes/draft-reads/draft-row-pages';
-import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
+import { PartialOperationLog } from 'src/infrastructure/database/operation-log';
 import {
   type DraftRowPage,
   GetDraftRowChangesQuery,

@@ -1,7 +1,7 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import { listingRequestOf } from 'src/features/partial-changes/listing/listing-request';
 import { UnitListing } from 'src/features/partial-changes/listing/unit-listing';
-import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
+import { PartialOperationLog } from 'src/infrastructure/database/operation-log';
 import {
   type ListChangesResult,
   ListDraftChangesQuery,

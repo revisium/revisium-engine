@@ -23,7 +23,7 @@ import {
   type OperationDetails,
   type OperationTrace,
   PartialOperationLog,
-} from 'src/features/partial-changes/logging/partial-operation-log';
+} from 'src/infrastructure/database/operation-log';
 import { ShareCommands } from 'src/features/share/share.commands';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
 

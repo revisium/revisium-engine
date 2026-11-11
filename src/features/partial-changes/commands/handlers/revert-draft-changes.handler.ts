@@ -5,7 +5,7 @@ import {
   RevertDraftChangesCommand,
   type RevertedDraft,
 } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
-import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
+import { PartialOperationLog } from 'src/infrastructure/database/operation-log';
 import type { CompletePlan } from 'src/features/partial-changes/planning/change-planner';
 import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';
 import { targetWritePlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';

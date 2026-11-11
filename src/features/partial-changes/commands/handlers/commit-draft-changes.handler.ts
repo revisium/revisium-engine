@@ -7,7 +7,7 @@ import {
   type CommittedDraft,
   type MigrationRenumbering,
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
-import { PartialOperationLog } from 'src/features/partial-changes/logging/partial-operation-log';
+import { PartialOperationLog } from 'src/infrastructure/database/operation-log';
 import type { CompletePlan } from 'src/features/partial-changes/planning/change-planner';
 import { validateComment } from 'src/features/partial-changes/selection/selection-validator';
 import { ChangeApplier } from 'src/features/partial-changes/writing/change-applier';

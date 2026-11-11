@@ -4,7 +4,7 @@ import { MigrationLockService } from 'src/features/migration/services/migration-
 import {
   type OperationTrace,
   PartialOperationLog,
-} from 'src/features/partial-changes/logging/partial-operation-log';
+} from 'src/infrastructure/database/operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {

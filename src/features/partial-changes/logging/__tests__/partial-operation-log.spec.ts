@@ -8,7 +8,7 @@ import {
   type OperationLogEntry,
   OPERATION_FINISHED,
   PartialOperationLog,
-} from 'src/features/partial-changes/logging/partial-operation-log';
+} from 'src/infrastructure/database/operation-log';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import { ChangeType } from 'src/features/revision-changes/types';
 import { OperationTimeoutException } from 'src/infrastructure/database/operation-timeout.exception';

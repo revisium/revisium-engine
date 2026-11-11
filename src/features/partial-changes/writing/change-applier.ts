@@ -5,7 +5,7 @@ import type {
   StoppedChangesBlocked,
   UnappliedChanges,
 } from 'src/features/partial-changes/commands/impl/apply-changes';
-import type { OperationTrace } from 'src/features/partial-changes/logging/partial-operation-log';
+import type { OperationTrace } from 'src/infrastructure/database/operation-log';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { ExpectedFingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import {

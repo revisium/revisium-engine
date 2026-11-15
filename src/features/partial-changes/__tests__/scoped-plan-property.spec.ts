@@ -3,7 +3,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import {
   seededRandom,
@@ -89,7 +89,7 @@ describe('scoped reading over random Drafts and selections (AS-74)', () => {
 
 // The first selection takes one unit of every listed kind, so that a kind a Draft lists rarely is still applied.
 function selectionsOf(
-  units: readonly ListedUnit[],
+  units: readonly DescribedUnitRef[],
   random: SeededRandom,
 ): Selection[] {
   return [
@@ -103,9 +103,9 @@ function selectionsOf(
 }
 
 function unitsOfEveryKind(
-  units: readonly ListedUnit[],
+  units: readonly DescribedUnitRef[],
   random: SeededRandom,
-): ListedUnit[] {
+): DescribedUnitRef[] {
   const kinds = [...new Set(units.map(({ kind }) => kind))];
 
   return kinds.map((kind) =>
@@ -114,7 +114,7 @@ function unitsOfEveryKind(
 }
 
 function randomSelectionOf(
-  units: readonly ListedUnit[],
+  units: readonly DescribedUnitRef[],
   random: SeededRandom,
 ): Selection {
   const included = Array.from({ length: random.count(1, 3) }, () =>
@@ -133,7 +133,7 @@ function randomSelectionOf(
 }
 
 function tableDataOf(
-  included: readonly ListedUnit[],
+  included: readonly DescribedUnitRef[],
   random: SeededRandom,
 ): Selection[] {
   if (random.pick([true, false, false])) {

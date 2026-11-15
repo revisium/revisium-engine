@@ -4,7 +4,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { addField, replaceField } from 'src/__tests__/fixtures/ledger-steps';
-import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
+import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
 import type { DraftTableChangesFilters } from 'src/features/partial-changes/queries/impl/draft-reads';
 import type { DraftChangesSummary } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import { ChangeType } from 'src/features/revision-changes/types';

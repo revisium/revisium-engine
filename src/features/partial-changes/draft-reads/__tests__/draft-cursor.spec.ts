@@ -7,8 +7,7 @@ import {
   type TablePosition,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
 import { encodeCursor } from 'src/features/partial-changes/input/cursor-codec';
-import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
-import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
+import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
 import { deeplyNestedCursor } from '../../__tests__/support/hostile-cursors';
 
 const LONGEST_ID = 'i'.repeat(64);
@@ -17,10 +16,14 @@ const MALFORMED_AFTER = new ListingValidationError(
   'after is malformed: pass the endCursor of the previous page',
 );
 
-const listingCursor = encodeListingCursor({
-  tableId: 'notes',
-  rows: { rowId: 'n1', inclusive: false },
-});
+const removedListingCursor = Buffer.from(
+  JSON.stringify({
+    v: 2,
+    kind: 'units',
+    tableId: 'notes',
+    rows: { rowId: 'n1', inclusive: false },
+  }),
+).toString('base64url');
 
 describe('Draft table cursor', () => {
   it('orders positions by table id in code points, then the Head-only table first', () => {
@@ -69,8 +72,10 @@ describe('Draft table cursor', () => {
     expect(() => decodeTableCursor(cursor)).toThrow(MALFORMED_AFTER);
   });
 
-  it('refuses the cursor of the unit listing', () => {
-    expect(() => decodeTableCursor(listingCursor)).toThrow(MALFORMED_AFTER);
+  it('refuses the cursor of the removed unit listing', () => {
+    expect(() => decodeTableCursor(removedListingCursor)).toThrow(
+      MALFORMED_AFTER,
+    );
   });
 
   it('refuses a cursor with an unknown part', () => {
@@ -124,8 +129,10 @@ describe('Draft row cursor', () => {
     expect(() => decodeRowCursor(cursor)).toThrow(MALFORMED_AFTER);
   });
 
-  it('refuses the cursor of the unit listing', () => {
-    expect(() => decodeRowCursor(listingCursor)).toThrow(MALFORMED_AFTER);
+  it('refuses the cursor of the removed unit listing', () => {
+    expect(() => decodeRowCursor(removedListingCursor)).toThrow(
+      MALFORMED_AFTER,
+    );
   });
 
   it('refuses a cursor with an unknown part', () => {

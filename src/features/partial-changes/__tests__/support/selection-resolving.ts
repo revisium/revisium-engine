@@ -6,6 +6,10 @@ import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-bl
 import type { CatalogueReason } from 'src/features/partial-changes/plan/reason';
 import { readAddressedRows } from 'src/features/partial-changes/selection/addressed-rows';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
+import {
+  type DescribedUnitRef,
+  describedUnitRefOf,
+} from 'src/features/partial-changes/selection/unit-refs';
 import type {
   SelectionResolution,
   UnmatchedSelectors,
@@ -53,6 +57,25 @@ export function readSelectionResolution(
     );
 
     return resolutionView(catalogue, resolution);
+  });
+}
+
+// The units a plan of this selection selects, named as its results name them.
+export function readSelectedUnits(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  selection: Selection,
+): Promise<DescribedUnitRef[]> {
+  return readInPlanningTransaction(kit, async () => {
+    const { catalogue, resolution } = await readResolvedSelection(
+      kit,
+      branch,
+      selection,
+    );
+
+    return unitsAmong(catalogue, resolution.selected).map((unit) =>
+      describedUnitRefOf(unit, catalogue.tables),
+    );
   });
 }
 

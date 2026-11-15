@@ -307,7 +307,7 @@ describe('TargetAssembler: rows moving between structures', () => {
       rows: [product('p3'), product('p4')],
     });
 
-    // The assembler lists rows in table order; the plan sorts them in listing order.
+    // The assembler lists rows in table order; the plan sorts them in unit order.
     expect(
       [...target.deferred].sort((left, right) =>
         (left.unit.rowId ?? '').localeCompare(right.unit.rowId ?? ''),

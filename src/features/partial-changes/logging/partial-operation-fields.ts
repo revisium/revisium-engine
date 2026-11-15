@@ -8,18 +8,18 @@ import type {
 
 export type DraftRead = 'tableChanges' | 'rowChanges' | 'summary';
 
-type PartialOperation = 'list' | 'preview' | ChangeOperation | DraftRead;
+type PartialOperation = 'preview' | ChangeOperation | DraftRead;
 
 export const OPERATION_FINISHED = 'Partial changes operation finished';
 
 const LOGGED_REFUSED_TABLE_IDS = 5;
 
-// What an operation learned from its plan, or from its listing page; only ids and counts, never row data.
+// What an operation learned from its plan, or from its Draft read; only ids and counts, never row data.
 interface PlannedFacts {
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly refusedTables: readonly RefusedTable[];
-  // False when a limit stopped the plan; a listing page has no plan.
+  // False when a limit stopped the plan; a Draft read has no plan.
   readonly planned?: boolean;
   readonly estimate?: PlanEstimate;
 }
@@ -32,7 +32,7 @@ interface LoggedEstimate {
   readonly maxLinksCopied: number;
 }
 
-// A listing page and a Draft read have no status.
+// A Draft read has no status.
 export function partialOperation(
   operation: PartialOperation,
   branch: unknown,
@@ -41,11 +41,11 @@ export function partialOperation(
     operation,
     message: OPERATION_FINISHED,
     branch,
-    outcome: operation === 'list' ? 'listed' : 'read',
+    outcome: 'read',
   };
 }
 
-// The fields of one attempt's plan, listing page or Draft read.
+// The fields of one attempt's plan or of a Draft read.
 export function plannedFieldsOf(facts: PlannedFacts): LogFields {
   const { headRevisionId, draftRevisionId, refusedTables } = facts;
 
@@ -57,7 +57,7 @@ export function plannedFieldsOf(facts: PlannedFacts): LogFields {
   };
 }
 
-// A listing applies no limit, so it says nothing of one.
+// A Draft read applies no limit, so it says nothing of one.
 function limitFieldsOf({ planned, estimate }: PlannedFacts): LogFields {
   if (planned === undefined) {
     return {};

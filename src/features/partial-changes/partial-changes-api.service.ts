@@ -26,11 +26,6 @@ import {
   GetDraftTableChangesQuery,
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import {
-  type ListChangesInput,
-  type ListChangesResult,
-  ListDraftChangesQuery,
-} from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
-import {
   type PreviewChangesInput,
   type PreviewChangesResult,
   PreviewDraftChangesQuery,
@@ -42,10 +37,6 @@ export class PartialChangesApiService {
     private readonly queryBus: QueryBus,
     private readonly commandBus: CommandBus,
   ) {}
-
-  public listChanges(data: ListChangesInput): Promise<ListChangesResult> {
-    return this.queryBus.execute(new ListDraftChangesQuery(data));
-  }
 
   public previewChanges(
     data: PreviewChangesInput,

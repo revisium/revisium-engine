@@ -841,11 +841,11 @@ describe('Schema ledger backfill', () => {
   }
 
   async function refusedTablesOf(draft: BranchScenario): Promise<unknown[]> {
-    const listing = await kit.partialChangesApi.listChanges({
+    const summary = await kit.partialChangesApi.draftChangesSummary({
       branch: draft.branch,
     });
 
-    return [...listing.refusedTables];
+    return [...summary.refusedTables];
   }
 
   function writeTitleOfC1(revisionId: string): Promise<unknown> {

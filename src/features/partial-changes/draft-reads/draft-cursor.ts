@@ -3,7 +3,7 @@ import {
   encodeCursor,
 } from 'src/features/partial-changes/input/cursor-codec';
 import type { Fields } from 'src/features/partial-changes/input/fields';
-import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
+import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 // Of two items with one table id, the table that exists only in Head comes first.

@@ -26,7 +26,6 @@ import {
   blockerRefOf,
   type DeferredRow,
   deferredRowsOf,
-  sampleOf,
 } from 'src/features/partial-changes/planning/plan-refs';
 import {
   type ScopedCatalogue,
@@ -38,10 +37,7 @@ import {
   type Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
-import type {
-  DescribedUnitRef,
-  RequiredUnit,
-} from 'src/features/partial-changes/selection/unit-refs';
+import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
@@ -91,7 +87,6 @@ export interface CompletePlan extends PlanBase {
   readonly coverage: readonly TableCoverage[];
   readonly required: readonly RequiredUnit[];
   readonly deferred: readonly DeferredRow[];
-  readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
   readonly target: PlannedTarget;
 }
@@ -261,7 +256,6 @@ function planOf({ source, closure, validated }: PlanParts): CompletePlan {
     required: closure.required,
     blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),
     deferred: deferredRowsOf(catalogue, validated.target.assembled.deferred),
-    sample: sampleOf(catalogue, appliedUnits),
     unmatched: closure.unmatched,
     estimate: closure.estimate,
     target: validated.target,

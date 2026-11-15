@@ -137,7 +137,7 @@ function entryOf(
   return { table: paged.table.pair, pair, head, draft, fieldChanges };
 }
 
-// The catalogue of a page holds the pairs the listing loads for the page's row ids, also those a filter left out; it
+// The catalogue of a page holds the pairs a plan loads for the page's row ids, also those a filter left out; it
 // loads none of a refused table.
 function changedRowsOf(
   rows: readonly PageRow[],

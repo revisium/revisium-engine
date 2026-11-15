@@ -10,10 +10,7 @@ import type {
 } from 'src/features/partial-changes/planning/plan-refs';
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
-import type {
-  DescribedUnitRef,
-  RequiredUnit,
-} from 'src/features/partial-changes/selection/unit-refs';
+import type { RequiredUnit } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 
 export interface PreviewChangesInput {
@@ -43,7 +40,6 @@ export interface PlannedPreview extends PreviewBase {
   readonly required: readonly RequiredUnit[];
   readonly requiredTotal: number;
   readonly deferred: readonly DeferredRow[];
-  readonly sample: readonly DescribedUnitRef[];
   readonly unmatched: UnmatchedSelectors;
   // Only with status empty: the Draft's stored hasChanges. True for exactly { all: true } means that applying it links
   // the Head versions of the content-equal Draft table versions (SPEC §3.8).
@@ -60,7 +56,6 @@ export interface StoppedPreview extends PreviewBase {
   readonly required: readonly [];
   readonly requiredTotal: 0;
   readonly deferred: readonly [];
-  readonly sample: readonly [];
   readonly unmatched: null;
 }
 

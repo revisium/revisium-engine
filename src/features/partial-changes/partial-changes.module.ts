@@ -22,7 +22,6 @@ import {
 import { PARTIAL_CHANGES_COMMAND_HANDLERS } from 'src/features/partial-changes/commands/handlers';
 import { OperationEstimator } from 'src/features/partial-changes/limits/operation-estimator';
 import { PartialChangesLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
-import { UnitListing } from 'src/features/partial-changes/listing/unit-listing';
 import { PartialChangesApiService } from 'src/features/partial-changes/partial-changes-api.service';
 import { ChangePlanner } from 'src/features/partial-changes/planning/change-planner';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
@@ -70,7 +69,6 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     PlanFingerprint,
     ChangePlanner,
     ChangeApplier,
-    UnitListing,
     ReportedRowCountsReader,
     DraftTablesReader,
     DraftTableItems,

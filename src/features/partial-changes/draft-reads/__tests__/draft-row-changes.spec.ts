@@ -23,8 +23,7 @@ import {
   encodeRowCursor,
   encodeTableCursor,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
-import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
-import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
+import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
 import type {
   DraftFieldChange,
   DraftRowItem,
@@ -1145,8 +1144,8 @@ describe('draft row changes', () => {
         },
       ],
       [
-        'a cursor of the unit listing',
-        { first: 10, after: encodeListingCursor({ tableId: 'a' }) },
+        'a cursor of the removed unit listing',
+        { first: 10, after: cursorOf({ v: 2, kind: 'units', tableId: 'a' }) },
       ],
       [
         'a cursor of the format before cursor kinds',

@@ -5,14 +5,12 @@ import {
 } from 'src/features/partial-changes/input/fields';
 
 // One kind per operation that issues cursors: an operation accepts only its own.
-export type CursorKind = 'units' | 'tables' | 'rows';
+export type CursorKind = 'tables' | 'rows';
 
-// The longest legitimate cursor is a listing position after a field: ids of at most 64 characters (native id rules)
-// and a field path that the position holds twice. 16,384 characters leave room for a path of over 5,000 characters
-// (64 levels of 64-character field names take 4,160), and bound the work spent on any cursor text.
+// Bounds the work spent on any cursor text, far above the longest cursor issued: a row position of two ids.
 export const MAX_CURSOR_LENGTH = 16_384;
 
-// The payload, a listing position in it, and the unit address of that position.
+// Bounds the work of reading a payload; an issued cursor holds only texts and flags.
 const MAX_NESTING = 3;
 const CURSOR_VERSION = 2;
 const BASE64URL = /^[\w-]+$/;

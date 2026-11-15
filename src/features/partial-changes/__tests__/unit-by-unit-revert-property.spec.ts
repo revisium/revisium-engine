@@ -3,7 +3,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
-import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import {
   seededRandom,
   type SeededRandom,
@@ -89,7 +89,7 @@ describe('reverting listed units one by one over random Drafts (AS-65a)', () => 
 
   async function revertAsReviewed(
     draft: ChangesScenario,
-    { selector }: ListedUnit,
+    { selector }: DescribedUnitRef,
   ): Promise<RevertChangesResult> {
     const preview = await draft.previewChanges({
       operation: 'revert',

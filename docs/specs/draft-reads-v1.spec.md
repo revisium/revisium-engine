@@ -4,12 +4,12 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.7 |
+| Version | 1.8 |
 | Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
-| Date | 2026-11-11 |
+| Date | 2026-11-15 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001, REQ-001.BR-003, REQ-001.BR-009 |
-| Builds on | [partial-changes-v1](partial-changes-v1.spec.md) §3 (units), §4 (selection), §5.1–§5.2 (unit refs, listing), §6.2–§6.3 (snapshot, catalogue), §6.10 (refused tables) |
+| Builds on | [partial-changes-v1](partial-changes-v1.spec.md) §3 (units), §4 (selection), §5.1–§5.2 (unit refs, structure descriptions, unit order), §6.2–§6.3 (snapshot, catalogue), §6.10 (refused tables) |
 | Evidence | Engine branch `poc/draft-diff` (`ddb22c6`), document `docs/specs/draft-diff.poc.md` there; core and admin `poc/partial-changes` |
 
 This specification defines the three reads that show a branch's Draft against its Head together with how each change
@@ -35,8 +35,8 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 
 - An optional input given as `null` is treated as absent, at any depth, as in partial-changes-v1 §5.
 - `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of another operation (a table cursor passed
-  to `rowChanges` or the reverse, or a `nextCursor` of `changes.list`; any cursor longer or deeper than the bounds of
-  partial-changes-v1 §5.2), a filter of a wrong type, or a `search` holding the NUL character (no id holds it) →
+  to `rowChanges` or the reverse), a cursor longer than 16,384 characters or nested deeper than three levels, a filter
+  of a wrong type, or a `search` holding the NUL character (no id holds it) →
   validation error before the snapshot.
 - An unknown project or branch → the native lookup error, a `BadRequestException` (partial-changes-v1 §5.9).
 - `changeTypes` takes the native `ChangeType` values (`ADDED`, `REMOVED`, `MODIFIED`, `RENAMED`,
@@ -47,7 +47,7 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 Each call runs in one read-only Repeatable Read transaction under `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS`
 (partial-changes-v1 §8.2, §11), and every phase of the call reads that one snapshot:
 
-1. the compared snapshot that every listing page reads (partial-changes-v1 §5.2, §6.2 steps 1–3): table pairs,
+1. the compared snapshot that every plan reads (partial-changes-v1 §6.2 steps 1–3): table pairs,
    system tables, structure analysis, the Head schema check;
 2. the reported row pairs of the tables the call needs (§3);
 3. the row versions of the page, their formula values and field diffs, the rows looked up for id exchanges and
@@ -67,7 +67,7 @@ again at one id (a replaced id) gives two items.
 The **row pairs** of a listed table come from one query per table and call:
 
 - a table on both sides with different versions: the anti-join of the two versions' row links (the row versions
-  linked to one version and not to the other, as the listing reads them), paired by row identity; each of those row
+  linked to one version and not to the other, as a plan reads them), paired by row identity; each of those row
   versions is read once, and the pair is compared where it is formed;
 - a table on one side only: the rows of its version, all `ADDED` or all `REMOVED`.
 
@@ -128,9 +128,10 @@ its item.
 - `structure` is the structure unit that holds the table identity, a `DescribedUnitRef`. Both items of a replaced id
   carry the same `replaced` structure unit.
 - `views` is the table's views unit; it exists only when the table has no structure unit (partial-changes-v1 §3.6).
-- `tableData` is `{ selector: { tableData: [Draft id] }, rows }`, present when the table is on both sides and its
-  row counts find a pair that the listing's row change predicate selects. `rows` is the number of rows whose units
-  the selector selects, each row counted by its row selector (the `row` of its `selectable` row item, §5.1):
+- `tableData` is `{ selector: { tableData: [Draft id] }, rows }`, present when the table is on both sides and its row
+  counts find a pair that the catalogue's row change predicate selects (partial-changes-v1 §6.3). `rows` is the number
+  of rows whose units the selector selects, each row counted by its row selector (the `row` of its `selectable` row
+  item, §5.1):
   - a row on both sides counts once, whatever its units (a rename with its edits is one row);
   - the deleted and the created row of a replaced row share one `rowReplace` unit and one selector, so they count
     once;
@@ -157,11 +158,11 @@ In order of precedence:
 
 1. `refused` with `code` — the table is refused.
 2. `goesWith` the structure unit, reason `tableExistence` — the table was created, removed or replaced.
-3. `selectable` — the row has units: `units` are its `rowCreate`, `rowDelete`, `rowReplace`, `rowRename`,
-   `rowColumns` and `field` units in listing order; `row` is `{ rows: [{ tableId, rowId, side? }] }`, which selects
-   all of them; `structure` is the table's structure unit when it has one. One item can hold several units (a rename
-   with an edit); two items can share one unit (a replaced row). A deleted row whose id a rename took over carries
-   `side: 'head'`.
+3. `selectable` — the row has units: `units` are its `rowCreate`, `rowDelete`, `rowReplace`, `rowRename`, `rowColumns`
+   and `field` units in unit order (partial-changes-v1 §5.2); `row` is `{ rows: [{ tableId, rowId, side? }] }`, which
+   selects all of them; `structure` is the table's structure unit when it has one. One item can hold several units (a
+   rename with an edit); two items can share one unit (a replaced row). A deleted row whose id a rename took over
+   carries `side: 'head'`.
 4. `computed` — the row is among the changed rows of the catalogue but yields no unit: only computed values differ.
 5. `goesWith` the structure unit, reason `structureBound` — the catalogue does not load the row because it differs
    only in changed fields or a structure-bound `publishedAt` (with or without `schemaHash`).
@@ -169,8 +170,8 @@ In order of precedence:
 Every row selection carries `units`, empty unless `selectable`, so a client reads the units of any row without a
 fallback to its state. A unit a change goes with is a `DescribedUnitRef`: a structure unit carries its
 `structureChange`, so a row says "part of replacing the table" by itself. The catalogue of a page gets exactly the
-pairs the listing would load for the page's unit row ids, also under filters, so the row units are those the listing
-gives.
+pairs a plan would load for the page's unit row ids, also under filters, so the row units are those of the change
+catalogue.
 
 ### 5.2 Field and column changes
 
@@ -318,7 +319,7 @@ matching tables only.
 
 ## 8. Cost
 
-A call costs the compared snapshot, which every listing page reads, and one query per table it needs, over the
+A call costs the compared snapshot, which every plan reads, and one query per table it needs, over the
 anti-join of the table's two link sets (a created or removed table reads the rows of its one version):
 
 - **`rowChanges`** reads the tables in order from the cursor's table (only the filtered tables with `tableId`, and no
@@ -449,9 +450,10 @@ name, `DraftEdge`, `TableData`, `SelectableRowSelection` and `DraftTablesSummary
 
 Reachability and oracles (properties over random Drafts):
 
-- DR-01 Every unit that `changes.list` returns is reachable from the three reads, and nothing else: structure and
-  views units from table items or the summary, shared schemas from the summary, row and field units from row items,
-  `rowColumns` units from row items and columns, including the units of `idTakeover`, `idExchange` and `follows`.
+- DR-01 Every unit of the change catalogue (read through the internal test path of partial-changes-v1 §13.6) is
+  reachable from the three reads, and nothing else: structure and views units from table items or the summary, shared
+  schemas from the summary, row and field units from row items, `rowColumns` units from row items and columns, including
+  the units of `idTakeover`, `idExchange` and `follows`.
 - DR-02 Every reported table, row, field and column without a unit says why: `goesWith`, `computed`, `contentEqual`
   or `refused`.
 - DR-03 Native oracle: on pages of 1, 2 and 7 rows, the reads list every row change of the native diff of the Draft
@@ -518,6 +520,13 @@ Paging, filters, validation, snapshot:
   (`BadRequestException`, `A branch with this name does not exist in the project`).
 
 ## Changelog
+
+### Version 1.8 (2026-11-15)
+
+- §1: with `changes.list` removed (partial-changes-v1 v2.8), a read refuses only a cursor of the other read; the cursor
+  bounds (16,384 characters, three levels) are stated here.
+- §2, §3, §4, §5.1, §8, DR-01: references to the listing name the plan, the change catalogue or the unit order instead;
+  no behaviour changes.
 
 ### Version 1.7 (2026-11-11)
 

@@ -4,7 +4,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ApplyStatus } from 'src/features/partial-changes/commands/impl/apply-changes';
-import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import {
   RANDOM_DRAFT_SEED_TIMEOUT_MS,
   RANDOM_DRAFT_SEEDS,
@@ -85,7 +85,7 @@ describe('mixed native and partial sequences with a Head-synced replica (AS-41)'
 });
 
 function statusOfCommittingEverything(
-  left: readonly ListedUnit[],
+  left: readonly DescribedUnitRef[],
 ): ApplyStatus {
   if (left.length === 0) {
     return 'empty';

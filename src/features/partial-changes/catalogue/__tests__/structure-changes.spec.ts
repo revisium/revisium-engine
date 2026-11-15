@@ -21,12 +21,11 @@ import {
 import type { UnitKind } from 'src/features/partial-changes/catalogue/unit';
 import {
   type ChangedField,
-  type ListedUnit,
   STRUCTURE_TABLE_CHANGES,
-} from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+} from 'src/features/partial-changes/catalogue/structure-changes';
 import { ANNOTATION_KEYWORDS } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import { STRUCTURE_FIELD_CHANGES } from 'src/features/partial-changes/structure/table-structure';
-import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
@@ -122,7 +121,7 @@ const moveTitleIntoExtracted: JsonPatch = {
   path: '/properties/extracted/properties/newTitle',
 };
 
-describe('listChanges: structure changes', () => {
+describe('structure changes', () => {
   let kit: PartialChangesTestKit;
 
   beforeAll(async () => {
@@ -703,7 +702,7 @@ describe('listChanges: structure changes', () => {
         await draft.updateTable(PRODUCTS, patches);
         await draft.updateRow(PRODUCTS, 'p1', editedRow);
 
-        const { units } = await draft.listChanges({ tableId: PRODUCTS });
+        const { units } = await draft.readUnitList({ tableId: PRODUCTS });
         const preview = await draft.previewChanges({
           operation: 'commit',
           selection: { fields: [{ tableId: PRODUCTS, rowId: 'p1', path }] },
@@ -1053,7 +1052,7 @@ describe('listChanges: structure changes', () => {
 
         await draft.updateRow(PRODUCTS, 'p1', editedRow);
 
-        const { units } = await draft.listChanges({ tableId: PRODUCTS });
+        const { units } = await draft.readUnitList({ tableId: PRODUCTS });
 
         expect(units.map(addressedUnitOfListed)).toEqual([
           { kind: 'structure', tableId: PRODUCTS },
@@ -1068,7 +1067,7 @@ describe('listChanges: structure changes', () => {
       await draft.updateRow(MEDIA, 'm1', { title: 'edited', cover: emptyFile });
       await draft.uploadFile(MEDIA, 'm1', 'cover');
 
-      const { units } = await draft.listChanges({ tableId: MEDIA });
+      const { units } = await draft.readUnitList({ tableId: MEDIA });
 
       expect(units.map(addressedUnitOfListed)).toEqual([
         { kind: 'structure', tableId: MEDIA },
@@ -1214,7 +1213,7 @@ describe('listChanges: structure changes', () => {
       const draft = await givenCommittedCategories();
       await edit(draft);
 
-      const page = await draft.listChanges();
+      const page = await draft.readUnitList();
 
       expect(page.units).toEqual([listed]);
     });
@@ -1274,32 +1273,14 @@ describe('listChanges: structure changes', () => {
     });
   });
 
-  describe('structure of other units', () => {
-    it('refers a row unit to the structure unit of its table by a selector that resolves to exactly that unit', async () => {
-      const draft = await givenCommittedCategories();
-      await draft.updateTable(CATEGORIES, [addField('color', str())]);
-      await draft.updateRow(CATEGORIES, 'c1', {
-        title: 'edited',
-        color: 'red',
-      });
-
-      const field = await listedUnitOf(draft, 'field');
-
-      expect(field.structure).toEqual({
-        kind: 'structure',
-        tableId: CATEGORIES,
-        selector: { structures: [{ tableId: CATEGORIES }] },
-      });
-      await expectToResolveToExactly(draft, field.structure);
-    });
-
-    it('refers the rows of a table that took over a removed table id to the renamed table, and lists the removed one on the Head side', async () => {
+  describe('a table id taken over by a rename', () => {
+    it('names the removed table on the Head side and the renamed table under the id, each by a selector that resolves to exactly it', async () => {
       const draft = await givenCommittedNotesAndMemos();
       await draft.removeTable(NOTES);
       await draft.renameTable(MEMOS, NOTES);
       await draft.updateRow(NOTES, 'm1', { label: 'edited' });
 
-      const [removed, renamed, field] = (await draft.listChanges()).units;
+      const [removed, renamed] = (await draft.readUnitList()).units;
 
       expect(removed).toEqual({
         kind: 'structure',
@@ -1315,23 +1296,17 @@ describe('listChanges: structure changes', () => {
         selector: { structures: [{ tableId: NOTES }] },
         structureChange: { table: 'changed', fields: [], views: false },
       });
-      expect(field?.structure).toEqual({
-        kind: 'structure',
-        tableId: NOTES,
-        previousTableId: MEMOS,
-        selector: { structures: [{ tableId: NOTES }] },
-      });
       await expectToResolveToExactly(draft, removed);
-      await expectToResolveToExactly(draft, field?.structure);
+      await expectToResolveToExactly(draft, renamed);
     });
   });
 
   async function expectToResolveToExactly(
     draft: ChangesScenario,
-    unit: UnitRef | undefined,
+    unit: DescribedUnitRef | undefined,
   ): Promise<void> {
     if (!unit) {
-      throw new Error('The listing gave no unit to resolve');
+      throw new Error('The catalogue gave no unit to resolve');
     }
 
     await expect(draft.resolveSelection(unit.selector)).resolves.toEqual({
@@ -1346,19 +1321,10 @@ describe('listChanges: structure changes', () => {
   async function listedStructureOf(
     draft: ChangesScenario,
     tableId: string,
-  ): Promise<ListedUnit> {
-    const { units } = await draft.listChanges({ tableId });
+  ): Promise<DescribedUnitRef> {
+    const { units } = await draft.readUnitList({ tableId });
 
     return unitOfKind(units, 'structure');
-  }
-
-  async function listedUnitOf(
-    draft: ChangesScenario,
-    kind: UnitKind,
-  ): Promise<ListedUnit> {
-    const { units } = await draft.listChanges();
-
-    return unitOfKind(units, kind);
   }
 
   function givenCommittedProducts(): Promise<ChangesScenario> {
@@ -1370,7 +1336,7 @@ describe('listChanges: structure changes', () => {
     });
   }
 
-  function changedFieldsOf(unit: ListedUnit): readonly ChangedField[] {
+  function changedFieldsOf(unit: DescribedUnitRef): readonly ChangedField[] {
     return unit.structureChange?.fields ?? [];
   }
 
@@ -1437,14 +1403,17 @@ interface FieldCase {
 interface TableCase {
   readonly change: string;
   readonly edit: (draft: ChangesScenario) => Promise<void>;
-  readonly listed: ListedUnit;
+  readonly listed: DescribedUnitRef;
 }
 
-function unitOfKind(units: readonly ListedUnit[], kind: UnitKind): ListedUnit {
+function unitOfKind(
+  units: readonly DescribedUnitRef[],
+  kind: UnitKind,
+): DescribedUnitRef {
   const unit = units.find((listed) => listed.kind === kind);
 
   if (!unit) {
-    throw new Error(`The listing has no ${kind} unit`);
+    throw new Error(`The catalogue has no ${kind} unit`);
   }
 
   return unit;

@@ -1,7 +1,10 @@
 import type { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import { structureChangeOf } from 'src/features/partial-changes/catalogue/structure-changes';
+import {
+  type StructureChange,
+  structureChangeOf,
+} from 'src/features/partial-changes/catalogue/structure-changes';
 import type {
   SelectorSide,
   Unit,
@@ -11,7 +14,6 @@ import type {
   CatalogueReason,
   CauseRole,
 } from 'src/features/partial-changes/plan/reason';
-import type { StructureChange } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type {
   RowRef,
   SelectionItems,

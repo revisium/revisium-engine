@@ -12,7 +12,6 @@ import {
 } from 'src/__tests__/fixtures/branch-content';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
-import type { ListChangesResult } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type {
   RowRef,
   Selection,
@@ -21,7 +20,10 @@ import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
 import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
-import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
+import {
+  addressedUnitOfListed,
+  type UnitList,
+} from '../../__tests__/support/change-listing';
 import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
@@ -131,7 +133,7 @@ describe('commitChanges', () => {
         p1: { title: 'uno', price: 10 },
         p2: { title: 'dos', price: 2 },
       });
-      expect(unitsOf(await draft.listChanges())).toEqual([
+      expect(unitsOf(await draft.readUnitList())).toEqual([
         { kind: 'field', rowId: 'p1', path: '/price' },
         { kind: 'field', rowId: 'p2', path: '/title' },
       ]);
@@ -457,7 +459,7 @@ describe('commitChanges', () => {
       const committed = await draft.row('head', PRODUCTS, 'p2');
       expect(committed.schemaHash).toBe(STALE_SCHEMA_HASH);
       expect(committed.data).toEqual({ title: 'two', price: 2 });
-      expect(unitsOf(await draft.listChanges())).toEqual([
+      expect(unitsOf(await draft.readUnitList())).toEqual([
         { kind: 'field', rowId: 'p1', path: '/price' },
         { kind: 'field', rowId: 'p1', path: '/title' },
         { kind: 'field', rowId: 'p2', path: '/title' },
@@ -680,7 +682,7 @@ describe('commitChanges', () => {
         title: 'one',
         image: uploadedImage,
       });
-      expect(unitsOf(await partial.listChanges())).toEqual([
+      expect(unitsOf(await partial.readUnitList())).toEqual([
         { kind: 'field', rowId: 'd1', path: '/title' },
       ]);
       expect(await partial.readFileAccounting()).toEqual(
@@ -958,7 +960,7 @@ describe('commitChanges', () => {
     );
   }
 
-  function unitsOf({ units }: ListChangesResult) {
+  function unitsOf({ units }: UnitList) {
     return units
       .map(addressedUnitOfListed)
       .map(({ kind, rowId, path }) => ({ kind, rowId, path }));

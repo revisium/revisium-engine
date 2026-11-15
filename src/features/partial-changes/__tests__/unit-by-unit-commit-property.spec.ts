@@ -4,7 +4,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
-import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import {
   seededRandom,
   type SeededRandom,
@@ -97,7 +97,7 @@ describe('committing listed units one by one over random Drafts (AS-65b)', () =>
 
   async function commitAsReviewed(
     draft: ChangesScenario,
-    { selector }: ListedUnit,
+    { selector }: DescribedUnitRef,
   ): Promise<CommitChangesResult> {
     const preview = await draft.previewChanges({
       operation: 'commit',

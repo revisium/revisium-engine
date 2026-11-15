@@ -357,7 +357,7 @@ describe('exactly { all: true } on a Draft left with only content-equal versions
     await expect(
       apply(draft, operation, { selection: titleOfP1 }),
     ).resolves.toMatchObject({ status: 'applied', draftHasChanges: true });
-    expect(await draft.listChanges()).toMatchObject({ units: [] });
+    expect(await draft.readUnitList()).toMatchObject({ units: [] });
     expect(await draft.tableVersionId('draft', LOGS)).not.toBe(
       await draft.tableVersionId('head', LOGS),
     );

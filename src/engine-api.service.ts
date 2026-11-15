@@ -262,9 +262,6 @@ export class EngineApiService {
   // --- Draft Changes ---
 
   readonly changes = {
-    list: (...args: Parameters<PartialChangesApiService['listChanges']>) =>
-      this.partialChangesApi.listChanges(...args),
-
     preview: (
       ...args: Parameters<PartialChangesApiService['previewChanges']>
     ) => this.partialChangesApi.previewChanges(...args),

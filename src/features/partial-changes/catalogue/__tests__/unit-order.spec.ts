@@ -22,7 +22,7 @@ const IDS_IN_CODE_POINT_ORDER = [
   '😀',
 ];
 
-describe('Listing order of units', () => {
+describe('Unit order', () => {
   let kit: DatabaseServiceTestKit;
 
   beforeAll(async () => {

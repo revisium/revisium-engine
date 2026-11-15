@@ -172,7 +172,6 @@ function previewResultOf(
       required: [],
       requiredTotal: 0,
       deferred: [],
-      sample: [],
       unmatched: null,
     };
   }
@@ -186,7 +185,6 @@ function previewResultOf(
     coverage: plan.coverage,
     ...listedRequiredOf(plan.required, maxListedDetails),
     deferred: plan.deferred,
-    sample: plan.sample,
     unmatched: plan.unmatched,
   };
 }

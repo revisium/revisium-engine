@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.8 |
+| Version | 2.9 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -375,18 +375,17 @@ message: string; unit?: DescribedUnitRef; reason?: RequiredReason }`, deduplicat
 the `reason` that required it), the applied unit whose target would dangle for `danglingInSource`, the unit of an
 invalid row for `invalidRow`.
 
-**DeferredRow** `{ unit: DescribedUnitRef; defaulted: DeferredValue[]; omitted: DeferredPath[]; structure:
-DescribedUnitRef }`: a created or replaced row committed without its table's structure. Its deferred paths are the changed input fields
-of the row's table (§3.3), Draft and Head pointers. The Head schema the commit writes the row against decides what
-happens to each: `defaulted` are the paths where it has an input field, `{ path; value }` with the value the commit
-writes there, taken from the assembled row (the Head default, a type default after a native schema update; for the
-published-at field, the row's `publishedAt` column, as reads show it; an array or a File is one value); `omitted`
-(`{ path }`, objects so that a reason can be added without a breaking change) are the others, where it has no field or
-computes the value, and the Draft value is left out. Each path is in exactly one of the two lists, which keep the
-code-point order of the changed fields (§5.2: leaves, never an object). A moved field appears in both: its Draft
-pointer is omitted, its Head pointer defaulted. `structure` is the unit that would carry the Draft values; the Draft
-keeps them. A File the commit creates is shown with `fileId: ''`: the commit gives it its id when it writes it, so two
-previews of one Draft agree; every other field of the File is the value written.
+**DeferredRow** `{ unit: DescribedUnitRef; omitted: DeferredPath[]; structure: DescribedUnitRef }`: a created or
+replaced row committed without its table's structure. Its deferred paths are the changed input fields of the row's
+table (§3.3), Draft and Head pointers, where the Head schema the commit writes the row against has no input field: it
+has no field there or computes the value, and the Draft value is left out of Head. `omitted` (`{ path }`, objects so
+that a reason can be added without a breaking change) keeps the code-point order of the changed fields (§5.2: leaves,
+never an object). `structure` is the unit that would carry the Draft values; the Draft keeps them. A row is deferred
+only when the Head schema has no input field at any changed input field: where it has one, the commit would write a
+default instead of the Draft value, so the row requires the structure (§6.6, `structureBoundData`) and is never
+deferred. So the Draft only adding fields, or making a computed Head field an input field, defers a row; changing a
+field's type, removing, renaming or moving a field requires the structure. Before v2.9 such a row was committed with
+the defaults and listed them in `defaulted: DeferredValue[]` (`{ path; value }`).
 
 **PlanEstimate** (§6.5; an upper bound: a merge that turns out content-equal to one side is still counted):
 
@@ -655,7 +654,7 @@ Decided in this order; preview skips step 3 and returns `ready` in step 6:
 | --- | --- | --- | --- |
 | `wholeRowUnit` | selection | A field of a created, deleted or replaced row was selected. | The row's existence unit. |
 | `atomicValue` | selection | A pointer inside an array or file value. | The field unit of the whole value. |
-| `structureBoundData` | selection, closure | A value of a new or changed field; a row of a created or removed table; the views of a table with a structure unit (§3.6); a reference at a changed field that would dangle. | The table's structure unit. |
+| `structureBoundData` | selection, closure | A value of a new or changed field; a row of a created or removed table; the views of a table with a structure unit (§3.6); a reference at a changed field that would dangle; a created or replaced row that a commit would move into the Head structure, which would replace its value at a changed field by a default (§6.6). | The table's structure unit. |
 | `referencedRowMissing` | closure | A target row references a row that exists only on the other side; or an unchanged row references an id the target loses and another unit provides. | The unit that brings the row (creation, replace, rename). |
 | `referrerStillReferences` | closure | A target row or schema still references a row or table the operation removes from the target; or a pending migration that stays out of the applied units references a table id that a resulting ledger does not hold at its step (§6.6). | The referrer's other-side value (field or row unit) or its structure unit. |
 | `idOccupied` | closure | Two rows, or two tables, would hold one id in the target; or a pending migration takes a table id that a resulting ledger already holds at its step (§6.6). | The unit that moves the occupant (rename, deletion, structure); for a ledger step, the unit that vacated the id or the unit of the step. |
@@ -667,7 +666,7 @@ Each code arises at fixed kinds of site (§5.1), with `references` set for refer
 | --- | --- | --- | --- |
 | `wholeRowUnit`, `atomicValue` | `selector` | — | no cause |
 | `structureBoundData` (selection) | `selector` | — | no cause |
-| `structureBoundData` (closure) | `row` | the referenced row | `referrer` (an applied unit brings the referring value of a changed field), `remover` (an applied unit takes away the referenced row) |
+| `structureBoundData` (closure) | `row` | the referenced row; none for a value the Head structure would replace by a default | `referrer` (an applied unit brings the referring value of a changed field, or brings the row whose value would be replaced by a default), `remover` (an applied unit takes away the referenced row) |
 | `referencedRowMissing` | `row` | the referenced row | `referrer` (an applied value, row or structure references the row), `remover` (an applied unit takes away the id that an unchanged or kept referrer references) |
 | `referrerStillReferences` | `row`, `schema`, `migration` | the row or table the reference needs | `remover`; `referrer` at a `row` site when an applied structure brings the referring value of a field it changed |
 | `referencedTableMissing` | `schema`, `migration` | the table | `referrer` |
@@ -678,7 +677,8 @@ Each code arises at fixed kinds of site (§5.1), with `references` set for refer
 - `structureBoundData` from the closure, `referencedRowMissing` and `referrerStillReferences` of rows: the applied unit
   that brings the referring value into the target (its field unit, the row's existence unit, or the structure that
   brings the table's rows), else the applied unit that removes the referenced row from it (a deletion, a reverted
-  creation, a rename). An unchanged referrer of a lost id names the unit that loses the id.
+  creation, a rename). An unchanged referrer of a lost id names the unit that loses the id. A row whose value the Head
+  structure would replace by a default names its existence unit (`rowCreate` or `rowReplace`).
 - `referrerStillReferences` and `referencedTableMissing` of schemas: the applied structure unit of the table that the
   reference meant, or of the referrer whose schema the target takes.
 - `idOccupied`: the applied unit that moves the other row or table into the id: its rename or existence unit, or its
@@ -714,6 +714,10 @@ alone requires the rewritten fields (`referrerStillReferences`, cause the rename
 `b → a` of a swap requires the rename `a → b`: `idOccupied`, site `{ kind: 'rowId', tableId, rowId: 'a' }`, cause the
 rename `b → a` (`taker`). Reverting a table removal whose id a pending rename of another table took requires reverting
 that rename: `idOccupied`, site `{ kind: 'tableId', tableId, migrationId }`, cause the removal (`occupant`).
+Head has `products` with a text `price`; the Draft makes `price` a number and creates `p-1101` with `price: 129`.
+Committing `p-1101` alone requires the structure of `products`: `structureBoundData`, site `{ kind: 'row', tableId:
+'products', rowId: 'p-1101', path: '/price' }`, no `references`, cause the creation (`referrer`). A client reads it as
+"p-1101 has a value in the new format; without the schema change it would be published with a default".
 
 ### 5.8 Blockers
 
@@ -907,10 +911,8 @@ type RequiredReason = { code: RequiredReasonCode; because: string; site: ReasonS
 type RequiredUnit = { unit: DescribedUnitRef; reason: RequiredReason };
 type PlanBlocker = { code: BlockerCode; tableId?: string; rowId?: string; path?: string; message: string;
   unit?: DescribedUnitRef; reason?: RequiredReason };
-type DeferredValue = { path: string; value: unknown };
 type DeferredPath = { path: string };
-type DeferredRow = { unit: DescribedUnitRef; defaulted: DeferredValue[]; omitted: DeferredPath[];
-  structure: DescribedUnitRef };
+type DeferredRow = { unit: DescribedUnitRef; omitted: DeferredPath[]; structure: DescribedUnitRef };
 type PlanEstimate = { changedRows: number; mergedRows: number; perRowWorkRows: number;
   mixedTables: MixedTableEstimate[] };
 type MixedTableEstimate = { tableId: string; linksCopied: number; linksAdded: number };
@@ -1144,6 +1146,16 @@ Structure checks:
 
 Row checks:
 
+- **Rows bound to their structure** (commit only): a created or replaced row taken from the Draft into a table whose
+  structure unit is not applied is moved into the Head structure (§6.7). When the Head schema has an input field at a
+  changed input field of the table (§3.3), the move would write a default there instead of the Draft value → the
+  table's structure unit (`structureBoundData`, site `row` at the first such pointer in code-point order, cause the
+  row's existence unit as `referrer`). The Head schema decides it for every such row of the table alike, so the
+  assembly names one row per table, the first in unit order, and the check costs nothing per unrelated row. A move
+  that only leaves Draft values out (the Head schema has no field there or computes it) requires nothing; the row is
+  deferred (§5.1). The next pass estimates and assembles with the structure, so the limits (§6.5) and the
+  fingerprint (§9.1) cover the structure unit and every row and value it carries. A revert is not affected: a
+  created row that a revert of its structure keeps in the Draft still moves into the restored Head structure.
 - **Row id collisions** in a target table → the rename or existence unit of the row that keeps its base id
   (`idOccupied`).
 - **Foreign-key values of target rows** (loaded rows of tables with foreign keys) that resolve nowhere in the
@@ -1216,7 +1228,8 @@ Per user table on both sides, with structure side S and the opposite side O:
   4. Rows not loaded (§3.1) follow S.
 - **Moving a row between structures:**
   - Draft row into the Head structure: Head defaults, then the Draft values of unchanged leaves, then the plugin hooks
-    for migrated rows. In a commit the changed fields are reported in `deferred`.
+    for migrated rows. In a commit a created or replaced row moved this way either requires the structure, when a
+    Head input field would get its default, or is reported in `deferred` with the changed fields left out (§6.6, §5.1).
   - Head row into the Draft structure: the pending history patches applied to the row, then the plugin hooks. If the
     Draft structure is not recorded → blocker `unrecordedStructureChange`.
 - **Merged row columns.** Each column comes from the side its owning unit chose; a column without a difference is
@@ -1936,8 +1949,9 @@ versions unchanged" (§14) holds in every scenario.
 - AS-11 Structure committed while edits of unchanged fields are not selected → those edits stay only in the Draft;
   `tableData` selects only them.
 - AS-12 A value of a changed field selected alone → `required` (`structureBoundData`).
-- AS-13 A created row committed without its structure → Head defaults for the changed fields; preview lists them in
-  `deferred`; nothing deferred when the structure is selected too.
+- AS-13 A created row committed without its structure: when the Draft only added fields, it commits alone without
+  their values and the preview lists them in `deferred`; when a Head input field would get a default instead of the
+  Draft value, it requires the structure (AS-98); nothing deferred when the structure is selected too.
 - AS-14 A created table commits whole with its rows; a row selector of a created table → requires the structure.
 - AS-15 A Head row whose deletion stays in the Draft is migrated into the committed structure; formulas of merged rows
   use the target structure.
@@ -2203,12 +2217,10 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   created at `x` and renamed to `y`, another created at `x`, the second committed alone), the `remover` at a ledger
   step (the `notes` / `links` example of §5.7) and the reverted removal as `occupant`; the `cause` of a result names its
   unit as the catalogue describes it (§5.1); the `reason` of a `requiredExcluded` blocker carries the same `cause`.
-- AS-86 Deferred values: a created or replaced row committed without its table's structure lists in `defaulted` each
-  Head input field with the value the commit writes, equal to the value in the written row (a declared default, a type
-  default after a native schema update, the leaves of a removed object, an array as one value, the `publishedAt`
-  column at the published-at field; a File as written but with `fileId: ''`); a field changed in place gets the Head
-  value, never the Draft value; fields the Head schema lacks or computes are in `omitted` as `{ path }`; a moved field
-  is in both; both lists are in code-point order, the rows in unit order; a revert defers nothing.
+- AS-86 Deferred values: a created or replaced row committed without its table's structure, whose changed input fields
+  the Head schema lacks or computes (only added fields, or a computed Head field made an input field), lists them in
+  `omitted` as `{ path }` in code-point order, the rows in unit order; the Head row has none of their values; a revert
+  defers nothing (v2.9: `defaulted` is removed, AS-98).
 - AS-87 Stopped plans: a preview stopped by `maxChangedRows`, and one stopped by a mixed-table or per-row-work limit in
   the closure, return `planned: false`, `fingerprint`, `counts` and `unmatched` as `null`, empty `required`,
   `deferred` and `coverage`, the `tooLarge` blockers (with `migrationInProgress` while an async migration
@@ -2258,6 +2270,15 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   it planned makes the attempt retry, and the retry reverts the edit (`applied`) with consistent revisions; a Draft
   version that the content check finds different from Head (a difference change detection missed) stays linked and
   `draftHasChanges` stays `true`.
+- AS-98 A new row never gets a made-up value. Head `products` has a text `price`; the Draft makes it a number and
+  creates `p-1101` with `price: 129`. A commit preview of `p-1101` is `required` with the structure of `products`
+  (`structureBoundData`, site `row` `products/p-1101` at `/price`, no `references`, cause the creation as `referrer`)
+  and defers nothing; the commit without `includeRequired` is `required` and writes nothing; with `includeRequired`
+  and the preview's fingerprint it publishes the row and the schema change, and the Head row has `price: 129`. The
+  same holds for the created half of a replaced row (cause the `rowReplace`), for a removed, renamed or moved field,
+  the leaves of a removed object, the published-at field and a File patched inside; with the structure excluded the
+  commit is `blocked` with `requiredExcluded`. A table whose rows would all get a default names one row, the first in
+  unit order, at the first such pointer in code-point order.
 
 ## 14. Test strategy
 
@@ -2407,6 +2428,30 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 
 ## Changelog
 
+### Version 2.9 (2026-11-15)
+
+A new row never gets a made-up value. The API is unreleased, so `defaulted` goes without a deprecation period or a
+new major version.
+
+- §5.1, §5.7, §6.6, §6.7: a created or replaced row taken from the Draft into a table whose structure unit is not
+  applied requires that structure unit in a commit when moving the row into the Head structure would replace one of
+  its values by a default: `structureBoundData` at a `row` site (the first such pointer in code-point order, no
+  `references`), caused by the row's existence unit as `referrer`. Example: Head has a text `price`, the Draft makes
+  it a number and creates `p-1101` with `price: 129`; before, a commit of `p-1101` alone wrote it into Head with
+  `price: ""` and listed `/price` in `defaulted`; now it is `required` with the structure, and with `includeRequired`
+  the schema change goes along. A row whose move only leaves Draft values out (the Draft only added fields) still
+  commits alone and is listed in `deferred`. Modified rows and revert are unchanged.
+- The reason reuses `structureBoundData` rather than a new code: the code already means "a value that belongs to the
+  structure unit" with the structure as the unit to add, and the `row` site with `path` names the row and the field;
+  a client tells it from a reference at a changed field by the absent `references`. No new code or role is added.
+- §5.1, §5.11, §15: `defaulted` and `DeferredValue` are removed: no applied or previewed plan has such a row any more
+  (with the structure excluded the plan is `blocked` and the row is not listed in `deferred`). `DeferredRow` is
+  `{ unit; omitted; structure }`.
+- §6.6: plans of such selections include the structure unit, so their estimate, limits and fingerprint cover the
+  structure and every row and value it carries; the rule is decided per table from the two schemas during the
+  assembly the closure already runs, one row per table, with no second pass.
+- §13: AS-13 and AS-86 follow; AS-98 is new.
+
 ### Version 2.8 (2026-11-15)
 
 No flat list of units, and no sample in a preview. The API is unreleased, so both go without a deprecation period or a
@@ -2534,7 +2579,8 @@ Results (§5.1, §5.3–§5.7, §5.11, §5.12):
   `occupant`.
 - `Deferred` → `DeferredRow` with `defaulted: { path, value }[]` and `omitted: { path }[]` (PoC 1.5–1.6 split
   `paths`; v2.0 adds the values, makes the omitted paths objects, sorts the paths in code-point order and the rows
-  in listing order; the published-at field's value is the `publishedAt` column; a new File shows `fileId: ''`).
+  in listing order; the published-at field's value is the `publishedAt` column; a new File shows `fileId: ''`). v2.9
+  removes `defaulted`: such a row requires its structure instead.
 - Preview: `planned`; when a limit stopped the plan, `fingerprint`, `counts` and `unmatched` are `null` instead of
   `''`, zeros and `{}`. `counts` drops `remaining`; `unreadTables` is removed; `coverage` (`TableCoverage[]`) is new;
   `sample` holds the first `min(20, selected + required)` applied units.

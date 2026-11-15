@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.10 |
+| Version | 2.11 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -459,10 +459,11 @@ views row counts as no views. So a caller sees that applying the structure also 
 | `changed` | A table on both sides whose structure differs (§3.4); a renamed table keeps `previousTableId`. |
 
 **ChangedField** `{ path: string; change: 'added' | 'removed' | 'changed' | 'moved' | 'annotated'; from?: string;
-annotations?: AnnotationKeyword[] }`. `path` and `from` are data JSON Pointers; `fields` names each `path` once, in
-code-point order. A change inside an array or File value reads as the pointer of the whole value (§3.2). Only an
-`annotated` entry carries `annotations` (below), and it never carries an empty list. An entry names a leaf, or, for a
-change of an object's own annotations, that object (below).
+annotations?: AnnotationKeyword[]; before?: FieldSchema; after?: FieldSchema }`. `path` and `from` are data JSON
+Pointers; `fields` names each `path` once, in code-point order. A change inside an array or File value reads as the
+pointer of the whole value (§3.2). Only an `annotated` entry carries `annotations` (below), and it never carries an
+empty list. An entry names a leaf, or, for a change of an object's own annotations, that object (below). `before` and
+`after` hold the field's schema on each side (Field schemas, below).
 
 The **annotations** of a leaf schema are the keywords of the schema toolkit that validate no value: `title`,
 `description`, `deprecated`, `default`, `readOnly` and `contentMediaType` (the metadata and content vocabularies of
@@ -552,6 +553,52 @@ created at its id: a leaf only in the Draft table is `added`, a leaf only in the
 both is reported when the leaf schemas differ (§3.3, condition 2): `annotated` when they differ only in annotations,
 otherwise `changed`. No ledger links the two tables, so no leaf is `moved`; every row of both tables still travels
 with the unit. For `created`, `removed` and `transient` tables, `fields` is empty: the whole table is the unit.
+
+**Field schemas** (v2.11). An entry says what changed, so a client renders it, as "price: text → number" or
+"code: default `none` → empty", without reading either table schema. `before` is the field's schema in Head and
+`after` its schema in the Draft, each as that side's table schema stores it: a `foreignKey` names the referenced table
+by that side's id, and annotations are kept. The Head schema is the schema of the Head leaf or object the entry comes
+from: at `from` for a moved field, otherwise at `path`.
+
+| `change` | `before` | `after` |
+| --- | --- | --- |
+| `added` | — | the Draft schema |
+| `removed` | the Head schema | — |
+| `changed` | the Head schema | the Draft schema |
+| `moved` | — | — |
+| `annotated` | the Head schema | the Draft schema |
+
+- A `moved` field has an equal schema on both sides (§3.3, condition 2), so `from` says all; a moved field whose schema
+  changed is `changed` and carries both schemas besides `from`.
+- An `annotated` entry carries both schemas although `annotations` names the differing keywords: the values of those
+  keywords (the old and the new default, the new description) are what a client shows, and the leaf schemas bound
+  their size.
+- The schema of a leaf is the whole schema at its pointer: for a primitive field its type, `default`, `foreignKey`,
+  `format`, `pattern`, `enum`, bounds, `readOnly`, `x-formula` and annotations; for an array its `items` as well (an
+  array is one atomic leaf, §3.2); for a File its `$ref`. An object is no leaf, and its fields are entries of their
+  own, so an `annotated` object carries its own keywords only, without `properties`, `required` and
+  `additionalProperties` (`ObjectOwnSchema`).
+- A `changed` entry whose two schemas are equal says that a pending patch rewrote the field's values without a net
+  schema change (an object replaced with an equal schema, a later patch that restored the Head schema, or a change of
+  an enclosing object's `required` list, below); its values travel with the structure unit as for any `changed`
+  field.
+- A node whose kind changed reads leaf by leaf, so every entry names one leaf with an unambiguous schema: an object
+  that became a text field reads as the field `added` and the object's leaves `removed`; a field that became an object
+  as the field `removed` and the object's leaves `added`; a field that became an array, an array that became a field,
+  and an array whose items changed read as `changed` with both schemas; an array that became an object reads as the
+  array `removed` and the object's leaves `added`.
+
+Size. An entry holds at most one leaf or object schema per side, never a table schema, and each Head and each Draft
+leaf or object is in at most one entry, so the schemas of one description together are at most the two table schemas
+of the unit. An object added whole reads as one `added` entry per leaf, each with that leaf's schema; an array added
+whole is one entry with its whole schema, items included. `created`, `removed` and `transient` tables keep `fields`
+empty: the whole table is the unit, and a client that shows its schema reads it.
+
+Required. A primitive field schema has no `required` keyword: the meta schema rejects it. Only an object schema
+carries `required`, the list of its properties a value must have. The schema toolkit writes every property into that
+list, so "a field becomes required" is not a change the standard tools make, and `ChangedField` has no flag for it.
+The engine API accepts a shorter list; a pending patch that changes it rewrites the object's leaves, which read
+`changed` with equal schemas.
 
 `structureChange` is not part of a unit's identity, internal key or selector, or of the fingerprint (§9.1).
 
@@ -850,7 +897,7 @@ exported with the union type derived from it, also where §5.11 spells the union
 `ApplyStatus`, `ReasonSiteKind`, `ReferencedEntityKind`, and `TableSelectionState`, `RowSelectionState` and
 `FieldSelectionState` of the Draft reads). Every object type that a result holds has an exported name, so a typed
 transport maps each of its types to one engine name (`MixedTableEstimate`, `PlannedChangesBlocked`,
-`StoppedChangesBlocked`, and those of draft-reads-v1 §9); only the variants of a discriminated union written inline
+`StoppedChangesBlocked`, `FieldSchema`, `ObjectOwnSchema`, and those of draft-reads-v1 §9); only the variants of a discriminated union written inline
 (`Unit`, `ReasonSite`, `ReferencedEntity`) and the parts of an intersection have none. As for the other engine features, the package also exports `PartialChangesModule` and
 `PartialChangesApiService`.
 
@@ -891,8 +938,12 @@ type UnitRef = Unit & { side?: SelectorSide; selector: SelectionItems };  // res
 type StructureTableChange = 'created' | 'removed' | 'replaced' | 'transient' | 'changed';
 type StructureFieldChange = 'added' | 'removed' | 'changed' | 'moved' | 'annotated';
 type AnnotationKeyword = 'contentMediaType' | 'default' | 'deprecated' | 'description' | 'readOnly' | 'title';
+type ObjectOwnSchema = Omit<JsonObjectSchema, 'properties' | 'required' | 'additionalProperties'>;
+type FieldSchema = JsonStringSchema | JsonNumberSchema | JsonBooleanSchema | JsonArraySchema | JsonRefSchema
+  | ObjectOwnSchema;                                                    // Json*Schema: schema toolkit types
 type ChangedField = { path: string; change: StructureFieldChange; from?: string;
-  annotations?: AnnotationKeyword[] };                                 // annotated entries only
+  annotations?: AnnotationKeyword[];                                   // annotated entries only
+  before?: FieldSchema; after?: FieldSchema };                          // §5.2 Field schemas
 type StructureChange = { table: StructureTableChange; fields: ChangedField[]; views: boolean };
 type DescribedUnitRef = UnitRef & { structureChange?: StructureChange }; // structure units only
 
@@ -2281,6 +2332,17 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   the leaves of a removed object, the published-at field and a File patched inside; with the structure excluded the
   commit is `blocked` with `requiredExcluded`. A table whose rows would all get a default names one row, the first in
   unit order, at the first such pointer in code-point order.
+- AS-99 A schema change says what changed. Head `products` has `code` (text), `price` (number), `address` (an object
+  of `city` and `street`) and `variants` (an array). In the Draft: `price` becomes text → `{ path: '/price', change:
+  'changed', before: <number>, after: <text> }`; an added `sku` carries only `after`, a removed `price` only `before`;
+  `code` moved to `sku` carries `from` and no schema, and moved and retyped carries `from` and both; a description
+  given to `price` is `annotated` with both schemas; a title given to `address` is `annotated` with its own keywords
+  (`{ type: 'object' }` → `{ type: 'object', title: 'Address' }`); `address` made a text field reads `/address`
+  `added` and `/address/city`, `/address/street` `removed`; a field added to the items of `variants` reads `changed`
+  with both array schemas, items included. A default reset by an update reads `annotated` `['default']` with the old
+  and the new default; a reference given to a text field, or pointed at another table, reads `changed` with each
+  side's `foreignKey`. A replaced table describes each field against the removed Head table; a created or removed
+  table has no field.
 
 ## 14. Test strategy
 
@@ -2429,6 +2491,24 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.11 (2026-11-15)
+
+A schema change says what changed. The API is unreleased, and the change only adds optional fields.
+
+- §5.2, §5.11: `ChangedField` carries `before` and `after`, the field's schema in Head and in the Draft as each side
+  stores it: `added` only `after`, `removed` only `before`, `changed` and `annotated` both, `moved` neither (a moved
+  field whose schema changed is `changed` and carries both). Example: `price` made text reads `{ path: '/price',
+  change: 'changed', before: { type: 'number', default: 0 }, after: { type: 'string', default: '' } }`; before, a
+  client read and compared both table schemas to say so.
+- An entry holds leaf schemas only (an array with its items, a File as its `$ref`); an annotated object holds its own
+  keywords without `properties`, `required` and `additionalProperties`. A node whose kind changed reads leaf by leaf.
+  Created, removed and transient tables keep `fields` empty.
+- "Becomes required" is not a change of a field schema: primitive schemas have no `required`, and the standard tools
+  list every property in an object's `required`; no flag is added.
+- §5.10: the package exports `FieldSchema` and `ObjectOwnSchema`. The fingerprint, the unit identities and the
+  selectors are unchanged.
+- §13: AS-99 is new.
 
 ### Version 2.10 (2026-11-15)
 

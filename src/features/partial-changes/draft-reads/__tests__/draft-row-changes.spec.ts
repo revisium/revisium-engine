@@ -560,7 +560,7 @@ describe('draft row changes', () => {
           {
             table: 'changed',
             fields: [
-              { path: '/color', change: 'added' },
+              { path: '/color', change: 'added', after: str() },
               { path: '/title', change: 'moved', from: '/name' },
             ],
             views: false,
@@ -699,10 +699,10 @@ describe('draft row changes', () => {
           {
             table: 'replaced',
             fields: [
-              { path: '/label', change: 'added' },
-              { path: '/price', change: 'removed' },
-              { path: '/tags', change: 'removed' },
-              { path: '/title', change: 'removed' },
+              { path: '/label', change: 'added', after: str() },
+              { path: '/price', change: 'removed', before: num() },
+              { path: '/tags', change: 'removed', before: arr(str()) },
+              { path: '/title', change: 'removed', before: str() },
             ],
             views: false,
           },

@@ -296,6 +296,8 @@ export type {
 export {
   STRUCTURE_TABLE_CHANGES,
   type ChangedField,
+  type FieldSchema,
+  type ObjectOwnSchema,
   type StructureChange,
   type StructureTableChange,
 } from './features/partial-changes/catalogue/structure-changes';

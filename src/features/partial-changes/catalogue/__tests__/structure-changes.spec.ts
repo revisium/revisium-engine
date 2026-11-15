@@ -1073,7 +1073,9 @@ describe('structure changes', () => {
         { kind: 'structure', tableId: MEDIA },
         { kind: 'field', tableId: MEDIA, rowId: 'm1', path: '/title' },
       ]);
-      expect(unitOfKind(units, 'structure').structureChange).toEqual({
+      expect(
+        withoutFieldSchemas(unitOfKind(units, 'structure')).structureChange,
+      ).toEqual({
         table: 'changed',
         fields: [{ path: '/cover', change: 'changed' }],
         views: false,
@@ -1215,7 +1217,7 @@ describe('structure changes', () => {
 
       const page = await draft.readUnitList();
 
-      expect(page.units).toEqual([listed]);
+      expect(page.units.map(withoutFieldSchemas)).toEqual([listed]);
     });
 
     it('lists the fields of a replaced table against the removed Head table', async () => {
@@ -1280,7 +1282,9 @@ describe('structure changes', () => {
       await draft.renameTable(MEMOS, NOTES);
       await draft.updateRow(NOTES, 'm1', { label: 'edited' });
 
-      const [removed, renamed] = (await draft.readUnitList()).units;
+      const [removed, renamed] = (await draft.readUnitList()).units.map(
+        withoutFieldSchemas,
+      );
 
       expect(removed).toEqual({
         kind: 'structure',
@@ -1324,7 +1328,7 @@ describe('structure changes', () => {
   ): Promise<DescribedUnitRef> {
     const { units } = await draft.readUnitList({ tableId });
 
-    return unitOfKind(units, 'structure');
+    return withoutFieldSchemas(unitOfKind(units, 'structure'));
   }
 
   function givenCommittedProducts(): Promise<ChangesScenario> {
@@ -1417,4 +1421,21 @@ function unitOfKind(
   }
 
   return unit;
+}
+
+// What each field holds is described in structure-change-schemas.spec.ts; here only which fields change, and how.
+function withoutFieldSchemas(unit: DescribedUnitRef): DescribedUnitRef {
+  if (!unit.structureChange) {
+    return unit;
+  }
+
+  return {
+    ...unit,
+    structureChange: {
+      ...unit.structureChange,
+      fields: unit.structureChange.fields.map(
+        ({ before: _before, after: _after, ...field }) => field,
+      ),
+    },
+  };
 }

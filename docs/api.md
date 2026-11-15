@@ -632,6 +632,49 @@ consists of, field by field. A selection is closed over its dependencies: a valu
 the row's creation, a reference needs the row it references, and so on; such units come back as required additions with
 a reason ([SPEC §5.7](specs/partial-changes-v1.spec.md#57-required-reasons)).
 
+#### Structure changes
+
+`structureChange` is `{ table, fields, views }`: `table` says whether the table was `created`, `removed`, `replaced`,
+only `transient`, or `changed`; `views` whether the unit also carries a views edit; `fields` lists the changed fields
+of a `changed` or `replaced` table in code-point order of `path` (empty for the other tables, whose whole schema is the
+unit). Each field entry (`ChangedField`) holds enough to show the change without reading either table schema:
+
+| `change` | Fields besides `path` |
+| --- | --- |
+| `added` | `after`: the Draft schema |
+| `removed` | `before`: the Head schema |
+| `changed` | `before`, `after`; `from` for a field that also moved |
+| `moved` | `from`: the Head path; the schema is unchanged |
+| `annotated` | `annotations`: the differing keywords (`default`, `description`, …); `before`, `after` |
+
+`before` and `after` (`FieldSchema`) are leaf schemas as each side stores them: type, `default`, `foreignKey`, `format`,
+`enum`, `readOnly`, `x-formula` and annotations of a primitive field, an array with its `items`, a File as its `$ref`.
+An object's own annotations read as the object `annotated`, with its own keywords only (`ObjectOwnSchema`, without
+`properties`). A field that became an object, or an object that became a field, reads leaf by leaf: the old leaves
+`removed`, the new ones `added`. Equal `before` and `after` on a `changed` field mean a schema patch rewrote its values
+without a net schema change. A primitive field has no `required` keyword, so no entry says "becomes required".
+
+```json
+{
+  "table": "changed",
+  "fields": [
+    { "path": "/category", "change": "changed",
+      "before": { "type": "string", "default": "" },
+      "after": { "type": "string", "default": "", "foreignKey": "categories" } },
+    { "path": "/code", "change": "annotated", "annotations": ["default"],
+      "before": { "type": "string", "default": "none" }, "after": { "type": "string", "default": "" } },
+    { "path": "/cost", "change": "changed", "from": "/price",
+      "before": { "type": "number", "default": 0 }, "after": { "type": "string", "default": "" } },
+    { "path": "/sku", "change": "added", "after": { "type": "string", "default": "" } },
+    { "path": "/title", "change": "moved", "from": "/name" },
+    { "path": "/weight", "change": "removed", "before": { "type": "number", "default": 0 } }
+  ],
+  "views": false
+}
+```
+
+See [SPEC §5.2](specs/partial-changes-v1.spec.md#52-structure-descriptions-and-unit-order).
+
 ### Input rules
 
 - An optional input given as `null` is treated as absent, at any depth, so a transport that sends `null` for an

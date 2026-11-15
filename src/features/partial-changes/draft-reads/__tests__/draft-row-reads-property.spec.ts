@@ -7,6 +7,7 @@ import {
   type DraftRowChangeKind,
   type DraftRowChangesFilters,
   type DraftRowItem,
+  type DraftRowOrder,
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTableItem } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
@@ -34,6 +35,7 @@ const ALL_ROWS = 5_000;
 const SEARCHED_ROWS = 5;
 const SMALL_PAGE = 2;
 const FIELDS_PER_ROW = 1;
+const RECENT: DraftRowOrder = 'recent';
 
 interface RowChangeView {
   readonly key: string;
@@ -236,13 +238,135 @@ describe('Draft row reads over random Drafts', () => {
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'lists the rows of each table by the stored time of their last change, newest first and removed rows last, on every page size (seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const tables = await readEveryTable(draft);
+
+      for (const tableId of new Set(tables.flatMap(tableIdsShownBy))) {
+        const byId = await readEveryRow(draft, { tableId });
+        const recent = await readEveryRow(draft, { tableId }, RECENT);
+
+        expect([tableId, byId.map(({ changedAt }) => changedAt)]).toEqual([
+          tableId,
+          await storedTimesOf(draft, byId),
+        ]);
+        expect([tableId, recent]).toEqual([
+          tableId,
+          inRecentOrder(byId, tables),
+        ]);
+
+        for (const first of PAGE_SIZES) {
+          expect([
+            tableId,
+            first,
+            rowItemsOf(
+              await draft.readEveryDraftRowPage({
+                first,
+                orderBy: RECENT,
+                filters: { tableId },
+              }),
+            ),
+          ]).toEqual([tableId, first, recent]);
+        }
+      }
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'lists under each row filter and the field limit exactly the matching items of the recent order, on pages of two (seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const tables = await readEveryTable(draft);
+      const all = await readEveryRow(draft);
+
+      for (const tableId of new Set(tables.flatMap(tableIdsShownBy))) {
+        const recent = await readEveryRow(draft, { tableId }, RECENT);
+
+        for (const filters of recentRowFiltersOf(
+          tableId,
+          rowFiltersOf(tables, all),
+        )) {
+          expect([
+            filters,
+            rowItemsOf(
+              await draft.readEveryDraftRowPage({
+                first: SMALL_PAGE,
+                orderBy: RECENT,
+                filters,
+              }),
+            ),
+          ]).toEqual([
+            filters,
+            recent.filter((item) =>
+              matchesRowFilters(item, filters, tables, all),
+            ),
+          ]);
+        }
+
+        expect([
+          tableId,
+          rowItemsOf(
+            await draft.readEveryDraftRowPage({
+              first: SMALL_PAGE,
+              orderBy: RECENT,
+              filters: { tableId },
+              fieldsPerRow: FIELDS_PER_ROW,
+            }),
+          ),
+        ]).toEqual([
+          tableId,
+          recent.map((item) => ({
+            ...item,
+            fields: item.fields.slice(0, FIELDS_PER_ROW),
+          })),
+        ]);
+      }
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
   async function readEveryRow(
     draft: ChangesScenario,
     filters?: DraftRowChangesFilters,
+    orderBy?: DraftRowOrder,
   ): Promise<DraftRowItem[]> {
     return rowItemsOf([
-      await draft.readDraftRowChanges({ first: ALL_ROWS, filters }),
+      await draft.readDraftRowChanges({ first: ALL_ROWS, filters, orderBy }),
     ]);
+  }
+
+  // The time of a row's last change is its Draft version's updatedAt; a replaced row's two items carry the time of its
+  // created row, and a removed row has none.
+  async function storedTimesOf(
+    draft: ChangesScenario,
+    items: readonly DraftRowItem[],
+  ): Promise<(Date | null)[]> {
+    const draftRows = new Map<string, Map<string, Date>>();
+
+    for (const { tableId, changeType, replaced } of items) {
+      if (
+        (changeType !== ChangeType.Removed || replaced) &&
+        !draftRows.has(tableId)
+      ) {
+        const rows = await draft.rows('draft', tableId);
+
+        draftRows.set(
+          tableId,
+          new Map(rows.map(({ id, updatedAt }) => [id, updatedAt])),
+        );
+      }
+    }
+
+    return items.map(({ tableId, rowId, changeType, replaced }) => {
+      if (changeType === ChangeType.Removed && !replaced) {
+        return null;
+      }
+
+      return draftRows.get(tableId)?.get(rowId) ?? null;
+    });
   }
 
   async function readEveryTable(
@@ -281,6 +405,52 @@ function rowFiltersOf(
     { changeTypes: [ChangeType.Modified], search: '1' },
     { tableId: firstTableId, search: firstSearch },
   ];
+}
+
+// The filters of one table: those of the unfiltered read that name it, and each kind and search within it.
+function recentRowFiltersOf(
+  tableId: string,
+  filters: readonly DraftRowChangesFilters[],
+): DraftRowChangesFilters[] {
+  return [
+    ...filters.filter((candidate) => candidate.tableId === tableId),
+    ...filters
+      .filter((candidate) => candidate.tableId === undefined)
+      .map((candidate) => ({ ...candidate, tableId })),
+  ];
+}
+
+// SPEC §7: the rows of a table in the Draft before those of a removed table that shares its id; within a table, rows
+// with a time newest first, then the removed rows; ties by row id, and of two items of one row id the one that exists
+// only in Head first, which the id order already holds.
+function inRecentOrder(
+  byId: readonly DraftRowItem[],
+  tables: readonly DraftTableItem[],
+): DraftRowItem[] {
+  return [...byId].sort(
+    (left, right) =>
+      Number(isOfRemovedTable(left, tables)) -
+        Number(isOfRemovedTable(right, tables)) ||
+      Number(left.changedAt === null) - Number(right.changedAt === null) ||
+      (right.changedAt?.getTime() ?? 0) - (left.changedAt?.getTime() ?? 0) ||
+      compareCodePoints(left.rowId, right.rowId),
+  );
+}
+
+// Two tables show one id only when one of them is removed: the other is created at its id, whose rows are added, or
+// renamed into it, whose rows carry its Head id.
+function isOfRemovedTable(
+  { tableId, previousTableId, changeType }: DraftRowItem,
+  tables: readonly DraftTableItem[],
+): boolean {
+  return (
+    changeType === ChangeType.Removed &&
+    previousTableId === undefined &&
+    tables.some(
+      (table) =>
+        table.tableId === tableId && table.changeType === ChangeType.Removed,
+    )
+  );
 }
 
 function tableIdsShownBy({

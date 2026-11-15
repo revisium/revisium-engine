@@ -1,6 +1,8 @@
 import {
+  decodeRecentRowCursor,
   decodeRowCursor,
   decodeTableCursor,
+  type RecentRowPosition,
   type RowPosition,
   type TablePosition,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
@@ -12,8 +14,10 @@ import { ListingValidationError } from 'src/features/partial-changes/draft-reads
 import type { DraftChangesSummaryInput } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import {
   DRAFT_ROW_CHANGE_KINDS,
+  DRAFT_ROW_ORDERS,
   type DraftRowChangeKind,
   type DraftRowChangesInput,
+  type DraftRowOrder,
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTableChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -38,13 +42,17 @@ export interface DraftTableChangesRequest {
   readonly filters: TableFilters;
 }
 
-export interface DraftRowChangesRequest {
+// A page after a position of its own order: the recent order reads the rows of one table id.
+export type RowPaging =
+  | { readonly orderBy: 'id'; readonly after?: RowPosition }
+  | { readonly orderBy: 'recent'; readonly after?: RecentRowPosition };
+
+export type DraftRowChangesRequest = RowPaging & {
   readonly branch: ChangesBranch;
   readonly first: number;
-  readonly after?: RowPosition;
   readonly filters: RowFilters;
   readonly fieldsPerRow?: number;
-}
+};
 
 export interface DraftChangesSummaryRequest {
   readonly branch: ChangesBranch;
@@ -56,6 +64,7 @@ const MAX_FIELDS_PER_ROW = 1_000;
 const MAX_ROW_IDS = 100;
 const CHANGE_TYPES: ReadonlySet<unknown> = new Set(Object.values(ChangeType));
 const ROW_CHANGE_KINDS: ReadonlySet<unknown> = new Set(DRAFT_ROW_CHANGE_KINDS);
+const ROW_ORDERS: ReadonlySet<unknown> = new Set(DRAFT_ROW_ORDERS);
 const FILTER_NAMES: readonly (keyof RowFilters)[] = [
   'changeTypes',
   'search',
@@ -83,12 +92,15 @@ export function rowChangesRequestOf({
   after,
   filters,
   fieldsPerRow,
+  orderBy,
 }: DraftRowChangesInput): DraftRowChangesRequest {
+  const rowFilters = rowFiltersOf(filters);
+
   return {
     branch,
     first: pageSizeOf(first),
-    after: cursorOf(after, decodeRowCursor),
-    filters: rowFiltersOf(filters),
+    ...rowPagingOf(rowOrderOf(orderBy, rowFilters), after),
+    filters: rowFilters,
     fieldsPerRow: fieldsPerRowOf(fieldsPerRow),
   };
 }
@@ -118,6 +130,37 @@ function pageSizeOf(first: unknown): number {
   }
 
   return first;
+}
+
+// The recent order needs the rows of every table it lists, so it lists the rows of one table id.
+function rowOrderOf(orderBy: unknown, filters: RowFilters): DraftRowOrder {
+  if (orderBy === undefined || orderBy === null) {
+    return 'id';
+  }
+
+  if (!isRowOrder(orderBy)) {
+    throw new ListingValidationError(
+      `orderBy must be one of ${DRAFT_ROW_ORDERS.join(', ')}`,
+    );
+  }
+
+  if (orderBy === 'recent' && filters.tableId === undefined) {
+    throw new ListingValidationError('orderBy recent requires filters.tableId');
+  }
+
+  return orderBy;
+}
+
+function isRowOrder(value: unknown): value is DraftRowOrder {
+  return ROW_ORDERS.has(value);
+}
+
+function rowPagingOf(orderBy: DraftRowOrder, after: unknown): RowPaging {
+  if (orderBy === 'recent') {
+    return { orderBy, after: cursorOf(after, decodeRecentRowCursor) };
+  }
+
+  return { orderBy, after: cursorOf(after, decodeRowCursor) };
 }
 
 function fieldsPerRowOf(fieldsPerRow: unknown): number | undefined {

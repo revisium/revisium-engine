@@ -34,6 +34,7 @@ interface OneSidedRows {
 
 export type TableRows = ComparedRows | OneSidedRows;
 
+// changedAt: the time of the row's last change in the Draft, in UTC to the millisecond; null for a removed row.
 export interface ReportedRowPair {
   readonly identity: string;
   readonly rowId: string;
@@ -42,6 +43,7 @@ export interface ReportedRowPair {
   readonly changeType: ChangeType;
   readonly replaced: boolean;
   readonly yieldsUnit: boolean;
+  readonly changedAt: string | null;
 }
 
 // The pairs of a page with whether a matching row follows them, and the other pairs of their row ids, which a filter
@@ -52,10 +54,16 @@ export interface ReportedRowPairsPage {
   readonly companions: readonly ReportedRowPair[];
 }
 
-// The rows after a row id (or from the first), up to a limit of items, completed with the items of the last row id.
-export interface RowRange {
-  readonly afterRowId?: string;
-  readonly limit: number;
+// The rows after a position of the order (or from the first), up to a limit of items, completed with the items that
+// share the last position: the items of one row id in the id order, a replaced row's two items in the recent order.
+export type RowRange = { readonly limit: number } & (
+  | { readonly orderBy: 'id'; readonly afterRowId?: string }
+  | { readonly orderBy: 'recent'; readonly after?: RecentRowKey }
+);
+
+export interface RecentRowKey {
+  readonly changedAt: string | null;
+  readonly rowId: string;
 }
 
 const ONE_SIDED = raw(`(h."versionId" IS NULL OR d."versionId" IS NULL)`);
@@ -71,9 +79,10 @@ const PAIR_ON_ONE_SIDE = raw(
 );
 
 // The row ids of the replaced rows: a deleted and a created row at one id are the two pairs on one side only there.
-// Only the pairs on one side are grouped, so a table of edited rows pays no sort or window over its pairs.
+// Only the pairs on one side are grouped, so a table of edited rows pays no sort or window over its pairs. The time of
+// a replaced row is that of its created row, the only one of the two with a Draft version.
 const REPLACED_ROW_IDS = sql`replaced_row_ids AS (
-  SELECT "rowId" FROM reported WHERE ${PAIR_ON_ONE_SIDE}
+  SELECT "rowId", max("draftUpdatedAt") AS "changedAt" FROM reported WHERE ${PAIR_ON_ONE_SIDE}
   GROUP BY "rowId" HAVING count(*) = 2
 )`;
 
@@ -97,47 +106,95 @@ const PAIR_JSON = raw(`json_build_object(
   'draftVersionId', p."draftVersionId",
   'changeType', p."changeType",
   'replaced', p."replaced",
-  'yieldsUnit', p."yieldsUnit"
+  'yieldsUnit', p."yieldsUnit",
+  'changedAt', to_char(p."changedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 )`);
 
-// Of two items with one row id, the row that exists only in Head comes first.
+const BY_ROW_ID = raw(`"rowId" COLLATE "C"`);
+
+// Rows with a time newest first, then the removed rows; ties by row id.
+const BY_RECENT_CHANGE = raw(
+  `("changedAt" IS NULL), "changedAt" DESC, "rowId" COLLATE "C"`,
+);
+
+const BY_RECENT_CHANGE_REVERSED = raw(
+  `("changedAt" IS NULL) DESC, "changedAt" ASC, "rowId" COLLATE "C" DESC`,
+);
+
+// Of two items at one position, the row that exists only in Head comes first.
 export function reportedRowPairsPageSql(
   rows: TableRows,
   filters: RowFilters,
-  { afterRowId, limit }: RowRange,
+  range: RowRange,
 ): Sql {
+  const order = orderOf(range);
+
   return sql`
     WITH ${reportedPairsCtes(rows, MATERIALIZED_PAIRS)},
     matching AS NOT MATERIALIZED (
       SELECT * FROM pairs p WHERE ${rowsMatching(filters)}
     ),
     page AS (
-      SELECT * FROM matching WHERE ${rowsAfter(afterRowId)}
-      ORDER BY "rowId" COLLATE "C"
-      FETCH FIRST ${limit} ROWS WITH TIES
+      SELECT * FROM matching WHERE ${order.after}
+      ORDER BY ${order.keys}
+      FETCH FIRST ${range.limit} ROWS WITH TIES
     )
     SELECT
       (
-        SELECT coalesce(json_agg(${PAIR_JSON} ORDER BY p."rowId" COLLATE "C", ${HEAD_ONLY_PAIR_FIRST}), '[]')
+        SELECT coalesce(json_agg(${PAIR_JSON} ORDER BY ${order.keys}, ${HEAD_ONLY_PAIR_FIRST}), '[]')
         FROM page p
       ) AS "pairs",
-      EXISTS (
-        SELECT 1 FROM matching
-        WHERE "rowId" COLLATE "C" > (SELECT max("rowId" COLLATE "C") FROM page)
-      ) AS "hasMore",
-      ${companionsOf(rows, filters)} AS "companions"
+      ${order.followsPage} AS "hasMore",
+      ${companionsOf(rows, filters, range)} AS "companions"
   `;
 }
 
-// The pairs with units at the page's row ids that the filters left out. Only a compared table holds two pairs at one row
-// id, and only a filter on rows can leave one of them out.
+interface PageOrder {
+  readonly keys: Sql;
+  readonly after: Sql;
+  readonly followsPage: Sql;
+}
+
+function orderOf(range: RowRange): PageOrder {
+  if (range.orderBy === 'recent') {
+    return {
+      keys: BY_RECENT_CHANGE,
+      after: recentRowsAfter(range.after),
+      followsPage: sql`EXISTS (
+        WITH last_line AS (
+          SELECT "changedAt" AS "lastChangedAt", "rowId" AS "lastRowId" FROM page
+          ORDER BY ${BY_RECENT_CHANGE_REVERSED} LIMIT 1
+        )
+        SELECT 1 FROM matching, last_line
+        WHERE ${recentAfter(raw('last_line."lastChangedAt"'), raw('last_line."lastRowId"'))}
+      )`,
+    };
+  }
+
+  return {
+    keys: BY_ROW_ID,
+    after: rowsAfter(range.afterRowId),
+    followsPage: sql`EXISTS (
+      SELECT 1 FROM matching
+      WHERE "rowId" COLLATE "C" > (SELECT max("rowId" COLLATE "C") FROM page)
+    )`,
+  };
+}
+
+// The pairs with units at the page's row ids that the page leaves out, which its catalogue needs. Only a compared table
+// holds two pairs at one row id; a filter on rows can leave one of them out, and the recent order places a deleted row
+// after the rename that took over its id.
 function companionsOf(
   rows: TableRows,
   { changeTypes, search, rowIds }: RowFilters,
+  { orderBy }: RowRange,
 ): Sql {
   if (
     rows.kind === 'oneSided' ||
-    (changeTypes === undefined && search === undefined && rowIds === undefined)
+    (orderBy === 'id' &&
+      changeTypes === undefined &&
+      search === undefined &&
+      rowIds === undefined)
   ) {
     return raw(`'[]'::json`);
   }
@@ -230,6 +287,7 @@ function comparedPairsCtes(table: ComparedTable, pairs: Sql = PAIRS): Sql {
              coalesce(d."id", h."id") AS "rowId",
              h."id" AS "headRowId",
              h."versionId" AS "headVersionId", d."versionId" AS "draftVersionId",
+             d."updatedAt" AS "draftUpdatedAt",
              ${changeTypeOf(structure)} AS "changeType",
              (${ONE_SIDED} OR ${rowChangePredicate(structure)}) AS "yieldsUnit"
       FROM ${ROW_VERSIONS_PAIRED_BY_IDENTITY}
@@ -244,8 +302,10 @@ function comparedPairsWithReplacedCtes(table: ComparedTable, pairs: Sql): Sql {
     ${comparedPairsCtes(table, REPORTED)},
     ${REPLACED_ROW_IDS},
     ${pairs} (
-      SELECT r.*, (${PAIR_ON_ONE_SIDE} AND r."rowId" IN (SELECT "rowId" FROM replaced_row_ids)) AS "replaced"
+      SELECT r.*, replaced."rowId" IS NOT NULL AS "replaced",
+             coalesce(replaced."changedAt", r."draftUpdatedAt") AS "changedAt"
       FROM reported r
+      LEFT JOIN replaced_row_ids replaced ON ${PAIR_ON_ONE_SIDE} AND replaced."rowId" = r."rowId"
     )
   `;
 }
@@ -260,6 +320,7 @@ function oneSidedPairsCte(
              ${oneSidedColumns(side)},
              ${oneSidedChangeType(side)} AS "changeType",
              FALSE AS "replaced",
+             ${oneSidedChangedAt(side)} AS "changedAt",
              FALSE AS "yieldsUnit"
       FROM "_RowToTable" link
       JOIN "Row" r ON r."versionId" = link."A"
@@ -278,6 +339,14 @@ function oneSidedColumns(side: RevisionSide): Sql {
   return raw(
     `NULL::text AS "headRowId", NULL::text AS "headVersionId", r."versionId" AS "draftVersionId"`,
   );
+}
+
+function oneSidedChangedAt(side: RevisionSide): Sql {
+  if (side === 'head') {
+    return raw('NULL::timestamp(3)');
+  }
+
+  return raw('r."updatedAt"');
 }
 
 function oneSidedChangeType(side: RevisionSide): Sql {
@@ -338,6 +407,24 @@ function rowsAfter(rowId: string | undefined): Sql {
   }
 
   return sql`"rowId" COLLATE "C" > ${rowId}`;
+}
+
+function recentRowsAfter(key: RecentRowKey | undefined): Sql {
+  if (key === undefined) {
+    return sql`TRUE`;
+  }
+
+  return recentAfter(sql`${key.changedAt}::timestamp(3)`, sql`${key.rowId}`);
+}
+
+// The rows after a position of the recent order: after a row with a time, the older rows and every removed row; after a
+// removed row, the removed rows of greater row ids.
+function recentAfter(changedAt: Sql, rowId: Sql): Sql {
+  return sql`(CASE WHEN ${changedAt} IS NULL
+    THEN "changedAt" IS NULL AND "rowId" COLLATE "C" > ${rowId}
+    ELSE "changedAt" IS NULL OR "changedAt" < ${changedAt}
+      OR ("changedAt" = ${changedAt} AND "rowId" COLLATE "C" > ${rowId})
+  END)`;
 }
 
 function changeTypeOf(structure: TableStructure): Sql {

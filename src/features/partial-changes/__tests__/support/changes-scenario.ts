@@ -137,6 +137,25 @@ export class ChangesScenario extends BranchScenario {
     }
   }
 
+  // Sets the stored time of the last change of Draft rows, which native writers set to the moment of each write.
+  public async stampDraftRowChanges(
+    tableId: string,
+    times: Readonly<Record<string, string>>,
+  ): Promise<void> {
+    for (const [rowId, time] of Object.entries(times)) {
+      const row = await this.row('draft', tableId, rowId);
+
+      if (row.readonly) {
+        throw new Error(`Row ${rowId} of ${tableId} is not owned by the Draft`);
+      }
+
+      await this.kit.prisma.row.update({
+        where: { versionId: row.versionId },
+        data: { updatedAt: new Date(time) },
+      });
+    }
+  }
+
   public async branchFromHead(branchName: string): Promise<ChangesScenario> {
     const branch = await this.kit.module
       .get(BranchApiService)

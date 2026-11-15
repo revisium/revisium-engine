@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import type { Row } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
 import { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
-import { encodeRowCursor } from 'src/features/partial-changes/draft-reads/draft-cursor';
+import {
+  encodeRecentRowCursor,
+  encodeRowCursor,
+} from 'src/features/partial-changes/draft-reads/draft-cursor';
 import {
   type DraftRowEntry,
   draftRowItemOf,
@@ -12,7 +15,10 @@ import { PageRenamesReader } from 'src/features/partial-changes/draft-reads/page
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
 import type { HeadSchemaCheck } from 'src/features/partial-changes/head-schema/head-schema-check';
 import type { DraftEdge } from 'src/features/partial-changes/queries/impl/draft-reads';
-import type { DraftRowItem } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import type {
+  DraftRowItem,
+  DraftRowOrder,
+} from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type {
   ChangedRows,
   RowPair,
@@ -29,6 +35,12 @@ export interface PagedTable {
   readonly table: DraftTable;
   readonly pairs: readonly ReportedRowPair[];
   readonly companions: readonly ReportedRowPair[];
+}
+
+// How a page lists its items: the order its cursors follow, and the field limit of each item.
+export interface RowListing {
+  readonly orderBy: DraftRowOrder;
+  readonly fieldsPerRow?: number;
 }
 
 interface PageRow {
@@ -52,7 +64,7 @@ export class DraftRowItems {
   public async edgesOf(
     page: readonly PagedTable[],
     compared: ComparedSnapshot,
-    fieldsPerRow: number | undefined,
+    { orderBy, fieldsPerRow }: RowListing,
   ): Promise<DraftEdge<DraftRowItem>[]> {
     if (page.length === 0) {
       return [];
@@ -87,10 +99,7 @@ export class DraftRowItems {
     );
 
     return entries.map(({ row, entry }) => ({
-      cursor: encodeRowCursor({
-        table: row.paged.table.position,
-        rowId: row.pair.rowId,
-      }),
+      cursor: cursorOf(row, orderBy),
       node: draftRowItemOf(entry, catalogue, renames, fieldsPerRow),
     }));
   }
@@ -116,6 +125,16 @@ export class DraftRowItems {
       this.rowDiff.analyzeFieldChanges(head?.data ?? null, draft?.data ?? null),
     );
   }
+}
+
+function cursorOf({ paged, pair }: PageRow, orderBy: DraftRowOrder): string {
+  const position = { table: paged.table.position, rowId: pair.rowId };
+
+  if (orderBy === 'recent') {
+    return encodeRecentRowCursor({ ...position, changedAt: pair.changedAt });
+  }
+
+  return encodeRowCursor(position);
 }
 
 function pageRowOf(

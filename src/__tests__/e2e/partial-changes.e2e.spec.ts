@@ -54,6 +54,7 @@ const CHANGES_API_TYPES = [
   'DraftRowChangesFilters',
   'DraftRowChangesInput',
   'DraftRowItem',
+  'DraftRowOrder',
   'DraftRowPage',
   'DraftRowsSummary',
   'DraftTableChangesFilters',
@@ -166,6 +167,7 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
     'RENAMED_AND_MODIFIED',
     'REPLACED',
   ],
+  DRAFT_ROW_ORDERS: ['id', 'recent'],
   FIELD_SELECTION_STATES: ['computed', 'goesWith', 'refused', 'unit'],
   FOLLOW_REASONS: ['referenceRename'],
   GOES_WITH_REASONS: ['rowExistence', 'structureBound', 'tableExistence'],
@@ -333,6 +335,16 @@ const CODE_UNIONS_EQUAL_THEIR_LISTS = {
         Equal<
           NonNullable<engine.DraftRowChangesFilters['changeTypes']>[number],
           engine.DraftRowChangeKind
+        >,
+      ]
+    >(),
+  DRAFT_ROW_ORDERS:
+    unionsEqual<
+      [
+        Equal<engine.DraftRowOrder, ListMember<typeof engine.DRAFT_ROW_ORDERS>>,
+        Equal<
+          NonNullable<engine.DraftRowChangesInput['orderBy']>,
+          engine.DraftRowOrder
         >,
       ]
     >(),

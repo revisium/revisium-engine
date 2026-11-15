@@ -63,7 +63,7 @@ export interface DraftRowEntry {
 type RowIds = Pick<DraftRowItem, 'rowId' | 'previousRowId'>;
 type ItemIds = Pick<DraftRowItem, 'tableId' | 'previousTableId'> & RowIds;
 type ItemHeading = ItemIds &
-  Pick<DraftRowItem, 'changeType' | 'replaced' | 'fieldsTotal'>;
+  Pick<DraftRowItem, 'changeType' | 'replaced' | 'changedAt' | 'fieldsTotal'>;
 
 const COMPUTED = { state: 'computed' } as const;
 
@@ -223,6 +223,7 @@ class DraftRow {
       ...rowIdsOf(this.entry),
       changeType: pair.changeType,
       replaced: pair.replaced,
+      changedAt: timeOf(pair.changedAt),
       fieldsTotal: fieldChanges.length,
     };
   }
@@ -429,6 +430,14 @@ function withoutOwnUnits(
   selection: RefusedSelection | GoesWithSelection,
 ): RowSelection {
   return { ...selection, units: [] };
+}
+
+function timeOf(changedAt: string | null): Date | null {
+  if (changedAt === null) {
+    return null;
+  }
+
+  return new Date(changedAt);
 }
 
 function rowIdsOf({ head, draft }: DraftRowEntry): RowIds {

@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import {
   compareTablePositions,
   type RowPosition,
+  type TablePosition,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
 import type {
   DraftRowChangesRequest,
   RowFilters,
+  RowPaging,
 } from 'src/features/partial-changes/draft-reads/draft-read-request';
 import {
   DraftRowItems,
@@ -40,23 +42,19 @@ export class DraftRowPages {
     private readonly rowItems: DraftRowItems,
   ) {}
 
-  public async readPage({
-    branch,
-    first,
-    after,
-    filters,
-    fieldsPerRow,
-  }: DraftRowChangesRequest): Promise<DraftRowPage> {
+  public async readPage(
+    request: DraftRowChangesRequest,
+  ): Promise<DraftRowPage> {
+    const { branch, first, filters, fieldsPerRow } = request;
     const tables = await this.tablesReader.read(branch);
     const page = await this.readPairs(
-      tablesFrom(tablesWithRowsOf(tables.listed, filters), after),
-      { first, after, filters },
+      tablesFrom(tablesWithRowsOf(tables.listed, filters), request),
+      { first, filters, paging: request },
     );
-    const edges = await this.rowItems.edgesOf(
-      page.tables,
-      tables.compared,
+    const edges = await this.rowItems.edgesOf(page.tables, tables.compared, {
+      orderBy: request.orderBy,
       fieldsPerRow,
-    );
+    });
 
     return {
       ...tables.readState,
@@ -73,18 +71,15 @@ export class DraftRowPages {
     tables: readonly TableWithRows[],
     {
       first,
-      after,
       filters,
-    }: { first: number; after?: RowPosition; filters: RowFilters },
+      paging,
+    }: { first: number; filters: RowFilters; paging: RowPaging },
   ): Promise<PageOfTables> {
     const paged: PagedTable[] = [];
     let listed = 0;
 
     for (const { table, rows } of tables) {
-      const range: RowRange = {
-        afterRowId: rowIdAfterIn(table, after),
-        limit: Math.max(first - listed, 1),
-      };
+      const range = rangeIn(table, paging, Math.max(first - listed, 1));
       const { pairs, hasMore, companions } =
         await this.pairsReader.readPairsPage(rows, filters, range);
 
@@ -165,26 +160,62 @@ function mayListRowsOf(
   return hasChangeTypeAmong(ChangeType.Added, changeTypes);
 }
 
+// The tables of the order from the cursor's table. The recent order lists the rows of one table id: those of a table
+// in the Draft first, then those of the removed table at its id, which has only removed rows.
 function tablesFrom(
   tables: readonly TableWithRows[],
-  after: RowPosition | undefined,
+  { orderBy, after }: RowPaging,
 ): TableWithRows[] {
+  const compare = tableOrderOf(orderBy);
+  const ordered = [...tables].sort((left, right) =>
+    compare(left.table.position, right.table.position),
+  );
+
   if (!after) {
-    return [...tables];
+    return ordered;
   }
 
-  return tables.filter(
-    ({ table }) => compareTablePositions(table.position, after.table) >= 0,
+  return ordered.filter(
+    ({ table }) => compare(table.position, after.table) >= 0,
   );
 }
 
-function rowIdAfterIn(
+function tableOrderOf(
+  orderBy: RowPaging['orderBy'],
+): (left: TablePosition, right: TablePosition) => number {
+  if (orderBy === 'recent') {
+    return (left, right) =>
+      Number(left.headOnly) - Number(right.headOnly) ||
+      compareTablePositions(left, right);
+  }
+
+  return compareTablePositions;
+}
+
+function rangeIn(
+  table: DraftTable,
+  paging: RowPaging,
+  limit: number,
+): RowRange {
+  if (paging.orderBy === 'recent') {
+    return { orderBy: 'recent', limit, after: positionIn(table, paging.after) };
+  }
+
+  return {
+    orderBy: 'id',
+    limit,
+    afterRowId: positionIn(table, paging.after)?.rowId,
+  };
+}
+
+// The cursor's position applies within its own table; the tables after it are read from their first row.
+function positionIn<Position extends RowPosition>(
   { position }: DraftTable,
-  after: RowPosition | undefined,
-): string | undefined {
+  after: Position | undefined,
+): Position | undefined {
   if (!after || compareTablePositions(position, after.table) !== 0) {
     return undefined;
   }
 
-  return after.rowId;
+  return after;
 }

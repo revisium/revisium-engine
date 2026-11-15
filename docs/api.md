@@ -915,6 +915,7 @@ engine.changes.rowChanges({
     search?: string | null;
   } | null;
   fieldsPerRow?: number | null;                      // 0–1,000
+  orderBy?: DraftRowOrder | null;                    // 'id' (default) or 'recent'; 'recent' requires filters.tableId
 }): Promise<DraftRowPage>
 // { edges: DraftEdge<DraftRowItem>[], pageInfo, headRevisionId, draftRevisionId, refusedTables }
 
@@ -926,7 +927,7 @@ engine.changes.summary({
 
 - **Items.** A table item has `tableId`, `previousTableId` (renamed), `changeType`, `replaced`, `rowsSummary`,
   `schemaMigrations`, `viewsChanges` and `selection`. A row item has `tableId`, `previousTableId`, `rowId`,
-  `previousRowId` (renamed), `changeType`, `replaced`, `fields` (`path` as a JSON Pointer, `changeType`, `oldValue`,
+  `previousRowId` (renamed), `changeType`, `replaced`, `changedAt`, `fields` (`path` as a JSON Pointer, `changeType`, `oldValue`,
   `newValue`, `selection`), `fieldsTotal`, `columns` (`publishedAt`, `meta`, `schemaHash`), `selection`, and
   `idTakeover` / `idExchange` when a rename took over another row's id. `changeType` takes the native `ChangeType`
   values.
@@ -939,6 +940,15 @@ engine.changes.summary({
   returns every item that shows the id (a deleted row and the rename that took over its id, both items of a replaced
   row, the rows of both tables of a replaced table id), so take your item by `previousTableId`, `previousRowId` and
   `changeType`. The limit saves payload, not work: the page still computes the whole diff of each row.
+- **Recently changed.** `changedAt` is the time of the row's last change in the Draft: the `updatedAt` of its Draft
+  row version, which every native write of the row sets (create, update, patch, file upload, rename, a reference
+  rewritten by a rename, a partial commit or revert that merges the row). Both items of a replaced row carry the
+  created row's time; a removed row has `null`. A structure change rewrites every row of its table, so all of them
+  then carry its time. With `orderBy: 'recent'` and `filters.tableId`, `rowChanges` lists the table's rows newest
+  first, removed rows last, ties by row id; a replaced row's two items stay adjacent and on one page, while the
+  deleted row of an id takeover is listed among the removed rows (both items keep `idTakeover`); every filter and
+  `fieldsPerRow` apply. Without `tableId` the recent order is refused (400): ordering across tables would read every
+  table. Tables keep their id order.
 - **Selection of an item.** A table is `selectable` (its `structure`, `views` and `tableData` selectors) or
   `refused` (with the refusal `code`). A row is `selectable` (`row` selects all its `units`), `goesWith` a unit that
   carries it (`reason`: `tableExistence`, `structureBound`, `rowExistence`) or `refused`. A field or column is `unit`,
@@ -956,7 +966,7 @@ engine.changes.summary({
   ([SPEC](specs/draft-reads-v1.spec.md) §3).
 - **Paging.** Keyset pages: pass `pageInfo.endCursor` as `after` while `pageInfo.hasNextPage`. Each page reads its own
   snapshot. The two items of one row id are never split, so a row page can hold a few more items than `first`. A read
-  refuses a cursor of the other read as malformed (400).
+  refuses a cursor of the other read, or of the other row order, as malformed (400).
 - **Totals.** `tableChanges` returns `totalCount` of the tables matching its filters. `rowChanges` returns no
   `totalCount`: it reads only the tables it needs for the page. Row totals come from `summary` (`rowsSummary` by
   kind, `rowsWithUnits`) or from a table item (`rowsSummary`, `tableData.rows`). `rowsSummary` counts lines: a replaced

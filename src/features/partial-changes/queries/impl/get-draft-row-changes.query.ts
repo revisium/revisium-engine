@@ -32,12 +32,18 @@ export interface DraftRowChangesFilters {
   readonly search?: string | null;
 }
 
+// The orders of the row read: by row id, or by the time of each row's last change in the Draft, newest first.
+export const DRAFT_ROW_ORDERS = ['id', 'recent'] as const;
+
+export type DraftRowOrder = (typeof DRAFT_ROW_ORDERS)[number];
+
 export interface DraftRowChangesInput {
   readonly branch: ChangesBranch;
   readonly first: number;
   readonly after?: string | null;
   readonly filters?: DraftRowChangesFilters | null;
   readonly fieldsPerRow?: number | null;
+  readonly orderBy?: DraftRowOrder | null;
 }
 
 export interface SelectableRowSelection {
@@ -103,6 +109,7 @@ export interface DraftRowItem {
   readonly previousRowId?: string;
   readonly changeType: ChangeType;
   readonly replaced: boolean;
+  readonly changedAt: Date | null;
   readonly fields: readonly DraftFieldChange[];
   readonly fieldsTotal: number;
   readonly columns: readonly DraftColumnChange[];

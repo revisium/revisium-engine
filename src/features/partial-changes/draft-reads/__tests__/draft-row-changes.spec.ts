@@ -143,6 +143,7 @@ describe('draft row changes', () => {
           },
         ],
         fieldsTotal: 1,
+        changedAt: expect.any(Date),
         columns: [],
         selection: {
           state: 'selectable',
@@ -685,6 +686,7 @@ describe('draft row changes', () => {
           },
         ],
         fieldsTotal: 1,
+        changedAt: expect.any(Date),
         columns: [],
         selection: { ...goesWithCreatedTable, units: [] },
       });
@@ -801,6 +803,7 @@ describe('draft row changes', () => {
         replaced: false,
         fields: [],
         fieldsTotal: 0,
+        changedAt: expect.any(Date),
         columns: [],
         selection: {
           state: 'selectable',

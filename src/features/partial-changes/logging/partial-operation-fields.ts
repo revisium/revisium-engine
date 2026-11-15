@@ -6,7 +6,11 @@ import type {
   TrackedOperation,
 } from 'src/infrastructure/database/operation-log';
 
-export type DraftRead = 'tableChanges' | 'rowChanges' | 'summary';
+export type DraftRead =
+  | 'tableChanges'
+  | 'rowChanges'
+  | 'summary'
+  | 'fieldValue';
 
 type PartialOperation = 'preview' | ChangeOperation | DraftRead;
 

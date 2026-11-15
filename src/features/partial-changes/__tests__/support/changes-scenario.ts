@@ -8,6 +8,7 @@ import type { ChangeOperation } from 'src/features/partial-changes/plan/change-o
 import type { Fingerprint } from 'src/features/partial-changes/plan/fingerprint';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { DraftChangesSummary } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
+import type { DraftFieldValue } from 'src/features/partial-changes/queries/impl/get-draft-field-value.query';
 import type { DraftRowPage } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTablePage } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
@@ -40,10 +41,12 @@ import {
   type DraftSummaryOptions,
   type DraftTableOptions,
   type DraftTablePaging,
+  type DraftValueOptions,
   linkSetsOf,
   type NativeComparison,
   type NativeTableFilters,
   readDraftChangesSummary,
+  readDraftFieldValue,
   readDraftRowChanges,
   readDraftTableChanges,
   readEveryDraftRowPage,
@@ -242,6 +245,12 @@ export class ChangesScenario extends BranchScenario {
     options: DraftSummaryOptions = {},
   ): Promise<DraftChangesSummary> {
     return readDraftChangesSummary(this.kit, this.branch, options);
+  }
+
+  public readDraftFieldValue(
+    options: DraftValueOptions,
+  ): Promise<DraftFieldValue> {
+    return readDraftFieldValue(this.kit, this.branch, options);
   }
 
   public async readNativeTableChanges(

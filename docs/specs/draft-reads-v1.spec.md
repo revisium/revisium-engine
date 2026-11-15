@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.12 |
+| Version | 1.13 |
 | Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -13,7 +13,8 @@
 | Evidence | Engine branch `poc/draft-diff` (`ddb22c6`), document `docs/specs/draft-diff.poc.md` there; core and admin `poc/partial-changes` |
 
 This specification defines the three reads that show a branch's Draft against its Head together with how each change
-is selected: `changes.tableChanges`, `changes.rowChanges` and `changes.summary`. A client shows the Draft in lists of
+is selected: `changes.tableChanges`, `changes.rowChanges` and `changes.summary`, and `changes.fieldValue`, which reads
+one value of a row on one side whole (§5.8). A client shows the Draft in lists of
 tables and rows, lets the user select changes, and passes the selectors it got to `changes.preview`,
 `changes.commit` and `changes.revert` unchanged. The engine derives every annotation from the change catalogue of
 partial-changes-v1, so no client re-implements unit ownership.
@@ -30,8 +31,9 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 | Operation | Input | Output |
 | --- | --- | --- |
 | `changes.tableChanges` | `branch`; `first` (integer 1–5,000); `after` (cursor, optional); `filters: { changeTypes?, search? }` (optional) | `DraftTablePage` (§9): table items, `pageInfo`, `totalCount`, ids, `refusedTables` |
-| `changes.rowChanges` | `branch`; `first` (integer 1–5,000); `after` (optional); `filters: { tableId?, rowIds?, changeTypes?, search? }` (optional); `fieldsPerRow` (integer 0–1,000, optional); `orderBy` (`'id'`, the default, or `'recent'`, which requires `filters.tableId`; optional, §7) | `DraftRowPage` (§9): row items, `pageInfo`, ids, `refusedTables`; no `totalCount` |
+| `changes.rowChanges` | `branch`; `first` (integer 1–5,000); `after` (optional); `filters: { tableId?, rowIds?, changeTypes?, search? }` (optional); `fieldsPerRow` (integer 0–1,000, optional); `orderBy` (`'id'`, the default, or `'recent'`, which requires `filters.tableId`; optional, §7); `maxValueBytes` (integer 2–1,048,576, optional, §5.2) | `DraftRowPage` (§9): row items, `pageInfo`, ids, `refusedTables`; no `totalCount` |
 | `changes.summary` | `branch`; `filters: { changeTypes?, search? }` (optional, those of `tableChanges`) | `DraftChangesSummary` (§9) |
+| `changes.fieldValue` | `branch`; `tableId`, `rowId` (non-empty strings); `path` (JSON Pointer); `side` (`'head'` or `'draft'`); `offset` (integer 0 or more, optional), `limit` (integer 1–1,048,576, optional) (§5.8) | `DraftFieldValue` (§9): the value, its size, the range of a string, ids, `refusedTables` |
 
 - An optional input given as `null` is treated as absent, at any depth, as in partial-changes-v1 §5.
 - `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of another operation (a table cursor passed
@@ -39,7 +41,10 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
   of a wrong type, a `search` or a row id holding the NUL character (no id holds it), `fieldsPerRow` outside 0–1,000
   or not an integer, `rowIds` without `tableId` or with more than 100 ids, `REPLACED` among the `changeTypes` of
   `tableChanges` or `summary`, an `orderBy` other than `id` and `recent`, `recent` without `filters.tableId`, or a
-  row cursor of the other order → validation error (a `BadRequestException`) before the snapshot.
+  row cursor of the other order, a `maxValueBytes` outside 2–1,048,576 or not an integer, or in `fieldValue` a `tableId`
+  or `rowId` that is not a non-empty string or holds the NUL character, a `path` that is not a JSON Pointer, a `side`
+  other than `head` and `draft`, an `offset` below 0 or not an integer, or a `limit` outside 1–1,048,576 or not an
+  integer → validation error (a `BadRequestException`) before the snapshot.
 - An unknown project or branch → the native lookup error, a `BadRequestException` (partial-changes-v1 §5.9).
 - `changeTypes` takes the native `ChangeType` values (`ADDED`, `REMOVED`, `MODIFIED`, `RENAMED`,
   `RENAMED_AND_MODIFIED`); the `changeTypes` of `rowChanges` also take `REPLACED`, the kind of a replaced row (§5.6).
@@ -54,6 +59,8 @@ Each call runs in one read-only Repeatable Read transaction under `PARTIAL_CHANG
 2. the reported row pairs of the tables the call needs (§3);
 3. the row versions of the page, their formula values and field diffs, the rows looked up for id exchanges and
    followed renames (§5).
+
+`changes.fieldValue` reads phase 1, then the one row version it addresses and its formula values (§5.8).
 
 A Draft edit that commits while a call runs changes nothing it returns. Every result returns the `headRevisionId` and
 `draftRevisionId` it read and every refused table (`refusedTables`, partial-changes-v1 §6.10). Pages are not one
@@ -175,7 +182,8 @@ A listed table that is not refused always has one of them (§3).
 A row item (`DraftRowItem`, §9) is addressed by `tableId` (Draft id, else the Head id of a removed table),
 `previousTableId` (Head id of a renamed table, on every row of it), `rowId` (Draft id, else the Head id of a removed
 row) and `previousRowId` (Head id of a renamed row). It carries `changeType` (§3), `replaced` (§5.6), `changedAt`
-(§5.7), `fields` and `fieldsTotal` (§5.2), `columns`, `selection`, and `idTakeover` / `idExchange` where they apply.
+(§5.7), `fields`, `fieldsTotal` and `arrays` (§5.2), `columns`, `selection`, and `idTakeover` / `idExchange` where they
+apply.
 
 ### 5.1 Row selection
 
@@ -206,7 +214,10 @@ formula values of the page's rows are computed), in native order, each as one en
 | --- | --- |
 | `path` | JSON Pointer of the changed value: a field, an array element (`/tags/1`), or the root `''`. |
 | `changeType` | `FIELD_ADDED`, `FIELD_REMOVED` or `FIELD_MODIFIED`: the values of the native `RowChangeDetailType` that the value diff produces. |
-| `oldValue`, `newValue` | The Head and the Draft value, as the native read computes them: the formula computation of the page's rows also gives a stored `null` of a typed field that type's value. A side without the value has `null`: `oldValue` of `FIELD_ADDED`, `newValue` of `FIELD_REMOVED`. |
+| `oldValue`, `newValue` | The Head and the Draft value, as the native read computes them: the formula computation of the page's rows also gives a stored `null` of a typed field that type's value. A side without the value has `null`: `oldValue` of `FIELD_ADDED`, `newValue` of `FIELD_REMOVED`. Under `maxValueBytes` a side can be cut (below). |
+| `oldValueBytes`, `newValueBytes` | Only with `maxValueBytes`: the size of the whole Head and Draft value, the number of bytes of its compact JSON text in UTF-8 (`JSON.stringify`); `null` for a side without the value. |
+| `oldValueToken`, `newValueToken` | Only with `maxValueBytes`: an opaque token of each whole side's content, the one `changes.fieldValue` returns for that value (§5.8); `null` for a side without the value. |
+| `oldValueCut`, `newValueCut` | Only on a side that `maxValueBytes` cut: `prefix` or `omitted` (below). |
 | `selection` | The result of the field selector at `path` (partial-changes-v1 §4.3), resolved by the selection normalisation itself (below). |
 | `follows` | The rename whose cascade rewrote this reference (§5.5). |
 
@@ -222,6 +233,11 @@ formula values of the page's rows are computed), in native order, each as one en
   `structureChange` reports the move (partial-changes-v1 §5.2).
 - An array element reads at its own pointer, and its selection is the unit of the whole array (§3.2 of
   partial-changes-v1: arrays are atomic).
+- The change type tells which side holds the value: `FIELD_ADDED` none in Head, `FIELD_REMOVED` none in the Draft,
+  `FIELD_MODIFIED` both. A missing key reads as `FIELD_ADDED` or `FIELD_REMOVED` with `null` on its side; a stored
+  `null` of a typed field reads as that type's value after the formula computation (`""` for a string), as in the native
+  read, so a client cannot tell a stored `null` from that value. With `maxValueBytes`, the size of a side without the
+  value is `null` and of a stored value never is.
 
 | Selector result | `selection` |
 | --- | --- |
@@ -235,8 +251,9 @@ it computes travel with the structure unit.
 
 **Field limit.** With `fieldsPerRow: n`, `fields` lists the first `n` entries of the row in the order above, and
 `fieldsTotal` is the number of all of them; without it `fields` lists all and `fieldsTotal` equals their number. The
-limit cuts `fields` only: `selection` (its `row` selector selects every unit of the row, the cut ones too), `columns`,
-`idTakeover`, `idExchange` and the `follows` of the listed entries are those of the unlimited read. A client reads the
+limit cuts `fields`, and `arrays` to those of the listed entries: `selection` (its `row` selector selects every unit of
+the row, the cut ones too), `columns`, `idTakeover`, `idExchange` and the `follows` of the listed entries are those of
+the unlimited read. A client reads the
 rest of an item's field changes by `filters: { tableId, rowIds: [rowId] }` without the limit (§7). That read returns
 every item that shows the id, which can be more than the one item: a deleted row and the rename that took over its id
 (`REMOVED`, and `RENAMED` or `RENAMED_AND_MODIFIED` with `previousRowId`), the two items of a replaced row (`REMOVED`
@@ -244,6 +261,31 @@ and `ADDED`, both `replaced`), and with a `tableId` that two tables show (a repl
 the renamed table that took over its id) the rows of both (the renamed table's carry `previousTableId`). The client
 takes the item it expanded by `(previousTableId, previousRowId, changeType)`, which tells these apart within one
 `tableId` and `rowId`. No per-row cursor is needed: a row's field changes are computed whole on every read (§8).
+
+**Value limit.** With `maxValueBytes: n`, every listed field change carries `oldValueBytes` and `newValueBytes`, and a
+side whose size exceeds `n` is cut:
+
+- a string to its longest prefix whose JSON text has at most `n` bytes, with `…Cut: 'prefix'`; the prefix ends on a
+  character boundary, so it never splits a UTF-8 sequence or a surrogate pair, and an escaped character counts as its
+  escape (`\"` two bytes, `\u0001` six);
+- any other value (an object, an array, a number, a boolean, and the root entry of a created or removed row) to `null`,
+  with `…Cut: 'omitted'`: a part of it is no JSON value. `null` with the mark is never the value itself.
+
+A side within the limit is returned whole, without a mark. A client reads the whole value, or the rest of a string
+from the prefix's length on, with `changes.fieldValue` (§5.8). The limit changes nothing else: `path`, `changeType`,
+`selection`, `follows`, `arrays`, `columns` and the row's selection are those of the read without it, and `columns`
+are not cut. Without it the field changes carry no size and no mark.
+
+**Arrays.** `arrays` describes each array at the pointer of a listed field change or around it, so a client folds the
+unchanged elements between the listed changes and counts them without reading the array: `{ path, oldLength,
+newLength }`, the number of elements on each side, `null` on a side whose value there is not an array (an array that a
+structure change added or removed, or a value that became an array). It lists each path once, in the order of the
+field changes and, for one change, from the outermost array in, so the arrays of an element inside an array follow the
+outer array: `/groups/0/tags/1` gives `/groups` and `/groups/0/tags`. It describes no array inside a value that a field
+change shows whole (an added element, the root entry of a created or removed row), and none of a field change that
+`fieldsPerRow` cuts. The lengths are those of the computed data the field changes come from. The native diff compares
+elements by index (`/tags/1` is the second element on each side), and the reads do not match elements by an id or a
+key.
 
 `columns` lists, for a row on both sides, each differing column among `publishedAt`, `meta` and `schemaHash`
 (`DraftColumnChange`: `column`, `oldValue`, `newValue`, `selection`). Each gets the unit that owns it in the catalogue
@@ -327,6 +369,58 @@ and it happened before the creation at its id); a removed row carries `null`, as
 A structure change that rewrites every row of a table gives each of them its time, so after it the rows of that
 table read as changed at that moment, the rows it did not change included when they are reported for an earlier edit;
 the stored time cannot tell the two writes apart. Only a stored time per kind of write could (out of scope).
+
+### 5.8 One value
+
+`changes.fieldValue` reads the value at `path` (a JSON Pointer; `''` for the whole row data; an object member by its
+key, an array element by its index without leading zeros, nothing else, so `/tags/length` or `/tags/01` has no value)
+of one row on one side,
+whole: what `oldValue` (`side: 'head'`) or `newValue` (`side: 'draft'`) of a field change holds before `maxValueBytes`
+cuts it, with the formula values computed as the row read computes them. It returns `DraftFieldValue` (§9):
+
+| Field | Meaning |
+| --- | --- |
+| `headRevisionId`, `draftRevisionId`, `refusedTables` | As every read. A refused table's values are read like any other: the refusal concerns selection. |
+| `value` | The value; for a string, the part that `offset` and `limit` select. `null` when the side has no value there: no table or row with the ids on that side, or no value at `path`. |
+| `valueBytes` | The size of the whole value as in §5.2; `null` exactly when the side has no value there. |
+| `valueToken` | An opaque token of the whole value's content: the same for every range of one value and for equal values, another one when the value differs; `null` exactly when the side has no value there. |
+| `text` | Only for a string: `{ offset, totalLength }`, where the returned part starts and the length of the whole string, both in UTF-16 code units (the `length` of a JavaScript string). |
+
+**Ids.** `tableId` and `rowId` name the table and the row on the side read: the Head id for `head`, the Draft id for
+`draft`. Only when no table of that side holds `tableId` does it name the table that holds it on the other side (a
+renamed table, read by its other id), and only when no row of the table holds `rowId` on that side does it name the row
+that holds it on the other side (a renamed row). So the ids of a row item read both sides: `tableId` and `rowId` for the
+Draft side, `previousTableId ?? tableId` and `previousRowId ?? rowId` for the Head side, in every case:
+
+| Item | `head` | `draft` |
+| --- | --- | --- |
+| a row on both sides with one id | its Head version | its Draft version |
+| a renamed row (`rowId` b, `previousRowId` a) | by `a`, or by `b` while no Head row holds `b` | by `b`, or by `a` while no Draft row holds `a` |
+| a created row | no value | its Draft version |
+| a removed row | its Head version | no value |
+| a replaced row (two items, one id) | the deleted row | the created row |
+| an id takeover (a deleted row `a`, a rename `b` → `a`) | by `a` the deleted row, by `b` the rename | by `a` the rename |
+| a renamed table, a replaced table id, a removed table and the table renamed into its id | as the rows, by the table id of that side | as the rows |
+
+**Text range.** For a string, `offset` (default 0) and `limit` (default the rest) select code units `[offset, offset +
+limit)` on character boundaries: an `offset` between the two halves of a surrogate pair starts at the pair, an end that
+would split a pair ends before it, and a part that would then be empty holds the whole pair. An `offset` past the end
+returns `''` at `offset: totalLength`. A client reads the rest of a cut prefix from `offset` equal to the prefix's
+`length`, and the next part from `text.offset` plus the returned part's `length`. A value that is not a string is
+returned whole under a range, without `text`.
+
+The read never reads the table's changes: it reads the compared snapshot (phase 1 of §2), finds the table there, then
+the row version by its id through the row links of that one table version (and, for a renamed row, the row of the
+same identity on the other side), and computes the formula values of that one row.
+
+**Continuation.** A Draft row edit keeps `headRevisionId` and `draftRevisionId`, so they do not tell a client that the
+value it continues changed: a client that read `abc` of `abcdef` and continues after the row became `UVWXYZ` would get
+`XYZ` under the same ids. It compares the tokens instead: the `…ValueToken` of the cut side, or the `valueToken` of its
+first range, with the `valueToken` of each next range; when they differ it restarts from `offset: 0`. The token is the
+SHA-256 (base64url) of the value's compact JSON text, the text the size counts, after the formula computation: it
+changes with every write that changes the returned value (an edit of the field, of a formula's input, a File the
+plugin fills differently), and with nothing else, so edits of other rows or of other fields of the row keep it. The
+engine keeps no state for it.
 
 ## 6. Summary
 
@@ -453,6 +547,16 @@ anti-join of the table's two link sets (a created or removed table reads the row
   deleted rows with 20,000 created again at their ids and 10,000 created: the row counts as before; a row page about
   60 ms over a page without the mark (the page's pairs are kept once more), where a window over all pairs cost 120–300
   ms.
+- `maxValueBytes` adds one compact JSON serialisation of each listed side (to count its bytes and hash it with
+  SHA-256 for its token) and, for a cut string,
+  a binary search over its character boundaries that serialises prefixes of at most the limit's size; it reads nothing
+  more. `arrays` looks up the pointers along each listed field change in the page's computed data. Both work on the
+  listed entries only, after `fieldsPerRow`.
+- `fieldValue` costs the compared snapshot that every read pays and one or two indexed statements by row id over one
+  table version's row links, then the formula computation of one row; no anti-join, no row counts, no native diff.
+- Measured on a table of 20,000 rows with 60 edited rows, 30 of them holding a 50 KB string on each side, a page of 50
+  by `tableId`, median of 5 runs: 96 ms and 3.8 MB without the limit, 106 ms and 1.6 MB with `maxValueBytes: 20480`;
+  `fieldValue` of 10,000 characters from the middle of such a string 8 ms.
 - The recent order adds no scan: the row query takes the time from the Draft row versions the anti-join already
   reads, a replaced row's time from the aggregate that marks it, and sorts the table's matching pairs by time and row
   id instead of by row id (a top-N sort either way, as no index serves either order), and it always looks up the
@@ -479,7 +583,11 @@ type DraftTableChangesInput = { branch: ChangesBranch; first: number; after?: st
 type DraftRowOrder = 'id' | 'recent';
 type DraftRowChangesInput = { branch: ChangesBranch; first: number; after?: string | null;
   filters?: DraftRowChangesFilters | null; fieldsPerRow?: number | null;   // fieldsPerRow: 0–1,000
-  orderBy?: DraftRowOrder | null };                                          // 'id' when absent; 'recent' needs tableId
+  orderBy?: DraftRowOrder | null;                                            // 'id' when absent; 'recent' needs tableId
+  maxValueBytes?: number | null };                                           // 2–1,048,576
+type DraftValueSide = 'head' | 'draft';
+type DraftFieldValueInput = { branch: ChangesBranch; tableId: string; rowId: string; path: string;
+  side: DraftValueSide; offset?: number | null; limit?: number | null };   // limit: 1–1,048,576
 type DraftChangesSummaryInput = { branch: ChangesBranch; filters?: DraftTableChangesFilters | null };
 
 type DraftReadState = { headRevisionId: string; draftRevisionId: string; refusedTables: RefusedTable[] };
@@ -514,6 +622,7 @@ type DraftRowItem = {
   changedAt: Date | null;                     // last change in the Draft (§5.7); null for a removed row
   fields: DraftFieldChange[];                 // native field changes, in native order, at most fieldsPerRow
   fieldsTotal: number;                        // the number of all field changes of the row
+  arrays: DraftArrayLengths[];                // the arrays at and around the listed field changes (§5.2)
   columns: DraftColumnChange[];               // publishedAt, meta, schemaHash of a row on both sides
   selection: RowSelection;
   idTakeover?: IdTakeover;
@@ -522,11 +631,26 @@ type DraftRowItem = {
 type DraftFieldChange = {
   path: string;                     // JSON Pointer; '' for the whole value of a created or removed row
   changeType: DraftFieldChangeType;
-  oldValue: unknown;                // null when Head has no value
-  newValue: unknown;                // null when the Draft has no value
+  oldValue: unknown;                // null when Head has no value, or when omitted by maxValueBytes
+  newValue: unknown;                // null when the Draft has no value, or when omitted by maxValueBytes
+  oldValueBytes?: number | null;    // with maxValueBytes: bytes of the whole value's JSON text; null without a value
+  newValueBytes?: number | null;
+  oldValueToken?: string | null;    // with maxValueBytes: the token fieldValue returns for the value; null without one
+  newValueToken?: string | null;
+  oldValueCut?: DraftValueCut;      // only on a cut side
+  newValueCut?: DraftValueCut;
   selection: FieldSelection;
   follows?: FollowedUnit;
 };
+type DraftValueCut = 'prefix' | 'omitted';
+type DraftArrayLengths = { path: string; oldLength: number | null; newLength: number | null };
+type DraftFieldValue = DraftReadState & {
+  value: unknown;                   // null when the side has no value at path
+  valueBytes: number | null;        // null exactly when the side has no value at path
+  valueToken: string | null;        // opaque; equal for every range of one value, null exactly without a value
+  text?: DraftTextRange;            // only for a string
+};
+type DraftTextRange = { offset: number; totalLength: number };   // UTF-16 code units
 type DraftFieldChangeType = 'FIELD_ADDED' | 'FIELD_REMOVED' | 'FIELD_MODIFIED';  // native RowChangeDetailType values
 type DraftColumnChange = { column: RowColumn; oldValue: unknown; newValue: unknown; selection: FieldSelection };
 
@@ -570,9 +694,10 @@ built of (`MigrationType`, `JsonPatchOp`, `JsonPatchOperation`, `HistoryPatch`, 
 holds the values of the native `RowChangeDetailType` that the row value diff produces, and the package exports that
 enum too. Every code union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `DRAFT_FIELD_CHANGE_TYPES`,
-`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`, `DRAFT_ROW_CHANGE_KINDS`, `DRAFT_ROW_ORDERS`. Every
-type of this section is exported under its name, `DraftEdge`, `TableData`, `SelectableRowSelection`,
-`DraftTablesSummary`, `DraftRowsSummary`, `DraftRowChangeKind` and `DraftRowOrder` included.
+`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`, `DRAFT_ROW_CHANGE_KINDS`, `DRAFT_ROW_ORDERS`,
+`DRAFT_VALUE_CUTS`, `DRAFT_VALUE_SIDES`. Every type of this section is exported under its name, `DraftEdge`,
+`TableData`, `SelectableRowSelection`, `DraftTablesSummary`, `DraftRowsSummary`, `DraftRowChangeKind`, `DraftRowOrder`,
+`DraftArrayLengths` and `DraftTextRange` included.
 
 ## 10. Acceptance scenarios
 
@@ -709,7 +834,56 @@ Summary:
   without changes, a Draft with a change with an effect beside one without, a Draft with only a table created and
   removed inside it, and a Draft whose only difference is an empty shared-schemas or migration table that Head lacks.
 
+Values and arrays:
+
+- DR-30 Value limit: over random Drafts, on pages of 1, 2 and 7, the read with `maxValueBytes` equals the read without
+  it with each side cut by an independent oracle (`null` size on a side without the value, a string to its longest
+  prefix of whole characters within the limit, any other value omitted), and nothing else changes. Scenarios: sizes
+  of both sides within the limit; a long string cut to a prefix on one side; strings of two- and three-byte characters
+  and emoji cut on a character boundary; escaped characters counted by their escapes; an object element and the root
+  entries of a created and a removed row omitted with their sizes; no size or mark without the limit.
+- DR-31 Arrays: a grown and a shrunk array give their lengths; an array of objects with a changed nested field gives
+  the array; nested arrays give every array around the change, outer first, and none inside an added element; an
+  array that a structure change added or removed gives `null` on the side without it; a created row and a row without
+  arrays give none; `fieldsPerRow` keeps only the arrays of the listed entries.
+- DR-32 Value read: over random Drafts, each side of sampled field changes, read by the ids of its item on that side,
+  equals its whole `oldValue` or `newValue` and its size. Scenarios: a path of an edited row, the root and an array
+  whole; a created and a removed row on each side; a missing path, an unknown row or table (no value); a formula value
+  as the row read computes it; a refused table's value with its refusal; a renamed row and a renamed table by either
+  id; the two sides of a replaced row, of an id takeover by each id, of a replaced table id, and of a removed table and
+  the table renamed into its id; string ranges, their surrogate-pair boundaries and an offset past the end; a range on
+  an array returned whole; `/tags/length`, `/tags/00` and `/tags/-` have no value.
+- DR-33 Value read validation and cost: each malformed input of §1 → validation error before the snapshot; `null`
+  `offset` and `limit` are absent; an unknown branch is the native lookup error; one read-only Repeatable Read
+  snapshot; every statement that names the table's versions also names the row id, and no row pair query, row count
+  or native diff runs.
+- DR-34 A missing key reads as `FIELD_REMOVED` with a `null` size, and a stored `null` of a string as `FIELD_MODIFIED`
+  to `""` with a size of 2.
+- DR-35 Value tokens: one token for every range of an unchanged value; another after an edit of the value, under the
+  same revision ids; the same after edits of other rows and other fields of the row; `null` without a value; the
+  tokens of both sides of the row read under `maxValueBytes` equal those of the value read, also over random Drafts.
+
 ## Changelog
+
+### Version 1.13 (2026-11-15)
+
+- §1, §5.2, §9: `rowChanges` takes `maxValueBytes` (2–1,048,576). Each listed field change then carries
+  `oldValueBytes` and `newValueBytes`, the size of each whole side's compact JSON text (`null` for a side without the
+  value), and a side over the limit is cut: a string to its longest prefix within the limit on a character boundary
+  (`…Cut: 'prefix'`), any other value to `null` (`…Cut: 'omitted'`, `DraftValueCut`, `DRAFT_VALUE_CUTS`). Without it
+  nothing changes.
+- §5, §5.2, §9: every row item carries `arrays` (`DraftArrayLengths`): the arrays at and around its listed field
+  changes with their lengths on each side, so a client folds unchanged elements by index without reading the array.
+  `fieldsPerRow` keeps the arrays of the listed entries only.
+- §5.2: which side holds a value is stated: the change type tells a missing key apart; a stored `null` of a typed field
+  reads as that type's value, as in the native read.
+- §1, §2, §5.8, §9: `changes.fieldValue` (`DraftFieldValueInput`, `DraftFieldValue`, `DraftTextRange`,
+  `DraftValueSide`, `DRAFT_VALUE_SIDES`) reads one value of one row on one side whole, by the ids of that side (a
+  renamed table or row also by its other id), with a character range of a string. Its path follows JSON only (object
+  keys, canonical array indexes). `valueToken`, and `oldValueToken` / `newValueToken` of the row read under
+  `maxValueBytes`, let a client tell that a value it continues changed; the revision ids cannot.
+- §8: costs of the value limit, the arrays and the value read.
+- §10: DR-30 to DR-35 added.
 
 ### Version 1.12 (2026-11-15)
 

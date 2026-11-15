@@ -16,6 +16,7 @@ import type {
   RenamedRow,
 } from 'src/features/partial-changes/draft-reads/page-renames';
 import { tableIdsOf } from 'src/features/partial-changes/draft-reads/table-ids';
+import { cutValueOf } from 'src/features/partial-changes/draft-reads/json-values';
 import { pointerOfNativeFieldPath } from 'src/features/partial-changes/draft-reads/native-field-path';
 import type { ReportedRowPair } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
 import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
@@ -26,10 +27,12 @@ import type {
   RefusedSelection,
 } from 'src/features/partial-changes/queries/impl/draft-reads';
 import type {
+  DraftArrayLengths,
   DraftColumnChange,
   DraftFieldChange,
   DraftFieldChangeType,
   DraftRowItem,
+  DraftValueCut,
   FollowedUnit,
   IdExchange,
   IdTakeover,
@@ -45,11 +48,17 @@ import {
   publicTableIdOf,
   type TablePair,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
+import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import {
   type FieldChange,
   RowChangeDetailType,
 } from 'src/features/revision-changes/types';
+
+// The Head and the Draft data of a row after the formula values of the page's rows are computed; null for no version.
+export interface ComputedData {
+  readonly head: unknown;
+  readonly draft: unknown;
+}
 
 // A reported row of a page: its pair, its stored versions and the native field changes of its computed values.
 export interface DraftRowEntry {
@@ -58,23 +67,53 @@ export interface DraftRowEntry {
   readonly head?: Row;
   readonly draft?: Row;
   readonly fieldChanges: readonly FieldChange[];
+  readonly computed: ComputedData;
+}
+
+// The field limit and the value limit of an item.
+export interface FieldListing {
+  readonly fieldsPerRow?: number;
+  readonly maxValueBytes?: number;
+}
+
+interface FieldValues {
+  oldValue: unknown;
+  newValue: unknown;
+  oldValueBytes?: number | null;
+  newValueBytes?: number | null;
+  oldValueToken?: string | null;
+  newValueToken?: string | null;
+  oldValueCut?: DraftValueCut;
+  newValueCut?: DraftValueCut;
+}
+
+interface SideValue {
+  readonly value: unknown;
+  readonly bytes: number | null;
+  readonly token: string | null;
+  readonly cut?: DraftValueCut;
 }
 
 type RowIds = Pick<DraftRowItem, 'rowId' | 'previousRowId'>;
 type ItemIds = Pick<DraftRowItem, 'tableId' | 'previousTableId'> & RowIds;
 type ItemHeading = ItemIds &
-  Pick<DraftRowItem, 'changeType' | 'replaced' | 'changedAt' | 'fieldsTotal'>;
+  Pick<
+    DraftRowItem,
+    'changeType' | 'replaced' | 'changedAt' | 'fieldsTotal' | 'arrays'
+  >;
 
 const COMPUTED = { state: 'computed' } as const;
+const NO_VALUE: SideValue = { value: null, bytes: null, token: null };
 
-// With a field limit, the item lists the first field changes of the row only, and fieldsTotal counts all of them.
+// With a field limit, the item lists the first field changes of the row only, and fieldsTotal counts all of them; with
+// a value limit, each side of a listed change says its size and is cut over the limit.
 export function draftRowItemOf(
   entry: DraftRowEntry,
   catalogue: DraftCatalogue,
   renames: PageRenames,
-  fieldsPerRow: number | undefined,
+  listing: FieldListing,
 ): DraftRowItem {
-  return new DraftRow(entry, catalogue, renames, fieldsPerRow).item();
+  return new DraftRow(entry, catalogue, renames, listing).item();
 }
 
 class DraftRow {
@@ -84,7 +123,7 @@ class DraftRow {
     private readonly entry: DraftRowEntry,
     private readonly catalogue: DraftCatalogue,
     private readonly renames: PageRenames,
-    private readonly fieldsPerRow: number | undefined,
+    private readonly listing: FieldListing,
   ) {
     this.row = addressedRowOf(entry);
   }
@@ -225,7 +264,31 @@ class DraftRow {
       replaced: pair.replaced,
       changedAt: timeOf(pair.changedAt),
       fieldsTotal: fieldChanges.length,
+      arrays: this.arrays(),
     };
+  }
+
+  // The arrays at and around the listed field changes, each once, outer first: a client folds the unchanged elements
+  // of an array between its listed changes without reading it.
+  private arrays(): DraftArrayLengths[] {
+    const { head, draft } = this.entry.computed;
+    const arrays = new Map<string, DraftArrayLengths>();
+
+    for (const { fieldPath } of this.listedFieldChanges()) {
+      for (const pointer of pointersAlong(
+        pointerOfNativeFieldPath(fieldPath),
+      )) {
+        const path = pointer.toString();
+        const oldLength = arrayLengthOf(pointer.valueIn(head));
+        const newLength = arrayLengthOf(pointer.valueIn(draft));
+
+        if (!arrays.has(path) && (oldLength !== null || newLength !== null)) {
+          arrays.set(path, { path, oldLength, newLength });
+        }
+      }
+    }
+
+    return [...arrays.values()];
   }
 
   private selection(): RowSelection {
@@ -268,11 +331,11 @@ class DraftRow {
     return this.listedFieldChanges().map(
       ({ fieldPath, changeType, oldValue, newValue }) => {
         const pointer = pointerOfNativeFieldPath(fieldPath);
+        const fieldChangeType = draftFieldChangeTypeOf(changeType);
         const change: DraftFieldChange = {
           path: pointer.toString(),
-          changeType: draftFieldChangeTypeOf(changeType),
-          oldValue: oldValue ?? null,
-          newValue: newValue ?? null,
+          changeType: fieldChangeType,
+          ...this.valuesOf(fieldChangeType, oldValue ?? null, newValue ?? null),
           selection: selectionAt(pointer),
         };
         const follows = this.followedRenameAt(pointer);
@@ -288,12 +351,39 @@ class DraftRow {
 
   private listedFieldChanges(): readonly FieldChange[] {
     const { fieldChanges } = this.entry;
+    const { fieldsPerRow } = this.listing;
 
-    if (this.fieldsPerRow === undefined) {
+    if (fieldsPerRow === undefined) {
       return fieldChanges;
     }
 
-    return fieldChanges.slice(0, this.fieldsPerRow);
+    return fieldChanges.slice(0, fieldsPerRow);
+  }
+
+  // A side without the value is the Head side of an added value and the Draft side of a removed one.
+  private valuesOf(
+    changeType: DraftFieldChangeType,
+    oldValue: unknown,
+    newValue: unknown,
+  ): FieldValues {
+    const { maxValueBytes } = this.listing;
+
+    if (maxValueBytes === undefined) {
+      return { oldValue, newValue };
+    }
+
+    return limitedValuesOf(
+      sideWithin(
+        oldValue,
+        changeType !== RowChangeDetailType.FieldAdded,
+        maxValueBytes,
+      ),
+      sideWithin(
+        newValue,
+        changeType !== RowChangeDetailType.FieldRemoved,
+        maxValueBytes,
+      ),
+    );
   }
 
   private fieldSelectionAt(pointer: JsonPointer): FieldSelection {
@@ -424,6 +514,60 @@ class DraftRow {
   private address(): string {
     return `${publicTableIdOf(this.entry.table)}/${this.row.rowId}`;
   }
+}
+
+function sideWithin(
+  value: unknown,
+  present: boolean,
+  maxValueBytes: number,
+): SideValue {
+  if (!present) {
+    return NO_VALUE;
+  }
+
+  return cutValueOf(value, maxValueBytes);
+}
+
+function limitedValuesOf(old: SideValue, next: SideValue): FieldValues {
+  const values: FieldValues = {
+    oldValue: old.value,
+    newValue: next.value,
+    oldValueBytes: old.bytes,
+    newValueBytes: next.bytes,
+    oldValueToken: old.token,
+    newValueToken: next.token,
+  };
+
+  if (old.cut) {
+    values.oldValueCut = old.cut;
+  }
+
+  if (next.cut) {
+    values.newValueCut = next.cut;
+  }
+
+  return values;
+}
+
+// The pointers from the first segment down to the pointer itself.
+function pointersAlong(pointer: JsonPointer): JsonPointer[] {
+  const pointers: JsonPointer[] = [];
+  let current = JsonPointer.root;
+
+  for (const segment of pointer.segments) {
+    current = current.child(segment);
+    pointers.push(current);
+  }
+
+  return pointers;
+}
+
+function arrayLengthOf(value: unknown): number | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  return value.length;
 }
 
 function withoutOwnUnits(

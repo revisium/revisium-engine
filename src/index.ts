@@ -418,6 +418,8 @@ export {
   DRAFT_FIELD_CHANGE_TYPES,
   DRAFT_ROW_CHANGE_KINDS,
   DRAFT_ROW_ORDERS,
+  DRAFT_VALUE_CUTS,
+  type DraftArrayLengths,
   type DraftColumnChange,
   type DraftFieldChange,
   type DraftFieldChangeType,
@@ -427,12 +429,20 @@ export {
   type DraftRowItem,
   type DraftRowOrder,
   type DraftRowPage,
+  type DraftValueCut,
   type FollowedUnit,
   type IdExchange,
   type IdTakeover,
   type RowSelection,
   type SelectableRowSelection,
 } from './features/partial-changes/queries/impl/get-draft-row-changes.query';
+export {
+  DRAFT_VALUE_SIDES,
+  type DraftFieldValue,
+  type DraftFieldValueInput,
+  type DraftTextRange,
+  type DraftValueSide,
+} from './features/partial-changes/queries/impl/get-draft-field-value.query';
 export type {
   ChangedSharedSchema,
   DraftChangesSummary,

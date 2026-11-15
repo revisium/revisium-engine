@@ -888,7 +888,7 @@ describe('EngineApiService.changes (AS-92)', () => {
       stale.status === 'stale' &&
         stale.places.map(
           ({ changedAt }) =>
-            changedAt !== null && changedAt > preview.plannedAt,
+            changedAt !== null && changedAt >= preview.plannedAt,
         ),
     ).toEqual([true]);
   });

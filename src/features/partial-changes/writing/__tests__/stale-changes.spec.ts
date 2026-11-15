@@ -319,7 +319,7 @@ function editedAfter(
   return result.places.flatMap((place) =>
     place.kind === 'row' &&
     place.changedAt !== null &&
-    place.changedAt > plannedAt
+    place.changedAt >= plannedAt
       ? [`${place.tableId}/${place.rowId}`]
       : [],
   );

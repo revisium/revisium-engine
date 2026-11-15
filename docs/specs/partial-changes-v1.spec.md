@@ -452,7 +452,7 @@ as this engine instance read them at startup, which the estimate is compared aga
 `maxMixedTableLinks`. A preview returns them next to its estimate, planned or stopped (§5.3), so a client warns before
 a limit is reached (for example when `changedRows` passes 80% of `maxChangedRows`) and explains a `tooLarge` blocker
 with the limit it exceeded. They are configuration, not part of the plan: the fingerprint does not cover them. Before
-v2.13 a client could not see them; the `tooLarge` message alone named the limit.
+v2.14 a client could not see them; the `tooLarge` message alone named the limit.
 
 **PlanCounts** `{ selected: integer; required: integer }`: selected units after exclusions, and required additions
 (disjoint from them). Their sum is the number of units the operation applies with `includeRequired`. Results do not
@@ -2579,8 +2579,9 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   `p2x`, `p3`, `p4` counts `c9` as a selected added row and `p1` as a required modified row, partly applied. The
   commit or revert with `includeRequired` and the preview's fingerprint returns the preview's `applied` counts,
   `rowCounts` and `coverage`. A row that differs only in `schemaHash` is in `coverage.rows` and in no row count, and its
-  `schemaHash` unit leaves a row whose edited value is applied wholly applied; a `meta` edit counts as modified. The
-  structure of a created table counts no row. Over random Drafts, the commit preview of the table data of each table
+  `schemaHash` unit leaves a row whose edited value is applied wholly applied; a `meta` edit counts as modified. A
+  revert of `c9` and the `rowColumns` unit of `p1`, whose other difference is its `schemaHash`, requires `p1/category`
+  and counts `p1` as a selected modified row. The structure of a created table counts no row. Over random Drafts, the commit preview of the table data of each table
   counts `selected.total` equal to the table's `tableData.rows`, `added`, `removed`, `replaced` and `renamed` equal to
   its `rowsSummary`, `modified` equal to the rows whose row read lists a `field` or shown `rowColumns` unit and at most
   `rowsSummary.modified`, with no required and no partly applied row.
@@ -2588,8 +2589,8 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   instance's configured `maxChangedRows`, `maxPerRowWork` and `maxMixedTableLinks` (the defaults when nothing is
   configured).
 - AS-103 Where the Draft changed (§9.2). After a preview of `p1/title` and `p2/title`, `p1` is edited again: the commit,
-  and the revert, with the preview's fingerprint is `stale` (`content`) and lists `p1` first, with a `changedAt` later
-  than the preview's `plannedAt`, then `p2` with its stored time, earlier; `placesTotal: 2`. A deleted row comes last
+  and the revert, with the preview's fingerprint is `stale` (`content`) and lists `p1` first, with a `changedAt` not
+  earlier than the preview's `plannedAt`, then `p2` with its stored time, earlier; `placesTotal: 2`. A deleted row comes last
   with `changedAt: null`, a selected structure is a `table` place with `units: ['structure']`, and a renamed and edited
   row lists `['field', 'rowRename']`. With `maxListedDetails` = 2 a stale operation over six places lists two, the
   edited row first, with `placesTotal: 6`. The e2e facade test reads «lamp» as the place edited after the preview.

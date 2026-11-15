@@ -1,5 +1,6 @@
 import { DanglingRowReferences } from 'src/features/partial-changes/closure/dangling-row-references';
 import { LedgerDependencyChecks } from 'src/features/partial-changes/closure/ledger-dependency-checks';
+import { RowsBoundToStructure } from 'src/features/partial-changes/closure/rows-bound-to-structure';
 import { RowIdCollisions } from 'src/features/partial-changes/closure/row-id-collisions';
 import { TableIdCollisions } from 'src/features/partial-changes/closure/table-id-collisions';
 import { TableReferences } from 'src/features/partial-changes/closure/table-references';
@@ -13,6 +14,7 @@ export const TARGET_CHECKS_IN_SPEC_ORDER = [
   TableReferences,
   WholesaleRowReferences,
   LedgerDependencyChecks,
+  RowsBoundToStructure,
   RowIdCollisions,
   DanglingRowReferences,
   UnchangedReferrersOfLostIds,

@@ -495,7 +495,6 @@ describe('previewChanges', () => {
               rowId: 'p2',
               selector: selection,
             },
-            defaulted: [],
             omitted: [{ path: '/color' }],
             structure: {
               kind: 'structure',

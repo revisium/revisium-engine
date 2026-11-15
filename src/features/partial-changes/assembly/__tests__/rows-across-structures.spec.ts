@@ -1,19 +1,12 @@
 import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import {
-  arr,
-  num,
-  numFormula,
-  obj,
-  ref,
-  str,
-} from '@revisium/schema-toolkit/mocks';
+import { num, numFormula, obj, ref, str } from '@revisium/schema-toolkit/mocks';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
-import type { JsonPatch, JsonSchema } from '@revisium/schema-toolkit/types';
+import type { JsonPatch } from '@revisium/schema-toolkit/types';
 import type { InputJsonValue } from 'src/engine-prisma-types';
 import {
   addField,
@@ -25,11 +18,7 @@ import {
   completeAsyncMigrationInPlace,
   recordLedgerRepair,
 } from 'src/__tests__/fixtures/head-schema-damage';
-import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
-import { SystemTables } from 'src/features/share/system-tables.consts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
-import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
-import type { TargetView } from '../../__tests__/support/target-assembling';
 import { expectEveryDifferenceOwnedOnce } from '../../__tests__/support/column-ownership';
 
 const PRODUCTS = 'products';
@@ -89,108 +78,125 @@ describe('TargetAssembler: rows moving between structures', () => {
     expect(target.deferred).toEqual([
       {
         unit: { kind: 'rowCreate', tableId: PRODUCTS, rowId: 'p3' },
-        defaulted: [],
         omitted: [{ path: '/color' }],
         structure: { kind: 'structure', tableId: PRODUCTS },
       },
     ]);
+    expect(target.structureBoundRows).toEqual([]);
   });
 
   it.each<{
     change: string;
     patches: JsonPatch[];
     created: InputJsonValue;
-    defaulted: { path: string; value: unknown }[];
-    omitted: { path: string }[];
+    path: string;
   }>([
     {
       change: 'a removed field',
       patches: [removeField('price')],
       created: { title: 'three' },
-      defaulted: [{ path: '/price', value: 0 }],
-      omitted: [],
+      path: '/price',
     },
     {
       change: 'a renamed field',
       patches: [moveField('title', 'name')],
       created: { price: 30, name: 'three' },
-      defaulted: [{ path: '/title', value: '' }],
-      omitted: [{ path: '/name' }],
+      path: '/title',
     },
     {
       change: 'a field changed in place',
       patches: [replaceField('price', str())],
       created: { title: 'three', price: 'expensive' },
-      defaulted: [{ path: '/price', value: 0 }],
-      omitted: [],
+      path: '/price',
     },
   ])(
-    'defers $change of a created row committed without its structure',
-    async ({ patches, created, defaulted, omitted }) => {
+    'binds a created row to its structure when the Head structure would give $change a default, and defers nothing',
+    async ({ patches, created, path }) => {
       const draft = await givenProductsWithCreatedRowAfter(patches, created);
 
       const target = await draft.assembleTarget('commit', {
         rows: [product('p3')],
       });
 
-      expect(target.deferred).toEqual([
+      expect(target.structureBoundRows).toEqual([
         {
           unit: { kind: 'rowCreate', tableId: PRODUCTS, rowId: 'p3' },
-          defaulted,
-          omitted,
+          path,
           structure: { kind: 'structure', tableId: PRODUCTS },
         },
       ]);
-      expectDefaultedAsWritten(target, PRODUCTS);
+      expect(target.deferred).toEqual([]);
     },
   );
 
-  it('defers the declared Head default of a field the Draft removed, as the value the commit writes', async () => {
-    const draft = await givenProductsWithCreatedRowAfter(
-      [removeField('price')],
-      { title: 'three' },
-      obj({ title: str(), price: num({ default: 7 }) }),
-    );
-
-    const target = await draft.assembleTarget('commit', {
-      rows: [product('p3')],
-    });
-
-    expect(target.deferred).toEqual([
-      expect.objectContaining({
-        defaulted: [{ path: '/price', value: 7 }],
-        omitted: [],
-      }),
-    ]);
-    expectDefaultedAsWritten(target, PRODUCTS);
-  });
-
-  it('defers the default a native schema update left in the Head schema, as the value the commit writes', async () => {
+  it('binds a created row to its structure at the first leaf of an object the Draft removed', async () => {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: {
-        schema: obj({ title: str(), price: num({ default: 7 }) }),
-        rows: { p1: { title: 'one', price: 10 } },
+        schema: obj({
+          title: str(),
+          address: obj({ zip: str(), city: str({ default: 'Oslo' }) }),
+        }),
+        rows: { p1: { title: 'one', address: { zip: '1', city: 'Bergen' } } },
       },
     });
-    await draft.updateTable(PRODUCTS, [addField('color', str())]);
-    await draft.commit();
-    // A native schema update stores SchemaTable.getSchema(), which resets every default to its type default
-    // (backlog: schema-toolkit default reset).
-    expect(await priceDefaultIn(draft, 'head')).toBe(0);
-    await draft.updateTable(PRODUCTS, [removeField('price')]);
-    await draft.createRows(PRODUCTS, { p3: { title: 'three', color: 'red' } });
+    await draft.updateTable(PRODUCTS, [removeField('address')]);
+    await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
 
     const target = await draft.assembleTarget('commit', {
       rows: [product('p3')],
     });
 
-    expect(target.deferred).toEqual([
-      expect.objectContaining({
-        defaulted: [{ path: '/price', value: 0 }],
-        omitted: [],
-      }),
+    expect(target.structureBoundRows).toEqual([
+      expect.objectContaining({ path: '/address/city' }),
     ]);
-    expectDefaultedAsWritten(target, PRODUCTS);
+  });
+
+  it('binds a created row to its structure at the published-at field the Draft removed', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: obj({
+          title: str(),
+          releasedAt: ref(SystemSchemaIds.RowPublishedAt),
+        }),
+        rows: { p1: { title: 'one', releasedAt: '' } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [removeField('releasedAt')]);
+    await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p3')],
+    });
+
+    expect(target.structureBoundRows).toEqual([
+      expect.objectContaining({ path: '/releasedAt' }),
+    ]);
+  });
+
+  it('names one row of a table for its structure, the first in unit order, at the first defaulted path in code-point order', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: obj({ title: str(), z: num(), aa: num() }),
+        rows: { p1: { title: 'one', z: 3, aa: 4 } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [removeField('z'), removeField('aa')]);
+    await draft.createRows(PRODUCTS, {
+      p4: { title: 'four' },
+      p3: { title: 'three' },
+    });
+
+    const target = await draft.assembleTarget('commit', {
+      rows: [product('p4'), product('p3')],
+    });
+
+    expect(target.structureBoundRows).toEqual([
+      {
+        unit: { kind: 'rowCreate', tableId: PRODUCTS, rowId: 'p3' },
+        path: '/aa',
+        structure: { kind: 'structure', tableId: PRODUCTS },
+      },
+    ]);
   });
 
   it('omits a field the Head schema computes and the Draft made an input field', async () => {
@@ -212,11 +218,11 @@ describe('TargetAssembler: rows moving between structures', () => {
     expect(target.deferred).toEqual([
       {
         unit: { kind: 'rowCreate', tableId: ORDERS, rowId: 'o3' },
-        defaulted: [],
         omitted: [{ path: '/total' }],
         structure: { kind: 'structure', tableId: ORDERS },
       },
     ]);
+    expect(target.structureBoundRows).toEqual([]);
     expect(target.tableOf(ORDERS)?.newRows).toEqual([
       expect.objectContaining({
         id: 'o3',
@@ -225,76 +231,14 @@ describe('TargetAssembler: rows moving between structures', () => {
     ]);
   });
 
-  it('defers the leaves of an object the Draft removed, never the object', async () => {
+  it("lists each row's omitted paths in code-point order", async () => {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: {
-        schema: obj({
-          title: str(),
-          address: obj({ zip: str(), city: str({ default: 'Oslo' }) }),
-        }),
-        rows: { p1: { title: 'one', address: { zip: '1', city: 'Bergen' } } },
-      },
-    });
-    await draft.updateTable(PRODUCTS, [removeField('address')]);
-    await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
-
-    const target = await draft.assembleTarget('commit', {
-      rows: [product('p3')],
-    });
-
-    expect(target.deferred).toEqual([
-      expect.objectContaining({
-        defaulted: [
-          { path: '/address/city', value: 'Oslo' },
-          { path: '/address/zip', value: '' },
-        ],
-        omitted: [],
-      }),
-    ]);
-    expectDefaultedAsWritten(target, PRODUCTS);
-  });
-
-  it('defers an array the Draft removed as one value that is detached from the written row', async () => {
-    const draft = await ChangesScenario.committed(kit, {
-      [PRODUCTS]: {
-        schema: obj({ title: str(), tags: arr(str()) }),
-        rows: { p1: { title: 'one', tags: ['a'] } },
-      },
-    });
-    await draft.updateTable(PRODUCTS, [removeField('tags')]);
-    await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
-
-    const target = await draft.assembleTarget('commit', {
-      rows: [product('p3')],
-    });
-    const tags = target.deferred[0]?.defaulted[0];
-    (tags?.value as string[]).push('changed by a caller');
-
-    expect(target.deferred).toEqual([
-      expect.objectContaining({
-        defaulted: [{ path: '/tags', value: ['changed by a caller'] }],
-        omitted: [],
-      }),
-    ]);
-    expect(target.tableOf(PRODUCTS)?.newRows).toEqual([
-      expect.objectContaining({ id: 'p3', data: { title: 'three', tags: [] } }),
-    ]);
-  });
-
-  it("lists each row's deferred paths in code-point order, defaulted and omitted alike", async () => {
-    const draft = await ChangesScenario.committed(kit, {
-      [PRODUCTS]: {
-        schema: obj({
-          title: str(),
-          z: num({ default: 1 }),
-          aa: num({ default: 2 }),
-        }),
-        rows: { p1: { title: 'one', z: 3, aa: 4 } },
+        schema: obj({ title: str() }),
+        rows: { p1: { title: 'one' } },
       },
     });
     await draft.updateTable(PRODUCTS, [
-      removeField('z'),
-      removeField('aa'),
       addField('zz', str()),
       addField('ab', str()),
     ]);
@@ -315,54 +259,13 @@ describe('TargetAssembler: rows moving between structures', () => {
     ).toEqual(
       ['p3', 'p4'].map((rowId) => ({
         unit: { kind: 'rowCreate', tableId: PRODUCTS, rowId },
-        defaulted: [
-          { path: '/aa', value: 2 },
-          { path: '/z', value: 1 },
-        ],
         omitted: [{ path: '/ab' }, { path: '/zz' }],
         structure: { kind: 'structure', tableId: PRODUCTS },
       })),
     );
-    expectDefaultedAsWritten(target, PRODUCTS);
   });
 
-  it('defers the published-at field the Draft removed with the publishedAt column the commit writes', async () => {
-    const draft = await ChangesScenario.committed(kit, {
-      [PRODUCTS]: {
-        schema: obj({
-          title: str(),
-          releasedAt: ref(SystemSchemaIds.RowPublishedAt),
-        }),
-        rows: { p1: { title: 'one', releasedAt: '' } },
-      },
-    });
-    await draft.updateTable(PRODUCTS, [removeField('releasedAt')]);
-    await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
-
-    const target = await draft.assembleTarget('commit', {
-      rows: [product('p3')],
-    });
-    const written = target
-      .tableOf(PRODUCTS)
-      ?.newRows.find(({ id }) => id === 'p3');
-
-    const draftRow = await draft.row('draft', PRODUCTS, 'p3');
-
-    expect(written?.data).toEqual({ title: 'three', releasedAt: '' });
-    expect(target.deferred).toEqual([
-      expect.objectContaining({
-        defaulted: [
-          {
-            path: '/releasedAt',
-            value: draftRow.publishedAt.toISOString(),
-          },
-        ],
-        omitted: [],
-      }),
-    ]);
-  });
-
-  it('defers the created half of a replaced row committed without its structure', async () => {
+  it('binds the created half of a replaced row committed without its structure to the structure', async () => {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: {
         schema: productSchema,
@@ -377,15 +280,14 @@ describe('TargetAssembler: rows moving between structures', () => {
       rows: [product('p1')],
     });
 
-    expect(target.deferred).toEqual([
+    expect(target.structureBoundRows).toEqual([
       {
         unit: { kind: 'rowReplace', tableId: PRODUCTS, rowId: 'p1' },
-        defaulted: [{ path: '/price', value: 0 }],
-        omitted: [],
+        path: '/price',
         structure: { kind: 'structure', tableId: PRODUCTS },
       },
     ]);
-    expectDefaultedAsWritten(target, PRODUCTS);
+    expect(target.deferred).toEqual([]);
   });
 
   it('defers nothing in a revert, which restores a Head row into the Draft structure', async () => {
@@ -409,6 +311,7 @@ describe('TargetAssembler: rows moving between structures', () => {
       expect.objectContaining({ id: 'p2', data: { title: 'two' } }),
     ]);
     expect(target.deferred).toEqual([]);
+    expect(target.structureBoundRows).toEqual([]);
   });
 
   it('defers no computed field of a created row committed without its structure', async () => {
@@ -623,41 +526,13 @@ describe('TargetAssembler: rows moving between structures', () => {
     return draft;
   }
 
-  // Each deferred row's values against its own written row.
-  function expectDefaultedAsWritten(target: TargetView, tableId: string): void {
-    const newRows = target.tableOf(tableId)?.newRows ?? [];
-
-    expect(target.deferred.some(({ defaulted }) => defaulted.length > 0)).toBe(
-      true,
-    );
-    for (const { unit, defaulted } of target.deferred) {
-      const written = newRows.find(({ id }) => id === unit.rowId);
-
-      expect(written).toBeDefined();
-      for (const { path, value } of defaulted) {
-        expect(JsonPointer.parse(path).valueIn(written?.data)).toEqual(value);
-      }
-    }
-  }
-
-  async function priceDefaultIn(
-    draft: ChangesScenario,
-    side: RevisionSide,
-  ): Promise<unknown> {
-    const { data } = await draft.row(side, SystemTables.Schema, PRODUCTS);
-
-    return (data as { properties: { price: { default?: unknown } } }).properties
-      .price.default;
-  }
-
   async function givenProductsWithCreatedRowAfter(
     patches: JsonPatch[],
     created: InputJsonValue,
-    schema: JsonSchema = productSchema,
   ): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [PRODUCTS]: {
-        schema,
+        schema: productSchema,
         rows: { p1: { title: 'one', price: 10 } },
       },
     });

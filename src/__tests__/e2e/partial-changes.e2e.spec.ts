@@ -42,7 +42,6 @@ const CHANGES_API_TYPES = [
   'ContentEqualSelection',
   'DeferredPath',
   'DeferredRow',
-  'DeferredValue',
   'DescribedUnitRef',
   'DraftChangesSummary',
   'DraftChangesSummaryInput',

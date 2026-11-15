@@ -2170,9 +2170,11 @@ The scenarios that speak of every unit of the Draft read them from the change ca
 
 - AS-80 Selection vocabulary: `structures` with `{ tableId, side? }` objects and `rowRenames` select as `tables` and
   `renames` did; a bare string in `structures`, and the fields `tables` or `renames`, are validation errors; every
-  selector a result returns (required, deferred, blockers, causes, Draft read items) is `SelectionItems` with no
-  `all` or `exclude`, and adding it to `exclude` excludes exactly that unit. Units have exactly the fields of their
-  kind; a shared schema unit has `sharedSchemaId` and no `tableId`.
+  selector a result returns (unit references in required, deferred, blockers and causes, and the selectors of Draft
+  read items) is `SelectionItems` with no `all` or `exclude`. Adding the selector of a unit reference to `exclude`
+  excludes exactly that unit; adding the selector of a Draft read item excludes exactly what it selects (a row
+  selector every unit of its row, `tableData` the row and field units of its table, draft-reads-v1 §4, §5.1). Units
+  have exactly the fields of their kind; a shared schema unit has `sharedSchemaId` and no `tableId`.
 - AS-81 Code lists and exports: every code union of §5.11 and draft-reads-v1 §9 equals its runtime list
   (`SELECTOR_SIDES`, `STRUCTURE_TABLE_CHANGES`, `STRUCTURE_FIELD_CHANGES`, `REASON_SITE_KINDS`, `STALE_CHANGES`, …); the
   package exports the names of §5.10 and no partial-changes type named `TableChange`, `FieldChange`, `Blocker`,
@@ -2420,7 +2422,9 @@ new major version.
 - §8.2, §11: the operation timeout and the `READ ONLY` transaction of §8.2 are named for the preview and the Draft
   reads.
 - §13: AS-17, AS-47d, AS-49, AS-60 – AS-62, AS-65, AS-75, AS-76, AS-80 and AS-85 – AS-88 name the catalogue, the
-  preview or the Draft reads instead of the listing, and AS-92 the six operations; AS-66 is withdrawn. The tests read
+  preview or the Draft reads instead of the listing, and AS-92 the six operations; AS-66 is withdrawn. AS-80 also
+  states that the selector of a Draft read item excludes exactly what it selects, not one unit (a wording error of
+  the first v2.8 draft). The tests read
   every unit of a Draft from the change catalogue through an internal test path.
 
 ### Version 2.7 (2026-11-11)

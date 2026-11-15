@@ -1,9 +1,30 @@
 import type { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
-import type { SelectorSide } from 'src/features/partial-changes/catalogue/unit';
+import type {
+  SelectorSide,
+  UnitAddress,
+} from 'src/features/partial-changes/catalogue/unit';
 import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
+
+// Rows an operation applies, each counted once, by the kinds of its applied changes as the Draft reads name them; a
+// renamed row whose values are applied too counts as renamed and as modified (SPEC §5.1).
+export interface RowKindCounts {
+  readonly total: number;
+  readonly added: number;
+  readonly modified: number;
+  readonly removed: number;
+  readonly renamed: number;
+  readonly replaced: number;
+  readonly partlyApplied: number;
+}
+
+// A row counts as selected when one of its applied units is selected, otherwise as required.
+export interface PlanRowCounts {
+  readonly selected: RowKindCounts;
+  readonly required: RowKindCounts;
+}
 
 export interface TableCoverage {
   readonly tableId: string;
@@ -14,7 +35,27 @@ export interface TableCoverage {
   readonly rows: number;
   readonly appliedRows: number;
   readonly partlyAppliedRows: number;
+  readonly rowCounts: PlanRowCounts;
 }
+
+export interface AppliedUnitKeys {
+  readonly applied: ReadonlySet<string>;
+  readonly selected: ReadonlySet<string>;
+}
+
+type RowKind = Exclude<keyof RowKindCounts, 'total' | 'partlyApplied'>;
+
+const NO_ROWS: RowKindCounts = {
+  total: 0,
+  added: 0,
+  modified: 0,
+  removed: 0,
+  renamed: 0,
+  replaced: 0,
+  partlyApplied: 0,
+};
+
+const ROW_COUNT_KEYS = Object.keys(NO_ROWS) as (keyof RowKindCounts)[];
 
 type Mutable<Type> = { -readonly [Key in keyof Type]: Type[Key] };
 
@@ -31,12 +72,19 @@ interface TableUnits {
 // Transient structures and shared schemas hold no table and have no entry.
 export function coverageOf(
   { units, tables }: ChangeCatalogue,
-  applied: ReadonlySet<string>,
+  keys: AppliedUnitKeys,
 ): TableCoverage[] {
   return [...unitsByTable(units).values()]
-    .filter((table) => table.units.some(({ key }) => applied.has(key)))
-    .map((table) => coverageOfTable(table, applied, tables))
+    .filter((table) => table.units.some(({ key }) => keys.applied.has(key)))
+    .map((table) => coverageOfTable(table, keys, tables))
     .sort(compareCoverage);
+}
+
+export function rowCountsOf(coverage: readonly TableCoverage[]): PlanRowCounts {
+  return {
+    selected: sumOf(coverage.map(({ rowCounts }) => rowCounts.selected)),
+    required: sumOf(coverage.map(({ rowCounts }) => rowCounts.required)),
+  };
 }
 
 // The units of each table, keyed by the structure unit that holds the table, else by the table identity.
@@ -77,9 +125,10 @@ function unitsByTable(
 
 function coverageOfTable(
   { identity, units }: TableUnits,
-  applied: ReadonlySet<string>,
+  keys: AppliedUnitKeys,
   tables: CatalogueTables,
 ): TableCoverage {
+  const { applied } = keys;
   const structure = units.find(({ unit }) => unit.kind === 'structure');
   const views = units.find(({ unit }) => unit.kind === 'views');
   // A table without a structure unit keeps its id: a rename is a structure change.
@@ -91,7 +140,9 @@ function coverageOfTable(
     rows: 0,
     appliedRows: 0,
     partlyAppliedRows: 0,
+    rowCounts: { selected: NO_ROWS, required: NO_ROWS },
   };
+  const rowCounts = { selected: new RowTally(), required: new RowTally() };
 
   if (structure) {
     coverage.structure = applied.has(structure.key);
@@ -110,9 +161,99 @@ function coverageOfTable(
     } else if (appliedUnits.length > 0) {
       coverage.partlyAppliedRows += 1;
     }
+
+    countShownRow(rowUnits, keys, rowCounts);
   }
 
+  coverage.rowCounts = {
+    selected: rowCounts.selected.counts(),
+    required: rowCounts.required.counts(),
+  };
+
   return coverage;
+}
+
+// A row counts by its units that the Draft reads show: a rowColumns unit that owns only schemaHash is a technical
+// difference no read shows, so a row with nothing else applied is no row, and leaving it out leaves no row partly
+// applied.
+function countShownRow(
+  rowUnits: readonly CatalogueUnit[],
+  { applied, selected }: AppliedUnitKeys,
+  tallies: Record<keyof PlanRowCounts, RowTally>,
+): void {
+  const shown = rowUnits.filter(({ unit }) => !isOnlySchemaHash(unit));
+  const appliedUnits = shown.filter(({ key }) => applied.has(key));
+
+  if (appliedUnits.length === 0) {
+    return;
+  }
+
+  const group = appliedUnits.some(({ key }) => selected.has(key))
+    ? 'selected'
+    : 'required';
+
+  tallies[group].add(
+    new Set(appliedUnits.map(({ unit }) => rowKindOf(unit))),
+    appliedUnits.length < shown.length,
+  );
+}
+
+export function isOnlySchemaHash({ kind, columns }: UnitAddress): boolean {
+  return (
+    kind === 'rowColumns' &&
+    columns?.length === 1 &&
+    columns[0] === 'schemaHash'
+  );
+}
+
+function rowKindOf({ kind }: UnitAddress): RowKind {
+  switch (kind) {
+    case 'rowCreate':
+      return 'added';
+    case 'rowDelete':
+      return 'removed';
+    case 'rowReplace':
+      return 'replaced';
+    case 'rowRename':
+      return 'renamed';
+    case 'field':
+    case 'rowColumns':
+      return 'modified';
+    default:
+      throw new Error(`A ${kind} unit is not a unit of a row`);
+  }
+}
+
+class RowTally {
+  private readonly tally: Mutable<RowKindCounts> = { ...NO_ROWS };
+
+  public add(kinds: ReadonlySet<RowKind>, partly: boolean): void {
+    this.tally.total += 1;
+
+    for (const kind of kinds) {
+      this.tally[kind] += 1;
+    }
+
+    if (partly) {
+      this.tally.partlyApplied += 1;
+    }
+  }
+
+  public counts(): RowKindCounts {
+    return { ...this.tally };
+  }
+}
+
+function sumOf(counts: readonly RowKindCounts[]): RowKindCounts {
+  const sum: Mutable<RowKindCounts> = { ...NO_ROWS };
+
+  for (const count of counts) {
+    for (const key of ROW_COUNT_KEYS) {
+      sum[key] += count[key];
+    }
+  }
+
+  return sum;
 }
 
 function structureAddressOf({ unit, side }: CatalogueUnit): TableAddress {

@@ -18,6 +18,8 @@ import {
 import { assertEveryAppliedTableRead } from 'src/features/partial-changes/planning/applied-tables-read';
 import {
   coverageOf,
+  type PlanRowCounts,
+  rowCountsOf,
   type TableCoverage,
 } from 'src/features/partial-changes/planning/plan-coverage';
 import { PlanFingerprint } from 'src/features/partial-changes/planning/plan-fingerprint';
@@ -84,6 +86,7 @@ export interface CompletePlan extends PlanBase {
   readonly fingerprint: Fingerprint;
   readonly appliedUnits: readonly CatalogueUnit[];
   readonly counts: PlanCounts;
+  readonly rowCounts: PlanRowCounts;
   readonly coverage: readonly TableCoverage[];
   readonly required: readonly RequiredUnit[];
   readonly deferred: readonly DeferredRow[];
@@ -238,6 +241,7 @@ function planOf({ source, closure, validated }: PlanParts): CompletePlan {
   const appliedUnits = catalogue.units.filter(({ key }) =>
     closure.applied.has(key),
   );
+  const coverage = coverageOf(catalogue, closure);
   const blockers = distinctBlockers([
     ...closure.blockers,
     ...validated.blockers,
@@ -251,7 +255,8 @@ function planOf({ source, closure, validated }: PlanParts): CompletePlan {
     fingerprint: validated.fingerprint,
     appliedUnits,
     counts: countsOf(closure),
-    coverage: coverageOf(catalogue, closure.applied),
+    rowCounts: rowCountsOf(coverage),
+    coverage,
     refusedTables: headSchema.refusedTables,
     required: closure.required,
     blockers: blockers.map((blocker) => blockerRefOf(catalogue, blocker)),

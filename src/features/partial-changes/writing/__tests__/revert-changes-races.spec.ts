@@ -12,6 +12,8 @@ import {
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
+import { editedValuePlaceOf } from '../../__tests__/support/row-counts';
+import type { PlanPlace } from 'src/features/partial-changes/planning/plan-places';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   HeldPartialRevert,
@@ -323,6 +325,8 @@ describe('revertChanges racing other writers', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: titleOfP1,
+        places: [editedValuePlaceOf(PRODUCTS, 'p2')],
+        placesTotal: 1,
       });
       await expectDraftData(draft, 'p2', { title: 'dos', price: 2 });
     });
@@ -367,6 +371,8 @@ describe('revertChanges racing other writers', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: {},
+        places: expect.any(Array) as PlanPlace[],
+        placesTotal: expect.any(Number) as number,
       });
       expect(await draft.rowIds('draft', PRODUCTS)).toEqual(['p2', 'p9']);
     });

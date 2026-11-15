@@ -6,6 +6,10 @@ import {
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint';
+import type {
+  PlanRowCounts,
+  RowKindCounts,
+} from 'src/features/partial-changes/planning/plan-coverage';
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type {
@@ -29,6 +33,7 @@ import {
 } from '../../__tests__/support/ledger-replaying';
 import { titleOf } from '../../__tests__/support/field-refs';
 import { structureRef } from '../../__tests__/support/expected-unit-refs';
+import { NO_ROW_COUNTS, NO_ROWS } from '../../__tests__/support/row-counts';
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
@@ -43,6 +48,14 @@ const STICKERS = 'stickers';
 const LABELS = 'labels';
 
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
+const rowsOf = (counts: Partial<RowKindCounts>): RowKindCounts => ({
+  ...NO_ROWS,
+  ...counts,
+});
+const oneModifiedRow: PlanRowCounts = {
+  selected: rowsOf({ total: 1, modified: 1 }),
+  required: NO_ROWS,
+};
 const FINGERPRINT_FORMAT = /^pcf2\.[\w-]+$/;
 
 const categorySchema = obj({ title: str() });
@@ -399,15 +412,33 @@ describe('previewChanges', () => {
         fingerprint: encodeFingerprint(
           await draft.fingerprintPlan('commit', categoryOfP1),
         ),
+        plannedAt: expect.any(Date) as Date,
         counts: { selected: 1, required: 1 },
+        rowCounts: {
+          selected: rowsOf({ total: 1, modified: 1, partlyApplied: 1 }),
+          required: rowsOf({ total: 1, added: 1 }),
+        },
         coverage: [
           {
             tableId: CATEGORIES,
             rows: 2,
             appliedRows: 1,
             partlyAppliedRows: 0,
+            rowCounts: {
+              selected: NO_ROWS,
+              required: rowsOf({ total: 1, added: 1 }),
+            },
           },
-          { tableId: PRODUCTS, rows: 1, appliedRows: 0, partlyAppliedRows: 1 },
+          {
+            tableId: PRODUCTS,
+            rows: 1,
+            appliedRows: 0,
+            partlyAppliedRows: 1,
+            rowCounts: {
+              selected: rowsOf({ total: 1, modified: 1, partlyApplied: 1 }),
+              required: NO_ROWS,
+            },
+          },
         ],
         refusedTables: [],
         required: [
@@ -441,6 +472,11 @@ describe('previewChanges', () => {
             { tableId: CATEGORIES, linksCopied: 1, linksAdded: 1 },
             { tableId: PRODUCTS, linksCopied: 1, linksAdded: 1 },
           ],
+        },
+        limits: {
+          maxChangedRows: 20_000,
+          maxPerRowWork: 2_000,
+          maxMixedTableLinks: 100_000,
         },
       });
     });
@@ -563,10 +599,28 @@ describe('previewChanges', () => {
       });
 
       expect(byFields.coverage).toEqual([
-        { tableId: PRODUCTS, rows: 3, appliedRows: 1, partlyAppliedRows: 1 },
+        {
+          tableId: PRODUCTS,
+          rows: 3,
+          appliedRows: 1,
+          partlyAppliedRows: 1,
+          rowCounts: {
+            selected: rowsOf({ total: 2, modified: 2, partlyApplied: 1 }),
+            required: NO_ROWS,
+          },
+        },
       ]);
       expect(byTableData.coverage).toEqual([
-        { tableId: PRODUCTS, rows: 3, appliedRows: 3, partlyAppliedRows: 0 },
+        {
+          tableId: PRODUCTS,
+          rows: 3,
+          appliedRows: 3,
+          partlyAppliedRows: 0,
+          rowCounts: {
+            selected: rowsOf({ total: 3, added: 1, modified: 2 }),
+            required: NO_ROWS,
+          },
+        },
       ]);
     });
 
@@ -579,7 +633,13 @@ describe('previewChanges', () => {
       });
 
       expect(preview.coverage).toEqual([
-        { tableId: CATEGORIES, rows: 2, appliedRows: 1, partlyAppliedRows: 0 },
+        {
+          tableId: CATEGORIES,
+          rows: 2,
+          appliedRows: 1,
+          partlyAppliedRows: 0,
+          rowCounts: oneModifiedRow,
+        },
       ]);
     });
 
@@ -607,6 +667,7 @@ describe('previewChanges', () => {
           rows: 1,
           appliedRows: 1,
           partlyAppliedRows: 0,
+          rowCounts: oneModifiedRow,
         },
         {
           tableId: PRODUCTS,
@@ -614,6 +675,7 @@ describe('previewChanges', () => {
           rows: 1,
           appliedRows: 1,
           partlyAppliedRows: 0,
+          rowCounts: oneModifiedRow,
         },
       ]);
       expect(tablesOnly.coverage).toEqual([
@@ -623,6 +685,7 @@ describe('previewChanges', () => {
           rows: 1,
           appliedRows: 0,
           partlyAppliedRows: 0,
+          rowCounts: NO_ROW_COUNTS,
         },
         {
           tableId: PRODUCTS,
@@ -630,6 +693,7 @@ describe('previewChanges', () => {
           rows: 1,
           appliedRows: 0,
           partlyAppliedRows: 0,
+          rowCounts: NO_ROW_COUNTS,
         },
       ]);
     });
@@ -653,6 +717,7 @@ describe('previewChanges', () => {
           rows: 0,
           appliedRows: 0,
           partlyAppliedRows: 0,
+          rowCounts: NO_ROW_COUNTS,
         },
         {
           tableId: ALPHA,
@@ -661,6 +726,7 @@ describe('previewChanges', () => {
           rows: 0,
           appliedRows: 0,
           partlyAppliedRows: 0,
+          rowCounts: NO_ROW_COUNTS,
         },
       ]);
     });
@@ -681,6 +747,10 @@ describe('previewChanges', () => {
           rows: 2,
           appliedRows: 1,
           partlyAppliedRows: 0,
+          rowCounts: {
+            selected: rowsOf({ total: 1, removed: 1 }),
+            required: NO_ROWS,
+          },
         },
       ]);
     });
@@ -708,6 +778,7 @@ describe('previewChanges', () => {
           rows: 0,
           appliedRows: 0,
           partlyAppliedRows: 0,
+          rowCounts: NO_ROW_COUNTS,
         },
       ]);
     });
@@ -1160,12 +1231,13 @@ describe('previewChanges', () => {
         includeRequired: null,
       });
 
-      expect(preview).toEqual(
-        await draft.previewChanges({
+      expect(preview).toEqual({
+        ...(await draft.previewChanges({
           operation: 'commit',
           selection: { rows: [rowOf(CATEGORIES, 'c9')], exclude: {} },
-        }),
-      );
+        })),
+        plannedAt: preview.plannedAt,
+      });
     });
 
     it.each<{

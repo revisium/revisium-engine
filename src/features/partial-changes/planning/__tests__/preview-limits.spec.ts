@@ -8,6 +8,7 @@ import { encodeFingerprint } from 'src/features/partial-changes/plan/fingerprint
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
+import type { PlanLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import type { FieldRef } from 'src/features/partial-changes/selection/selection';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
@@ -18,6 +19,13 @@ const LIMITED_WORK = {
   PARTIAL_CHANGES_MAX_CHANGED_ROWS: String(MAX_CHANGED_ROWS),
   PARTIAL_CHANGES_MAX_PER_ROW_WORK: String(MAX_PER_ROW_WORK),
   PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS: String(MAX_MIXED_TABLE_LINKS),
+};
+
+// The limits of this engine instance, which every preview returns beside its estimate (SPEC §5.3, §11).
+const LIMITS: PlanLimits = {
+  maxChangedRows: MAX_CHANGED_ROWS,
+  maxPerRowWork: MAX_PER_ROW_WORK,
+  maxMixedTableLinks: MAX_MIXED_TABLE_LINKS,
 };
 
 const PRODUCTS = 'products';
@@ -97,8 +105,10 @@ describe('previewChanges refused by a limit', () => {
         planned: false,
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
+        plannedAt: expect.any(Date) as Date,
         fingerprint: null,
         counts: null,
+        rowCounts: null,
         coverage: [],
         refusedTables: [],
         required: [],
@@ -113,6 +123,7 @@ describe('previewChanges refused by a limit', () => {
           perRowWorkRows: 0,
           mixedTables: [],
         },
+        limits: LIMITS,
       });
     },
   );
@@ -132,8 +143,10 @@ describe('previewChanges refused by a limit', () => {
         planned: false,
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
+        plannedAt: expect.any(Date) as Date,
         fingerprint: null,
         counts: null,
+        rowCounts: null,
         coverage: [],
         refusedTables: [],
         required: [],
@@ -154,6 +167,26 @@ describe('previewChanges refused by a limit', () => {
             },
           ],
         },
+        limits: LIMITS,
+      });
+    },
+  );
+
+  it.each(OPERATIONS)(
+    'returns with the estimate of a planned %s the limits it is compared against (AS-102)',
+    async (operation) => {
+      const draft = await givenTwoEditedOrders();
+
+      const preview = await draft.previewChanges({
+        operation,
+        selection: { fields: [priceOf('o1')] },
+      });
+
+      expect(preview).toMatchObject({
+        status: 'ready',
+        planned: true,
+        estimate: { changedRows: 2, mergedRows: 1, perRowWorkRows: 1 },
+        limits: LIMITS,
       });
     },
   );

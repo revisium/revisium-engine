@@ -16,6 +16,7 @@ import type { RevertChangesResult } from 'src/features/partial-changes/commands/
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import { oneSelectedValueOf } from '../../__tests__/support/row-counts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 import { titleOf } from '../../__tests__/support/field-refs';
@@ -70,6 +71,7 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       headRevisionId: formerDraftRevisionId,
       draftRevisionId: await draft.revisionId('draft'),
       applied: { selected: 1, required: 0 },
+      ...oneSelectedValueOf({ tableId: CATEGORIES, rows: 2, partly: false }),
       draftHasChanges: true,
       renumberedMigrations: [],
     });
@@ -107,6 +109,7 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       headRevisionId,
       draftRevisionId,
       applied: { selected: 1, required: 0 },
+      ...oneSelectedValueOf({ tableId: CATEGORIES, rows: 2, partly: false }),
       draftHasChanges: true,
     });
     await expectRows(draft, 'draft', CATEGORIES, {
@@ -251,6 +254,7 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       headRevisionId: formerDraftRevisionId,
       draftRevisionId: await draft.revisionId('draft'),
       applied: { selected: 1, required: 0 },
+      ...oneSelectedValueOf({ tableId: CATEGORIES, rows: 1, partly: false }),
       draftHasChanges: true,
       renumberedMigrations: [],
     });
@@ -276,6 +280,7 @@ describe('commitChanges and revertChanges next to an unledgered table', () => {
       headRevisionId,
       draftRevisionId,
       applied: { selected: 1, required: 0 },
+      ...oneSelectedValueOf({ tableId: CATEGORIES, rows: 1, partly: false }),
       draftHasChanges: true,
     });
     await expectRows(draft, 'draft', CATEGORIES, {

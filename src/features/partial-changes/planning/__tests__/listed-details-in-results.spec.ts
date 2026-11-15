@@ -172,6 +172,29 @@ describe('plan details listed in the results', () => {
     },
   );
 
+  it.each(OPERATIONS)(
+    'a stale %s lists its places up to the limit, most recently changed first, and counts all of them (AS-103)',
+    async (operation) => {
+      const draft = await givenProductsOfCreatedCategories();
+      const selection = SELECTIONS[operation];
+      const preview = await draft.previewChanges({ operation, selection });
+      await draft.updateRow(PRODUCTS, 'p2', { title: 'two', category: 'c8' });
+
+      const result = await applyChanges(draft, operation, {
+        selection,
+        includeRequired: true,
+        expected: preview.fingerprint,
+      });
+
+      expect(result).toMatchObject({
+        status: 'stale',
+        changed: ['content'],
+        places: [{ kind: 'row', tableId: PRODUCTS, rowId: 'p2' }, {}],
+        placesTotal: 6,
+      });
+    },
+  );
+
   async function givenProductsOfCreatedCategories(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },

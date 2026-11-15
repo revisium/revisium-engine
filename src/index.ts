@@ -335,7 +335,17 @@ export type {
   PlanEstimate,
 } from './features/partial-changes/limits/operation-estimator';
 export type { PlanCounts } from './features/partial-changes/planning/change-planner';
-export type { TableCoverage } from './features/partial-changes/planning/plan-coverage';
+export type {
+  PlanRowCounts,
+  RowKindCounts,
+  TableCoverage,
+} from './features/partial-changes/planning/plan-coverage';
+export {
+  PLAN_PLACE_KINDS,
+  type PlanPlace,
+  type PlanPlaceKind,
+} from './features/partial-changes/planning/plan-places';
+export type { PlanLimits } from './features/partial-changes/limits/partial-changes-limits';
 export {
   REFUSAL_CODES,
   type RefusalCode,

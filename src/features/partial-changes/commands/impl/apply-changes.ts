@@ -1,5 +1,10 @@
 import type { StaleChange } from 'src/features/partial-changes/plan/fingerprint';
 import type { PlanCounts } from 'src/features/partial-changes/planning/change-planner';
+import type {
+  PlanRowCounts,
+  TableCoverage,
+} from 'src/features/partial-changes/planning/plan-coverage';
+import type { PlanPlace } from 'src/features/partial-changes/planning/plan-places';
 import type { PlanBlocker } from 'src/features/partial-changes/planning/plan-refs';
 import type { SelectionInput } from 'src/features/partial-changes/selection/selection';
 import type { UnmatchedSelectors } from 'src/features/partial-changes/selection/selection-resolution';
@@ -31,6 +36,8 @@ export interface ApplyResult {
 // table versions, SPEC §6.13 step 7 and §6.14 step 7).
 export interface AppliedOutcome {
   readonly applied: PlanCounts;
+  readonly rowCounts: PlanRowCounts;
+  readonly coverage: readonly TableCoverage[];
   readonly draftHasChanges: boolean;
 }
 
@@ -64,13 +71,17 @@ export interface StoppedChangesBlocked extends ApplyResult {
 export type ChangesBlocked = PlannedChangesBlocked | StoppedChangesBlocked;
 
 // The current ids and unmatched selectors, so a caller drops the selectors that no longer match before it previews
-// again; no new fingerprint (SPEC §9.2).
+// again; no new fingerprint (SPEC §9.2). The fingerprint holds digests only, so the places are those the operation
+// applies now, most recently changed first: a caller tells the ones changed after its preview by plannedAt.
 export interface ChangesStale extends ApplyResult {
   readonly status: 'stale';
   readonly changed: readonly StaleChange[];
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly unmatched: UnmatchedSelectors;
+  // At most PARTIAL_CHANGES_MAX_LISTED_DETAILS places; placesTotal counts them all (SPEC §5.1).
+  readonly places: readonly PlanPlace[];
+  readonly placesTotal: number;
 }
 
 // No unit to apply. Exactly { all: true } still links the Head version of every content-equal Draft table version it

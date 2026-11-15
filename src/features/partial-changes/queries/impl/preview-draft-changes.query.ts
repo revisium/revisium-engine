@@ -2,7 +2,11 @@ import type { RefusedTable } from 'src/features/partial-changes/head-schema/head
 import type { PlanEstimate } from 'src/features/partial-changes/limits/operation-estimator';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { PlanCounts } from 'src/features/partial-changes/planning/change-planner';
-import type { TableCoverage } from 'src/features/partial-changes/planning/plan-coverage';
+import type {
+  PlanRowCounts,
+  TableCoverage,
+} from 'src/features/partial-changes/planning/plan-coverage';
+import type { PlanLimits } from 'src/features/partial-changes/limits/partial-changes-limits';
 import type { PreviewStatus } from 'src/features/partial-changes/planning/plan-decision';
 import type {
   PlanBlocker,
@@ -21,6 +25,8 @@ export interface PreviewChangesInput {
 }
 
 export interface PreviewBase {
+  // When the preview started reading, by the engine's clock, which also stamps a row's last change (SPEC §9.2).
+  readonly plannedAt: Date;
   readonly headRevisionId: string;
   readonly draftRevisionId: string;
   readonly refusedTables: readonly RefusedTable[];
@@ -28,6 +34,7 @@ export interface PreviewBase {
   readonly blockers: readonly PlanBlocker[];
   readonly blockersTotal: number;
   readonly estimate: PlanEstimate;
+  readonly limits: PlanLimits;
 }
 
 export interface PlannedPreview extends PreviewBase {
@@ -35,6 +42,7 @@ export interface PlannedPreview extends PreviewBase {
   readonly planned: true;
   readonly fingerprint: string;
   readonly counts: PlanCounts;
+  readonly rowCounts: PlanRowCounts;
   readonly coverage: readonly TableCoverage[];
   // At most PARTIAL_CHANGES_MAX_LISTED_DETAILS entries; requiredTotal counts them all, as counts.required does.
   readonly required: readonly RequiredUnit[];
@@ -52,6 +60,7 @@ export interface StoppedPreview extends PreviewBase {
   readonly planned: false;
   readonly fingerprint: null;
   readonly counts: null;
+  readonly rowCounts: null;
   readonly coverage: readonly [];
   readonly required: readonly [];
   readonly requiredTotal: 0;

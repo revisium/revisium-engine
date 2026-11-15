@@ -17,6 +17,7 @@ import type {
 } from 'src/features/partial-changes/selection/selection';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
 import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
+import { editedValuePlaceOf } from '../../__tests__/support/row-counts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { titleOf } from '../../__tests__/support/field-refs';
 import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input-refusal';
@@ -151,6 +152,8 @@ describe('statuses that commit and revert share', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: {},
+        places: [editedValuePlaceOf(PRODUCTS, 'p1')],
+        placesTotal: 1,
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
@@ -174,6 +177,8 @@ describe('statuses that commit and revert share', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: {},
+        places: [editedValuePlaceOf(PRODUCTS, 'p1')],
+        placesTotal: 1,
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });

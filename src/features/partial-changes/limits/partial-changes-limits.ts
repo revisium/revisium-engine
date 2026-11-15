@@ -33,6 +33,14 @@ const MAX_LISTED_DETAILS: NumericSetting = {
   minValue: 1,
 };
 
+// The configured limits a plan's estimate is compared against (SPEC §5.1, §11): changedRows with maxChangedRows,
+// perRowWorkRows with maxPerRowWork, and the linksCopied of each mixed table with maxMixedTableLinks.
+export interface PlanLimits {
+  readonly maxChangedRows: number;
+  readonly maxPerRowWork: number;
+  readonly maxMixedTableLinks: number;
+}
+
 @Injectable()
 export class PartialChangesLimits implements OnModuleInit {
   public readonly maxChangedRows: number;
@@ -50,6 +58,14 @@ export class PartialChangesLimits implements OnModuleInit {
     this.maxPerRowWork = this.read(configService, MAX_PER_ROW_WORK);
     this.maxMixedTableLinks = this.read(configService, MAX_MIXED_TABLE_LINKS);
     this.maxListedDetails = this.read(configService, MAX_LISTED_DETAILS);
+  }
+
+  public get planLimits(): PlanLimits {
+    return {
+      maxChangedRows: this.maxChangedRows,
+      maxPerRowWork: this.maxPerRowWork,
+      maxMixedTableLinks: this.maxMixedTableLinks,
+    };
   }
 
   onModuleInit() {

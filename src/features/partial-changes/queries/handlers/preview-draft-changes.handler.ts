@@ -51,6 +51,11 @@ interface PreviewRequest {
   readonly includeRequired: boolean;
 }
 
+interface PreviewSetting {
+  readonly plannedAt: Date;
+  readonly limits: PartialChangesLimits;
+}
+
 @QueryHandler(PreviewDraftChangesQuery)
 export class PreviewDraftChangesHandler implements IQueryHandler<
   PreviewDraftChangesQuery,
@@ -86,6 +91,7 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
     deadline: DeadlineHandle,
     trace: OperationTrace,
   ): Promise<PreviewChangesResult> {
+    const plannedAt = new Date();
     const compared = await this.planner.readComparedSnapshot(request);
     const migrationBlockers = await this.readMigrationLock(compared.snapshot);
     const plan = await this.planner.plan({ ...request, compared }, deadline);
@@ -97,7 +103,10 @@ export class PreviewDraftChangesHandler implements IQueryHandler<
     const result = previewResultOf(
       preview,
       decidePlanStatus(preview, request),
-      this.limits.maxListedDetails,
+      {
+        plannedAt,
+        limits: this.limits,
+      },
     );
 
     if (!result.planned || result.status !== 'empty') {
@@ -151,14 +160,17 @@ function migrationInProgress({ tableId }: MigrationLockedDetails): PlanBlocker {
 function previewResultOf(
   plan: ChangePlan,
   status: PreviewStatus,
-  maxListedDetails: number,
+  { plannedAt, limits }: PreviewSetting,
 ): PreviewChangesResult {
+  const { maxListedDetails } = limits;
   const base = {
+    plannedAt,
     headRevisionId: plan.headRevisionId,
     draftRevisionId: plan.draftRevisionId,
     refusedTables: plan.refusedTables,
     ...listedBlockersOf(plan.blockers, maxListedDetails),
     estimate: plan.estimate,
+    limits: limits.planLimits,
   };
 
   if (!plan.planned) {
@@ -168,6 +180,7 @@ function previewResultOf(
       planned: false,
       fingerprint: null,
       counts: null,
+      rowCounts: null,
       coverage: [],
       required: [],
       requiredTotal: 0,
@@ -182,6 +195,7 @@ function previewResultOf(
     planned: true,
     fingerprint: encodeFingerprint(plan.fingerprint),
     counts: plan.counts,
+    rowCounts: plan.rowCounts,
     coverage: plan.coverage,
     ...listedRequiredOf(plan.required, maxListedDetails),
     deferred: plan.deferred,

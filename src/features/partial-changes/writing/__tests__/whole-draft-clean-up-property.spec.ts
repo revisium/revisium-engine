@@ -1,4 +1,3 @@
-import { obj, str } from '@revisium/schema-toolkit/mocks';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -12,6 +11,7 @@ import {
   type SeededRandom,
 } from 'src/features/share/ledger-replay/__tests__/support/seeded-random';
 import { SystemTables } from 'src/features/share/system-tables.consts';
+import type { TableViewsData } from 'src/features/views/types';
 import type { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   givenRandomDraft,
@@ -22,6 +22,12 @@ import {
 const WHOLE_DRAFT: Selection = { all: true };
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
 const LEFTOVERS = ['contentEqual', 'schemaHash', 'none'] as const;
+const ROW_LEFTOVERS = ['contentEqual', 'schemaHash'] as const;
+const DEFAULT_VIEWS: TableViewsData = {
+  version: 1,
+  defaultViewId: 'default',
+  views: [{ id: 'default', name: 'Default' }],
+};
 
 type Leftover = (typeof LEFTOVERS)[number];
 
@@ -81,27 +87,32 @@ describe('exactly { all: true } on a Draft the summary says holds only changes w
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
 
-  // Every user table gets a content-equal row version, a schema hash rewrite or nothing; a Draft without any of them
-  // gets a shared schema created and removed.
+  // The first user table with rows gets a content-equal row version or a schema hash rewrite, every other one either or
+  // nothing; when Head has no views table, a views row is also written and removed, leaving an empty views table that
+  // only the Draft holds.
   async function givenOnlyChangesWithoutEffect(
     draft: ChangesScenario,
     random: SeededRandom,
   ): Promise<void> {
-    let changed = false;
+    let leftovers = 0;
 
     for (const { id } of await draft.userTables('draft')) {
       const rows = await draft.rows('draft', id);
-      const leftover: Leftover = random.pick(LEFTOVERS);
+      const leftover: Leftover =
+        leftovers === 0 ? random.pick(ROW_LEFTOVERS) : random.pick(LEFTOVERS);
 
       if (rows.length > 0 && leftover !== 'none') {
         await writeLeftover(draft, id, random.pick(rows), leftover);
-        changed = true;
+        leftovers += 1;
       }
     }
 
-    if (!changed) {
-      await givenSharedSchemaCreatedAndRemoved(draft);
+    if (!(await draft.hasTable('head', SystemTables.Views))) {
+      await givenViewsSetAndRemoved(draft, random);
+      leftovers += 1;
     }
+
+    expect(leftovers).toBeGreaterThan(0);
   }
 
   async function writeLeftover(
@@ -123,15 +134,14 @@ describe('exactly { all: true } on a Draft the summary says holds only changes w
     await draft.writeRowColumns(tableId, row.id, { schemaHash: 'other' });
   }
 
-  async function givenSharedSchemaCreatedAndRemoved(
+  async function givenViewsSetAndRemoved(
     draft: ChangesScenario,
+    random: SeededRandom,
   ): Promise<void> {
-    const id = (await draft.hasTable('head', SystemTables.SharedSchemas))
-      ? 'leftover-address'
-      : 'address';
+    const { id } = random.pick(await draft.userTables('draft'));
 
-    await draft.createSharedSchema(id, obj({ city: str() }));
-    await draft.removeSharedSchema(id);
+    await draft.updateViews(id, DEFAULT_VIEWS);
+    await draft.removeViewsRow(id);
   }
 
   function isCleanUpWithoutRevision(result: CommitChangesResult): boolean {

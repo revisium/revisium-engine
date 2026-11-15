@@ -26,6 +26,7 @@ import {
   ChangeType,
   type RevisionChangeSummary,
 } from 'src/features/revision-changes/types';
+import { emptyDraftOnlySystemTablesOf } from 'src/features/partial-changes/snapshot/empty-draft-only-system-tables';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
@@ -71,11 +72,19 @@ export class DraftChangesSummaryReader {
       viewsOnlyTablesCount: items.viewsOnlyTables.length,
       onlyChangesWithoutEffect:
         showsNothing(counts, items) &&
+        !keepsASystemTableItCannotClear(tables) &&
         (await this.snapshotReader.readDraftHasChanges(
           tables.readState.draftRevisionId,
         )),
     };
   }
+}
+
+// An empty system table only the Draft holds stays when no native writer would create it again (SPEC §6).
+function keepsASystemTableItCannotClear({ compared }: DraftTables): boolean {
+  return emptyDraftOnlySystemTablesOf(compared.snapshot.systemRows).some(
+    ({ recreatedWhenMissing }) => !recreatedWhenMissing,
+  );
 }
 
 // No table item and no summary item: whatever still makes the Draft differ from Head has no effect (SPEC §6).

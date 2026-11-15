@@ -342,7 +342,7 @@ the stored time cannot tell the two writes apart. Only a stored time per kind of
 | `transientTables` | Every structure unit of tables created and removed inside the Draft: `{ tableId, changeType: 'ADDED', structure }`. |
 | `viewsOnlyTables` | Every views unit of a table whose user table version is unchanged, which no table item shows: `{ tableId, changeType: 'MODIFIED', views }`. |
 | `sharedSchemasCount`, `transientTablesCount`, `viewsOnlyTablesCount` | The lengths of the three lists before `filters`. |
-| `onlyChangesWithoutEffect` | `true` when the Draft still differs from Head (its stored `hasChanges`) while the reads show nothing: no table item and none of the three lists. All that remains are changes without effect (§3), which exactly `{ all: true }` clears without a revision (partial-changes-v1 §3.8); a client runs or offers it instead of showing changes over an empty list. It ignores `filters`, like the counts. |
+| `onlyChangesWithoutEffect` | `true` when the Draft still differs from Head (its stored `hasChanges`) while the reads show nothing (no table item and none of the three lists), and the Draft holds no empty schema, migration or shared-schemas table that Head lacks, which no native write creates again and so stays (partial-changes-v1 §3.8). All that remains are changes without effect (§3), which exactly `{ all: true }` clears without a revision (partial-changes-v1 §3.8); a client runs or offers it instead of showing changes over an empty list. It ignores `filters`, like the counts. |
 
 A `RENAMED_AND_MODIFIED` item counts in `renamed` and in `modified`, so each count equals the `totalCount` of the
 `changeTypes` filter of that type in `tableChanges`, and the row counts the lines `rowChanges` lists under the filter of
@@ -705,8 +705,9 @@ Recent order:
 Summary:
 
 - DR-29 `onlyChangesWithoutEffect` is `true` for a Draft that holds only a value edited and set back, only a stale
-  formula output, or only a `schemaHash` difference, and `false` for a Draft without changes, a Draft with a change with
-  an effect beside one without, and a Draft with only a table created and removed inside it.
+  formula output, only a `schemaHash` difference, or only an empty views table that Head lacks, and `false` for a Draft
+  without changes, a Draft with a change with an effect beside one without, a Draft with only a table created and
+  removed inside it, and a Draft whose only difference is an empty shared-schemas or migration table that Head lacks.
 
 ## Changelog
 

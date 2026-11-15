@@ -213,23 +213,39 @@ describe('draftFollowsHeadPlanOf', () => {
 });
 
 describe('draftFollowsHeadPlanOf for a system table only the Draft holds', () => {
-  it('unlinks one without rows, and keeps one with rows and one that Head holds too', () => {
+  it('unlinks an empty views table, which its writer creates again, and keeps the empty tables no native write creates again', () => {
     const plan = draftFollowsHeadPlanOf(writableTargetOf({}), {
       systemRows: systemRowsOf({
+        schemas: { draft: 'schemas-draft' },
+        migrations: { draft: 'migrations-draft' },
+        views: { draft: 'views-draft' },
         sharedSchemas: { draft: 'shared-draft' },
-        views: { draft: 'views-draft', draftRows: [systemRow] },
-        migrations: { head: 'migrations-head', draft: 'migrations-draft' },
       }),
     });
 
     expect(plan.tables).toEqual<TableWritePlan[]>([
       {
-        identity: SystemTables.SharedSchemas,
-        draftVersionId: 'shared-draft',
+        identity: SystemTables.Views,
+        draftVersionId: 'views-draft',
         target: { kind: 'linked' },
         relinkCandidate: false,
       },
     ]);
+  });
+
+  it('keeps a views table with rows and one that Head holds too', () => {
+    const withRows = draftFollowsHeadPlanOf(writableTargetOf({}), {
+      systemRows: systemRowsOf({
+        views: { draft: 'views-draft', draftRows: [systemRow] },
+      }),
+    });
+    const inHead = draftFollowsHeadPlanOf(writableTargetOf({}), {
+      systemRows: systemRowsOf({
+        views: { head: 'views-head', draft: 'views-draft' },
+      }),
+    });
+
+    expect([withRows.tables, inHead.tables]).toEqual([[], []]);
   });
 });
 

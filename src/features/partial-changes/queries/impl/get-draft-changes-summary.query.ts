@@ -1,5 +1,6 @@
 import type {
   DraftReadState,
+  DraftRowsSummary,
   DraftTableChangesFilters,
 } from 'src/features/partial-changes/queries/impl/draft-reads';
 import type {
@@ -41,7 +42,7 @@ export interface DraftTablesSummary extends RevisionChangeSummary {
 
 export interface DraftChangesSummary extends DraftReadState {
   readonly tablesSummary: DraftTablesSummary;
-  readonly rowsSummary: RevisionChangeSummary;
+  readonly rowsSummary: DraftRowsSummary;
   readonly rowsWithUnits: number;
   readonly sharedSchemas: readonly ChangedSharedSchema[];
   readonly sharedSchemasCount: number;

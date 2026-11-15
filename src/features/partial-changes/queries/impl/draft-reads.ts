@@ -6,11 +6,20 @@ import type {
   DescribedUnitRef,
   UnitRef,
 } from 'src/features/partial-changes/selection/unit-refs';
-import type { ChangeType } from 'src/features/revision-changes/types';
+import type {
+  ChangeType,
+  RevisionChangeSummary,
+} from 'src/features/revision-changes/types';
 
 export interface DraftTableChangesFilters {
   readonly changeTypes?: readonly ChangeType[] | null;
   readonly search?: string | null;
+}
+
+// The reported rows by kind: a replaced row counts once, in replaced, and a RENAMED_AND_MODIFIED row in renamed and in
+// modified.
+export interface DraftRowsSummary extends RevisionChangeSummary {
+  readonly replaced: number;
 }
 
 export interface DraftReadState {

@@ -62,15 +62,19 @@ export interface DraftRowEntry {
 
 type RowIds = Pick<DraftRowItem, 'rowId' | 'previousRowId'>;
 type ItemIds = Pick<DraftRowItem, 'tableId' | 'previousTableId'> & RowIds;
+type ItemHeading = ItemIds &
+  Pick<DraftRowItem, 'changeType' | 'replaced' | 'fieldsTotal'>;
 
 const COMPUTED = { state: 'computed' } as const;
 
+// With a field limit, the item lists the first field changes of the row only, and fieldsTotal counts all of them.
 export function draftRowItemOf(
   entry: DraftRowEntry,
   catalogue: DraftCatalogue,
   renames: PageRenames,
+  fieldsPerRow: number | undefined,
 ): DraftRowItem {
-  return new DraftRow(entry, catalogue, renames).item();
+  return new DraftRow(entry, catalogue, renames, fieldsPerRow).item();
 }
 
 class DraftRow {
@@ -80,6 +84,7 @@ class DraftRow {
     private readonly entry: DraftRowEntry,
     private readonly catalogue: DraftCatalogue,
     private readonly renames: PageRenames,
+    private readonly fieldsPerRow: number | undefined,
   ) {
     this.row = addressedRowOf(entry);
   }
@@ -93,8 +98,7 @@ class DraftRow {
 
     return this.withIdExchange(
       this.withIdTakeover({
-        ...this.ids(),
-        changeType: this.entry.pair.changeType,
+        ...this.heading(),
         fields: this.fields((pointer) => this.fieldSelectionAt(pointer)),
         columns: this.columns((column) => this.columnSelectionOf(column)),
         selection: this.selection(),
@@ -106,8 +110,7 @@ class DraftRow {
     const refused: RefusedSelection = { state: 'refused', code };
 
     return {
-      ...this.ids(),
-      changeType: this.entry.pair.changeType,
+      ...this.heading(),
       fields: this.fields(() => refused),
       columns: this.columns(() => refused),
       selection: withoutOwnUnits(refused),
@@ -212,8 +215,16 @@ class DraftRow {
     return rename && unitRefOf(rename);
   }
 
-  private ids(): ItemIds {
-    return { ...tableIdsOf(this.entry.table), ...rowIdsOf(this.entry) };
+  private heading(): ItemHeading {
+    const { pair, fieldChanges } = this.entry;
+
+    return {
+      ...tableIdsOf(this.entry.table),
+      ...rowIdsOf(this.entry),
+      changeType: pair.changeType,
+      replaced: pair.replaced,
+      fieldsTotal: fieldChanges.length,
+    };
   }
 
   private selection(): RowSelection {
@@ -253,7 +264,7 @@ class DraftRow {
   private fields(
     selectionAt: (pointer: JsonPointer) => FieldSelection,
   ): DraftFieldChange[] {
-    return this.entry.fieldChanges.map(
+    return this.listedFieldChanges().map(
       ({ fieldPath, changeType, oldValue, newValue }) => {
         const pointer = pointerOfNativeFieldPath(fieldPath);
         const change: DraftFieldChange = {
@@ -272,6 +283,16 @@ class DraftRow {
         return { ...change, follows };
       },
     );
+  }
+
+  private listedFieldChanges(): readonly FieldChange[] {
+    const { fieldChanges } = this.entry;
+
+    if (this.fieldsPerRow === undefined) {
+      return fieldChanges;
+    }
+
+    return fieldChanges.slice(0, this.fieldsPerRow);
   }
 
   private fieldSelectionAt(pointer: JsonPointer): FieldSelection {

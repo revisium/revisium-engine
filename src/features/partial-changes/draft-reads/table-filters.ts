@@ -1,10 +1,15 @@
 import type { TableFilters } from 'src/features/partial-changes/draft-reads/draft-read-request';
+import type { DraftRowChangeKind } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import { ChangeType } from 'src/features/revision-changes/types';
+
+const CHANGE_TYPES: ReadonlySet<DraftRowChangeKind> = new Set(
+  Object.values(ChangeType),
+);
 
 // RENAMED and MODIFIED also match RENAMED_AND_MODIFIED, which is both.
 export function hasChangeTypeAmong(
   changeType: ChangeType,
-  changeTypes: readonly ChangeType[] | undefined,
+  changeTypes: readonly DraftRowChangeKind[] | undefined,
 ): boolean {
   if (changeTypes === undefined) {
     return true;
@@ -36,9 +41,12 @@ export function matchesTableFilters(
   );
 }
 
+// The change types a filter matches; REPLACED is the kind of a replaced row, not a change type.
 export function changeTypesMatching(
-  changeTypes: readonly ChangeType[],
+  kinds: readonly DraftRowChangeKind[],
 ): ChangeType[] {
+  const changeTypes = kinds.filter(isChangeType);
+
   if (
     changeTypes.includes(ChangeType.Renamed) ||
     changeTypes.includes(ChangeType.Modified)
@@ -46,5 +54,9 @@ export function changeTypesMatching(
     return [...changeTypes, ChangeType.RenamedAndModified];
   }
 
-  return [...changeTypes];
+  return changeTypes;
+}
+
+function isChangeType(kind: DraftRowChangeKind): kind is ChangeType {
+  return CHANGE_TYPES.has(kind);
 }

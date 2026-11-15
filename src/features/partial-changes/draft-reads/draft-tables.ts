@@ -43,6 +43,7 @@ const NO_REPORTED_ROWS: ReportedRowCounts = {
   modified: 0,
   removed: 0,
   renamed: 0,
+  replaced: 0,
   rowsWithUnits: 0,
   hasRowUnits: false,
 };

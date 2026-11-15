@@ -50,10 +50,12 @@ const CHANGES_API_TYPES = [
   'DraftFieldChangeType',
   'DraftPageInfo',
   'DraftReadState',
+  'DraftRowChangeKind',
   'DraftRowChangesFilters',
   'DraftRowChangesInput',
   'DraftRowItem',
   'DraftRowPage',
+  'DraftRowsSummary',
   'DraftTableChangesFilters',
   'DraftTableChangesInput',
   'DraftTableItem',
@@ -156,6 +158,14 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
   CAUSE_ROLES: ['occupant', 'referrer', 'remover', 'taker'],
   CHANGE_OPERATIONS: ['commit', 'revert'],
   DRAFT_FIELD_CHANGE_TYPES: ['FIELD_ADDED', 'FIELD_MODIFIED', 'FIELD_REMOVED'],
+  DRAFT_ROW_CHANGE_KINDS: [
+    'ADDED',
+    'MODIFIED',
+    'REMOVED',
+    'RENAMED',
+    'RENAMED_AND_MODIFIED',
+    'REPLACED',
+  ],
   FIELD_SELECTION_STATES: ['computed', 'goesWith', 'refused', 'unit'],
   FOLLOW_REASONS: ['referenceRename'],
   GOES_WITH_REASONS: ['rowExistence', 'structureBound', 'tableExistence'],
@@ -310,6 +320,19 @@ const CODE_UNIONS_EQUAL_THEIR_LISTS = {
         Equal<
           engine.DraftFieldChange['changeType'],
           engine.DraftFieldChangeType
+        >,
+      ]
+    >(),
+  DRAFT_ROW_CHANGE_KINDS:
+    unionsEqual<
+      [
+        Equal<
+          engine.DraftRowChangeKind,
+          ListMember<typeof engine.DRAFT_ROW_CHANGE_KINDS>
+        >,
+        Equal<
+          NonNullable<engine.DraftRowChangesFilters['changeTypes']>[number],
+          engine.DraftRowChangeKind
         >,
       ]
     >(),
@@ -484,6 +507,8 @@ const RESULT_PARTS_HAVE_THEIR_NAMES = unionsEqual<
       engine.DraftChangesSummary['tablesSummary'],
       engine.DraftTablesSummary
     >,
+    Equal<engine.DraftChangesSummary['rowsSummary'], engine.DraftRowsSummary>,
+    Equal<engine.DraftTableItem['rowsSummary'], engine.DraftRowsSummary>,
     Equal<
       engine.PlanEstimate['mixedTables'][number],
       engine.MixedTableEstimate

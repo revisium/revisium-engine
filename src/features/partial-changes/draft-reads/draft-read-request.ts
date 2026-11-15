@@ -10,7 +10,11 @@ import {
 } from 'src/features/partial-changes/input/fields';
 import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
 import type { DraftChangesSummaryInput } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
-import type { DraftRowChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import {
+  DRAFT_ROW_CHANGE_KINDS,
+  type DraftRowChangeKind,
+  type DraftRowChangesInput,
+} from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTableChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { ChangeType } from 'src/features/revision-changes/types';
@@ -20,8 +24,11 @@ export interface TableFilters {
   readonly search?: string;
 }
 
-export interface RowFilters extends TableFilters {
+export interface RowFilters {
   readonly tableId?: string;
+  readonly rowIds?: readonly string[];
+  readonly changeTypes?: readonly DraftRowChangeKind[];
+  readonly search?: string;
 }
 
 export interface DraftTableChangesRequest {
@@ -36,6 +43,7 @@ export interface DraftRowChangesRequest {
   readonly first: number;
   readonly after?: RowPosition;
   readonly filters: RowFilters;
+  readonly fieldsPerRow?: number;
 }
 
 export interface DraftChangesSummaryRequest {
@@ -44,11 +52,15 @@ export interface DraftChangesSummaryRequest {
 }
 
 const MAX_PAGE_SIZE = 5_000;
+const MAX_FIELDS_PER_ROW = 1_000;
+const MAX_ROW_IDS = 100;
 const CHANGE_TYPES: ReadonlySet<unknown> = new Set(Object.values(ChangeType));
+const ROW_CHANGE_KINDS: ReadonlySet<unknown> = new Set(DRAFT_ROW_CHANGE_KINDS);
 const FILTER_NAMES: readonly (keyof RowFilters)[] = [
   'changeTypes',
   'search',
   'tableId',
+  'rowIds',
 ];
 
 export function tableChangesRequestOf({
@@ -70,12 +82,14 @@ export function rowChangesRequestOf({
   first,
   after,
   filters,
+  fieldsPerRow,
 }: DraftRowChangesInput): DraftRowChangesRequest {
   return {
     branch,
     first: pageSizeOf(first),
     after: cursorOf(after, decodeRowCursor),
     filters: rowFiltersOf(filters),
+    fieldsPerRow: fieldsPerRowOf(fieldsPerRow),
   };
 }
 
@@ -106,6 +120,25 @@ function pageSizeOf(first: unknown): number {
   return first;
 }
 
+function fieldsPerRowOf(fieldsPerRow: unknown): number | undefined {
+  if (fieldsPerRow === undefined || fieldsPerRow === null) {
+    return undefined;
+  }
+
+  if (
+    typeof fieldsPerRow !== 'number' ||
+    !Number.isInteger(fieldsPerRow) ||
+    fieldsPerRow < 0 ||
+    fieldsPerRow > MAX_FIELDS_PER_ROW
+  ) {
+    throw new ListingValidationError(
+      `fieldsPerRow must be an integer from 0 to ${MAX_FIELDS_PER_ROW}`,
+    );
+  }
+
+  return fieldsPerRow;
+}
+
 function cursorOf<Position>(
   after: unknown,
   decode: (cursor: string) => Position,
@@ -121,20 +154,26 @@ function cursorOf<Position>(
   return decode(after);
 }
 
-function tableFiltersOf(filters: unknown): TableFilters {
-  return tableFiltersOfFields(filterFieldsOf(filters));
-}
-
 function rowFiltersOf(filters: unknown): RowFilters {
   const fields = filterFieldsOf(filters);
+  const tableId = tableIdOf(fields.tableId);
+  const rowIds = rowIdsOf(fields.rowIds);
+
+  if (rowIds !== undefined && tableId === undefined) {
+    throw new ListingValidationError('filters.rowIds requires filters.tableId');
+  }
 
   return {
-    ...tableFiltersOfFields(fields),
-    tableId: tableIdOf(fields.tableId),
+    tableId,
+    rowIds,
+    changeTypes: rowChangeKindsOf(fields.changeTypes),
+    search: searchOf(fields.search),
   };
 }
 
-function tableFiltersOfFields(fields: Fields): TableFilters {
+function tableFiltersOf(filters: unknown): TableFilters {
+  const fields = filterFieldsOf(filters);
+
   return {
     changeTypes: changeTypesOf(fields.changeTypes),
     search: searchOf(fields.search),
@@ -165,18 +204,49 @@ function tableIdOf(tableId: unknown): string | undefined {
   return tableId;
 }
 
-function changeTypesOf(changeTypes: unknown): ChangeType[] | undefined {
-  if (changeTypes === undefined || changeTypes === null) {
+function rowIdsOf(rowIds: unknown): string[] | undefined {
+  if (rowIds === undefined || rowIds === null) {
     return undefined;
   }
 
-  if (!Array.isArray(changeTypes) || !changeTypes.every(isChangeType)) {
+  if (
+    !Array.isArray(rowIds) ||
+    !rowIds.every(isIdText) ||
+    rowIds.length > MAX_ROW_IDS
+  ) {
     throw new ListingValidationError(
-      `filters.changeTypes must be an array of ${[...CHANGE_TYPES].join(', ')}`,
+      `filters.rowIds must be an array of at most ${MAX_ROW_IDS} strings without the NUL character`,
     );
   }
 
-  return changeTypes;
+  return rowIds;
+}
+
+function changeTypesOf(changeTypes: unknown): ChangeType[] | undefined {
+  return listOf(changeTypes, CHANGE_TYPES);
+}
+
+function rowChangeKindsOf(
+  changeTypes: unknown,
+): DraftRowChangeKind[] | undefined {
+  return listOf(changeTypes, ROW_CHANGE_KINDS);
+}
+
+function listOf<Value>(
+  values: unknown,
+  allowed: ReadonlySet<unknown>,
+): Value[] | undefined {
+  if (values === undefined || values === null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(values) || !values.every((value) => allowed.has(value))) {
+    throw new ListingValidationError(
+      `filters.changeTypes must be an array of ${[...allowed].join(', ')}`,
+    );
+  }
+
+  return values as Value[];
 }
 
 function searchOf(search: unknown): string | undefined {
@@ -188,8 +258,7 @@ function searchOf(search: unknown): string | undefined {
     throw new ListingValidationError('filters.search must be a string');
   }
 
-  // No id holds it, and a database text parameter cannot.
-  if (search.includes('\u0000')) {
+  if (!isIdText(search)) {
     throw new ListingValidationError(
       'filters.search must not contain the NUL character',
     );
@@ -198,6 +267,7 @@ function searchOf(search: unknown): string | undefined {
   return search;
 }
 
-function isChangeType(value: unknown): value is ChangeType {
-  return CHANGE_TYPES.has(value);
+// No id holds the NUL character, and a database text parameter cannot.
+function isIdText(value: unknown): value is string {
+  return typeof value === 'string' && !value.includes('\u0000');
 }

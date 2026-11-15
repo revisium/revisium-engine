@@ -3,10 +3,13 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
+import type { DraftTableChangesFilters } from 'src/features/partial-changes/queries/impl/draft-reads';
 import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
-import type {
-  DraftRowChangesFilters,
-  DraftRowItem,
+import {
+  DRAFT_ROW_CHANGE_KINDS,
+  type DraftRowChangeKind,
+  type DraftRowChangesFilters,
+  type DraftRowItem,
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import { ChangeType } from 'src/features/revision-changes/types';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
@@ -148,6 +151,160 @@ describe('Draft row filters', () => {
     });
   });
 
+  describe('replaced rows (DR-16)', () => {
+    it('matches the two items of a replaced row by REPLACED only, with its one replace unit', async () => {
+      const draft = await givenAllRowChangeTypes();
+      await draft.removeRow(PRODUCTS, 'p5');
+      await draft.createRows(PRODUCTS, { p5: product('reused') });
+      const replace = existenceRef('rowReplace', PRODUCTS, 'p5');
+
+      const replaced = await readFiltered(draft, { changeTypes: ['REPLACED'] });
+      const addedOrRemoved = await readFiltered(draft, {
+        changeTypes: [ChangeType.Added, ChangeType.Removed],
+      });
+
+      expect(
+        replaced.map((item) => [nameOf(item), item.selection.units]),
+      ).toEqual([
+        ['products/p5 REMOVED', [replace]],
+        ['products/p5 ADDED', [replace]],
+      ]);
+      expect(addedOrRemoved.map(nameOf)).toEqual([
+        'products/p4 REMOVED',
+        'products/p9 ADDED',
+      ]);
+    });
+  });
+
+  describe('row ids (DR-16)', () => {
+    it('lists exactly the rows of the given ids, not a row whose id only contains one', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: productSchema,
+          rows: { p1: product('a'), p10: product('b'), p11: product('c') },
+        },
+      });
+      await draft.updateRow(PRODUCTS, 'p1', product('edited'));
+      await draft.updateRow(PRODUCTS, 'p10', product('edited'));
+      await draft.updateRow(PRODUCTS, 'p11', product('edited'));
+
+      const exact = await readFiltered(draft, {
+        tableId: PRODUCTS,
+        rowIds: ['p11', 'p1', 'P10'],
+      });
+      const searched = await readFiltered(draft, { search: 'p1' });
+
+      expect(exact.map(nameOf)).toEqual([
+        'products/p1 MODIFIED',
+        'products/p11 MODIFIED',
+      ]);
+      expect(searched.map(nameOf)).toEqual([
+        'products/p1 MODIFIED',
+        'products/p10 MODIFIED',
+        'products/p11 MODIFIED',
+      ]);
+    });
+
+    it('selects a renamed row by its Draft id, and by its Head id while no row holds that id', async () => {
+      const draft = await givenCommittedProductsAndTags();
+      await draft.renameRow(PRODUCTS, 'p1', 'item1');
+
+      const byDraftId = await readFiltered(draft, {
+        tableId: PRODUCTS,
+        rowIds: ['item1'],
+      });
+      const byHeadId = await readFiltered(draft, {
+        tableId: PRODUCTS,
+        rowIds: ['p1'],
+      });
+
+      expect(byDraftId.map(idsOf)).toEqual([
+        ['products', undefined, 'item1', 'p1'],
+      ]);
+      expect(byHeadId).toEqual(byDraftId);
+    });
+
+    it("selects only the row that holds a renamed row's Head id now", async () => {
+      const draft = await givenCommittedProductsAndTags();
+      await draft.renameRow(PRODUCTS, 'p1', 'item1');
+      await draft.createRows(PRODUCTS, { p1: product('new') });
+
+      const items = await readFiltered(draft, {
+        tableId: PRODUCTS,
+        rowIds: ['p1'],
+      });
+
+      expect(items.map(nameOf)).toEqual(['products/p1 ADDED']);
+    });
+
+    it('lists both items of a replaced row, and of a deleted row and the rename that took over its id', async () => {
+      const draft = await givenAllRowChangeTypes();
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.createRows(PRODUCTS, { p1: product('reused') });
+      await draft.removeRow(PRODUCTS, 'p5');
+      await draft.renameRow(PRODUCTS, 'p6', 'p5');
+      const all = await readFiltered(draft, {});
+
+      const items = await readFiltered(draft, {
+        tableId: PRODUCTS,
+        rowIds: ['p1', 'p5'],
+      });
+
+      expect(items.map(nameOf)).toEqual([
+        'products/p1 REMOVED',
+        'products/p1 ADDED',
+        'products/p5 REMOVED',
+        'products/p5 RENAMED',
+      ]);
+      expect(items).toEqual(
+        all.filter(({ rowId }) => rowId === 'p1' || rowId === 'p5'),
+      );
+    });
+
+    it('gives a rename found by its Head id the takeover of the deleted row at its Draft id', async () => {
+      const draft = await givenCommittedProductsAndTags();
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.renameRow(PRODUCTS, 'p2', 'p1');
+      const all = await readFiltered(draft, {});
+
+      const items = await readFiltered(draft, {
+        tableId: PRODUCTS,
+        rowIds: ['p2'],
+      });
+
+      expect(items.map(nameOf)).toEqual(['products/p1 RENAMED']);
+      expect(items).toEqual(
+        all.filter(({ changeType }) => changeType === ChangeType.Renamed),
+      );
+    });
+
+    it('applies with the other filters, and lists nothing for an empty list', async () => {
+      const draft = await givenAllRowChangeTypes();
+      const rowIds = ['p1', 'p20', 'p4'];
+
+      expect(
+        (
+          await readFiltered(draft, {
+            tableId: PRODUCTS,
+            rowIds,
+            changeTypes: [ChangeType.Modified, ChangeType.Removed],
+          })
+        ).map(nameOf),
+      ).toEqual(['products/p1 MODIFIED', 'products/p4 REMOVED']);
+      expect(
+        (
+          await readFiltered(draft, { tableId: PRODUCTS, rowIds, search: '2' })
+        ).map(nameOf),
+      ).toEqual(['products/p20 RENAMED']);
+      expect(
+        await readFiltered(draft, { tableId: TAGS, rowIds: ['p1'] }),
+      ).toEqual([]);
+      expect(
+        await readFiltered(draft, { tableId: PRODUCTS, rowIds: [] }),
+      ).toEqual([]);
+    });
+  });
+
   describe('search (DR-16)', () => {
     it('matches a case-insensitive substring of the Head or the Draft row id', async () => {
       const draft = await givenCommittedProductsAndTags();
@@ -212,23 +369,6 @@ describe('Draft row filters', () => {
       expect(renamed?.idTakeover).toEqual(takeover);
     });
 
-    it('gives each item of a replaced row the replace unit when the filter leaves out the other item', async () => {
-      const draft = await givenCommittedProductsAndTags();
-      await draft.removeRow(PRODUCTS, 'p1');
-      await draft.createRows(PRODUCTS, { p1: product('reused') });
-      const replace = existenceRef('rowReplace', PRODUCTS, 'p1');
-
-      const [deleted] = await readFiltered(draft, {
-        changeTypes: [ChangeType.Removed],
-      });
-      const [created] = await readFiltered(draft, {
-        changeTypes: [ChangeType.Added],
-      });
-
-      expect(deleted?.selection.units).toEqual([replace]);
-      expect(created?.selection.units).toEqual([replace]);
-    });
-
     it('gives a rename into the id of a deleted row its takeover when a search matches only the rename, by its Head id', async () => {
       const draft = await givenCommittedProductsAndTags();
       await draft.removeRow(PRODUCTS, 'p1');
@@ -289,12 +429,14 @@ describe('Draft row filters', () => {
       const draft = await givenAllRowChangeTypes();
       await draft.removeRow(PRODUCTS, 'p5');
       await draft.renameRow(PRODUCTS, 'p6', 'p5');
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.createRows(PRODUCTS, { p1: product('reused') });
       const all = await readFiltered(draft, {});
 
-      for (const changeType of Object.values(ChangeType)) {
-        expect(
-          await readFiltered(draft, { changeTypes: [changeType] }),
-        ).toEqual(all.filter((item) => matchesType(item, changeType)));
+      for (const kind of DRAFT_ROW_CHANGE_KINDS) {
+        expect(await readFiltered(draft, { changeTypes: [kind] })).toEqual(
+          all.filter((item) => matchesKind(item, kind)),
+        );
       }
     });
   });
@@ -305,7 +447,7 @@ describe('Draft row filters', () => {
       await draft.removeRow(PRODUCTS, 'p5');
       await draft.createRows(PRODUCTS, { p5: product('reused') });
       const filters: DraftRowChangesFilters = {
-        changeTypes: [ChangeType.Added, ChangeType.Removed],
+        changeTypes: [ChangeType.Added, ChangeType.Removed, 'REPLACED'],
       };
       const all = await readFiltered(draft, filters);
 
@@ -429,6 +571,20 @@ describe('Draft row filters', () => {
       ['an unknown change type', { changeTypes: ['MOVED'] }],
       ['a search that is not a string', { search: 1 }],
       ['a search with the NUL character', { search: 'p\u00001' }],
+      ['row ids without a table id', { rowIds: ['p1'] }],
+      ['row ids that are not an array', { tableId: PRODUCTS, rowIds: 'p1' }],
+      ['a row id that is not a string', { tableId: PRODUCTS, rowIds: [1] }],
+      [
+        'a row id with the NUL character',
+        { tableId: PRODUCTS, rowIds: ['p\u00001'] },
+      ],
+      [
+        'more than 100 row ids',
+        {
+          tableId: PRODUCTS,
+          rowIds: Array.from({ length: 101 }, (_, index) => `p${index}`),
+        },
+      ],
     ])('refuses %s before reading the snapshot', async (_input, filters) => {
       const draft = await givenCommittedProductsAndTags();
       const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');
@@ -446,6 +602,20 @@ describe('Draft row filters', () => {
       }
     });
 
+    it('refuses REPLACED as a change type of the table reads, which count replaced table ids beside their items', async () => {
+      const draft = await givenCommittedProductsAndTags();
+      const filters = {
+        changeTypes: ['REPLACED'],
+      } as unknown as DraftTableChangesFilters;
+
+      await expect(
+        draft.readDraftTableChanges({ first: 10, filters }),
+      ).rejects.toThrow(ListingValidationError);
+      await expect(draft.readDraftChangesSummary({ filters })).rejects.toThrow(
+        ListingValidationError,
+      );
+    });
+
     it('treats null filters and null filter fields as absent', async () => {
       const draft = await givenCommittedProductsAndTags();
       await draft.updateRow(PRODUCTS, 'p1', product('edited'));
@@ -457,7 +627,12 @@ describe('Draft row filters', () => {
       expect(
         await draft.readDraftRowChanges({
           first: 10,
-          filters: { tableId: null, changeTypes: null, search: null },
+          filters: {
+            tableId: null,
+            changeTypes: null,
+            search: null,
+            rowIds: null,
+          },
         }),
       ).toEqual(unfiltered);
     });
@@ -512,12 +687,19 @@ function product(title: string, price = 1) {
   return { title, price };
 }
 
-// RENAMED and MODIFIED also match RENAMED_AND_MODIFIED, which is both.
-function matchesType({ changeType }: DraftRowItem, type: ChangeType): boolean {
+// A replaced row is of its own kind; RENAMED and MODIFIED also match RENAMED_AND_MODIFIED, which is both.
+function matchesKind(
+  { changeType, replaced }: DraftRowItem,
+  kind: DraftRowChangeKind,
+): boolean {
+  if (replaced) {
+    return kind === 'REPLACED';
+  }
+
   return (
-    changeType === type ||
+    changeType === kind ||
     (changeType === ChangeType.RenamedAndModified &&
-      (type === ChangeType.Renamed || type === ChangeType.Modified))
+      (kind === ChangeType.Renamed || kind === ChangeType.Modified))
   );
 }
 

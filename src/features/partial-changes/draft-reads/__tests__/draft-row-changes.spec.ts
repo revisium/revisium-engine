@@ -132,6 +132,7 @@ describe('draft row changes', () => {
         tableId: PRODUCTS,
         rowId: 'p1',
         changeType: ChangeType.Modified,
+        replaced: false,
         fields: [
           {
             path: '/title',
@@ -141,6 +142,7 @@ describe('draft row changes', () => {
             selection: { state: 'unit', unit: title },
           },
         ],
+        fieldsTotal: 1,
         columns: [],
         selection: {
           state: 'selectable',
@@ -672,6 +674,7 @@ describe('draft row changes', () => {
         tableId: TAGS,
         rowId: 't1',
         changeType: ChangeType.Added,
+        replaced: false,
         fields: [
           {
             path: '',
@@ -681,6 +684,7 @@ describe('draft row changes', () => {
             selection: goesWithCreatedTable,
           },
         ],
+        fieldsTotal: 1,
         columns: [],
         selection: { ...goesWithCreatedTable, units: [] },
       });
@@ -794,7 +798,9 @@ describe('draft row changes', () => {
         rowId: 'p10',
         previousRowId: 'p1',
         changeType: ChangeType.Renamed,
+        replaced: false,
         fields: [],
+        fieldsTotal: 0,
         columns: [],
         selection: {
           state: 'selectable',
@@ -1210,9 +1216,169 @@ describe('draft row changes', () => {
     });
   });
 
+  describe('fields per row', () => {
+    it('lists at most the given number of field changes of each row, in native order, with the number of all of them', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateRow(PRODUCTS, 'p1', product('edited', 5, ['x']));
+      await draft.updateRow(PRODUCTS, 'p3', product('p3', 7));
+      const all = await readRowItems(draft);
+
+      const limited = rowItemsOf([
+        await draft.readDraftRowChanges({ first: 100, fieldsPerRow: 2 }),
+      ]);
+
+      expect(
+        all.map(({ fields, fieldsTotal }) => [fields.length, fieldsTotal]),
+      ).toEqual([
+        [3, 3],
+        [1, 1],
+      ]);
+      expect(limited).toEqual(
+        all.map((item) => ({ ...item, fields: item.fields.slice(0, 2) })),
+      );
+    });
+
+    it('lists no field change with a limit of 0, keeping their number and the row selection', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateRow(PRODUCTS, 'p1', product('edited', 5));
+      await draft.removeRow(PRODUCTS, 'p2');
+      const all = await readRowItems(draft);
+
+      const limited = rowItemsOf([
+        await draft.readDraftRowChanges({ first: 100, fieldsPerRow: 0 }),
+      ]);
+
+      expect(
+        limited.map(({ fields, fieldsTotal }) => [fields, fieldsTotal]),
+      ).toEqual([
+        [[], 2],
+        [[], 1],
+      ]);
+      expect(limited).toEqual(all.map((item) => ({ ...item, fields: [] })));
+    });
+
+    it('reads the rest of the field changes of one row by its id without the limit', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateRow(PRODUCTS, 'p1', product('edited', 5, ['x']));
+      await draft.updateRow(PRODUCTS, 'p2', product('edited', 5));
+      const all = await readRowItems(draft);
+
+      const row = rowItemsOf([
+        await draft.readDraftRowChanges({
+          first: 100,
+          filters: { tableId: PRODUCTS, rowIds: ['p1'] },
+        }),
+      ]);
+
+      expect(row).toEqual([rowItemOf(all, 'p1')]);
+    });
+
+    it('reads by the id of a takeover both items that show it, told apart by change type and previous row id', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.renameRow(PRODUCTS, 'p2', 'p1');
+      await draft.updateRow(PRODUCTS, 'p1', product('edited', 5, ['x']));
+      const all = await readRowItems(draft);
+      const limited = rowItemsOf([
+        await draft.readDraftRowChanges({ first: 100, fieldsPerRow: 1 }),
+      ]);
+
+      const rest = rowItemsOf([
+        await draft.readDraftRowChanges({
+          first: 100,
+          filters: { tableId: PRODUCTS, rowIds: ['p1'] },
+        }),
+      ]);
+      const expanded = limited.find(
+        ({ previousRowId }) => previousRowId === 'p2',
+      );
+
+      expect(rest.map((item) => [nameOf(item), item.previousRowId])).toEqual([
+        ['products/p1 REMOVED', undefined],
+        ['products/p1 RENAMED_AND_MODIFIED', 'p2'],
+      ]);
+      expect(expanded?.fields).toHaveLength(1);
+      const whole = rest.find(
+        ({ changeType, previousRowId }) =>
+          changeType === expanded?.changeType &&
+          previousRowId === expanded.previousRowId,
+      );
+
+      expect(whole).toEqual(
+        all.find(({ previousRowId }) => previousRowId === 'p2'),
+      );
+      expect(whole?.fields.length).toBeGreaterThan(1);
+      expect(whole?.fields).toHaveLength(expanded?.fieldsTotal ?? 0);
+    });
+  });
+
+  describe('replaced rows', () => {
+    it('marks the two items of a replaced row as replaced, the deleted row first, both with its one replace unit', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.createRows(PRODUCTS, { p1: product('reused') });
+      await draft.removeRow(PRODUCTS, 'p2');
+      await draft.createRows(PRODUCTS, { p9: product('new') });
+      const replace = existenceRef('rowReplace', PRODUCTS, 'p1');
+
+      const items = await readRowItems(draft);
+
+      expect(
+        items.map((item) => [
+          nameOf(item),
+          item.replaced,
+          item.selection.units,
+        ]),
+      ).toEqual([
+        ['products/p1 REMOVED', true, [replace]],
+        ['products/p1 ADDED', true, [replace]],
+        [
+          'products/p2 REMOVED',
+          false,
+          [existenceRef('rowDelete', PRODUCTS, 'p2')],
+        ],
+        [
+          'products/p9 ADDED',
+          false,
+          [existenceRef('rowCreate', PRODUCTS, 'p9')],
+        ],
+      ]);
+      expect(items[0]?.selection).toEqual(items[1]?.selection);
+      expect(items.slice(0, 2).map(({ fields }) => fields)).toEqual([
+        [expect.objectContaining({ path: '', oldValue: product('p1') })],
+        [expect.objectContaining({ path: '', newValue: product('reused') })],
+      ]);
+    });
+
+    it('does not mark a deleted row and the rename that took over its id, nor the rows of a replaced table', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.createTable(TAGS, labelSchema);
+      await draft.createRows(TAGS, { t1: { label: 'one' } });
+      await draft.commit();
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.renameRow(PRODUCTS, 'p2', 'p1');
+      await draft.removeTable(TAGS);
+      await draft.createTable(TAGS, labelSchema);
+      await draft.createRows(TAGS, { t1: { label: 'again' } });
+
+      const items = await readRowItems(draft);
+
+      expect(items.map((item) => [nameOf(item), item.replaced])).toEqual([
+        ['products/p1 REMOVED', false],
+        ['products/p1 RENAMED', false],
+        ['tags/t1 REMOVED', false],
+        ['tags/t1 ADDED', false],
+      ]);
+    });
+  });
+
   describe('validation', () => {
     it.each<[string, Record<string, unknown>]>([
       ['first of 0', { first: 0 }],
+      ['fields per row of -1', { first: 10, fieldsPerRow: -1 }],
+      ['fields per row of 1,001', { first: 10, fieldsPerRow: 1_001 }],
+      ['fields per row of 1.5', { first: 10, fieldsPerRow: 1.5 }],
+      ['fields per row that is not a number', { first: 10, fieldsPerRow: '5' }],
       ['first of 5,001', { first: 5_001 }],
       ['first of 1.5', { first: 1.5 }],
       ['an offset cursor', { first: 10, after: '10' }],
@@ -1269,11 +1435,15 @@ describe('draft row changes', () => {
       ).rejects.toThrow(ListingValidationError);
     });
 
-    it('treats a null after as absent', async () => {
+    it('treats a null after and a null fields per row as absent', async () => {
       const draft = await givenCommittedProducts();
       await draft.updateRow(PRODUCTS, 'p1', product('edited'));
 
-      const page = await draft.readDraftRowChanges({ first: 10, after: null });
+      const page = await draft.readDraftRowChanges({
+        first: 10,
+        after: null,
+        fieldsPerRow: null,
+      });
 
       expect(page).toEqual(await draft.readDraftRowChanges({ first: 10 }));
     });

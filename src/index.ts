@@ -392,6 +392,7 @@ export {
   type DraftEdge,
   type DraftPageInfo,
   type DraftReadState,
+  type DraftRowsSummary,
   type DraftTableChangesFilters,
   type FieldSelection,
   type FieldSelectionState,
@@ -415,9 +416,11 @@ export {
 } from './features/partial-changes/queries/impl/get-draft-table-changes.query';
 export {
   DRAFT_FIELD_CHANGE_TYPES,
+  DRAFT_ROW_CHANGE_KINDS,
   type DraftColumnChange,
   type DraftFieldChange,
   type DraftFieldChangeType,
+  type DraftRowChangeKind,
   type DraftRowChangesFilters,
   type DraftRowChangesInput,
   type DraftRowItem,

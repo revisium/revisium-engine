@@ -651,8 +651,9 @@ unit). Each field entry (`ChangedField`) holds enough to show the change without
 `enum`, `readOnly`, `x-formula` and annotations of a primitive field, an array with its `items`, a File as its `$ref`.
 An object's own annotations read as the object `annotated`, with its own keywords only (`ObjectOwnSchema`, without
 `properties`). A field that became an object, or an object that became a field, reads leaf by leaf: the old leaves
-`removed`, the new ones `added`. Equal `before` and `after` on a `changed` field mean a schema patch rewrote its values
-without a net schema change. A primitive field has no `required` keyword, so no entry says "becomes required".
+`removed`, the new ones `added`. Equal `before` and `after` on a `changed` field mean either that a schema patch
+rewrote its values without a net schema change, or that its `foreignKey` names the same table id on both sides while
+that id belongs to a different table (the referenced table was removed and another created at its id). A primitive field has no `required` keyword, so no entry says "becomes required".
 
 ```json
 {

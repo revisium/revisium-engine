@@ -203,8 +203,13 @@ function fieldSchemasOf({
   return schemas;
 }
 
-// An object is no leaf: its fields are described at their own pointers, so it is described by its own keywords.
+// A copy, so a caller that edits a result changes neither the snapshot nor another description.
 function fieldSchemaOf(schema: JsonSchema): FieldSchema {
+  return structuredClone(describedSchemaOf(schema));
+}
+
+// An object is no leaf: its fields are described at their own pointers, so it is described by its own keywords.
+function describedSchemaOf(schema: JsonSchema): FieldSchema {
   if (!isObjectSchema(schema)) {
     return schema;
   }

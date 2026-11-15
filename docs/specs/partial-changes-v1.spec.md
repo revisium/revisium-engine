@@ -578,10 +578,12 @@ from: at `from` for a moved field, otherwise at `path`.
   array is one atomic leaf, §3.2); for a File its `$ref`. An object is no leaf, and its fields are entries of their
   own, so an `annotated` object carries its own keywords only, without `properties`, `required` and
   `additionalProperties` (`ObjectOwnSchema`).
-- A `changed` entry whose two schemas are equal says that a pending patch rewrote the field's values without a net
-  schema change (an object replaced with an equal schema, a later patch that restored the Head schema, or a change of
-  an enclosing object's `required` list, below); its values travel with the structure unit as for any `changed`
-  field.
+- A `changed` entry can carry two equal schemas for two causes. A pending patch rewrote the field's values without a
+  net schema change: an object replaced with an equal schema, a later patch that restored the Head schema, or a change
+  of an enclosing object's `required` list (below). Or its `foreignKey` names the same table id on both sides while
+  that id belongs to different tables (§3.3, condition 2): the referenced table was removed and another created at its
+  id. Either way its values travel with the structure unit as for any `changed` field.
+- Every entry holds its own copies of the schemas, so a caller that edits one changes no other result.
 - A node whose kind changed reads leaf by leaf, so every entry names one leaf with an unambiguous schema: an object
   that became a text field reads as the field `added` and the object's leaves `removed`; a field that became an object
   as the field `removed` and the object's leaves `added`; a field that became an array, an array that became a field,
@@ -2503,7 +2505,7 @@ A schema change says what changed. The API is unreleased, and the change only ad
   client read and compared both table schemas to say so.
 - An entry holds leaf schemas only (an array with its items, a File as its `$ref`); an annotated object holds its own
   keywords without `properties`, `required` and `additionalProperties`. A node whose kind changed reads leaf by leaf.
-  Created, removed and transient tables keep `fields` empty.
+  Created, removed and transient tables keep `fields` empty. Each entry holds its own copies of the schemas.
 - "Becomes required" is not a change of a field schema: primitive schemas have no `required`, and the standard tools
   list every property in an object's `required`; no flag is added.
 - §5.10: the package exports `FieldSchema` and `ObjectOwnSchema`. The fingerprint, the unit identities and the

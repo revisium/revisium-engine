@@ -17,6 +17,7 @@ import type {
 } from 'src/features/partial-changes/catalogue/structure-changes';
 import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
+import { rowItemsOf } from '../../__tests__/support/draft-reading';
 
 const CATEGORIES = 'categories';
 const GROUPS = 'groups';
@@ -308,6 +309,24 @@ describe('what a changed field of a structure change holds', () => {
     });
   });
 
+  it('gives each description its own schemas, so a caller that edits one changes no other', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: productRow, p2: { ...productRow, code: 'p2' } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [replaceField('price', str())]);
+
+    const [first, second] = await rowStructuresOf(draft);
+    const edited = first?.fields[0]?.after as Record<string, unknown>;
+    edited.type = 'number';
+
+    expect(second?.fields).toEqual([
+      { path: '/price', change: 'changed', before: num(), after: str() },
+    ]);
+  });
+
   describe('a replaced table', () => {
     it('describes each field by the schema of the removed Head table and of the created Draft table', async () => {
       const draft = await givenCommittedProducts();
@@ -386,6 +405,18 @@ describe('what a changed field of a structure change holds', () => {
     });
   }
 });
+
+async function rowStructuresOf(
+  draft: ChangesScenario,
+): Promise<StructureChange[]> {
+  const items = rowItemsOf([await draft.readDraftRowChanges({ first: 100 })]);
+
+  return items.flatMap(({ selection }) =>
+    selection.state === 'goesWith' && selection.unit.structureChange
+      ? [selection.unit.structureChange]
+      : [],
+  );
+}
 
 async function structureChangeOf(
   draft: ChangesScenario,

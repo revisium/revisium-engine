@@ -472,7 +472,7 @@ describe('commitChanges of structure units', () => {
       await draft.createRows(TAGS, { b1: { name: 'one' } });
 
       expect(
-        unitsOf((await draft.listChanges({ tableId: TAGS })).units),
+        unitsOf((await draft.readUnitList({ tableId: TAGS })).units),
       ).toEqual([{ kind: 'structure' }]);
       await expectApplied(
         draft.commitChanges({ selection: { structures: [{ tableId: TAGS }] } }),

@@ -8,7 +8,7 @@ import {
   type Fields,
   isFields,
 } from 'src/features/partial-changes/input/fields';
-import { ListingValidationError } from 'src/features/partial-changes/listing/listing-validation-error';
+import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
 import type { DraftChangesSummaryInput } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import type { DraftRowChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTableChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';

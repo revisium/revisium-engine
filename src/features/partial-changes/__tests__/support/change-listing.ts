@@ -1,87 +1,57 @@
 import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type {
-  Unit,
-  UnitAddress,
-} from 'src/features/partial-changes/catalogue/unit';
-import type {
-  ListChangesInput,
-  ListChangesResult,
-  ListedUnit,
-} from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
+import { buildChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
+import type { UnitAddress } from 'src/features/partial-changes/catalogue/unit';
+import type { RefusedTable } from 'src/features/partial-changes/head-schema/head-schema-check';
 import {
-  type ChangesBranch,
-  type RowPair,
-  unitRowIdOf,
+  type DescribedUnitRef,
+  describedUnitRefOf,
+  type UnitRef,
+} from 'src/features/partial-changes/selection/unit-refs';
+import type {
+  ChangesBranch,
+  ChangesSnapshot,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
-import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { AddressedUnit } from './catalogue-reading';
+import {
+  readComparedSnapshot,
+  readInPlanningTransaction,
+} from './snapshot-reading';
 
-export type ListingOptions = Omit<ListChangesInput, 'branch'>;
-
-export interface ChangedRowsRead {
-  readonly tableId: string;
-  readonly rowIds: readonly string[];
-  readonly pairs: number;
+export interface UnitListOptions {
+  readonly tableId?: string;
 }
 
-export interface PageWithReads {
-  readonly page: ListChangesResult;
-  readonly reads: readonly ChangedRowsRead[];
+// Every selectable unit of the Draft in unit order, as a preview names a required unit.
+export interface UnitList {
+  readonly headRevisionId: string;
+  readonly draftRevisionId: string;
+  readonly units: readonly DescribedUnitRef[];
+  readonly refusedTables: readonly RefusedTable[];
 }
 
-const MAX_PAGES = 1_000;
-
-export function listChanges(
+export function readUnitList(
   kit: PartialChangesTestKit,
   branch: ChangesBranch,
-  options: ListingOptions,
-): Promise<ListChangesResult> {
-  return kit.partialChangesApi.listChanges({ ...options, branch });
-}
+  { tableId }: UnitListOptions = {},
+): Promise<UnitList> {
+  return readInPlanningTransaction(kit, async () => {
+    const compared = await readComparedSnapshot(kit, branch);
+    const changedRows = await kit.snapshotReader.readChangedRows(
+      compared.tables,
+    );
+    const catalogue = buildChangeCatalogue({ ...compared, changedRows });
+    const isListed = tableFilterOf(compared.snapshot, tableId);
 
-export async function listEveryPage(
-  kit: PartialChangesTestKit,
-  branch: ChangesBranch,
-  options: ListingOptions,
-): Promise<ListChangesResult[]> {
-  const pages = await listEveryPageWithReads(kit, branch, options);
-
-  return pages.map(({ page }) => page);
-}
-
-export async function listEveryPageWithReads(
-  kit: PartialChangesTestKit,
-  branch: ChangesBranch,
-  options: ListingOptions,
-): Promise<PageWithReads[]> {
-  const reads = new ChangedRowsReads(kit);
-  const pages: PageWithReads[] = [];
-  let cursor = options.cursor;
-
-  try {
-    do {
-      const page = await reads.during(() =>
-        listChanges(kit, branch, { ...options, cursor }),
-      );
-
-      pages.push(page);
-      cursor = page.page.nextCursor ?? undefined;
-    } while (cursor !== undefined && pages.length < MAX_PAGES);
-  } finally {
-    reads.stop();
-  }
-
-  if (cursor !== undefined) {
-    throw new Error(`The listing did not end within ${MAX_PAGES} pages`);
-  }
-
-  return pages;
-}
-
-export function unitsOfPages(
-  pages: readonly ListChangesResult[],
-): ListedUnit[] {
-  return pages.flatMap(({ units }) => units);
+    return {
+      headRevisionId: compared.snapshot.headRevisionId,
+      draftRevisionId: compared.snapshot.draftRevisionId,
+      units: catalogue.units
+        .filter(isListed)
+        .map((unit) => describedUnitRefOf(unit, catalogue.tables)),
+      refusedTables: catalogue.refusedTables,
+    };
+  });
 }
 
 export function addressedUnitOfListed(listed: UnitRef): AddressedUnit {
@@ -101,7 +71,7 @@ export function addressedUnitOfListed(listed: UnitRef): AddressedUnit {
   };
 }
 
-function addressIdOf(unit: Unit): string {
+function addressIdOf(unit: UnitRef): string {
   if (unit.kind === 'sharedSchema') {
     return unit.sharedSchemaId;
   }
@@ -109,52 +79,22 @@ function addressIdOf(unit: Unit): string {
   return unit.tableId;
 }
 
-class ChangedRowsReads {
-  private readonly spy: jest.SpyInstance;
-  private reads: Promise<ChangedRowsRead>[] = [];
-
-  constructor(private readonly kit: PartialChangesTestKit) {
-    const reader = kit.snapshotReader;
-    const readChangedRows = reader.readChangedRowsFrom.bind(reader);
-
-    this.spy = jest
-      .spyOn(reader, 'readChangedRowsFrom')
-      .mockImplementation(async (table, keyset) => {
-        const pairs = await readChangedRows(table, keyset);
-
-        this.reads.push(this.readOf(table.draftVersionId, pairs));
-
-        return pairs;
-      });
+// The units of the table with that Draft id, or else that Head id, on either side.
+function tableFilterOf(
+  snapshot: ChangesSnapshot,
+  tableId: string | undefined,
+): (unit: CatalogueUnit) => boolean {
+  if (tableId === undefined) {
+    return () => true;
   }
 
-  public async during(
-    list: () => Promise<ListChangesResult>,
-  ): Promise<PageWithReads> {
-    this.reads = [];
+  const pair =
+    snapshot.tables.find(({ draft }) => draft?.id === tableId) ??
+    snapshot.tables.find(({ head }) => head?.id === tableId);
 
-    const page = await list();
-
-    return { page, reads: await Promise.all(this.reads) };
+  if (!pair) {
+    throw new Error(`tableId "${tableId}" names no Head or Draft table`);
   }
 
-  public stop(): void {
-    this.spy.mockRestore();
-  }
-
-  private async readOf(
-    tableVersionId: string,
-    pairs: readonly RowPair[],
-  ): Promise<ChangedRowsRead> {
-    const table = await this.kit.prisma.table.findUniqueOrThrow({
-      where: { versionId: tableVersionId },
-      select: { id: true },
-    });
-
-    return {
-      tableId: table.id,
-      rowIds: [...new Set(pairs.map(unitRowIdOf))],
-      pairs: pairs.length,
-    };
-  }
+  return ({ tableIdentities }) => tableIdentities.includes(pair.identity);
 }

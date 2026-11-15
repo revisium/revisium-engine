@@ -6,11 +6,11 @@ import {
 import type { JsonValue } from 'src/engine-prisma-types';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import {
-  type ListedUnit,
   STRUCTURE_TABLE_CHANGES,
   type StructureTableChange,
-} from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+} from 'src/features/partial-changes/catalogue/structure-changes';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import {
   seededRandom,
   type SeededRandom,
@@ -47,7 +47,7 @@ type SidedDocuments = Readonly<Record<RevisionSide, ViewsDocuments>>;
 class TableUnits {
   private readonly tableChanges = new Map<string, StructureTableChange>();
 
-  constructor(units: readonly ListedUnit[]) {
+  constructor(units: readonly DescribedUnitRef[]) {
     for (const unit of units) {
       if (unit.structureChange) {
         this.tableChanges.set(
@@ -62,7 +62,7 @@ class TableUnits {
     const change = this.tableChanges.get(keyOf(unit));
 
     if (change === undefined) {
-      throw new Error(`The listing has no structure unit ${keyOf(unit)}`);
+      throw new Error(`The catalogue has no structure unit ${keyOf(unit)}`);
     }
 
     return change;
@@ -273,7 +273,7 @@ describe('views follow the structure over random Drafts (AS-83)', () => {
 });
 
 function expectNoTableWithBothStructureAndViewsUnits(
-  units: readonly ListedUnit[],
+  units: readonly DescribedUnitRef[],
 ): void {
   const addressed = units.map(addressedUnitOfListed);
   const structureTableIds = new Set(
@@ -350,7 +350,7 @@ function applyOf(
 }
 
 function randomSelectionOf(
-  units: readonly ListedUnit[],
+  units: readonly DescribedUnitRef[],
   random: SeededRandom,
 ): Selection {
   const included = Array.from({ length: random.count(1, 3) }, () =>
@@ -368,7 +368,7 @@ function randomSelectionOf(
 // A changed structure that carries a views change, another structure that does, and a views unit, when the Draft lists
 // them, plus random units.
 function viewsSelectionOf(
-  units: readonly ListedUnit[],
+  units: readonly DescribedUnitRef[],
   random: SeededRandom,
 ): Selection {
   const carryingViews = units.filter(

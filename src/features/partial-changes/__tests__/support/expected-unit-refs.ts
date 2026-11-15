@@ -1,5 +1,5 @@
 import type { RowColumn } from 'src/features/partial-changes/catalogue/unit';
-import type { StructureChange } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { StructureChange } from 'src/features/partial-changes/catalogue/structure-changes';
 import type {
   DescribedUnitRef,
   UnitRef,

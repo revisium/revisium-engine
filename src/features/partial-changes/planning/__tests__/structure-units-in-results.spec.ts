@@ -5,7 +5,7 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
@@ -44,7 +44,7 @@ describe('structure units in preview and apply results', () => {
 
   describe('previewChanges', () => {
     it.each(OPERATIONS)(
-      'describes the structure unit a %s requires as the listing does',
+      'describes the structure unit a %s requires as the catalogue does',
       async (operation) => {
         const draft = await givenProductsGettingColor();
 
@@ -59,7 +59,7 @@ describe('structure units in preview and apply results', () => {
       },
     );
 
-    it('describes the structure a deferred row is committed without as the listing does', async () => {
+    it('describes the structure a deferred row is committed without as the catalogue does', async () => {
       const draft = await givenProductsGettingColor();
 
       const preview = await draft.previewChanges({
@@ -72,18 +72,7 @@ describe('structure units in preview and apply results', () => {
       ]);
     });
 
-    it('describes a sampled structure unit as the listing does', async () => {
-      const draft = await givenProductsGettingColor();
-
-      const preview = await draft.previewChanges({
-        operation: 'commit',
-        selection: structureOfProducts,
-      });
-
-      expect(preview.sample).toEqual([await listedStructureOf(draft)]);
-    });
-
-    it('describes the excluded structure unit of a blocker as the listing does', async () => {
+    it('describes the excluded structure unit of a blocker as the catalogue does', async () => {
       const draft = await givenProductsGettingColor();
 
       const preview = await draft.previewChanges({
@@ -98,7 +87,7 @@ describe('structure units in preview and apply results', () => {
   });
 
   describe('the cause of a reason (AS-85)', () => {
-    it('describes the structure unit a required unit is caused by as the listing does', async () => {
+    it('describes the structure unit a required unit is caused by as the catalogue does', async () => {
       const draft = await givenProductsReferencingCreatedBrands();
       const products = await listedStructureOf(draft);
 
@@ -139,7 +128,7 @@ describe('structure units in preview and apply results', () => {
   });
 
   describe('commitChanges and revertChanges', () => {
-    it('describes the structure unit a commit requires as the listing does', async () => {
+    it('describes the structure unit a commit requires as the catalogue does', async () => {
       const draft = await givenProductsGettingColor();
       const structure = await listedStructureOf(draft);
 
@@ -157,7 +146,7 @@ describe('structure units in preview and apply results', () => {
       });
     });
 
-    it('describes the excluded structure unit that blocks a revert as the listing does', async () => {
+    it('describes the excluded structure unit that blocks a revert as the catalogue does', async () => {
       const draft = await givenProductsGettingColor();
       const structure = await listedStructureOf(draft);
 
@@ -184,13 +173,13 @@ describe('structure units in preview and apply results', () => {
 
   async function listedStructureOf(
     draft: ChangesScenario,
-  ): Promise<ListedUnit> {
-    const { units } = await draft.listChanges({ tableId: PRODUCTS });
+  ): Promise<DescribedUnitRef> {
+    const { units } = await draft.readUnitList({ tableId: PRODUCTS });
     const structure = units.find(({ kind }) => kind === 'structure');
 
     if (!structure?.structureChange) {
       throw new Error(
-        `The listing does not describe the structure of ${PRODUCTS}`,
+        `The catalogue does not describe the structure of ${PRODUCTS}`,
       );
     }
 

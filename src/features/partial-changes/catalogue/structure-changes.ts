@@ -1,19 +1,39 @@
 import type { CatalogueTables } from 'src/features/partial-changes/catalogue/catalogue-tables';
 import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import { carriesViewsChange } from 'src/features/partial-changes/catalogue/views-units';
-import type {
-  ChangedField,
-  StructureChange,
-  StructureTableChange,
-} from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { AnnotationKeyword } from 'src/features/partial-changes/structure/normalized-leaf-schema';
 import {
   type AnnotatedObject,
   type ChangedLeaf,
   changedLeavesOfReplacedTable,
+  type StructureFieldChange,
   type TableStructure,
 } from 'src/features/partial-changes/structure/table-structure';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
+
+export const STRUCTURE_TABLE_CHANGES = [
+  'created',
+  'removed',
+  'replaced',
+  'transient',
+  'changed',
+] as const;
+
+export type StructureTableChange = (typeof STRUCTURE_TABLE_CHANGES)[number];
+
+export interface ChangedField {
+  readonly path: string;
+  readonly change: StructureFieldChange;
+  readonly from?: string;
+  readonly annotations?: readonly AnnotationKeyword[];
+}
+
+export interface StructureChange {
+  readonly table: StructureTableChange;
+  readonly fields: readonly ChangedField[];
+  readonly views: boolean;
+}
 
 type WholeTableChange = Exclude<StructureTableChange, 'changed' | 'replaced'>;
 

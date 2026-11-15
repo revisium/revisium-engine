@@ -3,7 +3,6 @@ import { BadRequestException } from '@nestjs/common';
 import { num, obj, str } from '@revisium/schema-toolkit/mocks';
 import { namesExportedFrom } from 'src/__tests__/utils/package-exports';
 import { deeplyNestedCursor } from 'src/features/partial-changes/__tests__/support/hostile-cursors';
-import { encodeListingCursor } from 'src/features/partial-changes/listing/listing-cursor';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import * as engine from 'src/index';
 import {
@@ -12,8 +11,8 @@ import {
   type ChangesBranch,
   type EngineApiService,
   type InputJsonValue,
-  type ListedUnit,
   type Selection,
+  type UnitRef,
 } from 'src/index';
 import {
   createEngineE2eTestKit,
@@ -73,9 +72,6 @@ const CHANGES_API_TYPES = [
   'IdExchange',
   'IdExchangeTermination',
   'IdTakeover',
-  'ListChangesInput',
-  'ListChangesResult',
-  'ListedUnit',
   'MigrationRenumbering',
   'MixedTableEstimate',
   'NothingToApply',
@@ -473,7 +469,7 @@ type Edge<Page extends { readonly edges: readonly unknown[] }> =
 
 type Variant<Union, State> = Extract<Union, { readonly state: State }>;
 
-// Every object a result of the seven operations holds has an exported name, and the result types use it.
+// Every object a result of the six operations holds has an exported name, and the result types use it.
 const RESULT_PARTS_HAVE_THEIR_NAMES = unionsEqual<
   [
     Equal<
@@ -505,7 +501,6 @@ const RESULT_PARTS_HAVE_THEIR_NAMES = unionsEqual<
 
 const CHANGES_OPERATIONS = [
   'commit',
-  'list',
   'preview',
   'revert',
   'rowChanges',
@@ -523,12 +518,12 @@ const deskPrice = { tableId: PRODUCTS, rowId: 'desk', path: '/price' };
 const lampTitleSelection: Selection = { fields: [lampTitle] };
 const deskPriceSelection: Selection = { fields: [deskPrice] };
 
-const lampTitleUnit: ListedUnit = {
+const lampTitleUnit: UnitRef = {
   kind: 'field',
   ...lampTitle,
   selector: lampTitleSelection,
 };
-const deskPriceUnit: ListedUnit = {
+const deskPriceUnit: UnitRef = {
   kind: 'field',
   ...deskPrice,
   selector: deskPriceSelection,
@@ -610,7 +605,7 @@ describe('EngineApiService.changes (AS-92)', () => {
     await kit.close();
   });
 
-  it('exposes the seven operations in the changes namespace', () => {
+  it('exposes the six operations in the changes namespace, without a flat list of units', () => {
     expect(Object.keys(changes).sort()).toEqual(CHANGES_OPERATIONS);
   });
 
@@ -678,12 +673,6 @@ describe('EngineApiService.changes (AS-92)', () => {
       ],
       pageInfo: { hasNextPage: false },
     });
-    expect(await changes.list({ branch })).toMatchObject({
-      units: [deskPriceUnit, lampTitleUnit],
-      nextCursor: null,
-      refusedTables: [],
-    });
-
     const preview = await changes.preview({
       branch,
       operation: 'revert',
@@ -695,6 +684,7 @@ describe('EngineApiService.changes (AS-92)', () => {
       planned: true,
       counts: { selected: 1, required: 0 },
     });
+    expect(preview).not.toHaveProperty('sample');
     expect(
       await changes.revert({
         branch,
@@ -724,7 +714,10 @@ describe('EngineApiService.changes (AS-92)', () => {
       price: 10,
     });
     expect(await headProductData('desk')).toEqual({ title: 'Desk', price: 20 });
-    expect((await changes.list({ branch })).units).toEqual([]);
+    expect(await changes.tableChanges({ branch, first: 10 })).toMatchObject({
+      edges: [],
+      totalCount: 0,
+    });
   });
 
   it('says what changed when the Draft changed after the preview', async () => {
@@ -758,14 +751,6 @@ describe('EngineApiService.changes (AS-92)', () => {
     await givenCommittedProducts({ lamp: { title: 'Lamp', price: 10 } });
     await updateDraftProduct('lamp', { title: 'Desk lamp', price: 10 });
 
-    expect(
-      await changes.list({
-        branch,
-        tableId: null,
-        cursor: null,
-        pageSize: null,
-      }),
-    ).toEqual(await changes.list({ branch }));
     expect(
       await changes.tableChanges({
         branch,
@@ -822,11 +807,6 @@ describe('EngineApiService.changes (AS-92)', () => {
   });
 
   it.each<[string, () => Promise<unknown>, string]>([
-    [
-      'list',
-      () => changes.list({ branch, pageSize: 0 }),
-      'pageSize must be an integer',
-    ],
     [
       'preview',
       () =>
@@ -898,41 +878,15 @@ describe('EngineApiService.changes (AS-92)', () => {
       .endCursor;
     const tableCursor = (await changes.tableChanges({ branch, first: 1 }))
       .pageInfo.endCursor;
-    const listingCursor = (await changes.list({ branch, pageSize: 1 }))
-      .nextCursor;
 
-    expect([rowCursor, tableCursor, listingCursor]).not.toContain(null);
+    expect([rowCursor, tableCursor]).not.toContain(null);
     await expectBadRequest(
-      changes.list({ branch, cursor: rowCursor, pageSize: 5 }),
-      'cursor is malformed',
-    );
-    await expectBadRequest(
-      changes.list({ branch, cursor: tableCursor, pageSize: 5 }),
-      'cursor is malformed',
-    );
-    await expectBadRequest(
-      changes.rowChanges({ branch, first: 1, after: listingCursor }),
+      changes.rowChanges({ branch, first: 1, after: tableCursor }),
       'after is malformed',
     );
     await expectBadRequest(
-      changes.tableChanges({ branch, first: 1, after: listingCursor }),
+      changes.tableChanges({ branch, first: 1, after: rowCursor }),
       'after is malformed',
-    );
-  });
-
-  it('refuses a listing cursor holding the NUL character as a bad request, not a database error', async () => {
-    await givenCommittedProducts({ lamp: { title: 'Lamp', price: 10 } });
-    await updateDraftProduct('lamp', { title: 'Desk lamp', price: 10 });
-
-    await expectBadRequest(
-      changes.list({
-        branch,
-        cursor: encodeListingCursor({
-          tableId: PRODUCTS,
-          rows: { rowId: 'lamp\u0000', inclusive: false },
-        }),
-      }),
-      'cursor is malformed',
     );
   });
 
@@ -940,10 +894,6 @@ describe('EngineApiService.changes (AS-92)', () => {
     await givenCommittedProducts({ lamp: { title: 'Lamp', price: 10 } });
     await updateDraftProduct('lamp', { title: 'Desk lamp', price: 10 });
 
-    await expectBadRequest(
-      changes.list({ branch, cursor: deeplyNestedCursor('units') }),
-      'cursor is malformed',
-    );
     await expectBadRequest(
       changes.tableChanges({
         branch,

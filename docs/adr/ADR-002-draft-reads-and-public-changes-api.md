@@ -8,6 +8,11 @@ Amends [ADR-001]: decision 3 (a views edit of a table whose structure changed is
 module table (the Draft reads belong to `partial-changes`, not to `revision-changes`) and the consequence on remaining
 counts (results no longer count remaining units).
 
+Amended 2026-11-15 ([PR #202](https://github.com/revisium/revisium-engine/pull/202)): `changes.list` and the preview
+field `sample` were removed before the first release, so the `changes` namespace has six operations, not the seven
+named below; no client uses a flat list of units, because the Draft reads return ready selectors
+([partial-changes-v1](../specs/partial-changes-v1.spec.md) v2.8).
+
 ## Date
 
 2026-11-10

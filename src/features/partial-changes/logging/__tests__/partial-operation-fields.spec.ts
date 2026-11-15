@@ -208,43 +208,9 @@ describe('Partial operation log', () => {
         estimate: { mixedTables: 200_000, maxLinksCopied: 199_999 },
       });
     });
-
-    it('says `listed` for a result without a status, and nothing of limits a listing does not apply', async () => {
-      const entries = loggedEntries();
-
-      await new OperationLog().track(
-        partialOperation('list', BRANCH),
-        (trace) => {
-          trace.attempted(false);
-          trace.planned(() => plannedFieldsOf(PLANNED));
-
-          return Promise.resolve({});
-        },
-      );
-
-      const [entry] = entries.finished();
-      expect(entry).toMatchObject({ outcome: 'listed', attempts: 1 });
-      expect(entry).not.toHaveProperty('tooLarge');
-      expect(entry).not.toHaveProperty('estimate');
-    });
   });
 
   describe('partial operations', () => {
-    it('log one entry for a listing page', async () => {
-      const draft = await givenEditedNotes(['n1']);
-      const entries = loggedEntries();
-
-      await draft.listChanges();
-
-      expect(entries.finished()).toEqual<OperationLogEntry[]>([
-        {
-          ...(await expectedEntryOf(draft, 'list')),
-          outcome: 'listed',
-          refusedTables: 0,
-        },
-      ]);
-    });
-
     it('log one entry for a preview', async () => {
       const draft = await givenEditedNotes(['n1']);
       const entries = loggedEntries();
@@ -447,11 +413,10 @@ describe('Partial operation log', () => {
       ]);
     });
 
-    it('log a listing page and a preview whose input is refused', async () => {
+    it('log a preview whose input is refused', async () => {
       const draft = await givenEditedNotes(['n1']);
       const entries = loggedEntries();
 
-      await expect(draft.listChanges({ pageSize: 0 })).rejects.toThrow();
       await expect(
         draft.previewChanges({
           operation: 'commit',
@@ -460,12 +425,6 @@ describe('Partial operation log', () => {
       ).rejects.toThrow();
 
       expect(entries.failed()).toMatchObject([
-        {
-          operation: 'list',
-          outcome: 'error',
-          attempts: 0,
-          error: 'ListingValidationError',
-        },
         {
           operation: 'preview',
           outcome: 'error',

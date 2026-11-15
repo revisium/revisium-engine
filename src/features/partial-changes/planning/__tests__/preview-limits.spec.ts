@@ -106,7 +106,6 @@ describe('previewChanges refused by a limit', () => {
         blockers: [{ code: 'tooLarge', message: CHANGED_ROWS_TOO_LARGE }],
         blockersTotal: 1,
         deferred: [],
-        sample: [],
         unmatched: null,
         estimate: {
           changedRows: 4,
@@ -142,7 +141,6 @@ describe('previewChanges refused by a limit', () => {
         blockers: [{ code: 'tooLarge', message: PER_ROW_WORK_TOO_LARGE }],
         blockersTotal: 1,
         deferred: [],
-        sample: [],
         unmatched: null,
         estimate: {
           changedRows: 2,
@@ -225,7 +223,6 @@ describe('previewChanges refused by a limit', () => {
       coverage: [],
       required: [],
       deferred: [],
-      sample: [],
       unmatched: null,
       blockers: [
         {

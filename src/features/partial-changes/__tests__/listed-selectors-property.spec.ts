@@ -3,7 +3,7 @@ import {
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import { addressedUnitOfListed } from './support/change-listing';
 import type { ChangesScenario } from './support/changes-scenario';
@@ -62,7 +62,7 @@ describe('listed selectors over random Drafts (AS-61, AS-80)', () => {
   async function expectSelectorToPreviewOnlyItsUnit(
     draft: ChangesScenario,
     operation: ChangeOperation,
-    unit: ListedUnit,
+    unit: DescribedUnitRef,
   ): Promise<void> {
     const preview = await draft.previewChanges({
       operation,
@@ -77,13 +77,13 @@ describe('listed selectors over random Drafts (AS-61, AS-80)', () => {
         notSelectable: [],
       },
     });
-    expect(preview.sample).toContainEqual(sampledUnitOf(unit));
+    expect(await draft.readSelectedUnits(unit.selector)).toEqual([unit]);
   }
 
   async function expectExcludedSelectorToLeaveOutOnlyItsUnit(
     draft: ChangesScenario,
-    unit: ListedUnit,
-    units: readonly ListedUnit[],
+    unit: DescribedUnitRef,
+    units: readonly DescribedUnitRef[],
   ): Promise<void> {
     const resolution = await draft.resolveSelection({
       all: true,
@@ -106,7 +106,7 @@ describe('listed selectors over random Drafts (AS-61, AS-80)', () => {
   async function expectUnionToPreviewAsWholeDraft(
     draft: ChangesScenario,
     operation: ChangeOperation,
-    units: readonly ListedUnit[],
+    units: readonly DescribedUnitRef[],
   ): Promise<void> {
     const union = await draft.previewChanges({
       operation,
@@ -133,8 +133,4 @@ function selectionOutcomeOf(preview: PreviewChangesResult) {
 
 function decisionOf({ status, counts, fingerprint }: PreviewChangesResult) {
   return { status, counts, fingerprint };
-}
-
-function sampledUnitOf({ structure: _structure, ...unit }: ListedUnit) {
-  return unit;
 }

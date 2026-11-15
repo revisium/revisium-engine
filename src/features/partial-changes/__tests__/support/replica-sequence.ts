@@ -8,7 +8,7 @@ import type {
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { MigrationRenumbering } from 'src/features/share/ledger/native-migration-id';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
-import type { ListedUnit } from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import {
   seededRandom,
@@ -58,7 +58,7 @@ export interface TakenStep {
 type ReviewedApplication = Omit<ApplyChangesInput, 'branch'>;
 
 interface DraftState {
-  readonly units: readonly ListedUnit[];
+  readonly units: readonly DescribedUnitRef[];
   readonly hasChanges: boolean;
 }
 
@@ -189,9 +189,9 @@ export class ReplicaSequence {
     };
   }
 
-  private selectionOf(units: readonly ListedUnit[]): Selection {
+  private selectionOf(units: readonly DescribedUnitRef[]): Selection {
     const unselected = [...units];
-    const selected: ListedUnit[] = [];
+    const selected: DescribedUnitRef[] = [];
     const count = this.random.count(1, MAX_UNITS_PER_SELECTION);
 
     while (selected.length < count && unselected.length > 0) {

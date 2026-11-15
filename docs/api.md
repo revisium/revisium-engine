@@ -562,7 +562,6 @@ inline: a table item's `TableData`, a page's `DraftEdge`, the summary's `DraftTa
 | `changes.summary` | Totals of the Draft's changes, and the changes that no table item shows | no |
 | `changes.tableChanges` | Pages the changed tables, each with how its changes are selected | no |
 | `changes.rowChanges` | Pages the changed rows with their field and column changes, each with how it is selected | no |
-| `changes.list` | Pages every selectable unit with an exact selector | no |
 | `changes.preview` | Plans a commit or a revert of a selection | no |
 | `changes.commit` | Publishes the selected changes into Head | yes |
 | `changes.revert` | Takes the selected changes out of the Draft | yes |
@@ -626,11 +625,12 @@ A `Selection` is a union of selectors minus `exclude`; every field is optional:
 
 Ids are public ids: the Draft id, else the Head id. `side: 'head'` addresses a deleted row or removed table whose id a
 rename took over. Paths are JSON Pointers (`/dims/width`), never the native dot paths of the patch APIs. Clients need
-not build selectors from item fields: every read returns them ready (`selector` of a unit, `tableData.selector`
-of a table item, `row` of a row selection), and a returned selector (`SelectionItems`) can be added to a selection or
-to its `exclude` as it is. A selection is closed over its dependencies: a value of a row created in the Draft needs
-the row's creation, a reference needs the row it references, and so on; such units come back as required additions
-with a reason ([SPEC §5.7](specs/partial-changes-v1.spec.md#57-required-reasons)).
+not build selectors from item fields: every read returns them ready (`selector` of a unit, `tableData.selector` of a
+table item, `row` of a row selection), and a returned selector (`SelectionItems`) can be added to a selection or to its
+`exclude` as it is. A structure unit that a result names carries `structureChange`: what the table's structure change
+consists of, field by field. A selection is closed over its dependencies: a value of a row created in the Draft needs
+the row's creation, a reference needs the row it references, and so on; such units come back as required additions with
+a reason ([SPEC §5.7](specs/partial-changes-v1.spec.md#57-required-reasons)).
 
 ### Input rules
 
@@ -654,33 +654,6 @@ with a reason ([SPEC §5.7](specs/partial-changes-v1.spec.md#57-required-reasons
   | `{ all: true, exclude: {} }` | no |
   | `{ all: true, exclude: { rows: [] } }`, `{ all: true, exclude: { rows: null } }` | no |
   | `{ all: false }`, `{ all: null }`, `{}` | no |
-
-### changes.list
-
-```typescript
-engine.changes.list({
-  branch: ChangesBranch;
-  tableId?: string | null; // only units of this table (Draft id, else Head id)
-  cursor?: string | null;  // nextCursor of the previous page
-  pageSize?: number | null; // 1–5,000, default 500
-}): Promise<{
-  headRevisionId: string;
-  draftRevisionId: string;
-  units: ListedUnit[];   // in listing order, each with its `selector`
-  nextCursor: string | null; // null only at the end
-  refusedTables: RefusedTable[];
-}>
-```
-
-A page can hold fewer units than `pageSize`, or none; only `nextCursor: null` ends the listing. The listing has no
-total. A cursor belongs to the operation that issued it: `changes.list` refuses the `endCursor` of `tableChanges` or
-`rowChanges`, and they refuse its `nextCursor`, with a 400. Each page reads its own snapshot, so units can move between
-pages under concurrent edits; what a commit applies is bound by `expected`, not by the listing. A structure unit
-carries `structureChange` (what the table's structure change consists of, field by field), and another unit of a table
-with a structure unit names it in `structure`.
-
-The `tableId` filter resolves the id to one table, the Draft table first, so a removed table whose id a rename took
-over (its structure unit has `side: 'head'`) is not listed under that id; only the unfiltered listing shows its unit.
 
 ### changes.preview
 
@@ -708,19 +681,18 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | `blockers` | What prevents the operation, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS`, each with a `code` and a `message`; `migrationInProgress` while an async migration runs on the branch. |
 | `blockersTotal` | Every blocker, listed or not. |
 | `deferred` | Commit only: created or replaced rows committed without their table's structure, with the values the commit writes (`defaulted`) and the paths it leaves out (`omitted`). |
-| `sample` | The first 20 applied units in listing order, for display (`changes.list` is the complete list). |
 | `unmatched` | The selectors that matched no unit; `{}` when every selector matched, `null` when not `planned`. |
 | `refusedTables` | Tables that partial operations refuse on this branch (see [Refused tables](#refused-tables)); empty for exactly `{ all: true }`. |
 | `estimate` | What the plan measured against the limits. |
 | `draftHasChanges` | Only when `status` is `empty`: whether the Draft still differs from Head (its stored `hasChanges`). For exactly `{ all: true }`, `true` means the Draft holds only content-equal versions, which a commit or revert clears (see [Content-equal versions](#content-equal-versions)). |
 
 A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts` and `unmatched` are `null`,
-`coverage`, `required`, `deferred` and `sample` are empty, and `requiredTotal` is 0.
+`coverage`, `required` and `deferred` are empty, and `requiredTotal` is 0.
 
 ```json
 { "status": "blocked", "planned": false, "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
   "fingerprint": null, "counts": null, "coverage": [], "unmatched": null, "required": [], "requiredTotal": 0,
-  "deferred": [], "sample": [], "refusedTables": [], "blockers": [{ "code": "tooLarge", "message": "…" }],
+  "deferred": [], "refusedTables": [], "blockers": [{ "code": "tooLarge", "message": "…" }],
   "blockersTotal": 1, "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] } }
 ```
 
@@ -796,8 +768,8 @@ A preview, commit or revert result lists at most `PARTIAL_CHANGES_MAX_LISTED_DET
 entry, and equal the list lengths when nothing is cut. `required` lists the first additions in the plan's order;
 `blockers` lists the first blocker of each `code` before the repeats of a code, so a cut list shows every kind of
 blocker it has room for. A client shows the entries and the totals. Only the result is cut: `includeRequired: true`
-applies every required addition, the fingerprint covers them all, and `counts`, `coverage`, `deferred` and `sample`
-come from the whole plan ([SPEC §5.1](specs/partial-changes-v1.spec.md#51-common-types)).
+applies every required addition, the fingerprint covers them all, and `counts`, `coverage` and `deferred` come from
+the whole plan ([SPEC §5.1](specs/partial-changes-v1.spec.md#51-common-types)).
 
 ### Statuses
 
@@ -895,7 +867,7 @@ engine.changes.summary({
   differ) or `refused`. A field or column is `unit`, `goesWith`, `computed` or `refused`.
 - **Paging.** Keyset pages: pass `pageInfo.endCursor` as `after` while `pageInfo.hasNextPage`. Each page reads its own
   snapshot. The two items of one row id are never split, so a row page can hold a few more items than `first`. A read
-  refuses a cursor of the other read or of `changes.list` as malformed (400).
+  refuses a cursor of the other read as malformed (400).
 - **Totals.** `tableChanges` returns `totalCount` of the tables matching its filters. `rowChanges` returns no
   `totalCount`: it reads only the tables it needs for the page. Row totals come from `summary` (`rowsSummary` by
   change type, `rowsWithUnits`) or from a table item (`rowsSummary`, `tableData.rows`). The summary's counts are the
@@ -911,11 +883,10 @@ every row of both revisions.
 
 ### Refused tables
 
-Partial operations refuse a table whose stored history they cannot trust. `changes.list`, `changes.preview` and the
-Draft reads list it in `refusedTables` with a `code`. Its units are not computed: `changes.list` lists none, and the
-Draft reads show its items as `refused`. A preview, commit or revert whose selection involves it is `blocked` with a
-blocker of the same code. Exactly `{ all: true }` and the
-native `createRevision` and `revertChanges` still work.
+Partial operations refuse a table whose stored history they cannot trust. `changes.preview` and the Draft reads list it
+in `refusedTables` with a `code`. Its units are not computed: the Draft reads show its items as `refused`. A preview,
+commit or revert whose selection involves it is `blocked` with a blocker of the same code. Exactly `{ all: true }` and
+the native `createRevision` and `revertChanges` still work.
 
 - `unledgeredTable`: the table has no intact migration history. On a branch without a migration table (projects
   created before core v2.0.0, and their clones) every table is refused; run
@@ -928,9 +899,8 @@ native `createRevision` and `revertChanges` still work.
 
 | Condition | Error |
 | --- | --- |
-| Malformed input: an unknown selection field, a wrong type, an empty id, a `path` that is not a JSON Pointer, `includeRequired: true` without `expected`, a `pageSize` or `first` out of range, a malformed cursor or a cursor of another operation, a filter of a wrong type | `BadRequestException` (400), before any transaction |
+| Malformed input: an unknown selection field, a wrong type, an empty id, a `path` that is not a JSON Pointer, `includeRequired: true` without `expected`, a `first` out of range, a malformed cursor or a cursor of another operation, a filter of a wrong type | `BadRequestException` (400), before any transaction |
 | A malformed `expected`, including the bare SHA-256 hex fingerprints of engines before this API | `BadRequestException` (400): `expected must be a fingerprint` |
-| `changes.list` with a `tableId` that names no Head or Draft table | `BadRequestException` (400) |
 | Unknown project or branch | The native `BadRequestException`: `A branch with this name does not exist in the project` |
 | `commit` or `revert` while an async migration runs on the branch | `MIGRATION_LOCKED` (423) |
 | `commit` or `revert` that waited too long for the branch write fence | `BRANCH_WRITE_FENCED` (423) |
@@ -1028,7 +998,7 @@ list types, and how a typed transport maps the unions:
   work above its limits with `tooLarge`. The defaults are conservative; a host raises them through the environment
   once the operation logs show the real costs ([ENV.md](../ENV.md),
   [SPEC §11](specs/partial-changes-v1.spec.md#11-limits-and-configuration)).
-  Every listing page, Draft read (`tableChanges`, `rowChanges`, `summary`), preview, commit and revert logs one
+  Every Draft read (`tableChanges`, `rowChanges`, `summary`), preview, commit and revert logs one
   structured entry (`Partial changes operation finished`) with its duration, outcome and attempts; a Draft read adds
   the page size asked and returned and the names of its filters, and an `empty` commit or revert that cleared
   content-equal versions adds `relinkedTables`. `backfillSchemaLedger` and `repairSchemaLedger` log

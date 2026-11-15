@@ -25,13 +25,13 @@ conservative: raise them once the operation logs show what operations really cos
 | `PARTIAL_CHANGES_MAX_PER_ROW_WORK` | `2000` | 1 or more | Merged or converted rows in tables whose target schema has formula or File fields. Above it the plan stops with `tooLarge`. |
 | `PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` | `100000` | 1 or more | Row links copied into one new table version of a partly applied table. Above it for any table the plan stops with `tooLarge` naming the table. |
 | `PARTIAL_CHANGES_MAX_LISTED_DETAILS` | `200` | 1 or more | Entries of `required` and, separately, of `blockers` that a preview, commit or revert result lists; `requiredTotal` and `blockersTotal` count them all. It bounds the size of a result and changes nothing else: `includeRequired` applies every required addition. |
-| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | `180000` | 1 to 2147453647 | Lifetime of one listing page, Draft read, preview, or commit or revert attempt; it also bounds the Head and Draft read of each branch in the schema ledger scan, the planning of a repair, and the backfill. Past it the operation fails with `OPERATION_TIMEOUT` and is rolled back. |
+| `PARTIAL_CHANGES_OPERATION_TIMEOUT_MS` | `180000` | 1 to 2147453647 | Lifetime of one Draft read, preview, or commit or revert attempt; it also bounds the Head and Draft read of each branch in the schema ledger scan, the planning of a repair, and the backfill. Past it the operation fails with `OPERATION_TIMEOUT` and is rolled back. |
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | `3` | 1 or more | Serializable attempts of a commit or revert, and of the schema ledger backfill, on serialization failures. When the last one fails serialization, the operation fails with `SERIALIZATION_CONFLICT` (409). From the third attempt on, each attempt holds the branch write fence exclusively, so with `1` or `2` no attempt is escalated. |
 
 Each setting is read once at startup, and the effective values are logged (`Partial changes limits: …`,
 `Partial operation settings: …`), with the variable each value came from when it is not the default.
 
-Each listing page, Draft read, preview, commit and revert, and each schema ledger backfill and repair, logs one
+Each Draft read, preview, commit and revert, and each schema ledger backfill and repair, logs one
 structured entry through the NestJS logger with the context `OperationLog` (messages `Partial changes operation
 finished` and `Schema ledger operation finished`): duration, outcome, attempts and counts, never row data
 ([partial-changes-v1 §11.1](docs/specs/partial-changes-v1.spec.md#111-operation-logs)). These are the entries to read

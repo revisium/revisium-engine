@@ -43,7 +43,6 @@ const STICKERS = 'stickers';
 const LABELS = 'labels';
 
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
-const SAMPLE_SIZE = 20;
 const FINGERPRINT_FORMAT = /^pcf2\.[\w-]+$/;
 
 const categorySchema = obj({ title: str() });
@@ -88,13 +87,6 @@ const categoryOfP1Unit: UnitRef = {
   rowId: 'p1',
   path: '/category',
   selector: categoryOfP1,
-};
-const titleOfC1Unit: UnitRef = {
-  kind: 'field',
-  tableId: CATEGORIES,
-  rowId: 'c1',
-  path: '/title',
-  selector: titleOfC1,
 };
 
 const headSchemaInconsistentCategories: PlanBlocker = {
@@ -141,8 +133,8 @@ describe('previewChanges', () => {
           counts: { selected: 1, required: 0 },
           required: [],
           blockers: [],
-          sample: [titleOfC1Unit],
         });
+        expect(preview).not.toHaveProperty('sample');
       },
     );
 
@@ -161,7 +153,6 @@ describe('previewChanges', () => {
           counts: { selected: 0, required: 1 },
           required: [{ unit: creationOfC9, reason: wholeRowOfC9() }],
           blockers: [],
-          sample: [creationOfC9],
         });
       },
     );
@@ -211,7 +202,6 @@ describe('previewChanges', () => {
               reason: wholeRowOfC9(),
             },
           ],
-          sample: [],
         });
       },
     );
@@ -230,7 +220,6 @@ describe('previewChanges', () => {
           status: 'blocked',
           blockers: [{ code: 'unmatchedSelector' }],
           unmatched: { rows: [rowOf(CATEGORIES, 'missing')] },
-          sample: [titleOfC1Unit],
         });
       },
     );
@@ -299,7 +288,6 @@ describe('previewChanges', () => {
           status: 'empty',
           counts: { selected: 0, required: 0 },
           blockers: [],
-          sample: [],
           unmatched: titleOfP1,
         });
       },
@@ -346,14 +334,15 @@ describe('previewChanges', () => {
       });
     });
 
-    it('keeps resolving a listed Head-side row selector by the Draft id of a renamed table', async () => {
+    it('keeps resolving a returned Head-side row selector by the Draft id of a renamed table', async () => {
       const draft = await givenRowIdTakenOverInARenamedTable();
-      const { units } = await draft.listChanges();
+      const { units } = await draft.readUnitList();
       const deletion = units.find(({ kind }) => kind === 'rowDelete');
+      const selection = deletion?.selector ?? {};
 
       const preview = await draft.previewChanges({
         operation: 'commit',
-        selection: deletion?.selector ?? {},
+        selection,
       });
 
       expect(deletion).toMatchObject({
@@ -363,10 +352,9 @@ describe('previewChanges', () => {
       });
       expect(preview).toMatchObject({
         status: 'ready',
-        sample: [
-          { kind: 'rowDelete', tableId: BETA, rowId: 'b1', side: 'head' },
-        ],
+        counts: { selected: 1, required: 0 },
       });
+      expect(await draft.readSelectedUnits(selection)).toEqual([deletion]);
     });
   });
 
@@ -444,7 +432,6 @@ describe('previewChanges', () => {
         blockers: [],
         blockersTotal: 0,
         deferred: [],
-        sample: [creationOfC9, categoryOfP1Unit],
         unmatched: {},
         estimate: {
           changedRows: 3,
@@ -485,20 +472,6 @@ describe('previewChanges', () => {
       });
     });
 
-    it('samples the first 20 applied units in listing order, with their selectors', async () => {
-      const draft = await givenProductsWithEditedTitles(25);
-
-      const preview = await draft.previewChanges({
-        operation: 'commit',
-        selection: { all: true },
-      });
-      const listing = await draft.listChanges();
-
-      expect(preview.counts?.selected).toBe(25);
-      expect(preview.sample).toHaveLength(SAMPLE_SIZE);
-      expect(preview.sample).toEqual(listing.units.slice(0, SAMPLE_SIZE));
-    });
-
     it('defers the changed fields of a row a commit takes without its structure, and a revert defers nothing', async () => {
       const draft = await givenCreatedRowWithNewField();
       const selection = { rows: [rowOf(PRODUCTS, 'p2')] };
@@ -535,7 +508,7 @@ describe('previewChanges', () => {
       expect(revert).toMatchObject({ status: 'ready', deferred: [] });
     });
 
-    it('lists deferred rows in the listing order of their units, across tables', async () => {
+    it('lists deferred rows in the unit order of their units, across tables', async () => {
       const draft = await givenTwoTablesWithNewFields();
       const created = [
         [PRODUCTS, 'p6'],
@@ -556,12 +529,12 @@ describe('previewChanges', () => {
           rows: created.map(([tableId, rowId]) => rowOf(tableId, rowId)),
         },
       });
-      const listing = await draft.listChanges();
+      const unitList = await draft.readUnitList();
       const keyOf = (unit: { kind: string; tableId?: string }): string =>
         `${unit.tableId}/${'rowId' in unit ? String(unit.rowId) : ''}`;
 
       expect(preview.deferred.map(({ unit }) => keyOf(unit))).toEqual(
-        listing.units
+        unitList.units
           .filter(({ kind }) => kind === 'rowCreate')
           .map((unit) => keyOf(unit)),
       );
@@ -713,7 +686,7 @@ describe('previewChanges', () => {
       ]);
     });
 
-    it('gives a replaced table one entry, and a transient structure or a shared schema none, though they are counted and sampled (AS-88)', async () => {
+    it('gives a replaced table one entry, and a transient structure or a shared schema none, though they are counted (AS-88)', async () => {
       const draft =
         await givenReplacedTableBesideTransientTableAndSharedSchema();
 
@@ -729,7 +702,6 @@ describe('previewChanges', () => {
         status: 'ready',
         counts: { selected: 3, required: 0 },
       });
-      expect(preview.sample).toHaveLength(3);
       expect(preview.coverage).toEqual([
         {
           tableId: CATEGORIES,
@@ -888,7 +860,6 @@ describe('previewChanges', () => {
           status: 'empty',
           counts: { selected: 0, required: 0 },
           blockers: [],
-          sample: [],
           unmatched: {},
           draftHasChanges: true,
         });
@@ -1483,24 +1454,6 @@ describe('previewChanges', () => {
     });
     await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 2 });
     await draft.writeInvalidRow(PRODUCTS, 'p1', { title: 'uno', price: 'ten' });
-
-    return draft;
-  }
-
-  async function givenProductsWithEditedTitles(
-    count: number,
-  ): Promise<ChangesScenario> {
-    const rowIds = Array.from({ length: count }, (_, index) => `p${index + 1}`);
-    const draft = await ChangesScenario.committed(kit, {
-      [PRODUCTS]: {
-        schema: titleSchema,
-        rows: Object.fromEntries(rowIds.map((rowId) => [rowId, { title: '' }])),
-      },
-    });
-
-    for (const rowId of rowIds) {
-      await draft.updateRow(PRODUCTS, rowId, { title: rowId });
-    }
 
     return draft;
   }

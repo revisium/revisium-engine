@@ -6,6 +6,11 @@ Accepted (2026-10-31). Amended by [ADR-002](ADR-002-draft-reads-and-public-chang
 table whose structure changed belong to its structure unit, the Draft reads belong to `partial-changes`, and results
 no longer count remaining units; the public API names below follow it.
 
+Amended 2026-11-15 ([PR #202](https://github.com/revisium/revisium-engine/pull/202)): `listChanges`
+(`changes.list`, decision 7 and the quick reference below) and the preview field `sample` were removed before the
+first release, because no client uses a flat list of units: the Draft reads return ready selectors. The text below
+keeps them as history ([partial-changes-v1](../specs/partial-changes-v1.spec.md) v2.8).
+
 This ADR replaces [ADR-0021] of the Revisium architecture repository (granular revert, Proposed, never implemented).
 
 ## Date

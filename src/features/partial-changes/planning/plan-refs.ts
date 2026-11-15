@@ -3,13 +3,11 @@ import type {
   DeferredValue,
   DeferredValues,
 } from 'src/features/partial-changes/assembly/target-assembler';
-import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type { CatalogueBlocker } from 'src/features/partial-changes/plan/plan-blocker';
 import {
   type DescribedUnitRef,
-  describedUnitRefOf,
   describedUnitRefOfKey,
   type RequiredReason,
   requiredReasonOf,
@@ -29,8 +27,6 @@ export interface DeferredRow {
   readonly structure: DescribedUnitRef;
 }
 
-const SAMPLE_SIZE = 20;
-
 export function blockerRefOf(
   catalogue: ChangeCatalogue,
   { unitKey, ...blocker }: CatalogueBlocker,
@@ -44,7 +40,7 @@ export function blockerRefOf(
   return { ...ref, unit: describedUnitRefOfKey(catalogue, unitKey) };
 }
 
-// In the listing order of their units, as `sample` lists units.
+// In the unit order of their units (SPEC §5.2).
 export function deferredRowsOf(
   catalogue: ChangeCatalogue,
   deferred: readonly DeferredValues[],
@@ -68,15 +64,6 @@ function deferredRowOf(
     omitted,
     structure: describedUnitRefOfKey(catalogue, structureKey),
   };
-}
-
-export function sampleOf(
-  { tables }: ChangeCatalogue,
-  appliedUnits: readonly CatalogueUnit[],
-): DescribedUnitRef[] {
-  return appliedUnits
-    .slice(0, SAMPLE_SIZE)
-    .map((unit) => describedUnitRefOf(unit, tables));
 }
 
 function withRequiredReason(

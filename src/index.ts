@@ -296,12 +296,9 @@ export type {
 export {
   STRUCTURE_TABLE_CHANGES,
   type ChangedField,
-  type ListChangesInput,
-  type ListChangesResult,
-  type ListedUnit,
   type StructureChange,
   type StructureTableChange,
-} from './features/partial-changes/queries/impl/list-draft-changes.query';
+} from './features/partial-changes/catalogue/structure-changes';
 export {
   STRUCTURE_FIELD_CHANGES,
   type StructureFieldChange,

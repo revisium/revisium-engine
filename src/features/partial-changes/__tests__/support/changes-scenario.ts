@@ -6,10 +6,6 @@ import type { PartialChangesTestKit } from 'src/__tests__/kit/create-partial-cha
 import { BranchApiService } from 'src/features/branch/branch-api.service';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type { Fingerprint } from 'src/features/partial-changes/plan/fingerprint';
-import type {
-  ListChangesResult,
-  ListedUnit,
-} from 'src/features/partial-changes/queries/impl/list-draft-changes.query';
 import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { DraftChangesSummary } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import type { DraftRowPage } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
@@ -17,6 +13,7 @@ import type { DraftTablePage } from 'src/features/partial-changes/queries/impl/g
 import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
+import type { DescribedUnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesSnapshot } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type {
   RevisionChanges,
@@ -30,12 +27,9 @@ import {
 } from './catalogue-reading';
 import { commitChanges, type CommitOptions } from './change-committing';
 import {
-  listChanges,
-  listEveryPage,
-  listEveryPageWithReads,
-  type ListingOptions,
-  type PageWithReads,
-  unitsOfPages,
+  readUnitList,
+  type UnitList,
+  type UnitListOptions,
 } from './change-listing';
 import { previewChanges, type PreviewOptions } from './change-preview';
 import { revertChanges, type RevertOptions } from './change-reverting';
@@ -71,6 +65,7 @@ import {
 } from './scoped-reading';
 import {
   type BlockerView,
+  readSelectedUnits,
   readSelectionResolution,
   type ResolutionView,
 } from './selection-resolving';
@@ -190,22 +185,16 @@ export class ChangesScenario extends BranchScenario {
     return readSelectionResolution(this.kit, this.branch, selection);
   }
 
-  public listChanges(options: ListingOptions = {}): Promise<ListChangesResult> {
-    return listChanges(this.kit, this.branch, options);
+  public readUnitList(options: UnitListOptions = {}): Promise<UnitList> {
+    return readUnitList(this.kit, this.branch, options);
   }
 
-  public listEveryPage(options: ListingOptions): Promise<ListChangesResult[]> {
-    return listEveryPage(this.kit, this.branch, options);
+  public async listEveryUnit(): Promise<readonly DescribedUnitRef[]> {
+    return (await this.readUnitList()).units;
   }
 
-  public async listEveryUnit(): Promise<ListedUnit[]> {
-    return unitsOfPages(await this.listEveryPage({}));
-  }
-
-  public listEveryPageWithReads(
-    options: ListingOptions,
-  ): Promise<PageWithReads[]> {
-    return listEveryPageWithReads(this.kit, this.branch, options);
+  public readSelectedUnits(selection: Selection): Promise<DescribedUnitRef[]> {
+    return readSelectedUnits(this.kit, this.branch, selection);
   }
 
   public readDraftTableChanges(

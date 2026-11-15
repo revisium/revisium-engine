@@ -377,11 +377,13 @@ read state `(tableId, rowId, changeType)` still identifies a row item, while its
 
 **Paging.** Keyset pages: `after` is the `endCursor` of the previous page, an opaque cursor naming the last table, or
 the last table and row id, and in the recent order also the time of the last line; offset cursors are refused, and so
-is a row cursor of the other order. Every edge carries the cursor of its position; the two items of
-one row id can share it. Row items that share a row id are never split across pages: a table's page is fetched
-`WITH TIES`, so a row page can hold a few more items than `first`. In the recent order the items that share a position
-(a replaced row's two items) are never split; the deleted row of an id takeover is at its own position. `pageInfo.hasNextPage` says whether an item follows
-the page. `tableChanges` returns `totalCount`, the number of tables matching its filters. `rowChanges` returns no total
+is a row cursor of the other order. Every edge carries the cursor of its position; the items at one position can
+share it. Items at one position are never split across pages: a table's page is fetched `WITH TIES`, so a row page
+can hold a few more items than `first`. In the id order a position is a row id, so the items that share a row id (a
+replaced row's two items, a deleted row and the rename that took over its id) are never split. In the recent order a
+position is a time and a row id, so only a replaced row's two items share one and are never split; the deleted row of
+an id takeover and the rename into its id are at two positions and can be on two pages. `pageInfo.hasNextPage` says
+whether an item follows the page. `tableChanges` returns `totalCount`, the number of tables matching its filters. `rowChanges` returns no total
 (§8).
 
 **Row filters** (`rowChanges`), applied after the anti-join, so they add no scan:
@@ -636,7 +638,8 @@ Items:
 Paging, filters, validation, snapshot:
 
 - DR-15 Paging until `hasNextPage = false` returns the same items as one large page, for pages of 1 to 5,000; the two
-  items of one row id are never split; offset and foreign cursors are refused; `first` of 0, 5,001 or 1.5 is refused
+  items of one row id are never split in the id order, nor a replaced row's two items in the recent order; offset
+  and foreign cursors are refused; `first` of 0, 5,001 or 1.5 is refused
   before the snapshot.
 - DR-16 Row filters: `tableId` of a replaced id lists both tables' rows; of a renamed table's Head id lists it only
   when no item shows the id; `changeTypes` `RENAMED` and `MODIFIED` include `RENAMED_AND_MODIFIED`, `REPLACED` lists
@@ -678,8 +681,8 @@ Lines of the list:
   `replaced`; `rowsSummary` of the summary and the table item counts the row once in `replaced` and `total`.
 - DR-26 Validation: `rowIds` without `tableId`, not an array, with a non-string or a NUL id, or with more than 100 ids;
   `fieldsPerRow` of -1, 1,001, 1.5 or a string; `REPLACED` in the table reads' `changeTypes`; an unknown `orderBy`,
-  `recent` without `tableId`, a recent cursor whose time is not a UTC time to the millisecond or `null` → validation
-  error before the snapshot; `null` for each is absent.
+  `recent` without `tableId`, a recent cursor whose time is not a real UTC time to the millisecond from year 1 (no year
+  0, month 13, day 32 or hour 25) or `null` → validation error before the snapshot; `null` for each is absent.
 
 Recent order:
 
@@ -702,7 +705,9 @@ Recent order:
 - §1, §7, §9: `rowChanges` takes `orderBy` (`DraftRowOrder`, `DRAFT_ROW_ORDERS`): `id` (the default, unchanged) or
   `recent`, the rows of one table id by the time of their last change, newest first, removed rows last, ties by row id.
   `recent` requires `filters.tableId`; every filter and `fieldsPerRow` apply under it. Its cursor carries the time of
-  the last line and is refused under the id order, and the reverse.
+  the last line (a UTC time to the millisecond from year 1, or `null`) and is refused under the id order, and the
+  reverse. Items at one position are never split: a row id in the id order, a replaced row's two items in the recent
+  order, where an id takeover's two items are at two positions (§7, DR-15).
 - §5.7, §9: every row item carries `changedAt`, the stored `updatedAt` of its Draft row version; both items of a
   replaced row carry the created row's time; a removed row `null`. A structure change gives every row it rewrites its
   time.

@@ -965,7 +965,9 @@ engine.changes.summary({
   while a stored formula output that differs is cleared only by a native `revertChanges` or commit
   ([SPEC](specs/draft-reads-v1.spec.md) §3).
 - **Paging.** Keyset pages: pass `pageInfo.endCursor` as `after` while `pageInfo.hasNextPage`. Each page reads its own
-  snapshot. The two items of one row id are never split, so a row page can hold a few more items than `first`. A read
+  snapshot. In the id order the items of one row id are never split; in the recent order only a replaced row's two
+  items are kept together, while the deleted row of an id takeover and the rename into its id can be on two pages. So
+  a row page can hold a few more items than `first`. A read
   refuses a cursor of the other read, or of the other row order, as malformed (400).
 - **Totals.** `tableChanges` returns `totalCount` of the tables matching its filters. `rowChanges` returns no
   `totalCount`: it reads only the tables it needs for the page. Row totals come from `summary` (`rowsSummary` by

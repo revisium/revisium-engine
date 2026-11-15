@@ -167,6 +167,18 @@ describe('Draft row cursor', () => {
 });
 
 describe('Draft row cursor of the recent order', () => {
+  it('decodes the earliest time the database stores', () => {
+    const position = {
+      table: { tableId: 'notes', headOnly: false },
+      rowId: 'n1',
+      changedAt: '0001-01-01T00:00:00.000Z',
+    };
+
+    expect(decodeRecentRowCursor(encodeRecentRowCursor(position))).toEqual(
+      position,
+    );
+  });
+
   it.each([
     {
       table: { tableId: 'notes', headOnly: false },
@@ -197,17 +209,24 @@ describe('Draft row cursor of the recent order', () => {
     ).toThrow(MALFORMED_AFTER);
   });
 
-  it.each(['2026-03-01', '2026-02-30T10:00:00.000Z', 'now', 0])(
-    'refuses the time %p',
-    (changedAt) => {
-      const cursor = encodeCursor('recentRows', {
-        tableId: 'notes',
-        headOnly: false,
-        rowId: 'n1',
-        changedAt,
-      });
+  it.each([
+    '2026-03-01',
+    '2026-02-30T10:00:00.000Z',
+    '2026-13-01T10:00:00.000Z',
+    '2026-03-32T10:00:00.000Z',
+    '2026-03-01T25:00:00.000Z',
+    '2026-03-01T10:60:00.000Z',
+    '0000-01-01T00:00:00.000Z',
+    'now',
+    0,
+  ])('refuses the time %p', (changedAt) => {
+    const cursor = encodeCursor('recentRows', {
+      tableId: 'notes',
+      headOnly: false,
+      rowId: 'n1',
+      changedAt,
+    });
 
-      expect(() => decodeRecentRowCursor(cursor)).toThrow(MALFORMED_AFTER);
-    },
-  );
+    expect(() => decodeRecentRowCursor(cursor)).toThrow(MALFORMED_AFTER);
+  });
 });

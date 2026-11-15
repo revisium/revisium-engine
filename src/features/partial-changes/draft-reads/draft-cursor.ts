@@ -24,6 +24,7 @@ export interface RecentRowPosition extends RowPosition {
 }
 
 const CHANGE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const FIRST_STORED_YEAR = 1;
 const TABLE_CURSOR_PARTS: ReadonlySet<string> = new Set([
   'tableId',
   'headOnly',
@@ -117,17 +118,23 @@ export function decodeRecentRowCursor(text: string): RecentRowPosition {
   };
 }
 
-// A time as the read issues it, in UTC to the millisecond, or null for a removed row.
+// A time as the read issues it, in UTC to the millisecond, or null for a removed row: a real calendar time that the
+// database timestamp holds. It has no year 0, and four digits stay far below its last year.
 function isChangeTime(value: unknown): value is string | null {
   if (value === null) {
     return true;
   }
 
+  if (typeof value !== 'string' || !CHANGE_TIME.test(value)) {
+    return false;
+  }
+
+  const time = new Date(value);
+
   return (
-    typeof value === 'string' &&
-    CHANGE_TIME.test(value) &&
-    !Number.isNaN(Date.parse(value)) &&
-    new Date(value).toISOString() === value
+    !Number.isNaN(time.getTime()) &&
+    time.toISOString() === value &&
+    time.getUTCFullYear() >= FIRST_STORED_YEAR
   );
 }
 

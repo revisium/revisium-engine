@@ -366,21 +366,26 @@ describe('Draft rows by the time of their last change', () => {
           filters: { tableId: PRODUCTS },
         },
       ],
-      ...['yesterday', '2026-03-01 10:00', 1, undefined].map(
-        (changedAt): [string, Partial<DraftRowChangesInput>] => [
-          `a recent cursor with the time ${String(changedAt)}`,
-          {
-            orderBy: RECENT,
-            filters: { tableId: PRODUCTS },
-            after: encodeCursor('recentRows', {
-              tableId: PRODUCTS,
-              headOnly: false,
-              rowId: 'p1',
-              changedAt,
-            }),
-          },
-        ],
-      ),
+      ...[
+        'yesterday',
+        '2026-03-01 10:00',
+        '0000-01-01T00:00:00.000Z',
+        '2026-13-01T10:00:00.000Z',
+        1,
+        undefined,
+      ].map((changedAt): [string, Partial<DraftRowChangesInput>] => [
+        `a recent cursor with the time ${String(changedAt)}`,
+        {
+          orderBy: RECENT,
+          filters: { tableId: PRODUCTS },
+          after: encodeCursor('recentRows', {
+            tableId: PRODUCTS,
+            headOnly: false,
+            rowId: 'p1',
+            changedAt,
+          }),
+        },
+      ]),
     ])('refuses %s before reading the snapshot', async (_input, input) => {
       const draft = await givenEveryRowChangeKind();
       const readSnapshot = jest.spyOn(kit.snapshotReader, 'readSnapshot');

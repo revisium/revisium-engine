@@ -36,10 +36,10 @@ export function readRowPageWhileDraftChanges<T>(
   const barrier = createBarrier('A Draft row page');
   const hold = jest
     .spyOn(items, 'edgesOf')
-    .mockImplementation(async (page, compared) => {
+    .mockImplementation(async (page, compared, fieldsPerRow) => {
       await barrier.arrive();
 
-      return edgesOf(page, compared);
+      return edgesOf(page, compared, fieldsPerRow);
     });
 
   return readWhileHeld(barrier, hold, read, edit);

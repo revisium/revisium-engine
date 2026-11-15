@@ -2,6 +2,7 @@ import type {
   DraftEdge,
   DraftPageInfo,
   DraftReadState,
+  DraftRowsSummary,
   DraftTableChangesFilters,
   RefusedSelection,
 } from 'src/features/partial-changes/queries/impl/draft-reads';
@@ -13,7 +14,6 @@ import type {
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type {
   ChangeType,
-  RevisionChangeSummary,
   SchemaMigrationDetail,
   ViewsChangeDetail,
 } from 'src/features/revision-changes/types';
@@ -48,7 +48,7 @@ export interface DraftTableItem {
   readonly previousTableId?: string;
   readonly changeType: ChangeType;
   readonly replaced: boolean;
-  readonly rowsSummary: RevisionChangeSummary;
+  readonly rowsSummary: DraftRowsSummary;
   readonly schemaMigrations: readonly SchemaMigrationDetail[];
   readonly viewsChanges: ViewsChangeDetail;
   readonly selection: TableSelection;

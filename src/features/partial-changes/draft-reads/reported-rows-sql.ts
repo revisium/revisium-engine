@@ -1,6 +1,6 @@
 import { join, raw, sql, type Sql } from 'src/engine-prisma-types';
 import type { RevisionSide } from 'src/features/draft-revision/commands/impl/target-write-plan';
-import type { TableFilters } from 'src/features/partial-changes/draft-reads/draft-read-request';
+import type { RowFilters } from 'src/features/partial-changes/draft-reads/draft-read-request';
 import { changeTypesMatching } from 'src/features/partial-changes/draft-reads/table-filters';
 import {
   ROW_VERSIONS_PAIRED_BY_IDENTITY,
@@ -18,6 +18,7 @@ import {
   leafOwnersOf,
 } from 'src/features/partial-changes/structure/column-owners';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
+import type { DraftRowChangeKind } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import { ChangeType } from 'src/features/revision-changes/types';
 
 interface ComparedRows {
@@ -39,6 +40,7 @@ export interface ReportedRowPair {
   readonly headVersionId: string | null;
   readonly draftVersionId: string | null;
   readonly changeType: ChangeType;
+  readonly replaced: boolean;
   readonly yieldsUnit: boolean;
 }
 
@@ -59,6 +61,9 @@ export interface RowRange {
 const ONE_SIDED = raw(`(h."versionId" IS NULL OR d."versionId" IS NULL)`);
 
 const IDS_DIFFER = raw(`h."id" <> d."id"`);
+
+// The deleted and the created row of a replaced row: the two pairs on one side only at one row id.
+const REPLACED = sql`${ONE_SIDED} AND count(*) FILTER (WHERE ${ONE_SIDED}) OVER (PARTITION BY coalesce(d."id", h."id")) = 2`;
 
 const NOTHING_DIFFERS = raw('FALSE');
 
@@ -81,19 +86,20 @@ const PAIR_JSON = raw(`json_build_object(
   'headVersionId', p."headVersionId",
   'draftVersionId', p."draftVersionId",
   'changeType', p."changeType",
+  'replaced', p."replaced",
   'yieldsUnit', p."yieldsUnit"
 )`);
 
 // Of two items with one row id, the row that exists only in Head comes first.
 export function reportedRowPairsPageSql(
   rows: TableRows,
-  filters: TableFilters,
+  filters: RowFilters,
   { afterRowId, limit }: RowRange,
 ): Sql {
   return sql`
     WITH ${reportedPairsCtes(rows, MATERIALIZED_PAIRS)},
     matching AS NOT MATERIALIZED (
-      SELECT * FROM pairs WHERE ${rowsMatching(filters)}
+      SELECT * FROM pairs p WHERE ${rowsMatching(filters)}
     ),
     page AS (
       SELECT * FROM matching WHERE ${rowsAfter(afterRowId)}
@@ -117,11 +123,11 @@ export function reportedRowPairsPageSql(
 // id, and only a filter on rows can leave one of them out.
 function companionsOf(
   rows: TableRows,
-  { changeTypes, search }: TableFilters,
+  { changeTypes, search, rowIds }: RowFilters,
 ): Sql {
   if (
     rows.kind === 'oneSided' ||
-    (changeTypes === undefined && search === undefined)
+    (changeTypes === undefined && search === undefined && rowIds === undefined)
   ) {
     return raw(`'[]'::json`);
   }
@@ -143,9 +149,10 @@ export function reportedRowCountsSql(rows: TableRows): Sql {
   return sql`
     WITH ${comparedPairsCtes(rows.table)}
     SELECT
-      count(*)::int AS "total",
-      count(*) FILTER (WHERE "changeType" = ${ChangeType.Added})::int AS "added",
-      count(*) FILTER (WHERE "changeType" = ${ChangeType.Removed})::int AS "removed",
+      (count(*) FILTER (WHERE NOT "replaced") + count(DISTINCT "rowId") FILTER (WHERE "replaced"))::int AS "total",
+      count(*) FILTER (WHERE "changeType" = ${ChangeType.Added} AND NOT "replaced")::int AS "added",
+      count(*) FILTER (WHERE "changeType" = ${ChangeType.Removed} AND NOT "replaced")::int AS "removed",
+      count(DISTINCT "rowId") FILTER (WHERE "replaced")::int AS "replaced",
       count(*) FILTER (
         WHERE "changeType" = ANY(${[ChangeType.Renamed, ChangeType.RenamedAndModified]}::text[])
       )::int AS "renamed",
@@ -168,7 +175,7 @@ function oneSidedRowCountsSql({ side, tableVersionId }: OneSidedRows): Sql {
 
   return sql`
     SELECT count(*)::int AS "total", ${added} AS "added", ${removed} AS "removed",
-           0 AS "renamed", 0 AS "modified", 0 AS "rowsWithUnits", FALSE AS "hasRowUnits"
+           0 AS "renamed", 0 AS "modified", 0 AS "replaced", 0 AS "rowsWithUnits", FALSE AS "hasRowUnits"
     FROM "_RowToTable" WHERE "B" = ${tableVersionId}
   `;
 }
@@ -200,6 +207,7 @@ function comparedPairsCtes(table: ComparedTable, pairs: Sql = PAIRS): Sql {
              h."id" AS "headRowId",
              h."versionId" AS "headVersionId", d."versionId" AS "draftVersionId",
              ${changeTypeOf(structure)} AS "changeType",
+             (${REPLACED}) AS "replaced",
              (${ONE_SIDED} OR ${rowChangePredicate(structure)}) AS "yieldsUnit"
       FROM ${ROW_VERSIONS_PAIRED_BY_IDENTITY}
       WHERE ${ONE_SIDED} OR ${IDS_DIFFER} OR ${contentWithEffectDiffers(structure)}
@@ -216,6 +224,7 @@ function oneSidedPairsCte(
       SELECT r."createdId" AS "identity", r."id" AS "rowId",
              ${oneSidedColumns(side)},
              ${oneSidedChangeType(side)} AS "changeType",
+             FALSE AS "replaced",
              FALSE AS "yieldsUnit"
       FROM "_RowToTable" link
       JOIN "Row" r ON r."versionId" = link."A"
@@ -244,18 +253,37 @@ function oneSidedChangeType(side: RevisionSide): Sql {
   return sql`${ChangeType.Added}::text`;
 }
 
-function rowsMatching({ changeTypes, search }: TableFilters): Sql {
-  return sql`${changeTypeMatches(changeTypes)} AND ${searchMatches(search)}`;
+function rowsMatching({ changeTypes, search, rowIds }: RowFilters): Sql {
+  return sql`${kindMatches(changeTypes)} AND ${searchMatches(search)} AND ${rowIdMatches(rowIds)}`;
 }
 
-function changeTypeMatches(
-  changeTypes: readonly ChangeType[] | undefined,
-): Sql {
-  if (changeTypes === undefined) {
+// A replaced row is of its own kind, so its two items match together.
+function kindMatches(kinds: readonly DraftRowChangeKind[] | undefined): Sql {
+  if (kinds === undefined) {
     return sql`TRUE`;
   }
 
-  return sql`"changeType" = ANY(${changeTypesMatching(changeTypes)}::text[])`;
+  const replacedMatches = kinds.includes('REPLACED')
+    ? raw('TRUE')
+    : raw('FALSE');
+
+  return sql`CASE WHEN p."replaced" THEN ${replacedMatches}
+    ELSE p."changeType" = ANY(${changeTypesMatching(kinds)}::text[]) END`;
+}
+
+// The rows that show one of the ids; a renamed row also by its Head id while no row of its table holds that id.
+function rowIdMatches(rowIds: readonly string[] | undefined): Sql {
+  if (rowIds === undefined) {
+    return sql`TRUE`;
+  }
+
+  return sql`(
+    p."rowId" = ANY(${rowIds}::text[])
+    OR (
+      p."headRowId" = ANY(${rowIds}::text[])
+      AND NOT EXISTS (SELECT 1 FROM pairs holder WHERE holder."rowId" = p."headRowId")
+    )
+  )`;
 }
 
 // A plain substring of the Head or the Draft row id, so '_' and '%' are no wildcards; row ids are ASCII.
@@ -266,7 +294,7 @@ function searchMatches(search: string | undefined): Sql {
 
   const term = search.toLowerCase();
 
-  return sql`(strpos(lower("rowId"), ${term}) > 0 OR strpos(lower("headRowId"), ${term}) > 0)`;
+  return sql`(strpos(lower(p."rowId"), ${term}) > 0 OR strpos(lower(p."headRowId"), ${term}) > 0)`;
 }
 
 function rowsAfter(rowId: string | undefined): Sql {

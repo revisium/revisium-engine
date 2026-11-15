@@ -52,6 +52,7 @@ export class DraftRowItems {
   public async edgesOf(
     page: readonly PagedTable[],
     compared: ComparedSnapshot,
+    fieldsPerRow: number | undefined,
   ): Promise<DraftEdge<DraftRowItem>[]> {
     if (page.length === 0) {
       return [];
@@ -90,7 +91,7 @@ export class DraftRowItems {
         table: row.paged.table.position,
         rowId: row.pair.rowId,
       }),
-      node: draftRowItemOf(entry, catalogue, renames),
+      node: draftRowItemOf(entry, catalogue, renames, fieldsPerRow),
     }));
   }
 

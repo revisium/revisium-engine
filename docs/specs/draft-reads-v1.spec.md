@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.9 |
+| Version | 1.10 |
 | Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -30,17 +30,18 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 | Operation | Input | Output |
 | --- | --- | --- |
 | `changes.tableChanges` | `branch`; `first` (integer 1–5,000); `after` (cursor, optional); `filters: { changeTypes?, search? }` (optional) | `DraftTablePage` (§9): table items, `pageInfo`, `totalCount`, ids, `refusedTables` |
-| `changes.rowChanges` | `branch`; `first` (integer 1–5,000); `after` (optional); `filters: { tableId?, changeTypes?, search? }` (optional) | `DraftRowPage` (§9): row items, `pageInfo`, ids, `refusedTables`; no `totalCount` |
+| `changes.rowChanges` | `branch`; `first` (integer 1–5,000); `after` (optional); `filters: { tableId?, rowIds?, changeTypes?, search? }` (optional); `fieldsPerRow` (integer 0–1,000, optional) | `DraftRowPage` (§9): row items, `pageInfo`, ids, `refusedTables`; no `totalCount` |
 | `changes.summary` | `branch`; `filters: { changeTypes?, search? }` (optional, those of `tableChanges`) | `DraftChangesSummary` (§9) |
 
 - An optional input given as `null` is treated as absent, at any depth, as in partial-changes-v1 §5.
 - `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of another operation (a table cursor passed
   to `rowChanges` or the reverse), a cursor longer than 16,384 characters or nested deeper than three levels, a filter
-  of a wrong type, or a `search` holding the NUL character (no id holds it) →
-  validation error before the snapshot.
+  of a wrong type, a `search` or a row id holding the NUL character (no id holds it), `fieldsPerRow` outside 0–1,000
+  or not an integer, `rowIds` without `tableId` or with more than 100 ids, or `REPLACED` among the `changeTypes` of
+  `tableChanges` or `summary` → validation error (a `BadRequestException`) before the snapshot.
 - An unknown project or branch → the native lookup error, a `BadRequestException` (partial-changes-v1 §5.9).
 - `changeTypes` takes the native `ChangeType` values (`ADDED`, `REMOVED`, `MODIFIED`, `RENAMED`,
-  `RENAMED_AND_MODIFIED`).
+  `RENAMED_AND_MODIFIED`); the `changeTypes` of `rowChanges` also take `REPLACED`, the kind of a replaced row (§5.6).
 
 ## 2. Snapshot
 
@@ -111,7 +112,7 @@ A table item (`DraftTableItem`, §9):
 | `previousTableId` | Head id of a renamed table. |
 | `changeType` | `ADDED`, `REMOVED`, `MODIFIED`, `RENAMED` or `RENAMED_AND_MODIFIED`, by the rule below. |
 | `replaced` | The item is one of the two items of a table id that the Draft removed and created again (partial-changes-v1 §3.7); the removed table is `REMOVED`, the created one `ADDED`. Set whether or not the table is refused. |
-| `rowsSummary` | The table's reported rows (§3) by change type: `total`, `added`, `modified`, `removed`, `renamed`; a `RENAMED_AND_MODIFIED` row counts in `renamed` and in `modified`. |
+| `rowsSummary` | The table's reported rows (§3) by kind, as lines (§5.6): `total`, `added`, `modified`, `removed`, `renamed`, `replaced`; a replaced row counts once, in `replaced` and `total`, not in `added` or `removed`; a `RENAMED_AND_MODIFIED` row counts in `renamed` and in `modified`. |
 | `schemaMigrations` | The pending migrations that the ledger attribution gives the table's identity (partial-changes-v1 §10.1), in ledger order, in the native migration detail shape. A renamed table lists its rename and every migration before and after it, under either id; of a replaced id, the removed table lists its removal and the created table its creation; a table created at the id of a transient table lists only its own. Each migration keeps its own `oldTableId` / `newTableId`: they name the step, not the item. |
 | `viewsChanges` | The views stored under the table's Head id in Head compared with those under its Draft id in Draft, a side without the table or without a views row counting as no views, in the native views change shape. A renamed table whose views did not change has none; of a replaced id, the removed table removes its views and the created one adds its own. |
 | `selection` | How the table's changes are selected (below). |
@@ -171,8 +172,8 @@ A listed table that is not refused always has one of them (§3).
 
 A row item (`DraftRowItem`, §9) is addressed by `tableId` (Draft id, else the Head id of a removed table),
 `previousTableId` (Head id of a renamed table, on every row of it), `rowId` (Draft id, else the Head id of a removed
-row) and `previousRowId` (Head id of a renamed row). It carries `changeType` (§3), `fields`, `columns`, `selection`,
-and `idTakeover` / `idExchange` where they apply.
+row) and `previousRowId` (Head id of a renamed row). It carries `changeType` (§3), `replaced` (§5.6), `fields` and
+`fieldsTotal` (§5.2), `columns`, `selection`, and `idTakeover` / `idExchange` where they apply.
 
 ### 5.1 Row selection
 
@@ -230,6 +231,13 @@ formula values of the page's rows are computed), in native order, each as one en
 A field of a refused table is `refused`. A changed formula field is `computed`, as its selector is, although the values
 it computes travel with the structure unit.
 
+**Field limit.** With `fieldsPerRow: n`, `fields` lists the first `n` entries of the row in the order above, and
+`fieldsTotal` is the number of all of them; without it `fields` lists all and `fieldsTotal` equals their number. The
+limit cuts `fields` only: `selection` (its `row` selector selects every unit of the row, the cut ones too), `columns`,
+`idTakeover`, `idExchange` and the `follows` of the listed entries are those of the unlimited read. A client reads the
+rest of one row by `filters: { tableId, rowIds: [rowId] }` without the limit (§7), which lists that row and nothing
+else of the table, so no per-row cursor is needed: a row's field changes are computed whole on every read (§8).
+
 `columns` lists, for a row on both sides, each differing column among `publishedAt`, `meta` and `schemaHash`
 (`DraftColumnChange`: `column`, `oldValue`, `newValue`, `selection`). Each gets the unit that owns it in the catalogue
 (partial-changes-v1 §3.1): the `field` unit of the published-at field or the `rowColumns` unit (`state: 'unit'`), or
@@ -279,6 +287,20 @@ with the same dependencies; one edited from another row, or to a row created at 
 rename. Array elements are compared by position. A rename in a refused table has no unit, so its referrers carry no
 `follows`. The page finds the renames with one query per referenced table with changed rows, by row id and identity.
 
+### 5.6 Replaced rows
+
+A replaced row (a row id the Draft deleted and created again, partial-changes-v1 §3.7) is one line of a list and two
+row items: the deleted row (`REMOVED`, its one root `FIELD_REMOVED` entry holding the whole Head data) and the created
+row (`ADDED`, its root `FIELD_ADDED` entry holding the whole Draft data), both `replaced: true`, adjacent in that order
+(§7), never on two pages, and both with one `selectable` selection: the one `rowReplace` unit and one `row` selector.
+Every filter lists both items or neither: they share their table and row id, and the kind of both is `REPLACED`, which
+`ADDED` and `REMOVED` do not match. `replaced` is `false` on every other item, also on a deleted row and the rename
+that took over its id (§5.3) and on the rows of a replaced table id (§4), which are rows of two tables. A refused
+table's replaced row is still `replaced`.
+
+The two items stay because `changeType` takes the native values, which have none for a replaced row, and each side
+keeps its native field entry, so DR-03 holds unchanged; `replaced` on row items mirrors `replaced` on table items.
+
 ## 6. Summary
 
 `changes.summary` returns (`DraftChangesSummary`, §9):
@@ -287,7 +309,7 @@ rename. Array elements are compared by position. A rename in a refused table has
 | --- | --- |
 | `headRevisionId`, `draftRevisionId`, `refusedTables` | As every read. |
 | `tablesSummary` | The listed tables by change type (§4): `total`, `added`, `modified`, `removed`, `renamed`, plus `replaced`, the number of replaced ids (each counted once; its two items are also counted in `added` and `removed`). |
-| `rowsSummary` | The reported rows of every listed table by change type, as `rowsSummary` of the table items. |
+| `rowsSummary` | The reported rows of every listed table by kind, as `rowsSummary` of the table items: `total` is the number of lines, and `added`, `modified`, `removed`, `renamed`, `replaced` the lines of each kind (§5.6). |
 | `rowsWithUnits` | The rows with units over all tables: the sum of the table items' `tableData.rows`. A client tells a user's own row edits from rows that only travel with a structure change by it. |
 | `sharedSchemas` | Every shared schema unit: `{ sharedSchemaId, changeType, unit }`, `changeType` `ADDED` (no Head row), `REMOVED` (no Draft row) or `MODIFIED`. |
 | `transientTables` | Every structure unit of tables created and removed inside the Draft: `{ tableId, changeType: 'ADDED', structure }`. |
@@ -295,7 +317,10 @@ rename. Array elements are compared by position. A rename in a refused table has
 | `sharedSchemasCount`, `transientTablesCount`, `viewsOnlyTablesCount` | The lengths of the three lists before `filters`. |
 
 A `RENAMED_AND_MODIFIED` item counts in `renamed` and in `modified`, so each count equals the `totalCount` of the
-`changeTypes` filter of that type in `tableChanges`, and the row counts what `rowChanges` lists under that filter.
+`changeTypes` filter of that type in `tableChanges`, and the row counts the lines `rowChanges` lists under the filter of
+that kind (`replaced` the replaced rows, each two items). So `total` equals `added + modified + removed + renamed +
+replaced` minus the `RENAMED_AND_MODIFIED` rows, which count twice. `tablesSummary.replaced` keeps its own rule: a
+replaced table id gives two table items, which also count in `added` and `removed`.
 `filters` apply to the three lists by the rules of §7 over each item's `changeType` and id (`tableId`, or
 `sharedSchemaId`), so the table items and the summary items of one filter form one list. The counts and the
 `…Count` fields do not follow `filters`: they are the Draft's totals, which a client shows on its tabs, beside its
@@ -328,10 +353,17 @@ the page. `tableChanges` returns `totalCount`, the number of tables matching its
   replaced id, a created table by its Draft id, a removed table by its Head id, a renamed table by its Draft id. Only
   when no table item shows the id does it select the renamed table whose Head id it is (its rows carry it as
   `previousTableId`); a renamed table's Head id that another table holds now selects that table only.
-- `changeTypes` matches the row's change type; `RENAMED` and `MODIFIED` also match `RENAMED_AND_MODIFIED`. An empty
-  list matches nothing.
+- `rowIds` (with `tableId`, at most 100 ids) selects exactly the rows that show one of the ids as `rowId` (Draft id,
+  else Head id), by code point and case: the two items of a replaced row, a deleted row and the rename that took over
+  its id (both show it), a created row, a renamed row by its Draft id. Only when no row of the table holds an id does
+  it select the renamed row whose Head id it is (it carries it as `previousRowId`); a renamed row's Head id that another
+  row holds now selects that row only. An empty list matches nothing.
+- `changeTypes` matches the row's kind: its change type, or `REPLACED` for both items of a replaced row (§5.6), which
+  no change type matches; `RENAMED` and `MODIFIED` also match `RENAMED_AND_MODIFIED`. An empty list matches nothing.
 - `search` is a case-insensitive substring of the Head or Draft row id (a plain substring: `_` and `%` are not
   wildcards).
+
+The row filters combine by AND.
 
 **Table filters** (`tableChanges`, `summary`): `changeTypes` follows the row rule over the table's change type (§4);
 `search` is a case-insensitive plain substring of the table's Draft or Head id, so a renamed table is found by either
@@ -367,7 +399,13 @@ anti-join of the table's two link sets (a created or removed table reads the row
 - A row query compares the stored values leaf by leaf over the pairs of the anti-join, under an unchanged structure only
   for a pair whose data `hash` differs, as a plan does for a table whose structure differs.
 - A row page then reads the row versions of its pairs, computes their formula values and builds the field diffs; its
-  id exchanges and followed renames read by row id and identity (§5.4, §5.5).
+  id exchanges and followed renames read by row id and identity (§5.4, §5.5). `fieldsPerRow` cuts the field changes
+  after the diff of the whole row: it saves the payload and the selection of the cut entries, not the reads or the
+  diff.
+- `rowIds` and `replaced` add no scan: `rowIds` applies with the other filters after the anti-join (with `tableId`, so
+  a call reads one table, or the two of a replaced id), and a renamed row's Head id is checked against the table's
+  reported pairs; `replaced` is a window count over the table's reported pairs by row id, in the row query and in the
+  row counts.
 
 No read joins every row of both revisions. Measured on the PoC in the sandbox, one table of 1,000,000 rows with 1,000
 rows edited: a row page of 50 or 500 1.6–1.8 s, a table page 1.6 s, the summary 1.6 s, against 31–34 s through the
@@ -380,11 +418,13 @@ Every page recomputes its tables' anti-joins; a cache of the Draft diff is out o
 type ChangesBranch = { projectId: string; branchName: string };
 
 type DraftTableChangesFilters = { changeTypes?: ChangeType[] | null; search?: string | null };
-type DraftRowChangesFilters = DraftTableChangesFilters & { tableId?: string | null };
+type DraftRowChangeKind = ChangeType | 'REPLACED';
+type DraftRowChangesFilters = { tableId?: string | null; rowIds?: string[] | null;   // rowIds: at most 100, with tableId
+  changeTypes?: DraftRowChangeKind[] | null; search?: string | null };
 type DraftTableChangesInput = { branch: ChangesBranch; first: number; after?: string | null;
   filters?: DraftTableChangesFilters | null };
 type DraftRowChangesInput = { branch: ChangesBranch; first: number; after?: string | null;
-  filters?: DraftRowChangesFilters | null };
+  filters?: DraftRowChangesFilters | null; fieldsPerRow?: number | null };   // fieldsPerRow: 0–1,000
 type DraftChangesSummaryInput = { branch: ChangesBranch; filters?: DraftTableChangesFilters | null };
 
 type DraftReadState = { headRevisionId: string; draftRevisionId: string; refusedTables: RefusedTable[] };
@@ -399,7 +439,7 @@ type DraftTableItem = {
   previousTableId?: string;              // Head id of a renamed table
   changeType: ChangeType;
   replaced: boolean;
-  rowsSummary: RevisionChangeSummary;    // { total, added, modified, removed, renamed }
+  rowsSummary: DraftRowsSummary;
   schemaMigrations: SchemaMigrationDetail[];  // native shape
   viewsChanges: ViewsChangeDetail;            // native shape
   selection: TableSelection;
@@ -415,7 +455,9 @@ type DraftRowItem = {
   rowId: string;                              // Draft id, else the Head id of a removed row
   previousRowId?: string;                     // Head id of a renamed row
   changeType: ChangeType;
-  fields: DraftFieldChange[];                 // native field changes, in native order
+  replaced: boolean;                          // one of the two items of a replaced row
+  fields: DraftFieldChange[];                 // native field changes, in native order, at most fieldsPerRow
+  fieldsTotal: number;                        // the number of all field changes of the row
   columns: DraftColumnChange[];               // publishedAt, meta, schemaHash of a row on both sides
   selection: RowSelection;
   idTakeover?: IdTakeover;
@@ -451,13 +493,14 @@ type IdExchangeTermination = 'cycle' | 'freeId' | 'deletedOccupant' | 'truncated
 
 type DraftChangesSummary = DraftReadState & {
   tablesSummary: DraftTablesSummary;
-  rowsSummary: RevisionChangeSummary;
+  rowsSummary: DraftRowsSummary;
   rowsWithUnits: number;
   sharedSchemas: ChangedSharedSchema[]; sharedSchemasCount: number;
   transientTables: TransientTable[]; transientTablesCount: number;
   viewsOnlyTables: ViewsOnlyTable[]; viewsOnlyTablesCount: number;
 };
 type DraftTablesSummary = RevisionChangeSummary & { replaced: number };
+type DraftRowsSummary = RevisionChangeSummary & { replaced: number };   // lines: a replaced row only in replaced
 type ChangedSharedSchema = { sharedSchemaId: string; changeType: ChangeType; unit: UnitRef };
 type TransientTable = { tableId: string; changeType: ChangeType; structure: DescribedUnitRef };
 type ViewsOnlyTable = { tableId: string; changeType: ChangeType; views: UnitRef };
@@ -470,8 +513,9 @@ built of (`MigrationType`, `JsonPatchOp`, `JsonPatchOperation`, `HistoryPatch`, 
 holds the values of the native `RowChangeDetailType` that the row value diff produces, and the package exports that
 enum too. Every code union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `DRAFT_FIELD_CHANGE_TYPES`,
-`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`. Every type of this section is exported under its
-name, `DraftEdge`, `TableData`, `SelectableRowSelection` and `DraftTablesSummary` included.
+`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`, `DRAFT_ROW_CHANGE_KINDS`. Every type of this section
+is exported under its name, `DraftEdge`, `TableData`, `SelectableRowSelection`, `DraftTablesSummary`,
+`DraftRowsSummary` and `DraftRowChangeKind` included.
 
 ## 10. Acceptance scenarios
 
@@ -495,7 +539,8 @@ Reachability and oracles (properties over random Drafts):
   which the native diff does not count; and the changes without effect of §3, which the reads do not show (a table
   whose versions differ while its content equals the last commit, which the native diff lists as `MODIFIED` with no
   row; a row whose only stored difference is a formula output, which it counts as modified; a row that differs only
-  in `schemaHash` is in neither). Each item's `schemaMigrations`, replayed from the Draft
+  in `schemaHash` is in neither); and a replaced row, which the native diff counts as one added and one removed row and
+  the reads once, as `replaced` (§5.6). Each item's `schemaMigrations`, replayed from the Draft
   ledger, take the table from its Head id to its Draft id in ledger order, each pending migration under one item at
   most and the rest forming transient tables (listed in the summary unless the catalogue joins them to the structure
   unit of a table created at their id); `viewsChanges` compare the views under the Head id in Head with those under
@@ -506,10 +551,9 @@ Reachability and oracles (properties over random Drafts):
   only in `schemaHash`, which the plan covers and the reads do not list (§4); a table whose only row units are such
   rows offers `tableData` with `rows: 0`.
 - DR-06 The summary equals the native summary in its counts and change types, apart from the exceptions of DR-04
-  (rows that differ only in `publishedAt` or `meta`, and the changes without effect of §3); each count of
-  `tablesSummary` equals
-  the `totalCount` of the table filter of its type, and of `rowsSummary` the number of rows the row filter of its
-  type lists.
+  (rows that differ only in `publishedAt` or `meta`, the changes without effect of §3, and replaced rows); each count
+  of `tablesSummary` equals the `totalCount` of the table filter of its type, and of `rowsSummary` the number of lines
+  the row filter of its kind lists (a replaced row's two items one line), `total` the lines of the unfiltered read.
 
 Items:
 
@@ -544,8 +588,10 @@ Paging, filters, validation, snapshot:
   items of one row id are never split; offset and foreign cursors are refused; `first` of 0, 5,001 or 1.5 is refused
   before the snapshot.
 - DR-16 Row filters: `tableId` of a replaced id lists both tables' rows; of a renamed table's Head id lists it only
-  when no item shows the id; `changeTypes` `RENAMED` and `MODIFIED` include `RENAMED_AND_MODIFIED`; `search` treats
-  `_` and `%` literally.
+  when no item shows the id; `changeTypes` `RENAMED` and `MODIFIED` include `RENAMED_AND_MODIFIED`, `REPLACED` lists
+  both items of a replaced row and `ADDED` / `REMOVED` neither; `search` treats `_` and `%` literally; `rowIds` lists
+  `p1` and not `p10`, a renamed row by its Draft id and by its Head id while no row holds it, both items of a replaced
+  row and of a takeover, and combines with the other filters by AND.
 - DR-17 Table filters select the same items from `tableChanges` and the summary lists and leave the summary counts and
   `…Count` fields unchanged; `totalCount` and `hasNextPage` count matching tables only.
 - DR-18 Snapshot: a Draft edit committed between a page's phases changes nothing the page returns (barrier tests for
@@ -569,7 +615,34 @@ Changes without effect:
 - DR-23 Rows that differ only in `meta` or `publishedAt` are listed and counted as `MODIFIED`, with their `columns`
   and units.
 
+Lines of the list:
+
+- DR-24 Field limit: with `fieldsPerRow` every item equals the unlimited item with `fields` cut to its first
+  `fieldsPerRow` entries, on every page size; `fieldsTotal` is the number of all entries (0 keeps the totals and lists
+  none); the item read by `tableId` and `rowIds: [rowId]` without the limit lists all of them.
+- DR-25 Replaced rows: both items `replaced: true`, `REMOVED` then `ADDED`, one `rowReplace` unit and selector, each
+  with its whole side; a deleted row and the rename into its id, and the rows of a replaced table id, are not
+  `replaced`; `rowsSummary` of the summary and the table item counts the row once in `replaced` and `total`.
+- DR-26 Validation: `rowIds` without `tableId`, not an array, with a non-string or a NUL id, or with more than 100 ids;
+  `fieldsPerRow` of -1, 1,001, 1.5 or a string; `REPLACED` in the table reads' `changeTypes` → validation error
+  before the snapshot; `null` for each is absent.
+
 ## Changelog
+
+### Version 1.10 (2026-11-15)
+
+- §1, §5.2, §9: `rowChanges` takes `fieldsPerRow` (0–1,000): each row item lists at most that many field changes,
+  and every row item carries `fieldsTotal`, the number of all of them. The rest of one row is read by `rowIds`
+  without the limit; the cut saves payload, not the diff.
+- §1, §7, §9: the row filter `rowIds` (with `tableId`, at most 100) selects rows by exact id; filters combine by AND.
+- §5.6, §9: a replaced row stays two items, now marked `replaced: true`; its kind is `REPLACED` (`DraftRowChangeKind`,
+  `DRAFT_ROW_CHANGE_KINDS`), which the row `changeTypes` filter takes and `ADDED` / `REMOVED` no longer match. The
+  table reads refuse `REPLACED`.
+- §4, §6, §9: `rowsSummary` (`DraftRowsSummary`) counts lines: a replaced row once, in the new `replaced` count, no
+  longer in `added` and `removed`, and once in `total`.
+- §8: costs of the field limit, `rowIds` and `replaced`.
+- §10: DR-04, DR-06 and DR-16 follow; DR-24 to DR-26 added. The plan's `coverage` and `tableData.rows` (DR-05)
+  already counted a replaced row once and do not change.
 
 ### Version 1.9 (2026-11-15)
 

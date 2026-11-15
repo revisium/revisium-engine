@@ -3,7 +3,6 @@ import type {
   DraftEdge,
   DraftPageInfo,
   DraftReadState,
-  DraftTableChangesFilters,
   FieldSelection,
   FollowReason,
   GoesWithSelection,
@@ -14,12 +13,23 @@ import type { SelectionItems } from 'src/features/partial-changes/selection/sele
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
-  type ChangeType,
+  ChangeType,
   RowChangeDetailType,
 } from 'src/features/revision-changes/types';
 
-export interface DraftRowChangesFilters extends DraftTableChangesFilters {
+// What the row filter and the row counts tell apart: the change types, and REPLACED for the two items of a replaced row.
+export const DRAFT_ROW_CHANGE_KINDS = [
+  ...Object.values(ChangeType),
+  'REPLACED',
+] as const;
+
+export type DraftRowChangeKind = (typeof DRAFT_ROW_CHANGE_KINDS)[number];
+
+export interface DraftRowChangesFilters {
   readonly tableId?: string | null;
+  readonly rowIds?: readonly string[] | null;
+  readonly changeTypes?: readonly DraftRowChangeKind[] | null;
+  readonly search?: string | null;
 }
 
 export interface DraftRowChangesInput {
@@ -27,6 +37,7 @@ export interface DraftRowChangesInput {
   readonly first: number;
   readonly after?: string | null;
   readonly filters?: DraftRowChangesFilters | null;
+  readonly fieldsPerRow?: number | null;
 }
 
 export interface SelectableRowSelection {
@@ -91,7 +102,9 @@ export interface DraftRowItem {
   readonly rowId: string;
   readonly previousRowId?: string;
   readonly changeType: ChangeType;
+  readonly replaced: boolean;
   readonly fields: readonly DraftFieldChange[];
+  readonly fieldsTotal: number;
   readonly columns: readonly DraftColumnChange[];
   readonly selection: RowSelection;
   readonly idTakeover?: IdTakeover;

@@ -908,7 +908,13 @@ engine.changes.rowChanges({
   branch: ChangesBranch;
   first: number;
   after?: string | null;
-  filters?: { tableId?: string | null; changeTypes?: ChangeType[] | null; search?: string | null } | null;
+  filters?: {
+    tableId?: string | null;
+    rowIds?: string[] | null;                        // at most 100; requires tableId
+    changeTypes?: DraftRowChangeKind[] | null;       // ChangeType values and 'REPLACED'
+    search?: string | null;
+  } | null;
+  fieldsPerRow?: number | null;                      // 0–1,000
 }): Promise<DraftRowPage>
 // { edges: DraftEdge<DraftRowItem>[], pageInfo, headRevisionId, draftRevisionId, refusedTables }
 
@@ -920,9 +926,17 @@ engine.changes.summary({
 
 - **Items.** A table item has `tableId`, `previousTableId` (renamed), `changeType`, `replaced`, `rowsSummary`,
   `schemaMigrations`, `viewsChanges` and `selection`. A row item has `tableId`, `previousTableId`, `rowId`,
-  `previousRowId` (renamed), `changeType`, `fields` (`path` as a JSON Pointer, `changeType`, `oldValue`, `newValue`,
-  `selection`), `columns` (`publishedAt`, `meta`, `schemaHash`), `selection`, and `idTakeover` / `idExchange` when a
-  rename took over another row's id. `changeType` takes the native `ChangeType` values.
+  `previousRowId` (renamed), `changeType`, `replaced`, `fields` (`path` as a JSON Pointer, `changeType`, `oldValue`,
+  `newValue`, `selection`), `fieldsTotal`, `columns` (`publishedAt`, `meta`, `schemaHash`), `selection`, and
+  `idTakeover` / `idExchange` when a rename took over another row's id. `changeType` takes the native `ChangeType`
+  values.
+- **One line per row.** A replaced row (deleted and created again under one id) is two adjacent items, `REMOVED`
+  then `ADDED`, both `replaced: true` with one `rowReplace` unit and one row selector; a client shows them as one line
+  (`±`) with both sides whole. They are never split across pages, and every filter lists both or neither.
+- **Field limit.** With `fieldsPerRow`, each row item lists only its first field changes, in native order, and
+  `fieldsTotal` counts all of them (it is there without the limit too). The row's `selection` and `columns` do not
+  change. To read the rest of one row, read it by `filters: { tableId, rowIds: [rowId] }` without the limit. The
+  limit saves payload, not work: the page still computes the whole diff of each row.
 - **Selection of an item.** A table is `selectable` (its `structure`, `views` and `tableData` selectors) or
   `refused` (with the refusal `code`). A row is `selectable` (`row` selects all its `units`), `goesWith` a unit that
   carries it (`reason`: `tableExistence`, `structureBound`, `rowExistence`) or `refused`. A field or column is `unit`,
@@ -943,13 +957,18 @@ engine.changes.summary({
   refuses a cursor of the other read as malformed (400).
 - **Totals.** `tableChanges` returns `totalCount` of the tables matching its filters. `rowChanges` returns no
   `totalCount`: it reads only the tables it needs for the page. Row totals come from `summary` (`rowsSummary` by
-  change type, `rowsWithUnits`) or from a table item (`rowsSummary`, `tableData.rows`). The summary's counts are the
+  kind, `rowsWithUnits`) or from a table item (`rowsSummary`, `tableData.rows`). `rowsSummary` counts lines: a replaced
+  row once, in `replaced`, and not in `added` or `removed` (the native diff counts it in both); a
+  `RENAMED_AND_MODIFIED` row in `renamed` and in `modified`. The summary's counts are the
   Draft's totals and ignore `filters`; its filters apply to its three lists (shared schemas, transient tables,
   views-only tables), which no table item shows.
 - **Filters.** `tableId` selects the rows of the tables listed under that id (both tables of a replaced id).
   `changeTypes` matches the change type; `RENAMED` and `MODIFIED` also match `RENAMED_AND_MODIFIED`, and an empty list
-  matches nothing. `search` is a case-insensitive plain substring of the Draft or Head id of the row (`rowChanges`) or
-  table.
+  matches nothing. In `rowChanges` a replaced row is of its own kind `REPLACED`: `ADDED` and `REMOVED` do not match it;
+  the table reads refuse `REPLACED`. `search` is a case-insensitive plain substring of the Draft or Head id of the row
+  (`rowChanges`) or table. `rowIds` (with `tableId`, at most 100) selects exactly the rows that show one of the ids
+  (`rowId`: Draft id, else Head id), so both items of a replaced row and both of a deleted row and the rename that took
+  over its id; a renamed row also by its Head id while no row of the table holds that id. Filters combine with AND.
 
 The Draft reads never run the native diff queries of [Revision Changes](#revision-changes-diffs), so they do not join
 every row of both revisions.

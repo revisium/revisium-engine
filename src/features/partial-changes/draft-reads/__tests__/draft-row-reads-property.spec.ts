@@ -2,9 +2,11 @@ import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
-import type {
-  DraftRowChangesFilters,
-  DraftRowItem,
+import {
+  DRAFT_ROW_CHANGE_KINDS,
+  type DraftRowChangeKind,
+  type DraftRowChangesFilters,
+  type DraftRowItem,
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTableItem } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
@@ -31,6 +33,7 @@ const PAGE_SIZES = [1, 2, 7];
 const ALL_ROWS = 5_000;
 const SEARCHED_ROWS = 5;
 const SMALL_PAGE = 2;
+const FIELDS_PER_ROW = 1;
 
 interface RowChangeView {
   readonly key: string;
@@ -101,6 +104,35 @@ describe('Draft row reads over random Drafts', () => {
   );
 
   it.each(RANDOM_DRAFT_SEEDS)(
+    'cuts the field changes of every row at the field limit and changes nothing else, on every page size (seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const all = await readEveryRow(draft);
+
+      expect(
+        all.filter(({ fields, fieldsTotal }) => fields.length !== fieldsTotal),
+      ).toEqual([]);
+
+      for (const first of PAGE_SIZES) {
+        expect(
+          rowItemsOf(
+            await draft.readEveryDraftRowPage({
+              first,
+              fieldsPerRow: FIELDS_PER_ROW,
+            }),
+          ),
+        ).toEqual(
+          all.map((item) => ({
+            ...item,
+            fields: item.fields.slice(0, FIELDS_PER_ROW),
+          })),
+        );
+      }
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it.each(RANDOM_DRAFT_SEEDS)(
     'counts in the table data of each table the rows the row read selects, and in the summary their sum (DR-05, seed %i)',
     async (seed) => {
       const draft = await givenRandomDraft(kit, seed);
@@ -165,8 +197,12 @@ describe('Draft row reads over random Drafts', () => {
 
         expect([filters, filtered]).toEqual([
           filters,
-          all.filter((item) => matchesRowFilters(item, filters, tables)),
+          all.filter((item) => matchesRowFilters(item, filters, tables, all)),
         ]);
+
+        if (filters.rowIds) {
+          expect(filtered.length).toBeGreaterThan(0);
+        }
 
         for (const first of pageSizesOf(filters)) {
           expect([
@@ -181,19 +217,20 @@ describe('Draft row reads over random Drafts', () => {
   );
 
   it.each(RANDOM_DRAFT_SEEDS)(
-    'counts in the summary the rows that the row filter of each change type lists (DR-06, seed %i)',
+    'counts in the summary the lines that the row filter of each kind lists, a replaced row as one line of two items (DR-06, seed %i)',
     async (seed) => {
       const draft = await givenRandomDraft(kit, seed);
       const { rowsSummary } = await draft.readDraftChangesSummary();
-      const countOf = async (changeType: ChangeType) =>
-        (await readEveryRow(draft, { changeTypes: [changeType] })).length;
+      const countOf = async (kind: DraftRowChangeKind) =>
+        linesOf(await readEveryRow(draft, { changeTypes: [kind] }));
 
       expect(rowsSummary).toEqual({
-        total: (await readEveryRow(draft)).length,
+        total: linesOf(await readEveryRow(draft)),
         added: await countOf(ChangeType.Added),
         removed: await countOf(ChangeType.Removed),
         renamed: await countOf(ChangeType.Renamed),
         modified: await countOf(ChangeType.Modified),
+        replaced: await countOf('REPLACED'),
       });
     },
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
@@ -215,8 +252,8 @@ describe('Draft row reads over random Drafts', () => {
   }
 });
 
-// Every change type, none, every id a table item shows or names as previous, searches by a whole Draft id in another
-// case, by part of one and by a Head id across the read, and two filters together.
+// Every kind, none, every id a table item shows or names as previous, searches by a whole Draft id in another case, by
+// part of one and by a Head id across the read, the exact ids of sampled rows in their table, and two filters together.
 function rowFiltersOf(
   tables: readonly DraftTableItem[],
   rows: readonly DraftRowItem[],
@@ -233,12 +270,14 @@ function rowFiltersOf(
   const [firstTableId] = tableIds;
 
   return [
-    ...Object.values(ChangeType).map((changeType) => ({
-      changeTypes: [changeType],
-    })),
+    ...DRAFT_ROW_CHANGE_KINDS.map((kind) => ({ changeTypes: [kind] })),
     { changeTypes: [] },
     ...[...tableIds].map((tableId) => ({ tableId })),
     ...[...searches].map((search) => ({ search })),
+    ...sampleOf(rows).map(({ tableId, rowId, previousRowId }) => ({
+      tableId,
+      rowIds: [rowId, previousRowId, `${rowId}0`].filter(isDefined),
+    })),
     { changeTypes: [ChangeType.Modified], search: '1' },
     { tableId: firstTableId, search: firstSearch },
   ];
@@ -273,10 +312,13 @@ function isDefined<T>(value: T | undefined): value is T {
 
 // The row filters of SPEC §7, over the items of an unfiltered read.
 function matchesRowFilters(
-  { tableId, previousTableId, rowId, previousRowId, changeType }: DraftRowItem,
+  item: DraftRowItem,
   filters: DraftRowChangesFilters,
   tables: readonly DraftTableItem[],
+  all: readonly DraftRowItem[],
 ): boolean {
+  const { tableId, previousTableId, rowId, previousRowId } = item;
+
   if (
     filters.tableId &&
     !isOfTable({ tableId, previousTableId }, filters.tableId, tables)
@@ -284,17 +326,12 @@ function matchesRowFilters(
     return false;
   }
 
-  if (filters.changeTypes) {
-    const types = filters.changeTypes;
-    const matches =
-      types.includes(changeType) ||
-      (changeType === ChangeType.RenamedAndModified &&
-        (types.includes(ChangeType.Renamed) ||
-          types.includes(ChangeType.Modified)));
+  if (filters.changeTypes && !hasKindAmong(item, filters.changeTypes)) {
+    return false;
+  }
 
-    if (!matches) {
-      return false;
-    }
+  if (filters.rowIds && !hasRowIdAmong(item, filters.rowIds, all)) {
+    return false;
   }
 
   if (filters.search) {
@@ -306,6 +343,52 @@ function matchesRowFilters(
   }
 
   return true;
+}
+
+// A replaced row is of its own kind; RENAMED and MODIFIED also match RENAMED_AND_MODIFIED, which is both.
+function hasKindAmong(
+  { changeType, replaced }: DraftRowItem,
+  kinds: readonly DraftRowChangeKind[],
+): boolean {
+  if (replaced) {
+    return kinds.includes('REPLACED');
+  }
+
+  return (
+    kinds.includes(changeType) ||
+    (changeType === ChangeType.RenamedAndModified &&
+      (kinds.includes(ChangeType.Renamed) ||
+        kinds.includes(ChangeType.Modified)))
+  );
+}
+
+// The rows that show one of the ids; a renamed row also by its Head id while no row of its table holds that id.
+function hasRowIdAmong(
+  item: DraftRowItem,
+  rowIds: readonly string[],
+  all: readonly DraftRowItem[],
+): boolean {
+  if (rowIds.includes(item.rowId)) {
+    return true;
+  }
+
+  const { previousRowId } = item;
+
+  return (
+    previousRowId !== undefined &&
+    rowIds.includes(previousRowId) &&
+    !all.some(
+      (other) =>
+        other.tableId === item.tableId &&
+        other.previousTableId === item.previousTableId &&
+        other.rowId === previousRowId,
+    )
+  );
+}
+
+// The lines of a list: the two items of a replaced row are one line.
+function linesOf(items: readonly DraftRowItem[]): number {
+  return items.length - items.filter(({ replaced }) => replaced).length / 2;
 }
 
 // The rows of the table items that show the id; only when none does, those of the renamed table it was in Head.

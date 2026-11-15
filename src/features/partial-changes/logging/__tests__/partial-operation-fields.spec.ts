@@ -461,7 +461,7 @@ describe('Partial operation log', () => {
 
       await draft.readDraftRowChanges({
         first: 1,
-        filters: { tableId: NOTES, search: 'n' },
+        filters: { tableId: NOTES, search: 'n', rowIds: ['n1', 'n2'] },
       });
 
       expect(entries.finished()).toEqual<OperationLogEntry[]>([
@@ -470,7 +470,7 @@ describe('Partial operation log', () => {
           outcome: 'read',
           pageSize: 1,
           returned: 1,
-          filters: ['search', 'tableId'],
+          filters: ['search', 'tableId', 'rowIds'],
           refusedTables: 0,
         },
       ]);

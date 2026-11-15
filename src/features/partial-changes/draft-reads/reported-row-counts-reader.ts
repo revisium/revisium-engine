@@ -3,10 +3,10 @@ import {
   reportedRowCountsSql,
   type TableRows,
 } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
-import type { RevisionChangeSummary } from 'src/features/revision-changes/types';
+import type { DraftRowsSummary } from 'src/features/partial-changes/queries/impl/draft-reads';
 import { TransactionPrismaService } from 'src/infrastructure/database/transaction-prisma.service';
 
-export interface ReportedRowCounts extends RevisionChangeSummary {
+export interface ReportedRowCounts extends DraftRowsSummary {
   readonly rowsWithUnits: number;
   readonly hasRowUnits: boolean;
 }

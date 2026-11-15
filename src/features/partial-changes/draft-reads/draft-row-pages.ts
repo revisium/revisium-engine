@@ -21,7 +21,10 @@ import type {
   TableRows,
 } from 'src/features/partial-changes/draft-reads/reported-rows-sql';
 import { hasChangeTypeAmong } from 'src/features/partial-changes/draft-reads/table-filters';
-import type { DraftRowPage } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import type {
+  DraftRowChangeKind,
+  DraftRowPage,
+} from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import { ChangeType } from 'src/features/revision-changes/types';
 
 interface PageOfTables {
@@ -42,13 +45,18 @@ export class DraftRowPages {
     first,
     after,
     filters,
+    fieldsPerRow,
   }: DraftRowChangesRequest): Promise<DraftRowPage> {
     const tables = await this.tablesReader.read(branch);
     const page = await this.readPairs(
       tablesFrom(tablesWithRowsOf(tables.listed, filters), after),
       { first, after, filters },
     );
-    const edges = await this.rowItems.edgesOf(page.tables, tables.compared);
+    const edges = await this.rowItems.edgesOf(
+      page.tables,
+      tables.compared,
+      fieldsPerRow,
+    );
 
     return {
       ...tables.readState,
@@ -144,7 +152,7 @@ function tablesNamed(
 
 function mayListRowsOf(
   rows: TableRows,
-  changeTypes: readonly ChangeType[] | undefined,
+  changeTypes: readonly DraftRowChangeKind[] | undefined,
 ): boolean {
   if (rows.kind === 'compared') {
     return changeTypes === undefined || changeTypes.length > 0;

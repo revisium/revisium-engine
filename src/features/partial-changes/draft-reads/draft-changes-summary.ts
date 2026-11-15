@@ -19,6 +19,7 @@ import type {
   TransientTable,
   ViewsOnlyTable,
 } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
+import type { DraftRowsSummary } from 'src/features/partial-changes/queries/impl/draft-reads';
 import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
 import type { RevisionRows } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
@@ -118,10 +119,8 @@ function tablesSummaryOf(
   };
 }
 
-function rowsSummaryOf(
-  counts: readonly ReportedRowCounts[],
-): RevisionChangeSummary {
-  const sumOfCount = (count: keyof RevisionChangeSummary) =>
+function rowsSummaryOf(counts: readonly ReportedRowCounts[]): DraftRowsSummary {
+  const sumOfCount = (count: keyof DraftRowsSummary) =>
     sumOf(counts.map((tableCounts) => tableCounts[count]));
 
   return {
@@ -130,6 +129,7 @@ function rowsSummaryOf(
     modified: sumOfCount('modified'),
     removed: sumOfCount('removed'),
     renamed: sumOfCount('renamed'),
+    replaced: sumOfCount('replaced'),
   };
 }
 

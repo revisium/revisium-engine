@@ -543,6 +543,27 @@ describe('draft table changes', () => {
         native.map(nativeViewOfChange).sort(byTableId),
       );
     });
+
+    it('counts a replaced row once as replaced, where the native table changes count one added and one removed row', async () => {
+      const draft = await givenCommittedTables();
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.createRows(PRODUCTS, { p1: { title: 'again', price: 1 } });
+
+      const [item] = await readTableItems(draft);
+      const [native] = await draft.readNativeTableChanges();
+
+      expect(item?.rowsSummary).toEqual({
+        total: 1,
+        added: 0,
+        modified: 0,
+        removed: 0,
+        renamed: 0,
+        replaced: 1,
+      });
+      expect(native && nativeViewOfChange(native).rows).toEqual([
+        2, 1, 0, 1, 0,
+      ]);
+    });
   });
 
   describe('change type filter', () => {
@@ -1072,6 +1093,7 @@ describe('draft table changes', () => {
         modified: 2,
         removed: 1,
         renamed: 1,
+        replaced: 0,
       });
     });
 
@@ -1090,6 +1112,7 @@ describe('draft table changes', () => {
         modified: 0,
         removed: 0,
         renamed: 1,
+        replaced: 0,
       });
     });
 
@@ -1106,6 +1129,7 @@ describe('draft table changes', () => {
         modified: 0,
         removed: 0,
         renamed: 1,
+        replaced: 0,
       });
     });
 
@@ -1134,6 +1158,7 @@ describe('draft table changes', () => {
         modified: 1,
         removed: 0,
         renamed: 0,
+        replaced: 0,
       });
     });
 

@@ -89,8 +89,63 @@ describe('draft changes summary', () => {
           modified: 1,
           removed: 0,
           renamed: 0,
+          replaced: 0,
         },
         rowsWithUnits: 1,
+      });
+    });
+
+    it('counts a replaced row once, as replaced and not as added and removed, in the summary and its table item', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: productSchema,
+          rows: { p1: { title: 'one' }, p2: { title: 'two' } },
+        },
+      });
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.createRows(PRODUCTS, { p1: { title: 'again' } });
+      await draft.removeRow(PRODUCTS, 'p2');
+      await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
+      const lines = { total: 3, added: 1, modified: 0, removed: 1, renamed: 0 };
+
+      const summary = await draft.readDraftChangesSummary();
+      const [table] = tableItemsOf([
+        await draft.readDraftTableChanges({ first: 10 }),
+      ]);
+
+      expect(summary.rowsSummary).toEqual({ ...lines, replaced: 1 });
+      expect(table?.rowsSummary).toEqual({ ...lines, replaced: 1 });
+      expect(summary.rowsWithUnits).toBe(3);
+    });
+
+    it('departs from the native summary for a replaced row only, which the native diff counts as one added and one removed row', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: productSchema,
+          rows: { p1: { title: 'one' }, p2: { title: 'two' } },
+        },
+      });
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.createRows(PRODUCTS, { p1: { title: 'again' } });
+      await draft.updateRow(PRODUCTS, 'p2', { title: 'edited' });
+
+      const summary = await draft.readDraftChangesSummary();
+      const native = await draft.readNativeSummary();
+
+      expect(native.rowsSummary).toEqual({
+        total: 3,
+        added: 1,
+        modified: 1,
+        removed: 1,
+        renamed: 0,
+      });
+      expect(summary.rowsSummary).toEqual({
+        total: 2,
+        added: 0,
+        modified: 1,
+        removed: 0,
+        renamed: 0,
+        replaced: 1,
       });
     });
 
@@ -148,6 +203,7 @@ describe('draft changes summary', () => {
           modified: 1,
           removed: 0,
           renamed: 0,
+          replaced: 0,
         },
         rowsWithUnits: 1,
       });
@@ -234,7 +290,10 @@ describe('draft changes summary', () => {
       const summary = await draft.readDraftChangesSummary();
       const native = await draft.readNativeSummary();
 
-      expect(summary.rowsSummary).toEqual(native.rowsSummary);
+      expect(summary.rowsSummary).toEqual({
+        ...native.rowsSummary,
+        replaced: 0,
+      });
       expect(summary.tablesSummary).toEqual({
         ...native.tablesSummary,
         replaced: 0,
@@ -518,6 +577,7 @@ describe('draft changes summary', () => {
         modified: 1,
         removed: 0,
         renamed: 0,
+        replaced: 0,
       });
       expect(linkSetReads).toEqual({ [PRODUCTS]: 1, [TAGS]: 1 });
       expect(nativeDiffReads).toEqual([]);

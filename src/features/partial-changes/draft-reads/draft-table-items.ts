@@ -8,7 +8,10 @@ import type {
 import { tableIdsOf } from 'src/features/partial-changes/draft-reads/table-ids';
 import type { ReportedRowCounts } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 import type { DraftCatalogue } from 'src/features/partial-changes/draft-reads/draft-catalogue';
-import type { DraftEdge } from 'src/features/partial-changes/queries/impl/draft-reads';
+import type {
+  DraftEdge,
+  DraftRowsSummary,
+} from 'src/features/partial-changes/queries/impl/draft-reads';
 import type {
   DraftTableItem,
   SelectableTableSelection,
@@ -21,7 +24,6 @@ import { pendingEntriesOf } from 'src/features/partial-changes/snapshot/ledger-a
 import { SchemaImpactService } from 'src/features/revision-changes/services/schema-impact.service';
 import { ViewsComparisonService } from 'src/features/revision-changes/services/views-comparison.service';
 import type {
-  RevisionChangeSummary,
   SchemaMigrationDetail,
   ViewsChangeDetail,
 } from 'src/features/revision-changes/types';
@@ -163,8 +165,9 @@ function rowsSummaryOf({
   modified,
   removed,
   renamed,
-}: ReportedRowCounts): RevisionChangeSummary {
-  return { total, added, modified, removed, renamed };
+  replaced,
+}: ReportedRowCounts): DraftRowsSummary {
+  return { total, added, modified, removed, renamed, replaced };
 }
 
 function viewsDataOf(row: Row | undefined): TableViewsData | null {

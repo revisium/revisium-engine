@@ -72,11 +72,15 @@ export interface ChangedLeaf {
   readonly change: StructureFieldChange;
   readonly from?: JsonPointer;
   readonly annotations?: readonly AnnotationKeyword[];
+  readonly before?: JsonSchema;
+  readonly after?: JsonSchema;
 }
 
 export interface AnnotatedObject {
   readonly pointer: JsonPointer;
   readonly annotations: readonly AnnotationKeyword[];
+  readonly before: JsonSchema;
+  readonly after: JsonSchema;
 }
 
 export interface TableStructure {
@@ -265,12 +269,7 @@ class LeafComparison {
     const { leaf, origin } = draftLeaf;
 
     if (!origin) {
-      return [
-        {
-          pointer: leaf.pointer,
-          change: this.changeOfNewLeaf(leaf, movedAway),
-        },
-      ];
+      return [this.newLeafOf(leaf, movedAway)];
     }
 
     if (isMoved(draftLeaf)) {
@@ -292,7 +291,14 @@ class LeafComparison {
       return this.annotatedLeafOf(origin.node, draftLeaf);
     }
 
-    return [{ pointer: draftLeaf.pointer, change: 'changed' }];
+    return [
+      {
+        pointer: draftLeaf.pointer,
+        change: 'changed',
+        before: origin.node.schema,
+        after: draftLeaf.schema,
+      },
+    ];
   }
 
   private annotatedLeafOf(
@@ -308,25 +314,50 @@ class LeafComparison {
       return [];
     }
 
-    return [{ pointer: draftLeaf.pointer, change: 'annotated', annotations }];
+    return [
+      {
+        pointer: draftLeaf.pointer,
+        change: 'annotated',
+        annotations,
+        before: headLeaf.schema,
+        after: draftLeaf.schema,
+      },
+    ];
   }
 
-  private changeOfNewLeaf(
+  private newLeafOf(
     leaf: SchemaLeaf,
     movedAway: ReadonlySet<string>,
-  ): StructureFieldChange {
-    if (!this.headLeaves.at(leaf.pointer) || movedAway.has(pointerKey(leaf))) {
-      return 'added';
+  ): ChangedLeaf {
+    const headLeaf = this.headLeaves.at(leaf.pointer);
+
+    if (!headLeaf || movedAway.has(pointerKey(leaf))) {
+      return { pointer: leaf.pointer, change: 'added', after: leaf.schema };
     }
 
-    return 'changed';
+    return {
+      pointer: leaf.pointer,
+      change: 'changed',
+      before: headLeaf.schema,
+      after: leaf.schema,
+    };
   }
 
   private movedLeafOf({ leaf, origin }: MovedLeaf): ChangedLeaf {
+    if (this.keepsValue(origin, leaf)) {
+      return {
+        pointer: leaf.pointer,
+        change: 'moved',
+        from: origin.node.pointer,
+      };
+    }
+
     return {
       pointer: leaf.pointer,
-      change: this.keepsValue(origin, leaf) ? 'moved' : 'changed',
+      change: 'changed',
       from: origin.node.pointer,
+      before: origin.node.schema,
+      after: leaf.schema,
     };
   }
 
@@ -337,7 +368,11 @@ class LeafComparison {
           !this.draftLeaves.at(leaf.pointer) &&
           !movedAway.has(pointerKey(leaf)),
       )
-      .map(({ pointer }) => ({ pointer, change: 'removed' }));
+      .map(({ pointer, schema }) => ({
+        pointer,
+        change: 'removed',
+        before: schema,
+      }));
   }
 
   private keepsValue(origin: LeafOrigin, draftLeaf: SchemaLeaf): boolean {
@@ -414,7 +449,14 @@ function annotatedObjectOf(
     return [];
   }
 
-  return [{ pointer: draftObject.pointer, annotations }];
+  return [
+    {
+      pointer: draftObject.pointer,
+      annotations,
+      before: origin.node.schema,
+      after: draftObject.schema,
+    },
+  ];
 }
 
 function isPatchedInPlace(

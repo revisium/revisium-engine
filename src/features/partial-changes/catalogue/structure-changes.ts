@@ -11,6 +11,16 @@ import {
   type TableStructure,
 } from 'src/features/partial-changes/structure/table-structure';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
+import {
+  type JsonArraySchema,
+  type JsonBooleanSchema,
+  type JsonNumberSchema,
+  type JsonObjectSchema,
+  type JsonRefSchema,
+  type JsonSchema,
+  JsonSchemaTypeName,
+  type JsonStringSchema,
+} from '@revisium/schema-toolkit/types';
 
 export const STRUCTURE_TABLE_CHANGES = [
   'created',
@@ -22,11 +32,26 @@ export const STRUCTURE_TABLE_CHANGES = [
 
 export type StructureTableChange = (typeof STRUCTURE_TABLE_CHANGES)[number];
 
+export type ObjectOwnSchema = Omit<
+  JsonObjectSchema,
+  'properties' | 'required' | 'additionalProperties'
+>;
+
+export type FieldSchema =
+  | JsonStringSchema
+  | JsonNumberSchema
+  | JsonBooleanSchema
+  | JsonArraySchema
+  | JsonRefSchema
+  | ObjectOwnSchema;
+
 export interface ChangedField {
   readonly path: string;
   readonly change: StructureFieldChange;
   readonly from?: string;
   readonly annotations?: readonly AnnotationKeyword[];
+  readonly before?: FieldSchema;
+  readonly after?: FieldSchema;
 }
 
 export interface StructureChange {
@@ -34,6 +59,17 @@ export interface StructureChange {
   readonly fields: readonly ChangedField[];
   readonly views: boolean;
 }
+
+interface SchemaSides {
+  readonly before?: JsonSchema;
+  readonly after?: JsonSchema;
+}
+
+const OBJECT_STRUCTURE_KEYWORDS: ReadonlySet<string> = new Set([
+  'properties',
+  'required',
+  'additionalProperties',
+]);
 
 type WholeTableChange = Exclude<StructureTableChange, 'changed' | 'replaced'>;
 
@@ -117,30 +153,76 @@ function inPathOrder(fields: ChangedField[]): ChangedField[] {
   return fields.sort((left, right) => compareCodePoints(left.path, right.path));
 }
 
-function annotatedFieldOf({
-  pointer,
-  annotations,
-}: AnnotatedObject): ChangedField {
-  return { path: pointer.toString(), change: 'annotated', annotations };
+function annotatedFieldOf(object: AnnotatedObject): ChangedField {
+  return {
+    path: object.pointer.toString(),
+    change: 'annotated',
+    annotations: object.annotations,
+    ...fieldSchemasOf(object),
+  };
 }
 
-function changedFieldOf({
-  pointer,
-  change,
+function changedFieldOf(leaf: ChangedLeaf): ChangedField {
+  return {
+    path: leaf.pointer.toString(),
+    change: leaf.change,
+    ...provenanceOf(leaf),
+    ...fieldSchemasOf(leaf),
+  };
+}
+
+function provenanceOf({
   from,
   annotations,
-}: ChangedLeaf): ChangedField {
-  const path = pointer.toString();
-
+}: ChangedLeaf): Pick<ChangedField, 'from' | 'annotations'> {
   if (from) {
-    return { path, change, from: from.toString() };
+    return { from: from.toString() };
   }
 
   if (annotations) {
-    return { path, change, annotations };
+    return { annotations };
   }
 
-  return { path, change };
+  return {};
+}
+
+function fieldSchemasOf({
+  before,
+  after,
+}: SchemaSides): Pick<ChangedField, 'before' | 'after'> {
+  const schemas: { before?: FieldSchema; after?: FieldSchema } = {};
+
+  if (before) {
+    schemas.before = fieldSchemaOf(before);
+  }
+
+  if (after) {
+    schemas.after = fieldSchemaOf(after);
+  }
+
+  return schemas;
+}
+
+// A copy, so a caller that edits a result changes neither the snapshot nor another description.
+function fieldSchemaOf(schema: JsonSchema): FieldSchema {
+  return structuredClone(describedSchemaOf(schema));
+}
+
+// An object is no leaf: its fields are described at their own pointers, so it is described by its own keywords.
+function describedSchemaOf(schema: JsonSchema): FieldSchema {
+  if (!isObjectSchema(schema)) {
+    return schema;
+  }
+
+  return Object.fromEntries(
+    Object.entries(schema).filter(
+      ([keyword]) => !OBJECT_STRUCTURE_KEYWORDS.has(keyword),
+    ),
+  ) as ObjectOwnSchema;
+}
+
+function isObjectSchema(schema: JsonSchema): schema is JsonObjectSchema {
+  return !('$ref' in schema) && schema.type === JsonSchemaTypeName.Object;
 }
 
 function isOnBothSides({ head, draft }: TablePair): boolean {

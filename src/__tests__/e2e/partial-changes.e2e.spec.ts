@@ -60,6 +60,7 @@ const CHANGES_API_TYPES = [
   'DraftTablePage',
   'DraftTablesSummary',
   'FieldRef',
+  'FieldSchema',
   'FieldSelection',
   'FieldSelectionState',
   'FieldUnitSelection',
@@ -73,6 +74,7 @@ const CHANGES_API_TYPES = [
   'MigrationRenumbering',
   'MixedTableEstimate',
   'NothingToApply',
+  'ObjectOwnSchema',
   'PlanBlocker',
   'PlanCounts',
   'PlanEstimate',
@@ -474,6 +476,8 @@ const RESULT_PARTS_HAVE_THEIR_NAMES = unionsEqual<
       NonNullable<engine.SelectableTableSelection['tableData']>,
       engine.TableData
     >,
+    Equal<NonNullable<engine.ChangedField['before']>, engine.FieldSchema>,
+    Equal<NonNullable<engine.ChangedField['after']>, engine.FieldSchema>,
     Equal<Edge<engine.DraftTablePage>, engine.DraftEdge<engine.DraftTableItem>>,
     Equal<Edge<engine.DraftRowPage>, engine.DraftEdge<engine.DraftRowItem>>,
     Equal<

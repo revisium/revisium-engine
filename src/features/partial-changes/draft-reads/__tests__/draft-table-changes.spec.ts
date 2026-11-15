@@ -18,6 +18,7 @@ import {
   encodeTableCursor,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
+import type { SelectionItems } from 'src/features/partial-changes/selection/selection';
 import type {
   DraftTableItem,
   DraftTablePage,
@@ -278,6 +279,60 @@ describe('draft table changes', () => {
         },
       });
     });
+
+    it('offers the table data selector of a listed table whose only row change has no effect, counting no row', async () => {
+      const draft = await givenViewsEditedBesideASchemaHashOnlyRow();
+
+      expect(selectionsOf(await readTableItems(draft))).toEqual([
+        [
+          ORDERS,
+          ChangeType.Modified,
+          {
+            state: 'selectable',
+            views: viewsRef(ORDERS),
+            tableData: { selector: { tableData: [ORDERS] }, rows: 0 },
+          },
+        ],
+      ]);
+    });
+
+    it.each<{ table: string; given: () => Promise<ChangesScenario> }>([
+      {
+        table: 'listed for its views',
+        given: givenViewsEditedBesideASchemaHashOnlyRow,
+      },
+      {
+        table: 'listed for its structure',
+        given: givenStructureChangedBesideASchemaHashOnlyRow,
+      },
+    ])(
+      'leaves no unit behind when every selector of a table $table is committed, also of a row it does not list',
+      async ({ given }) => {
+        const draft = await given();
+
+        for (const selection of selectorsOf(await readTableItems(draft))) {
+          await draft.commitChanges({ selection });
+        }
+
+        expect(await draft.listEveryUnit()).toEqual([]);
+      },
+    );
+
+    async function givenViewsEditedBesideASchemaHashOnlyRow(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTables();
+      await draft.updateViews(ORDERS, orderViews);
+      await draft.writeRowColumns(ORDERS, 'o1', { schemaHash: 'other' });
+
+      return draft;
+    }
+
+    async function givenStructureChangedBesideASchemaHashOnlyRow(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTables();
+      await draft.updateTable(ORDERS, [addField('color', str())]);
+      await draft.writeRowColumns(ORDERS, 'o1', { schemaHash: 'other' });
+
+      return draft;
+    }
 
     async function givenPriceEditedAndSetBack(): Promise<ChangesScenario> {
       const draft = await givenCommittedTables();
@@ -1479,6 +1534,20 @@ function selectionsOf(items: readonly DraftTableItem[]): TableSelectionView[] {
     changeType,
     selection,
   ]);
+}
+
+function selectorsOf(items: readonly DraftTableItem[]): SelectionItems[] {
+  return items.flatMap(({ selection }) => {
+    if (selection.state !== 'selectable') {
+      return [];
+    }
+
+    const { structure, views, tableData } = selection;
+
+    return [structure?.selector, views?.selector, tableData?.selector].filter(
+      (selector): selector is SelectionItems => selector !== undefined,
+    );
+  });
 }
 
 function idsOf({

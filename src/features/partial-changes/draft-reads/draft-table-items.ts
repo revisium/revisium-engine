@@ -144,12 +144,13 @@ export function tableDataRowsOf(
   return tableDataOf(table, counts)?.rows ?? 0;
 }
 
-// Rows of a table on one side only go with its structure, so they yield no unit.
+// Offered whenever the table has row units, also those of rows no item shows, so its selectors leave none behind; it
+// counts the rows shown. Rows of a table on one side only go with its structure, so they yield no unit.
 function tableDataOf(
   { pair }: DraftTable,
-  { rowsWithUnits }: ReportedRowCounts,
+  { rowsWithUnits, hasRowUnits }: ReportedRowCounts,
 ): TableData | undefined {
-  if (!pair.draft || rowsWithUnits === 0) {
+  if (!pair.draft || !hasRowUnits) {
     return undefined;
   }
 

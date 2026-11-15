@@ -76,8 +76,9 @@ The **row pairs** of a listed table come from one query per table and call:
 
 A **row** is reported when it exists on one side only, or its `id`, its stored values, `publishedAt` or `meta`
 differs. The stored values are the values at the leaves the change catalogue compares (partial-changes-v1 §3.1): every
-leaf the structure keeps that stores a value in the data, and every leaf the structure changed; they are compared only
-for a pair whose data `hash` differs. Changes without effect are not reported:
+leaf the structure keeps that stores a value in the data, and every leaf the structure changed. Under an unchanged
+structure they are compared only for a pair whose data `hash` differs, which trusts the stored hash as the plan's row
+change predicate does there; under a changed structure they are compared whatever the hashes, as there. Changes without effect are not reported:
 
 - a row whose only stored difference is a formula output that the structure keeps: the value is computed from the
   row's other values (a native foreign-key rewrite can leave it stale, partial-changes-v1 §5.2, or a write below the
@@ -95,8 +96,8 @@ whose only stored difference is a formula output is absent here and `MODIFIED` t
 specification counts reported rows only.
 
 The units of changes without effect stay in the change catalogue, so commit and revert apply what they did: a row that
-differs only in `schemaHash` keeps its `rowColumns` unit, which the table's `tableData` selector, the selection
-`{ all: true }` and the closure select, and a listed row's selector selects its own `schemaHash` difference with its
+differs only in `schemaHash` keeps its `rowColumns` unit, which the table's `tableData` selector (offered whenever the
+table has such a unit, §4), the selection `{ all: true }` and the closure select, and a listed row's selector selects its own `schemaHash` difference with its
 other units (§5.1). A formula output has no unit, as before. Exactly `{ all: true }` clears the Draft versions of a
 table whose content equals the last commit (partial-changes-v1 §3.8).
 
@@ -146,10 +147,14 @@ A listed table that is not refused always has one of them (§3).
 - `structure` is the structure unit that holds the table identity, a `DescribedUnitRef`. Both items of a replaced id
   carry the same `replaced` structure unit.
 - `views` is the table's views unit; it exists only when the table has no structure unit (partial-changes-v1 §3.6).
-- `tableData` is `{ selector: { tableData: [Draft id] }, rows }`, present when the table is on both sides and its row
-  counts find a pair that the catalogue's row change predicate selects (partial-changes-v1 §6.3). `rows` is the number
-  of rows whose units the selector selects, each row counted by its row selector (the `row` of its `selectable` row
-  item, §5.1):
+- `tableData` is `{ selector: { tableData: [Draft id] }, rows }`, present when the table is on both sides and has a
+  row with a row, field or `rowColumns` unit of its own, shown or not: it is offered whenever the table has row units,
+  so a client that applies every selector a table item offers leaves none of them behind. It selects every row unit of
+  the table, also the units of rows the reads do not show (a row that differs only in `schemaHash` under an unchanged
+  structure, §3). A table listed for its views whose only row change is such a row offers it with `rows: 0`. Under a
+  changed structure such a row has no unit of its own: its `schemaHash` goes with the structure unit. `rows` counts
+  the shown rows only: the number of rows whose units the selector selects and that a row item shows, each row counted
+  by its row selector (the `row` of its `selectable` row item, §5.1):
   - a row on both sides counts once, whatever its units (a rename with its edits is one row);
   - the deleted and the created row of a replaced row share one `rowReplace` unit and one selector, so they count
     once;
@@ -159,8 +164,8 @@ A listed table that is not refused always has one of them (§3).
 
   So `rows` equals the number of distinct `selection.row` of the table's `selectable` row items over all pages of an
   unfiltered `rowChanges`, and row filters do not change it. A client that selected rows one by one knows from it when
-  it has selected all of them. The selector also selects the `rowColumns` unit of a row of the table that differs only
-  in `schemaHash` (§3), which no row item shows and `rows` does not count.
+  it has selected all of them. The `rowColumns` unit of a row that differs only in `schemaHash` is selected and not
+  counted.
 
 ## 5. Row items
 
@@ -350,14 +355,17 @@ anti-join of the table's two link sets (a created or removed table reads the row
   `search` filter, and a `changeTypes` filter with several types, have no total: a `RENAMED_AND_MODIFIED` row counts
   in two types, so the per-type counts do not add up.
 - **`tableChanges`** reads the row counts of the tables on its page (one query each), of a renamed table off the
-  page only when a `changeTypes` filter needs its change type (§4), and of every table off the page that its filters
-  match and that has no refusal, structure or views unit: only its reported rows tell whether it has a change with an
-  effect (§3), and `totalCount` and `hasNextPage` count only such tables. So a table page costs at most what the
-  summary does.
-- **`summary`** reads the row counts of every listed table: the counts per change type and the number of rows with
-  units.
-- A row query compares the stored values leaf by leaf only for a pair whose data `hash` differs, over the pairs of
-  the anti-join, as a plan does for a table whose structure differs.
+  page only when a `changeTypes` filter needs its change type (§4), and of every table its filters match that has no
+  refusal, structure or views unit, which only a reported row shows (§3). `totalCount` counts the shown tables, so
+  this covers the tables before the cursor too. The counts are read once per call and reused by the items, so a table
+  page costs at most what the summary does. Two cheaper forms were measured and rejected: a walk of the row links that
+  stops at the first reported row probes an index per link and costs more than the hash anti-join, also for a table
+  with changes; one statement for all tables costs more to plan than the round trips it saves.
+- **`summary`** reads the row counts of every listed table: the counts per change type, the number of rows with
+  units, and whether the table has row units at all (§4); a table with nothing but rows to show is shown when it has a
+  reported row.
+- A row query compares the stored values leaf by leaf over the pairs of the anti-join, under an unchanged structure only
+  for a pair whose data `hash` differs, as a plan does for a table whose structure differs.
 - A row page then reads the row versions of its pairs, computes their formula values and builds the field diffs; its
   id exchanges and followed renames read by row id and identity (§5.4, §5.5).
 
@@ -473,7 +481,8 @@ Reachability and oracles (properties over random Drafts):
   reachable from the three reads, and nothing else: structure and views units from table items or the summary, shared
   schemas from the summary, row and field units from row items, `rowColumns` units from row items and columns, including
   the units of `idTakeover`, `idExchange` and `follows`; except the `rowColumns` unit of a row that differs only in
-  `schemaHash` (§3), which only its table's `tableData` selector reaches, when the table is listed.
+  `schemaHash` (§3), which its table's `tableData` selector reaches when the table is listed, and only `{ all: true }`
+  and the closure reach when the table has nothing else to show.
 - DR-02 Every reported table, row, field and column without a unit says why: a row `goesWith` or `refused`, a field or
   column also `computed`.
 - DR-03 Native oracle: on pages of 1, 2 and 7 rows, the reads list every row change of the native diff of the Draft
@@ -481,8 +490,12 @@ Reachability and oracles (properties over random Drafts):
   `publishedAt` or `meta`, §3), the same field changes (paths as JSON Pointers, values equal), and beside them only
   rows that differ in `publishedAt` or `meta`; a native change whose only stored difference is a formula output is
   not listed (§3).
-- DR-04 Table items equal the native table changes in change type and row counts, except a table with only rename
-  migrations and no reported row, which may read `RENAMED`, and the row-column differences of §3; each item's `schemaMigrations`, replayed from the Draft
+- DR-04 Table items equal the native table changes in change type and row counts, except: a table with only rename
+  migrations and no reported row, which may read `RENAMED`; the rows that differ only in `publishedAt` or `meta`,
+  which the native diff does not count; and the changes without effect of §3, which the reads do not show (a table
+  whose versions differ while its content equals the last commit, which the native diff lists as `MODIFIED` with no
+  row; a row whose only stored difference is a formula output, which it counts as modified; a row that differs only
+  in `schemaHash` is in neither). Each item's `schemaMigrations`, replayed from the Draft
   ledger, take the table from its Head id to its Draft id in ledger order, each pending migration under one item at
   most and the rest forming transient tables (listed in the summary unless the catalogue joins them to the structure
   unit of a table created at their id); `viewsChanges` compare the views under the Head id in Head with those under
@@ -490,9 +503,11 @@ Reachability and oracles (properties over random Drafts):
 - DR-05 `tableData.rows` of every table equals the distinct `selection.row` of its `selectable` items over an
   unfiltered row read; the summary's `rowsWithUnits` equals their sum; a preview that selects `tableData: [table]` has
   a `coverage` entry with `rows` equal to `tableData.rows` (partial-changes-v1 §5.1), apart from the rows that differ
-  only in `schemaHash`, which the plan covers and the reads do not list (§4).
-- DR-06 The summary equals the native summary in its counts and change types, apart from the row-column differences
-  of §3; each count of `tablesSummary` equals
+  only in `schemaHash`, which the plan covers and the reads do not list (§4); a table whose only row units are such
+  rows offers `tableData` with `rows: 0`.
+- DR-06 The summary equals the native summary in its counts and change types, apart from the exceptions of DR-04
+  (rows that differ only in `publishedAt` or `meta`, and the changes without effect of §3); each count of
+  `tablesSummary` equals
   the `totalCount` of the table filter of its type, and of `rowsSummary` the number of rows the row filter of its
   type lists.
 
@@ -549,7 +564,8 @@ Changes without effect:
   that matches only such rows lists nothing.
 - DR-22 A renamed row that also differs in `schemaHash` is `RENAMED`. A listed row whose `schemaHash` also differs
   shows it in `columns`, and its row selector selects its `rowColumns` unit; committing the `tableData` selector of a
-  listed table also commits the `schemaHash` of a row of the table that no item shows.
+  listed table also commits the `schemaHash` of a row of the table that no item shows. A table listed for its views
+  or its structure whose only row change is such a row: committing every selector its item offers leaves no unit.
 - DR-23 Rows that differ only in `meta` or `publishedAt` are listed and counted as `MODIFIED`, with their `columns`
   and units.
 
@@ -567,9 +583,12 @@ Changes without effect:
   rows with only a computed difference is replaced by the `schemaHash`-only rows the selector also selects.
 - §5.1, §9: the row selection state `computed` is removed; a field or column can still be `computed`.
 - §6: `rowsWithUnits` has no exception.
-- §8: a table page also reads the row counts of the off-page tables its filters match that have nothing but rows to
-  show; a row query compares stored values leaf by leaf for pairs whose hash differs.
-- §10: DR-01, DR-02, DR-03, DR-05, DR-11 and DR-13 follow; DR-21 to DR-23 added.
+- §4: `tableData` is offered whenever the table has a row unit, also of a row the reads do not show, so the selectors
+  of a table item leave no unit behind; `rows` counts the shown rows.
+- §8: a table page also reads the row counts of the tables its filters match that have nothing but rows to show,
+  before and after the cursor, since `totalCount` counts the shown tables; a row query compares stored values leaf by
+  leaf (under an unchanged structure for pairs whose hash differs).
+- §10: DR-01 to DR-06, DR-11 and DR-13 follow; DR-21 to DR-23 added.
 
 ### Version 1.8 (2026-11-15)
 

@@ -12,7 +12,11 @@ import {
   leafDiffers,
   rowChangePredicate,
 } from 'src/features/partial-changes/snapshot/row-change-predicate';
-import { leafOwnersOf } from 'src/features/partial-changes/structure/column-owners';
+import {
+  columnOwnerOf,
+  type LeafOwner,
+  leafOwnersOf,
+} from 'src/features/partial-changes/structure/column-owners';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 import { ChangeType } from 'src/features/revision-changes/types';
 
@@ -57,6 +61,8 @@ const ONE_SIDED = raw(`(h."versionId" IS NULL OR d."versionId" IS NULL)`);
 const IDS_DIFFER = raw(`h."id" <> d."id"`);
 
 const NOTHING_DIFFERS = raw('FALSE');
+
+const UNIT_COLUMNS = ['publishedAt', 'meta', 'schemaHash'] as const;
 
 const PAIR_ON_ONE_SIDE = raw(
   `("headVersionId" IS NULL OR "draftVersionId" IS NULL)`,
@@ -146,7 +152,11 @@ export function reportedRowCountsSql(rows: TableRows): Sql {
       count(*) FILTER (
         WHERE "changeType" = ANY(${[ChangeType.Modified, ChangeType.RenamedAndModified]}::text[])
       )::int AS "modified",
-      ${rowsWithUnitsCount()} AS "rowsWithUnits"
+      ${rowsWithUnitsCount()} AS "rowsWithUnits",
+      EXISTS (
+        SELECT 1 FROM ${ROW_VERSIONS_PAIRED_BY_IDENTITY}
+        WHERE ${ONE_SIDED} OR ${rowHasUnitsOfItsOwn(rows.table.structure)}
+      ) AS "hasRowUnits"
     FROM pairs
   `;
 }
@@ -158,7 +168,7 @@ function oneSidedRowCountsSql({ side, tableVersionId }: OneSidedRows): Sql {
 
   return sql`
     SELECT count(*)::int AS "total", ${added} AS "added", ${removed} AS "removed",
-           0 AS "renamed", 0 AS "modified", 0 AS "rowsWithUnits"
+           0 AS "renamed", 0 AS "modified", 0 AS "rowsWithUnits", FALSE AS "hasRowUnits"
     FROM "_RowToTable" WHERE "B" = ${tableVersionId}
   `;
 }
@@ -283,18 +293,47 @@ function changeTypeOf(structure: TableStructure): Sql {
 // is computed from the row's values, so a difference in either alone has no effect.
 function contentWithEffectDiffers(structure: TableStructure): Sql {
   return sql`(
-    ${storedValuesDiffer(structure)}
+    ${valuesDifferAt(structure, leafOwnersOf(structure))}
     OR ${columnDiffers('publishedAt')}
     OR ${columnDiffers('meta')}
   )`;
 }
 
-function storedValuesDiffer(structure: TableStructure): Sql {
-  const leaves = leafOwnersOf(structure);
+// A row on both sides with a row, field or rowColumns unit, shown or not: the units the catalogue builds for it.
+function rowHasUnitsOfItsOwn(structure: TableStructure): Sql {
+  const columns = UNIT_COLUMNS.filter(
+    (column) => columnOwnerOf(column, structure).owner !== 'structure',
+  );
 
+  const differences = [
+    IDS_DIFFER,
+    valuesDifferAt(structure, leafOwnersOf(structure).filter(isOwnedByField)),
+    ...columns.map(columnDiffers),
+  ];
+
+  return sql`(${join(differences, ' OR ')})`;
+}
+
+// Under an unchanged structure, equal stored hashes are trusted to mean equal data, as the plan's row change predicate
+// trusts them, and only a pair whose hashes differ is compared leaf by leaf; under a changed structure the leaves are
+// compared without the hash, as there.
+function valuesDifferAt(
+  structure: TableStructure,
+  leaves: readonly LeafOwner[],
+): Sql {
   if (leaves.length === 0) {
     return NOTHING_DIFFERS;
   }
 
-  return sql`(${columnDiffers('hash')} AND (${join(leaves.map(leafDiffers), ' OR ')}))`;
+  const leavesDiffer = join(leaves.map(leafDiffers), ' OR ');
+
+  if (structure.differs) {
+    return sql`(${leavesDiffer})`;
+  }
+
+  return sql`(${columnDiffers('hash')} AND (${leavesDiffer}))`;
+}
+
+function isOwnedByField(leaf: LeafOwner): boolean {
+  return leaf.owner === 'field';
 }

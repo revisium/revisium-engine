@@ -44,6 +44,7 @@ const NO_REPORTED_ROWS: ReportedRowCounts = {
   removed: 0,
   renamed: 0,
   rowsWithUnits: 0,
+  hasRowUnits: false,
 };
 
 @Injectable()

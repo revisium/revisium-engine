@@ -883,15 +883,16 @@ engine.changes.summary({
   `refused` (with the refusal `code`). A row is `selectable` (`row` selects all its `units`), `goesWith` a unit that
   carries it (`reason`: `tableExistence`, `structureBound`, `rowExistence`) or `refused`. A field or column is `unit`,
   `goesWith`, `computed` or `refused`.
-- **Changes without effect.** The reads show only changes with an effect. A table
-  whose content equals the last commit (a value edited and set back), a row whose only stored difference is a formula
-  output, and a row that differs only in the technical `schemaHash` are in no item and in no count (`totalCount`,
-  `tablesSummary`, `rowsSummary`, `rowsWithUnits`, `tableData.rows`), and neither difference makes a renamed row
-  `RENAMED_AND_MODIFIED`. Rows that differ in `meta` or `publishedAt` are changes and are listed. Selectors still
-  carry what is not shown: a row's selector also selects its `schemaHash` difference, and a table's `tableData`
-  selector the `schemaHash` of rows no item shows. So a Draft can read as empty while `draftHasChanges` and the
-  branch's `touched` are `true`: exactly `{ all: true }` clears content-equal versions and applies `schemaHash`
-  differences, while a stored formula output that differs is cleared only by a native `revertChanges` or commit
+- **Changes without effect.** The reads show only changes with an effect. A table whose content equals the last commit
+  (a value edited and set back), a row whose only stored difference is a formula output, and a row that differs only in
+  the technical `schemaHash` are in no item and in no count (`totalCount`, `tablesSummary`, `rowsSummary`,
+  `rowsWithUnits`, `tableData.rows`), and neither difference makes a renamed row `RENAMED_AND_MODIFIED`. Rows that
+  differ in `meta` or `publishedAt` are changes and are listed. Selectors still carry what is not shown: a row's
+  selector also selects its `schemaHash` difference, and a table item offers `tableData` whenever the table has row
+  units, also of rows no item shows, so applying every selector of a table item leaves none behind; `tableData.rows`
+  counts the shown rows only (it can be `0`). So a Draft can read as empty while `draftHasChanges` and the branch's
+  `touched` are `true`: exactly `{ all: true }` clears content-equal versions and applies `schemaHash` differences,
+  while a stored formula output that differs is cleared only by a native `revertChanges` or commit
   ([SPEC](specs/draft-reads-v1.spec.md) §3).
 - **Paging.** Keyset pages: pass `pageInfo.endCursor` as `after` while `pageInfo.hasNextPage`. Each page reads its own
   snapshot. The two items of one row id are never split, so a row page can hold a few more items than `first`. A read

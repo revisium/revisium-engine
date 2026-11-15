@@ -158,7 +158,9 @@ describe('JSON values of the Draft reads', () => {
 });
 
 function cutOf(value: unknown, maxBytes: number): Omit<LimitedValue, 'token'> {
-  const { token: _token, ...cut } = cutValueOf(value, maxBytes);
+  const cut = cutValueOf(value, maxBytes);
 
-  return cut;
+  return Object.fromEntries(
+    Object.entries(cut).filter(([key]) => key !== 'token'),
+  ) as Omit<LimitedValue, 'token'>;
 }

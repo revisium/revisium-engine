@@ -313,6 +313,28 @@ export class BranchScenario {
     );
   }
 
+  public async removeViewsRow(tableId: string): Promise<void> {
+    await this.writeBelowNativeValidation((revisionId) =>
+      this.kit.draftRevisionApi.removeRows({
+        revisionId,
+        tableId: SystemTables.Views,
+        rowIds: [tableId],
+      }),
+    );
+  }
+
+  public async createSystemTableBelowNativeValidation(
+    tableId: SystemTables,
+  ): Promise<void> {
+    await this.writeBelowNativeValidation((revisionId) =>
+      this.kit.draftRevisionApi.createTable({
+        revisionId,
+        tableId,
+        system: true,
+      }),
+    );
+  }
+
   public async createSharedSchema(
     id: string,
     schema: JsonSchema,

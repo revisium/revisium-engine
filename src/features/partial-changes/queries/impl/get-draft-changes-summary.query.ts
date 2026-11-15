@@ -50,6 +50,7 @@ export interface DraftChangesSummary extends DraftReadState {
   readonly transientTablesCount: number;
   readonly viewsOnlyTables: readonly ViewsOnlyTable[];
   readonly viewsOnlyTablesCount: number;
+  readonly onlyChangesWithoutEffect: boolean;
 }
 
 export class GetDraftChangesSummaryQuery {

@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.11 |
+| Version | 1.12 |
 | Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -97,11 +97,12 @@ whose only stored difference is a formula output is absent here and `MODIFIED` t
 `RENAMED` here when it is also renamed). A row that differs only in `schemaHash` is in neither. Every count of this
 specification counts reported rows only.
 
-The units of changes without effect stay in the change catalogue, so commit and revert apply what they did: a row that
-differs only in `schemaHash` keeps its `rowColumns` unit, which the table's `tableData` selector (offered whenever the
-table has such a unit, §4), the selection `{ all: true }` and the closure select, and a listed row's selector selects its own `schemaHash` difference with its
-other units (§5.1). A formula output has no unit, as before. Exactly `{ all: true }` clears the Draft versions of a
-table whose content equals the last commit (partial-changes-v1 §3.8).
+The units of changes without effect stay in the change catalogue, so a selection that names them applies them as
+before: a row that differs only in `schemaHash` keeps its `rowColumns` unit, which the table's `tableData` selector
+(offered whenever the table has such a unit, §4) and the closure select, and a listed row's selector selects its own
+`schemaHash` difference with its other units (§5.1). A formula output has no unit, as before. Exactly `{ all: true }`
+selects these `rowColumns` units together with other units, but none of them when they are the Draft's only units;
+it then clears every change without effect without a revision (partial-changes-v1 §3.8).
 
 ## 4. Table items
 
@@ -341,6 +342,7 @@ the stored time cannot tell the two writes apart. Only a stored time per kind of
 | `transientTables` | Every structure unit of tables created and removed inside the Draft: `{ tableId, changeType: 'ADDED', structure }`. |
 | `viewsOnlyTables` | Every views unit of a table whose user table version is unchanged, which no table item shows: `{ tableId, changeType: 'MODIFIED', views }`. |
 | `sharedSchemasCount`, `transientTablesCount`, `viewsOnlyTablesCount` | The lengths of the three lists before `filters`. |
+| `onlyChangesWithoutEffect` | `true` when the Draft still differs from Head (its stored `hasChanges`) while the reads show nothing (no table item and none of the three lists), and the Draft holds no empty schema, migration or shared-schemas table that Head lacks, which no native write creates again and so stays (partial-changes-v1 §3.8). All that remains are changes without effect (§3), which exactly `{ all: true }` clears without a revision (partial-changes-v1 §3.8); a client runs or offers it instead of showing changes over an empty list. It ignores `filters`, like the counts. |
 
 A `RENAMED_AND_MODIFIED` item counts in `renamed` and in `modified`, so each count equals the `totalCount` of the
 `changeTypes` filter of that type in `tableChanges`, and the row counts the lines `rowChanges` lists under the filter of
@@ -434,7 +436,8 @@ anti-join of the table's two link sets (a created or removed table reads the row
   with changes; one statement for all tables costs more to plan than the round trips it saves.
 - **`summary`** reads the row counts of every listed table: the counts per change type, the number of rows with
   units, and whether the table has row units at all (§4); a table with nothing but rows to show is shown when it has a
-  reported row.
+  reported row. `onlyChangesWithoutEffect` reads the Draft's stored `hasChanges`, one primary-key read, only when
+  nothing is shown.
 - A row query compares the stored values leaf by leaf over the pairs of the anti-join, under an unchanged structure only
   for a pair whose data `hash` differs, as a plan does for a table whose structure differs.
 - A row page then reads the row versions of its pairs, computes their formula values and builds the field diffs; its
@@ -551,6 +554,7 @@ type DraftChangesSummary = DraftReadState & {
   sharedSchemas: ChangedSharedSchema[]; sharedSchemasCount: number;
   transientTables: TransientTable[]; transientTablesCount: number;
   viewsOnlyTables: ViewsOnlyTable[]; viewsOnlyTablesCount: number;
+  onlyChangesWithoutEffect: boolean;
 };
 type DraftTablesSummary = RevisionChangeSummary & { replaced: number };
 type DraftRowsSummary = RevisionChangeSummary & { replaced: number };   // lines: a replaced row only in replaced
@@ -698,7 +702,21 @@ Recent order:
   the rows of a table created at a replaced table id before the removed table's rows; a renamed table by its Head id;
   `orderBy: 'id'` and `null` read what the absent order reads; a cursor of one order is refused under the other.
 
+Summary:
+
+- DR-29 `onlyChangesWithoutEffect` is `true` for a Draft that holds only a value edited and set back, only a stale
+  formula output, only a `schemaHash` difference, or only an empty views table that Head lacks, and `false` for a Draft
+  without changes, a Draft with a change with an effect beside one without, a Draft with only a table created and
+  removed inside it, and a Draft whose only difference is an empty shared-schemas or migration table that Head lacks.
+
 ## Changelog
+
+### Version 1.12 (2026-11-15)
+
+- §6, §8, §9, DR-29: the summary returns `onlyChangesWithoutEffect`, `true` when the Draft differs from Head while the
+  reads show nothing, so a client can run exactly `{ all: true }`, which clears those changes without a revision
+  (partial-changes-v1 v2.12 §3.8).
+- §3: exactly `{ all: true }` selects the `rowColumns` units of `schemaHash`-only rows only beside other units.
 
 ### Version 1.11 (2026-11-15)
 

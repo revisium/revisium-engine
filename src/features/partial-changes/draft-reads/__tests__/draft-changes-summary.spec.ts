@@ -338,6 +338,105 @@ describe('draft changes summary', () => {
     });
   });
 
+  describe('only changes without effect', () => {
+    it.each<{ draft: string; given: () => Promise<ChangesScenario> }>([
+      {
+        draft: 'a value edited and set back',
+        given: async () => {
+          const draft = await givenCommittedProducts();
+          await draft.updateRow(PRODUCTS, 'p1', { title: 'edited' });
+          await draft.updateRow(PRODUCTS, 'p1', { title: 'one' });
+
+          return draft;
+        },
+      },
+      {
+        draft: 'a stale formula output',
+        given: async () => {
+          const draft = await givenCommittedTotals();
+          await draft.writeRowBelowNativeValidation(GOODS, 'g1', {
+            price: 2,
+            quantity: 3,
+            total: 7,
+          });
+
+          return draft;
+        },
+      },
+      {
+        draft: 'a row that differs only in its schema hash',
+        given: async () => {
+          const draft = await givenCommittedProducts();
+          await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: 'other' });
+
+          return draft;
+        },
+      },
+    ])(
+      'says that a Draft holding only $draft has only changes without effect',
+      async ({ given }) => {
+        const draft = await given();
+
+        const summary = await draft.readDraftChangesSummary();
+
+        expect(summary).toMatchObject({
+          tablesSummary: { total: 0 },
+          onlyChangesWithoutEffect: true,
+        });
+      },
+    );
+
+    it.each<{ draft: string; given: () => Promise<ChangesScenario> }>([
+      { draft: 'without any change', given: givenCommittedProducts },
+      {
+        draft: 'with a change with an effect beside one without',
+        given: async () => {
+          const draft = await givenCommittedTotals();
+          await draft.writeRowBelowNativeValidation(GOODS, 'g1', {
+            price: 2,
+            quantity: 3,
+            total: 7,
+          });
+          await draft.updateRow(GOODS, 'g2', {
+            price: 5,
+            quantity: 3,
+            total: 0,
+          });
+
+          return draft;
+        },
+      },
+      {
+        draft: 'with only a table created and removed inside it',
+        given: async () => {
+          const draft = await givenCommittedProducts();
+          await draft.createTable(SCRATCH, productSchema);
+          await draft.removeTable(SCRATCH);
+
+          return draft;
+        },
+      },
+    ])('does not say so of a Draft $draft', async ({ given }) => {
+      const draft = await given();
+
+      const summary = await draft.readDraftChangesSummary();
+
+      expect(summary.onlyChangesWithoutEffect).toBe(false);
+    });
+
+    function givenCommittedTotals(): Promise<ChangesScenario> {
+      return ChangesScenario.committed(kit, {
+        [GOODS]: {
+          schema: totalSchema,
+          rows: {
+            g1: { price: 2, quantity: 3, total: 6 },
+            g2: { price: 2, quantity: 3, total: 6 },
+          },
+        },
+      });
+    }
+  });
+
   describe('items', () => {
     it('lists a table created and removed inside the Draft with its transient structure unit as ADDED', async () => {
       const draft = await givenCommittedProducts();

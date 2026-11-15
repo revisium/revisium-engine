@@ -33,6 +33,7 @@ import {
   positionOf,
   type ReasonSite,
 } from 'src/features/partial-changes/plan/reason';
+import type { CatalogueUnit } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import {
   selectsWholeDraft,
   type Selection,
@@ -102,7 +103,7 @@ export class DependencyClosure {
     return new SelectionClosure(
       source,
       request,
-      resolveSelection(request.selection, source),
+      resolveSelection(resolvedSelectionOf(request.selection, source), source),
       {
         deadline,
         estimation: this.estimator.estimationOf(source),
@@ -112,6 +113,33 @@ export class DependencyClosure {
       },
     ).close();
   }
+}
+
+const NOTHING: Selection = {};
+
+// Exactly { all: true } on a Draft whose only units are schema hash differences selects none of them: they have no
+// effect, so the operation clears them instead of applying them (SPEC §3.8). It still reads every table.
+function resolvedSelectionOf(
+  selection: Selection,
+  { catalogue }: ClosureSource,
+): Selection {
+  if (
+    selectsWholeDraft(selection) &&
+    catalogue.units.length > 0 &&
+    catalogue.units.every(ownsOnlySchemaHash)
+  ) {
+    return NOTHING;
+  }
+
+  return selection;
+}
+
+function ownsOnlySchemaHash({ unit }: CatalogueUnit): boolean {
+  return (
+    unit.kind === 'rowColumns' &&
+    unit.columns?.length === 1 &&
+    unit.columns[0] === 'schemaHash'
+  );
 }
 
 class SelectionClosure {

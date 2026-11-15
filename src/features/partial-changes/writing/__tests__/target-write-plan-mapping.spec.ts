@@ -5,7 +5,11 @@ import type {
 } from 'src/features/draft-revision/commands/impl';
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-table-plans';
 import type { TablePlan } from 'src/features/partial-changes/assembly/target-assembler';
-import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { Row } from 'src/engine-prisma-types';
+import type {
+  SystemRows,
+  TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import {
   draftFollowsHeadPlanOf,
@@ -186,6 +190,7 @@ describe('draftFollowsHeadPlanOf', () => {
           },
         ],
       }),
+      { systemRows: systemRowsOf({}) },
     );
 
     expect(plan.tables).toEqual<TableWritePlan[]>([
@@ -206,6 +211,89 @@ describe('draftFollowsHeadPlanOf', () => {
     ]);
   });
 });
+
+describe('draftFollowsHeadPlanOf for a system table only the Draft holds', () => {
+  it('unlinks an empty views table, which its writer creates again, and keeps the empty tables no native write creates again', () => {
+    const plan = draftFollowsHeadPlanOf(writableTargetOf({}), {
+      systemRows: systemRowsOf({
+        schemas: { draft: 'schemas-draft' },
+        migrations: { draft: 'migrations-draft' },
+        views: { draft: 'views-draft' },
+        sharedSchemas: { draft: 'shared-draft' },
+      }),
+    });
+
+    expect(plan.tables).toEqual<TableWritePlan[]>([
+      {
+        identity: SystemTables.Views,
+        draftVersionId: 'views-draft',
+        target: { kind: 'linked' },
+        relinkCandidate: false,
+      },
+    ]);
+  });
+
+  it('keeps a views table with rows and one that Head holds too', () => {
+    const withRows = draftFollowsHeadPlanOf(writableTargetOf({}), {
+      systemRows: systemRowsOf({
+        views: { draft: 'views-draft', draftRows: [systemRow] },
+      }),
+    });
+    const inHead = draftFollowsHeadPlanOf(writableTargetOf({}), {
+      systemRows: systemRowsOf({
+        views: { head: 'views-head', draft: 'views-draft' },
+      }),
+    });
+
+    expect([withRows.tables, inHead.tables]).toEqual([[], []]);
+  });
+});
+
+interface SystemTableFixture {
+  readonly head?: string;
+  readonly draft?: string;
+  readonly draftRows?: readonly Row[];
+}
+
+const systemRow: Row = {
+  versionId: 'views-row',
+  createdId: 'views-row',
+  id: 'products',
+  readonly: false,
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  publishedAt: new Date(0),
+  data: {},
+  meta: {},
+  hash: 'hash',
+  schemaHash: 'schema-hash',
+};
+
+function systemRowsOf(
+  tables: Partial<Record<keyof SystemRows, SystemTableFixture>>,
+): SystemRows {
+  const rowsOf = ({
+    head,
+    draft,
+    draftRows = [],
+  }: SystemTableFixture = {}) => ({
+    head: [],
+    draft: draftRows,
+    versions: {
+      head:
+        head === undefined ? undefined : { versionId: head, readonly: true },
+      draft:
+        draft === undefined ? undefined : { versionId: draft, readonly: false },
+    },
+  });
+
+  return {
+    schemas: rowsOf(tables.schemas),
+    migrations: rowsOf(tables.migrations),
+    views: rowsOf(tables.views),
+    sharedSchemas: rowsOf(tables.sharedSchemas),
+  };
+}
 
 function linkedTableOf(identity: string, versionId: string): TablePlan {
   return {

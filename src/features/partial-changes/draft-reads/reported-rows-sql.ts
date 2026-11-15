@@ -249,6 +249,14 @@ function replacedRowsCount(): Sql {
   return sql`(count(*) FILTER (WHERE ${PAIR_ON_ONE_SIDE}) - ${ONE_SIDED_ROW_IDS})`;
 }
 
+// Whether a table on both sides with different versions has a reported row: a change with an effect (SPEC §3).
+export function tableHasReportedRowSql(table: ComparedTable): Sql {
+  return sql`
+    WITH ${comparedPairsCtes(table)}
+    SELECT EXISTS (SELECT 1 FROM pairs) AS "hasReportedRow"
+  `;
+}
+
 // Every row of a table on one side only is reported, and goes with its structure.
 function oneSidedRowCountsSql({ side, tableVersionId }: OneSidedRows): Sql {
   const added = side === 'draft' ? raw('count(*)::int') : raw('0');

@@ -91,16 +91,24 @@ class TableRefusals {
   }
 
   private codeOf(pair: TablePair): RefusalCode | undefined {
-    if (pair.head) {
-      return headCodeOf(headCheckOf(pair.head, this.replays));
-    }
-
-    if (isUnledgered(pair, this.replays)) {
-      return 'unledgeredTable';
-    }
-
-    return undefined;
+    return refusalCodeOf(pair, this.replays);
   }
+}
+
+// Why the partial operations refuse a table, whatever the scope of the operation that asks.
+export function refusalCodeOf(
+  pair: TablePair,
+  replays: SourceReplays,
+): RefusalCode | undefined {
+  if (pair.head) {
+    return headCodeOf(headCheckOf(pair.head, replays));
+  }
+
+  if (isUnledgered(pair, replays)) {
+    return 'unledgeredTable';
+  }
+
+  return undefined;
 }
 
 export function isUnledgered(pair: TablePair, replays: SourceReplays): boolean {

@@ -67,7 +67,7 @@ export interface PlanCounts {
 }
 
 export interface PlannedTarget extends AppliedTarget {
-  readonly source: AssemblySource;
+  readonly source: AssemblySource & Pick<ComparedSnapshot, 'headSchema'>;
 }
 
 interface PlanBase {

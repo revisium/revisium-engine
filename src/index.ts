@@ -326,7 +326,6 @@ export {
 export type {
   DeferredPath,
   DeferredRow,
-  DeferredValue,
   PlanBlocker,
 } from './features/partial-changes/planning/plan-refs';
 export type {

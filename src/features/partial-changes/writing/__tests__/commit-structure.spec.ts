@@ -251,47 +251,44 @@ describe('commitChanges of structure units', () => {
       ]);
     });
 
-    it('defers the File of a created row committed without the structure that patched inside the File, and gives the row a new empty File', async () => {
+    it('requires the structure for a created row whose File the structure patched inside, and commits its uploaded File with it', async () => {
       const draft = await givenMediaWithAPatchInsideTheCover();
       await draft.createRows(MEDIA, { m2: { title: 'two', cover: emptyFile } });
       await draft.uploadFile(MEDIA, 'm2', 'cover');
+      const draftCover = await coverOf(draft, 'draft', 'm2');
       const selection: Selection = { rows: [rowOf(MEDIA, 'm2')] };
 
       const preview = await draft.previewChanges({
         operation: 'commit',
         selection,
       });
-      // Every plan gives the new File another id; the fingerprint covers stored versions only, so it still matches.
       await expectApplied(
-        draft.commitChanges({ selection, expected: preview.fingerprint }),
+        draft.commitChanges({
+          selection,
+          includeRequired: true,
+          expected: preview.fingerprint,
+        }),
       );
 
       expect(preview).toMatchObject({
-        status: 'ready',
-        deferred: [
+        status: 'required',
+        required: [
           {
-            unit: { kind: 'rowCreate', tableId: MEDIA, rowId: 'm2' },
-            defaulted: [
-              {
+            unit: structureRef(MEDIA),
+            reason: {
+              code: 'structureBoundData',
+              site: {
+                kind: 'row',
+                tableId: MEDIA,
+                rowId: 'm2',
                 path: '/cover',
-                value: expect.objectContaining({ fileId: '' }),
               },
-            ],
-            omitted: [],
-            structure: structureRef(MEDIA),
+            },
           },
         ],
+        deferred: [],
       });
-      expect(await coverOf(draft, 'head', 'm2')).toEqual({
-        ...emptyFile,
-        status: 'ready',
-        fileId: expect.stringMatching(/.+/),
-      });
-      // The commit gives the new File its id when it writes it; the preview shows every other field.
-      expect(preview.deferred[0]?.defaulted[0]?.value).toEqual({
-        ...((await coverOf(draft, 'head', 'm2')) as object),
-        fileId: '',
-      });
+      expect(await coverOf(draft, 'head', 'm2')).toEqual(draftCover);
     });
 
     it('commits the Draft File of a row with the structure that patched inside the File, and leaves the row edits of other fields pending', async () => {

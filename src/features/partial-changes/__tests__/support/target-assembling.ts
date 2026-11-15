@@ -10,8 +10,8 @@ import type { SystemTablePlan } from 'src/features/partial-changes/assembly/syst
 import type {
   AssembledTarget,
   DeferredPath,
-  DeferredValue,
   DeferredValues,
+  StructureBoundRow,
   TablePlan,
   TargetRow,
 } from 'src/features/partial-changes/assembly/target-assembler';
@@ -70,8 +70,13 @@ export interface SystemTablePlanView {
 
 export interface DeferredView {
   readonly unit: AddressedUnit;
-  readonly defaulted: readonly DeferredValue[];
   readonly omitted: readonly DeferredPath[];
+  readonly structure: AddressedUnit;
+}
+
+export interface StructureBoundRowView {
+  readonly unit: AddressedUnit;
+  readonly path: string;
   readonly structure: AddressedUnit;
 }
 
@@ -79,6 +84,7 @@ export interface TargetView {
   readonly tableIds: readonly string[];
   readonly blockers: readonly BlockerView[];
   readonly deferred: readonly DeferredView[];
+  readonly structureBoundRows: readonly StructureBoundRowView[];
   tableOf(tableId: string): TablePlanView | undefined;
   systemTableOf(tableId: SystemTables): SystemTablePlanView | undefined;
 }
@@ -151,6 +157,9 @@ function targetView(
     deferred: target.deferred.map((deferred) =>
       deferredView(catalogue, deferred),
     ),
+    structureBoundRows: target.structureBoundRows.map((row) =>
+      structureBoundRowView(catalogue, row),
+    ),
     tableOf: (tableId) => views.get(tableId),
     systemTableOf: (tableId) => systemViews.get(tableId),
   };
@@ -175,12 +184,22 @@ export function systemTablePlanViewOf(
 
 function deferredView(
   catalogue: ChangeCatalogue,
-  { unitKey, defaulted, omitted, structureKey }: DeferredValues,
+  { unitKey, omitted, structureKey }: DeferredValues,
 ): DeferredView {
   return {
     unit: addressedUnitOf(unitKeyed(catalogue, unitKey)),
-    defaulted,
     omitted,
+    structure: addressedUnitOf(unitKeyed(catalogue, structureKey)),
+  };
+}
+
+function structureBoundRowView(
+  catalogue: ChangeCatalogue,
+  { unitKey, path, structureKey }: StructureBoundRow,
+): StructureBoundRowView {
+  return {
+    unit: addressedUnitOf(unitKeyed(catalogue, unitKey)),
+    path,
     structure: addressedUnitOf(unitKeyed(catalogue, structureKey)),
   };
 }

@@ -13,6 +13,12 @@ field `sample` were removed before the first release, so the `changes` namespace
 named below; no client uses a flat list of units, because the Draft reads return ready selectors
 ([partial-changes-v1](../specs/partial-changes-v1.spec.md) v2.8).
 
+Amended 2026-11-15 ([PR #203](https://github.com/revisium/revisium-engine/pull/203)): `defaulted` (and its type
+`DeferredValue`) no longer exists; a created or replaced row whose value a commit would replace by a default requires
+its table's structure (`structureBoundData`), so a deferred row carries only `omitted` paths. Decision 6 and the
+client migration table below keep `defaulted { path, value }` as history
+([partial-changes-v1](../specs/partial-changes-v1.spec.md) v2.9).
+
 ## Date
 
 2026-11-10

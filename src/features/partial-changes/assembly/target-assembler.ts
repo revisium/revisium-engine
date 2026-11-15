@@ -1,6 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { SystemSchemaIds } from '@revisium/schema-toolkit/consts';
-import type { JsonSchema } from '@revisium/schema-toolkit/types';
 import type {
   RevisionSide,
   RowLinkChanges,
@@ -36,9 +34,11 @@ import {
   type SystemTablePlan,
   systemTablePlansOf,
 } from 'src/features/partial-changes/assembly/system-table-plans';
+import type { CatalogueLookup } from 'src/features/partial-changes/catalogue/catalogue-lookup';
 import type { CatalogueRow } from 'src/features/partial-changes/catalogue/catalogue-unit';
 import type { ChangeCatalogue } from 'src/features/partial-changes/catalogue/change-catalogue';
 import { differInContent } from 'src/features/partial-changes/catalogue/row-differences';
+import { compareUnits } from 'src/features/partial-changes/catalogue/unit-order';
 import type {
   AppliedUnits,
   ChangeOperation,
@@ -51,16 +51,14 @@ import {
   type ChangesSnapshot,
   type ComparedTable,
   publicIdOrIdentityOf,
+  publicTableIdOf,
   type RowPair,
   type TablePair,
   type TableVersion,
   versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import type { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
-import {
-  type SchemaLeaf,
-  SchemaLeaves,
-} from 'src/features/partial-changes/structure/schema-leaves';
+import { SchemaLeaves } from 'src/features/partial-changes/structure/schema-leaves';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 export interface AssemblySource {
@@ -90,21 +88,35 @@ export interface TablePlan extends RowLinkChanges {
   readonly rows: readonly TargetRow[];
 }
 
-export interface DeferredValue {
-  readonly path: string;
-  readonly value: unknown;
-}
-
 export interface DeferredPath {
   readonly path: string;
 }
 
 export interface DeferredValues {
   readonly unitKey: string;
-  readonly defaulted: readonly DeferredValue[];
   readonly omitted: readonly DeferredPath[];
   readonly structureKey: string;
 }
+
+// A created or replaced row a commit would move into the Head structure, which would replace its value at `path` by a
+// default: the row needs the structure (SPEC §6.6).
+export interface StructureBoundRow {
+  readonly unitKey: string;
+  readonly tableId: string;
+  readonly rowId: string;
+  readonly path: string;
+  readonly structureKey: string;
+}
+
+interface RowsWithoutStructure {
+  readonly deferred: readonly DeferredValues[];
+  readonly structureBound: readonly StructureBoundRow[];
+}
+
+const NO_ROWS_WITHOUT_STRUCTURE: RowsWithoutStructure = {
+  deferred: [],
+  structureBound: [],
+};
 
 export interface AssembledTarget {
   readonly tables: readonly TablePlan[];
@@ -113,18 +125,25 @@ export interface AssembledTarget {
   readonly ledger: LedgerPlan;
   readonly blockers: readonly CatalogueBlocker[];
   readonly deferred: readonly DeferredValues[];
+  readonly structureBoundRows: readonly StructureBoundRow[];
 }
 
 interface AssembledTable {
   readonly plan: TablePlan;
   readonly blockers: readonly CatalogueBlocker[];
-  readonly deferred: readonly DeferredValues[];
+  readonly withoutStructure: RowsWithoutStructure;
 }
 
 interface ReadTableContext {
   readonly operation: ChangeOperation;
+  readonly lookup: CatalogueLookup;
   readonly target: MergeTarget;
   readonly rowMerger: RowMerger;
+}
+
+interface ExistingRow {
+  readonly unitKey: string;
+  readonly pair: RowPair;
 }
 
 interface DecidedRow {
@@ -153,7 +172,12 @@ export class TargetAssembler {
       views: tableViewsOf(source, rules),
       ledger: planLedger(source, rules),
       blockers: tables.flatMap(({ blockers }) => blockers),
-      deferred: tables.flatMap(({ deferred }) => deferred),
+      deferred: tables.flatMap(
+        ({ withoutStructure }) => withoutStructure.deferred,
+      ),
+      structureBoundRows: tables.flatMap(
+        ({ withoutStructure }) => withoutStructure.structureBound,
+      ),
     };
   }
 }
@@ -180,6 +204,7 @@ class TargetAssembly {
 
     return new ReadTableAssembly(table, rules, {
       operation: this.rules.operation,
+      lookup: this.source.catalogue.lookup,
       target: this.mergeTargetOf(table.pair, rules.structureSide),
       rowMerger: this.rowMerger,
     }).assemble();
@@ -200,7 +225,7 @@ class TargetAssembly {
         {
           plan: this.oneSidedTablePlan(pair, structure.key),
           blockers: [],
-          deferred: [],
+          withoutStructure: NO_ROWS_WITHOUT_STRUCTURE,
         },
       ];
     });
@@ -275,7 +300,7 @@ class ReadTableAssembly {
         rows,
       },
       blockers: this.unrecordedStructureBlockers(),
-      deferred: this.deferredValues(newVersions),
+      withoutStructure: this.rowsWithoutStructure(),
     };
   }
 
@@ -351,26 +376,62 @@ class ReadTableAssembly {
     );
   }
 
-  // A row moved into the Head structure has the value the commit writes at each deferred pointer the Head schema
-  // keeps as an input field; its version is the row assembled by mapIntoHeadStructure.
-  private deferredValues(
-    newVersions: ReadonlyMap<string, MergedRow>,
-  ): DeferredValues[] {
+  // A row the commit moves into the Head structure needs the structure when the Head schema keeps an input field at a
+  // changed pointer, which would get a default instead of the Draft value; otherwise its changed fields are only left
+  // out and it is deferred. The Head schema decides this for every row of the table alike, so one row is named.
+  private rowsWithoutStructure(): RowsWithoutStructure {
     const structureKey = this.table.units.structure;
+    const rows = this.rowsMoving().flatMap(({ row }) => existenceOf(row) ?? []);
 
-    if (!this.commitsWithoutStructure() || structureKey === undefined) {
-      return [];
+    if (
+      !this.commitsWithoutStructure() ||
+      structureKey === undefined ||
+      rows.length === 0
+    ) {
+      return NO_ROWS_WITHOUT_STRUCTURE;
     }
 
-    const pointers = deferredPointersOf(this.table);
+    const { defaulted, omitted } = deferredPointersOf(this.table);
+    const [firstDefaulted] = defaulted;
 
-    return this.rowsMoving().flatMap(({ row }) =>
-      deferredValuesOf(
-        row,
-        newVersions.get(row.pair.identity),
-        pointers,
+    if (firstDefaulted !== undefined) {
+      const { unitKey, pair } = this.firstInUnitOrder(rows);
+
+      return {
+        deferred: [],
+        structureBound: [
+          {
+            unitKey,
+            tableId: publicTableIdOf(this.table.pair),
+            rowId: publicIdOrIdentityOf(pair),
+            path: firstDefaulted.toString(),
+            structureKey,
+          },
+        ],
+      };
+    }
+
+    if (omitted.length === 0) {
+      return NO_ROWS_WITHOUT_STRUCTURE;
+    }
+
+    return {
+      deferred: rows.map(({ unitKey }) => ({
+        unitKey,
+        omitted: omitted.map((pointer) => ({ path: pointer.toString() })),
         structureKey,
-      ),
+      })),
+      structureBound: [],
+    };
+  }
+
+  private firstInUnitOrder(rows: readonly ExistingRow[]): ExistingRow {
+    const { lookup } = this.context;
+
+    return rows.reduce((first, row) =>
+      compareUnits(lookup.unit(row.unitKey), lookup.unit(first.unitKey)) < 0
+        ? row
+        : first,
     );
   }
 
@@ -379,6 +440,17 @@ class ReadTableAssembly {
       this.context.operation === 'commit' && this.rules.structureSide === 'head'
     );
   }
+}
+
+function existenceOf({
+  existence,
+  pair,
+}: CatalogueRow): ExistingRow | undefined {
+  if (existence === undefined) {
+    return undefined;
+  }
+
+  return { unitKey: existence, pair };
 }
 
 function recordedDraftStructureOf({
@@ -450,7 +522,7 @@ function collapsedRowOf(
 }
 
 interface DeferredPointers {
-  readonly defaulted: readonly SchemaLeaf[];
+  readonly defaulted: readonly JsonPointer[];
   readonly omitted: readonly JsonPointer[];
 }
 
@@ -462,80 +534,22 @@ function deferredPointersOf({ pair, structure }: ReadTable): DeferredPointers {
   const changed = structure.changedPointers
     .filter(
       (pointer) =>
-        inputLeafAt(head, pointer) !== undefined ||
-        inputLeafAt(draft, pointer) !== undefined,
+        isInputLeafAt(head, pointer) || isInputLeafAt(draft, pointer),
     )
     .sort((left, right) =>
       compareCodePoints(left.toString(), right.toString()),
     );
 
   return {
-    defaulted: changed.flatMap((pointer) => inputLeafAt(head, pointer) ?? []),
-    omitted: changed.filter(
-      (pointer) => inputLeafAt(head, pointer) === undefined,
-    ),
+    defaulted: changed.filter((pointer) => isInputLeafAt(head, pointer)),
+    omitted: changed.filter((pointer) => !isInputLeafAt(head, pointer)),
   };
 }
 
-function inputLeafAt(
-  leaves: SchemaLeaves,
-  pointer: JsonPointer,
-): SchemaLeaf | undefined {
+function isInputLeafAt(leaves: SchemaLeaves, pointer: JsonPointer): boolean {
   const leaf = leaves.at(pointer);
 
-  return leaf?.kind === 'computed' ? undefined : leaf;
-}
-
-function deferredValuesOf(
-  { existence, pair }: CatalogueRow,
-  written: MergedRow | undefined,
-  { defaulted, omitted }: DeferredPointers,
-  structureKey: string,
-): DeferredValues[] {
-  if (existence === undefined || defaulted.length + omitted.length === 0) {
-    return [];
-  }
-
-  if (written === undefined) {
-    throw new Error(
-      `Row ${publicIdOrIdentityOf(pair)} was not assembled into the Head structure`,
-    );
-  }
-
-  return [
-    {
-      unitKey: existence,
-      defaulted: defaulted.map((leaf) => ({
-        path: leaf.pointer.toString(),
-        value: writtenValueAt(written, leaf),
-      })),
-      omitted: omitted.map((pointer) => ({ path: pointer.toString() })),
-      structureKey,
-    },
-  ];
-}
-
-// The published-at field reads the row's publishedAt column (§3.1); its data leaf keeps ''. A defaulted File is a new
-// one, whose id every planning mints anew: it is shown without it, so that two plans of one Draft agree.
-function writtenValueAt(
-  written: MergedRow,
-  { pointer, kind, schema }: SchemaLeaf,
-): unknown {
-  if (kind === 'publishedAt') {
-    return written.publishedAt.toISOString();
-  }
-
-  const value = structuredClone(pointer.valueIn(written.data));
-
-  if (isFileSchema(schema)) {
-    return { ...(value as object), fileId: '' };
-  }
-
-  return value;
-}
-
-function isFileSchema(schema: JsonSchema): boolean {
-  return '$ref' in schema && schema.$ref === SystemSchemaIds.File;
+  return leaf !== undefined && leaf.kind !== 'computed';
 }
 
 function linkChangesOf(

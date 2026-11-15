@@ -680,7 +680,7 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | `requiredTotal` | Every required addition, listed or not; 0 when not `planned`. |
 | `blockers` | What prevents the operation, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS`, each with a `code` and a `message`; `migrationInProgress` while an async migration runs on the branch. |
 | `blockersTotal` | Every blocker, listed or not. |
-| `deferred` | Commit only: created or replaced rows committed without their table's structure, with the values the commit writes (`defaulted`) and the paths it leaves out (`omitted`). |
+| `deferred` | Commit only: created or replaced rows committed without their table's structure, with the paths of the Draft's new fields that Head does not get (`omitted`). A row whose value Head would replace by a default is never deferred: it requires its table's structure (see below). |
 | `unmatched` | The selectors that matched no unit; `{}` when every selector matched, `null` when not `planned`. |
 | `refusedTables` | Tables that partial operations refuse on this branch (see [Refused tables](#refused-tables)); empty for exactly `{ all: true }`. |
 | `estimate` | What the plan measured against the limits. |
@@ -711,6 +711,24 @@ requires `ty` at a `tableId` site with `tableId: 'tx'`, the id of the new table;
 client links a reason at these two sites through public ids: the required `unit` and `cause.unit` carry them, and
 `migrationId` is the `migrationId` of an entry of `schemaMigrations` of the table item whose pending migration it is
 (`ty` here; a table created and removed in the Draft has no item, only its unit).
+
+A new row never gets a made-up value. When the Draft changes a field so that Head could only store a default for it
+(a type change, a removed, renamed or moved field), committing a created or replaced row of that table requires the
+table's structure. For example, Head has a text `price`, the Draft makes it a number and creates `p-1101` with
+`price: 129`; a commit preview of `p-1101` returns:
+
+```json
+{ "status": "required", "requiredTotal": 1, "deferred": [],
+  "required": [{ "unit": { "kind": "structure", "tableId": "products", "selector": { "structures": [{ "tableId": "products" }] }, "structureChange": { "…": "…" } },
+    "reason": { "code": "structureBoundData", "site": { "kind": "row", "tableId": "products", "rowId": "p-1101", "path": "/price" },
+      "cause": { "unit": { "kind": "rowCreate", "tableId": "products", "rowId": "p-1101", "selector": { "rows": [{ "tableId": "products", "rowId": "p-1101" }] } }, "role": "referrer" },
+      "because": "…" } }] }
+```
+
+A client says "p-1101 has a value in the new format; without the schema change it would be published with a
+default", and commits with `includeRequired: true` to publish the row with the schema change. A `structureBoundData`
+reason at a `row` site without `references` always means this; with `references` it is a reference at a changed field.
+When the Draft only added fields, the row commits alone and is listed in `deferred` with the new fields `omitted`.
 
 ### changes.commit / changes.revert
 

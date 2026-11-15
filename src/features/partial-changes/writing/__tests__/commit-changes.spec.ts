@@ -17,7 +17,11 @@ import type {
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import { ReadScope } from 'src/features/partial-changes/scope/read-scope';
-import { addField, removeField } from 'src/__tests__/fixtures/ledger-steps';
+import {
+  addField,
+  removeField,
+  replaceField,
+} from 'src/__tests__/fixtures/ledger-steps';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
 import {
@@ -31,6 +35,10 @@ import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 import { titleOf } from '../../__tests__/support/field-refs';
 import { tableViews } from '../../__tests__/support/views-documents';
+import {
+  existenceRef,
+  structureRef,
+} from '../../__tests__/support/expected-unit-refs';
 
 const CATEGORIES = 'categories';
 const PRODUCTS = 'products';
@@ -523,99 +531,154 @@ describe('commitChanges', () => {
       });
     });
 
-    it('commits a created row without its structure: Head gets the Head defaults at the deferred paths, and the Draft keeps its values', async () => {
-      const draft = await givenCommittedPrices();
-      await draft.updateTable(PRODUCTS, [removeField('price')]);
-      await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
-      const selection = { rows: [rowOf(PRODUCTS, 'p3')] };
-      const preview = await draft.previewChanges({
-        operation: 'commit',
-        selection,
-      });
+    describe('a created or replaced row in a table whose structure the commit does not take', () => {
+      it('requires the structure for a created row whose value the Head structure would replace by a default, and publishes both with includeRequired', async () => {
+        const draft = await givenPriceChangedFromTextToNumber();
+        await draft.createRows(PRODUCTS, {
+          'p-1101': { title: 'new', price: 129 },
+        });
+        const selection = { rows: [rowOf(PRODUCTS, 'p-1101')] };
 
-      const result = await draft.commitChanges({
-        selection,
-        expected: preview.fingerprint,
-      });
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection,
+        });
+        const withoutAdditions = await draft.commitChanges({
+          selection,
+          expected: preview.fingerprint,
+        });
+        const result = await draft.commitChanges({
+          selection,
+          includeRequired: true,
+          expected: preview.fingerprint,
+        });
 
-      expect(preview.deferred).toEqual([
-        expect.objectContaining({
-          defaulted: [{ path: '/price', value: 0 }],
-          omitted: [],
-        }),
-      ]);
-      expect(result).toMatchObject({ status: 'applied' });
-      await expectRow(draft, 'head', PRODUCTS, 'p3', {
-        title: 'three',
-        price: 0,
-      });
-      await expectRow(draft, 'draft', PRODUCTS, 'p3', { title: 'three' });
-    });
-
-    it('writes the declared Head default a preview defers for a created row committed without its structure', async () => {
-      const draft = await ChangesScenario.committed(kit, {
-        [PRODUCTS]: {
-          schema: obj({ title: str(), price: num({ default: 7 }) }),
-          rows: { p1: { title: 'one', price: 1 } },
-        },
-      });
-      await draft.updateTable(PRODUCTS, [removeField('price')]);
-      await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
-      const selection = { rows: [rowOf(PRODUCTS, 'p3')] };
-      const preview = await draft.previewChanges({
-        operation: 'commit',
-        selection,
-      });
-
-      const result = await draft.commitChanges({
-        selection,
-        expected: preview.fingerprint,
-      });
-
-      expect(preview.deferred).toEqual([
-        expect.objectContaining({
-          defaulted: [{ path: '/price', value: 7 }],
-          omitted: [],
-        }),
-      ]);
-      expect(result).toMatchObject({ status: 'applied' });
-      await expectRow(draft, 'head', PRODUCTS, 'p3', {
-        title: 'three',
-        price: 7,
-      });
-    });
-
-    it("writes the publishedAt a preview defers at the Head's published-at field for a created row committed without its structure", async () => {
-      const draft = await ChangesScenario.committed(kit, {
-        [PRODUCTS]: {
-          schema: obj({
-            title: str(),
-            releasedAt: ref(SystemSchemaIds.RowPublishedAt),
-          }),
-          rows: { p1: { title: 'one', releasedAt: '' } },
-        },
-      });
-      await draft.updateTable(PRODUCTS, [removeField('releasedAt')]);
-      await draft.createRows(PRODUCTS, { p3: { title: 'three' } });
-      const selection = { rows: [rowOf(PRODUCTS, 'p3')] };
-      const preview = await draft.previewChanges({
-        operation: 'commit',
-        selection,
-      });
-
-      await expectApplied(
-        draft.commitChanges({ selection, expected: preview.fingerprint }),
-      );
-
-      const head = await draft.row('head', PRODUCTS, 'p3');
-      expect(preview.deferred).toEqual([
-        expect.objectContaining({
-          defaulted: [
-            { path: '/releasedAt', value: head.publishedAt.toISOString() },
+        expect(preview).toMatchObject({
+          status: 'required',
+          required: [
+            {
+              unit: structureRef(PRODUCTS),
+              reason: {
+                code: 'structureBoundData',
+                site: {
+                  kind: 'row',
+                  tableId: PRODUCTS,
+                  rowId: 'p-1101',
+                  path: '/price',
+                },
+                cause: {
+                  unit: existenceRef('rowCreate', PRODUCTS, 'p-1101'),
+                  role: 'referrer',
+                },
+              },
+            },
           ],
-          omitted: [],
-        }),
-      ]);
+          deferred: [],
+        });
+        expect(preview.required[0]?.reason).not.toHaveProperty('references');
+        expect(withoutAdditions).toMatchObject({ status: 'required' });
+        expect(result).toMatchObject({
+          status: 'applied',
+          applied: { selected: 1, required: 1 },
+        });
+        await expectRow(draft, 'head', PRODUCTS, 'p-1101', {
+          title: 'new',
+          price: 129,
+        });
+      });
+
+      it('requires the structure for the created half of a replaced row whose value the Head structure would replace by a default', async () => {
+        const draft = await givenPriceChangedFromTextToNumber();
+        await draft.removeRow(PRODUCTS, 'p1');
+        await draft.createRows(PRODUCTS, { p1: { title: 'again', price: 5 } });
+
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection: { rows: [rowOf(PRODUCTS, 'p1')] },
+        });
+
+        expect(preview).toMatchObject({
+          status: 'required',
+          required: [
+            {
+              unit: structureRef(PRODUCTS),
+              reason: {
+                code: 'structureBoundData',
+                site: { kind: 'row', tableId: PRODUCTS, rowId: 'p1' },
+                cause: { unit: existenceRef('rowReplace', PRODUCTS, 'p1') },
+              },
+            },
+          ],
+          deferred: [],
+        });
+      });
+
+      it('blocks a commit of such a row while its structure is excluded, and defers nothing', async () => {
+        const draft = await givenPriceChangedFromTextToNumber();
+        await draft.createRows(PRODUCTS, {
+          'p-1101': { title: 'new', price: 129 },
+        });
+
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection: {
+            rows: [rowOf(PRODUCTS, 'p-1101')],
+            exclude: { structures: [{ tableId: PRODUCTS }] },
+          },
+        });
+
+        expect(preview).toMatchObject({
+          status: 'blocked',
+          blockers: [
+            {
+              code: 'requiredExcluded',
+              unit: structureRef(PRODUCTS),
+              reason: { code: 'structureBoundData' },
+            },
+          ],
+          deferred: [],
+        });
+      });
+
+      it('commits a created row alone when the Draft only added a field, leaving its value out of Head', async () => {
+        const draft = await givenCommittedPrices();
+        await draft.updateTable(PRODUCTS, [addField('color', str())]);
+        await draft.createRows(PRODUCTS, {
+          p3: { title: 'three', price: 3, color: 'red' },
+        });
+        const selection = { rows: [rowOf(PRODUCTS, 'p3')] };
+        const preview = await draft.previewChanges({
+          operation: 'commit',
+          selection,
+        });
+
+        const result = await draft.commitChanges({
+          selection,
+          expected: preview.fingerprint,
+        });
+
+        expect(preview).toMatchObject({
+          status: 'ready',
+          required: [],
+          deferred: [
+            {
+              unit: existenceRef('rowCreate', PRODUCTS, 'p3'),
+              omitted: [{ path: '/color' }],
+              structure: structureRef(PRODUCTS),
+            },
+          ],
+        });
+        expect(result).toMatchObject({ status: 'applied' });
+        await expectRow(draft, 'head', PRODUCTS, 'p3', {
+          title: 'three',
+          price: 3,
+        });
+        await expectRow(draft, 'draft', PRODUCTS, 'p3', {
+          title: 'three',
+          price: 3,
+          color: 'red',
+        });
+      });
     });
 
     it('recomputes the formulas of a merged Head row', async () => {
@@ -1053,6 +1116,18 @@ describe('commitChanges', () => {
       head: await draft.revisionId('head'),
       draft: await draft.revisionId('draft'),
     };
+  }
+
+  async function givenPriceChangedFromTextToNumber(): Promise<ChangesScenario> {
+    const draft = await ChangesScenario.committed(kit, {
+      [PRODUCTS]: {
+        schema: obj({ title: str(), price: str() }),
+        rows: { p1: { title: 'one', price: '10' } },
+      },
+    });
+    await draft.updateTable(PRODUCTS, [replaceField('price', num())]);
+
+    return draft;
   }
 
   function givenCommittedPrices(): Promise<ChangesScenario> {

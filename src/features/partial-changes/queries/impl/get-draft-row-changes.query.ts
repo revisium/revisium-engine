@@ -1,6 +1,5 @@
 import type { RowColumn } from 'src/features/partial-changes/catalogue/unit';
 import type {
-  ComputedSelection,
   DraftEdge,
   DraftPageInfo,
   DraftReadState,
@@ -40,7 +39,6 @@ export interface SelectableRowSelection {
 export type RowSelection = { readonly units: readonly UnitRef[] } & (
   | RefusedSelection
   | GoesWithSelection
-  | ComputedSelection
   | SelectableRowSelection
 );
 

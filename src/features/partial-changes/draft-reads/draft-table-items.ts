@@ -16,6 +16,7 @@ import type {
   TableSelection,
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
+import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { pendingEntriesOf } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SchemaImpactService } from 'src/features/revision-changes/services/schema-impact.service';
 import { ViewsComparisonService } from 'src/features/revision-changes/services/views-comparison.service';
@@ -109,7 +110,9 @@ function tableSelectionOf(
   const tableData = tableDataOf(table, counts);
 
   if (!structure && !views && !tableData) {
-    return { state: 'contentEqual' };
+    throw new Error(
+      `Table ${publicTableIdOf(table.pair)} is shown but has nothing to select`,
+    );
   }
 
   const selection: Mutable<SelectableTableSelection> = { state: 'selectable' };

@@ -403,7 +403,6 @@ export {
 } from './features/partial-changes/queries/impl/draft-reads';
 export {
   TABLE_SELECTION_STATES,
-  type ContentEqualSelection,
   type DraftTableChangesInput,
   type DraftTableItem,
   type DraftTablePage,

@@ -9,14 +9,12 @@ import {
 import type { ComparedTable } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import {
   columnDiffers,
+  leafDiffers,
   rowChangePredicate,
 } from 'src/features/partial-changes/snapshot/row-change-predicate';
+import { leafOwnersOf } from 'src/features/partial-changes/structure/column-owners';
 import type { TableStructure } from 'src/features/partial-changes/structure/table-structure';
 import { ChangeType } from 'src/features/revision-changes/types';
-import {
-  COMPARED_ROW_COLUMNS,
-  type ComparedRowColumn,
-} from 'src/features/share/compared-columns';
 
 interface ComparedRows {
   readonly kind: 'compared';
@@ -57,6 +55,8 @@ export interface RowRange {
 const ONE_SIDED = raw(`(h."versionId" IS NULL OR d."versionId" IS NULL)`);
 
 const IDS_DIFFER = raw(`h."id" <> d."id"`);
+
+const NOTHING_DIFFERS = raw('FALSE');
 
 const PAIR_ON_ONE_SIDE = raw(
   `("headVersionId" IS NULL OR "draftVersionId" IS NULL)`,
@@ -192,7 +192,7 @@ function comparedPairsCtes(table: ComparedTable, pairs: Sql = PAIRS): Sql {
              ${changeTypeOf(structure)} AS "changeType",
              (${ONE_SIDED} OR ${rowChangePredicate(structure)}) AS "yieldsUnit"
       FROM ${ROW_VERSIONS_PAIRED_BY_IDENTITY}
-      WHERE ${ONE_SIDED} OR ${anyDiffers(reportedColumnsOf(structure))}
+      WHERE ${ONE_SIDED} OR ${IDS_DIFFER} OR ${contentWithEffectDiffers(structure)}
     )
   `;
 }
@@ -268,7 +268,7 @@ function rowsAfter(rowId: string | undefined): Sql {
 }
 
 function changeTypeOf(structure: TableStructure): Sql {
-  const modified = anyDiffers(modifyingColumnsOf(structure));
+  const modified = contentWithEffectDiffers(structure);
 
   return sql`CASE
     WHEN h."versionId" IS NULL THEN ${ChangeType.Added}::text
@@ -279,17 +279,22 @@ function changeTypeOf(structure: TableStructure): Sql {
   END`;
 }
 
-// A schema update rewrites every row of its table with the new schema hash, and the table item shows the structure.
-function reportedColumnsOf(structure: TableStructure): ComparedRowColumn[] {
-  return COMPARED_ROW_COLUMNS.filter(
-    (column) => column !== 'schemaHash' || !structure.differs,
-  );
+// What a user sees of a row besides its id. The schema hash is technical, and a formula output that the structure keeps
+// is computed from the row's values, so a difference in either alone has no effect.
+function contentWithEffectDiffers(structure: TableStructure): Sql {
+  return sql`(
+    ${storedValuesDiffer(structure)}
+    OR ${columnDiffers('publishedAt')}
+    OR ${columnDiffers('meta')}
+  )`;
 }
 
-function modifyingColumnsOf(structure: TableStructure): ComparedRowColumn[] {
-  return reportedColumnsOf(structure).filter((column) => column !== 'id');
-}
+function storedValuesDiffer(structure: TableStructure): Sql {
+  const leaves = leafOwnersOf(structure);
 
-function anyDiffers(columns: readonly ComparedRowColumn[]): Sql {
-  return join(columns.map(columnDiffers), ' OR ');
+  if (leaves.length === 0) {
+    return NOTHING_DIFFERS;
+  }
+
+  return sql`(${columnDiffers('hash')} AND (${join(leaves.map(leafDiffers), ' OR ')}))`;
 }

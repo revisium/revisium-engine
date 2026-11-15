@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.8 |
+| Version | 1.9 |
 | Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -61,8 +61,11 @@ applies is bound by `expected` (partial-changes-v1 §9), not by the reads.
 ## 3. Reported tables and rows
 
 A **table** is listed when it is on one side only, or on both sides with a different public id or a different table
-version. System tables are not listed. Tables are paired by identity (`createdId`), so a table removed and created
-again at one id (a replaced id) gives two items.
+version, and it has a change with an effect: it is refused, it has a structure or a views unit, or it has a reported
+row (below). System tables are not listed. Tables are paired by identity (`createdId`), so a table removed and created
+again at one id (a replaced id) gives two items. A table whose versions differ while it has none of these is a table
+without effect: its content equals the last commit, for example after a value was edited and set back, or its rows
+differ only in what this section does not report. It is in no item and no count.
 
 The **row pairs** of a listed table come from one query per table and call:
 
@@ -71,17 +74,31 @@ The **row pairs** of a listed table come from one query per table and call:
   versions is read once, and the pair is compared where it is formed;
 - a table on one side only: the rows of its version, all `ADDED` or all `REMOVED`.
 
-A **row** is reported when it exists on one side only, or its `id`, data (`hash`), `publishedAt`, `meta` or
-`schemaHash` differs, except: a row that differs only in `schemaHash` is reported only in a table whose structure is
-unchanged (in a table whose structure differs, native writers rewrite every row with the new schema hash, and the
-table item already shows the structure). A row that differs only in structure-bound data is reported and goes with
-the structure (§5.1). The row's change type follows the native rule over these columns: `ADDED`, `REMOVED`,
-`MODIFIED`, `RENAMED` (the id alone differs) or `RENAMED_AND_MODIFIED`. The native diff compares `id` and data only,
-so the row columns are where the two depart: a row that differs only in `publishedAt`, `meta` or `schemaHash` is
-`MODIFIED` here and absent there, and a renamed row that also differs in one of them is `RENAMED_AND_MODIFIED` here
-and `RENAMED` there. `schemaHash` takes part in both rules only in a table whose structure is unchanged, so a renamed
-row of a table whose structure differs is `RENAMED` when its data, `publishedAt` and `meta` are equal. Every count of
-this specification counts reported rows only.
+A **row** is reported when it exists on one side only, or its `id`, its stored values, `publishedAt` or `meta`
+differs. The stored values are the values at the leaves the change catalogue compares (partial-changes-v1 §3.1): every
+leaf the structure keeps that stores a value in the data, and every leaf the structure changed; they are compared only
+for a pair whose data `hash` differs. Changes without effect are not reported:
+
+- a row whose only stored difference is a formula output that the structure keeps: the value is computed from the
+  row's other values (a native foreign-key rewrite can leave it stale, partial-changes-v1 §5.2, or a write below the
+  native validation can store another one);
+- a row that differs only in `schemaHash`: the column is technical, and native writers rewrite it (in a table whose
+  structure differs, every row gets the new schema hash, and the table item already shows the structure).
+
+A row that differs only in structure-bound data is reported and goes with the structure (§5.1). The row's change type
+follows the native rule over these differences: `ADDED`, `REMOVED`, `MODIFIED`, `RENAMED` (the id alone differs, or
+the id and only differences without effect) or `RENAMED_AND_MODIFIED`. The native diff compares `id` and data
+(`hash`) only, so the two depart: a row that differs only in `publishedAt` or `meta` is `MODIFIED` here and absent
+there, and a renamed row that also differs in one of them is `RENAMED_AND_MODIFIED` here and `RENAMED` there; a row
+whose only stored difference is a formula output is absent here and `MODIFIED` there (`RENAMED_AND_MODIFIED` there and
+`RENAMED` here when it is also renamed). A row that differs only in `schemaHash` is in neither. Every count of this
+specification counts reported rows only.
+
+The units of changes without effect stay in the change catalogue, so commit and revert apply what they did: a row that
+differs only in `schemaHash` keeps its `rowColumns` unit, which the table's `tableData` selector, the selection
+`{ all: true }` and the closure select, and a listed row's selector selects its own `schemaHash` difference with its
+other units (§5.1). A formula output has no unit, as before. Exactly `{ all: true }` clears the Draft versions of a
+table whose content equals the last commit (partial-changes-v1 §3.8).
 
 ## 4. Table items
 
@@ -123,7 +140,8 @@ its item.
 | --- | --- | --- |
 | `refused` | The table, or a table removed or created at its id, is refused (partial-changes-v1 §6.10). | `code` |
 | `selectable` | The table has a structure unit, a views unit or row units. | `structure` (with `structureChange`), `views`, `tableData` |
-| `contentEqual` | The table versions differ but no compared column of any row does (partial-changes-v1 §3.8). | — |
+
+A listed table that is not refused always has one of them (§3).
 
 - `structure` is the structure unit that holds the table identity, a `DescribedUnitRef`. Both items of a replaced id
   carry the same `replaced` structure unit.
@@ -141,9 +159,8 @@ its item.
 
   So `rows` equals the number of distinct `selection.row` of the table's `selectable` row items over all pages of an
   unfiltered `rowChanges`, and row filters do not change it. A client that selected rows one by one knows from it when
-  it has selected all of them. One exception: a pair whose only stored difference is a computed value (a formula
-  output that a native foreign-key rewrite left stale, partial-changes-v1 §5.2, or a write below the native
-  validation) makes `tableData` present and counts, while its row item is `computed` and it has no unit.
+  it has selected all of them. The selector also selects the `rowColumns` unit of a row of the table that differs only
+  in `schemaHash` (§3), which no row item shows and `rows` does not count.
 
 ## 5. Row items
 
@@ -163,8 +180,7 @@ In order of precedence:
    selects all of them; `structure` is the table's structure unit when it has one. One item can hold several units (a
    rename with an edit); two items can share one unit (a replaced row). A deleted row whose id a rename took over
    carries `side: 'head'`.
-4. `computed` — the row is among the changed rows of the catalogue but yields no unit: only computed values differ.
-5. `goesWith` the structure unit, reason `structureBound` — the catalogue does not load the row because it differs
+4. `goesWith` the structure unit, reason `structureBound` — the catalogue does not load the row because it differs
    only in changed fields or a structure-bound `publishedAt` (with or without `schemaHash`).
 
 Every row selection carries `units`, empty unless `selectable`, so a client reads the units of any row without a
@@ -267,7 +283,7 @@ rename. Array elements are compared by position. A rename in a refused table has
 | `headRevisionId`, `draftRevisionId`, `refusedTables` | As every read. |
 | `tablesSummary` | The listed tables by change type (§4): `total`, `added`, `modified`, `removed`, `renamed`, plus `replaced`, the number of replaced ids (each counted once; its two items are also counted in `added` and `removed`). |
 | `rowsSummary` | The reported rows of every listed table by change type, as `rowsSummary` of the table items. |
-| `rowsWithUnits` | The rows with units over all tables: the sum of the table items' `tableData.rows` (with its exception, §4). A client tells a user's own row edits from rows that only travel with a structure change by it. |
+| `rowsWithUnits` | The rows with units over all tables: the sum of the table items' `tableData.rows`. A client tells a user's own row edits from rows that only travel with a structure change by it. |
 | `sharedSchemas` | Every shared schema unit: `{ sharedSchemaId, changeType, unit }`, `changeType` `ADDED` (no Head row), `REMOVED` (no Draft row) or `MODIFIED`. |
 | `transientTables` | Every structure unit of tables created and removed inside the Draft: `{ tableId, changeType: 'ADDED', structure }`. |
 | `viewsOnlyTables` | Every views unit of a table whose user table version is unchanged, which no table item shows: `{ tableId, changeType: 'MODIFIED', views }`. |
@@ -333,10 +349,15 @@ anti-join of the table's two link sets (a created or removed table reads the row
   summary (`rowsSummary` per change type, `rowsWithUnits`) or from the table item (`rowsSummary`, `tableData.rows`). A
   `search` filter, and a `changeTypes` filter with several types, have no total: a `RENAMED_AND_MODIFIED` row counts
   in two types, so the per-type counts do not add up.
-- **`tableChanges`** reads the row counts of the tables on its page (one query each) and of a renamed table off the
-  page only when a `changeTypes` filter needs its change type (§4).
+- **`tableChanges`** reads the row counts of the tables on its page (one query each), of a renamed table off the
+  page only when a `changeTypes` filter needs its change type (§4), and of every table off the page that its filters
+  match and that has no refusal, structure or views unit: only its reported rows tell whether it has a change with an
+  effect (§3), and `totalCount` and `hasNextPage` count only such tables. So a table page costs at most what the
+  summary does.
 - **`summary`** reads the row counts of every listed table: the counts per change type and the number of rows with
   units.
+- A row query compares the stored values leaf by leaf only for a pair whose data `hash` differs, over the pairs of
+  the anti-join, as a plan does for a table whose structure differs.
 - A row page then reads the row versions of its pairs, computes their formula values and builds the field diffs; its
   id exchanges and followed renames read by row id and identity (§5.4, §5.5).
 
@@ -375,9 +396,8 @@ type DraftTableItem = {
   viewsChanges: ViewsChangeDetail;            // native shape
   selection: TableSelection;
 };
-type TableSelection = RefusedSelection | ContentEqualSelection | SelectableTableSelection;
+type TableSelection = RefusedSelection | SelectableTableSelection;
 type RefusedSelection = { state: 'refused'; code: RefusalCode };
-type ContentEqualSelection = { state: 'contentEqual' };
 type SelectableTableSelection = { state: 'selectable'; structure?: DescribedUnitRef; views?: UnitRef;
   tableData?: TableData };
 type TableData = { selector: SelectionItems; rows: number };
@@ -407,7 +427,6 @@ type DraftColumnChange = { column: RowColumn; oldValue: unknown; newValue: unkno
 type RowSelection = { units: UnitRef[] } & (   // the row's own units: empty unless selectable
   | RefusedSelection
   | GoesWithSelection
-  | ComputedSelection
   | SelectableRowSelection);
 type SelectableRowSelection = { state: 'selectable'; row: SelectionItems; structure?: UnitRef };
 type FieldSelection = RefusedSelection | GoesWithSelection | ComputedSelection | FieldUnitSelection;
@@ -453,13 +472,15 @@ Reachability and oracles (properties over random Drafts):
 - DR-01 Every unit of the change catalogue (read through the internal test path of partial-changes-v1 §13.6) is
   reachable from the three reads, and nothing else: structure and views units from table items or the summary, shared
   schemas from the summary, row and field units from row items, `rowColumns` units from row items and columns, including
-  the units of `idTakeover`, `idExchange` and `follows`.
-- DR-02 Every reported table, row, field and column without a unit says why: `goesWith`, `computed`, `contentEqual`
-  or `refused`.
+  the units of `idTakeover`, `idExchange` and `follows`; except the `rowColumns` unit of a row that differs only in
+  `schemaHash` (§3), which only its table's `tableData` selector reaches, when the table is listed.
+- DR-02 Every reported table, row, field and column without a unit says why: a row `goesWith` or `refused`, a field or
+  column also `computed`.
 - DR-03 Native oracle: on pages of 1, 2 and 7 rows, the reads list every row change of the native diff of the Draft
-  against its Head with an equal change type (`RENAMED_AND_MODIFIED` for a renamed row that also differs in a row
-  column, §3), the same field changes (paths as JSON Pointers, values equal), and beside them only rows that differ
-  in `publishedAt`, `meta` or `schemaHash` (§3).
+  against its Head with an equal change type (`RENAMED_AND_MODIFIED` for a renamed row that also differs in
+  `publishedAt` or `meta`, §3), the same field changes (paths as JSON Pointers, values equal), and beside them only
+  rows that differ in `publishedAt` or `meta`; a native change whose only stored difference is a formula output is
+  not listed (§3).
 - DR-04 Table items equal the native table changes in change type and row counts, except a table with only rename
   migrations and no reported row, which may read `RENAMED`, and the row-column differences of §3; each item's `schemaMigrations`, replayed from the Draft
   ledger, take the table from its Head id to its Draft id in ledger order, each pending migration under one item at
@@ -468,8 +489,8 @@ Reachability and oracles (properties over random Drafts):
   the Draft id in Draft.
 - DR-05 `tableData.rows` of every table equals the distinct `selection.row` of its `selectable` items over an
   unfiltered row read; the summary's `rowsWithUnits` equals their sum; a preview that selects `tableData: [table]` has
-  a `coverage` entry with `rows` equal to `tableData.rows` (partial-changes-v1 §5.1), apart from the computed-only
-  exception.
+  a `coverage` entry with `rows` equal to `tableData.rows` (partial-changes-v1 §5.1), apart from the rows that differ
+  only in `schemaHash`, which the plan covers and the reads do not list (§4).
 - DR-06 The summary equals the native summary in its counts and change types, apart from the row-column differences
   of §3; each count of `tablesSummary` equals
   the `totalCount` of the table filter of its type, and of `rowsSummary` the number of rows the row filter of its
@@ -488,8 +509,8 @@ Items:
   structure change and with a views edit has `views`; a views-only table appears only in the summary; whenever
   `viewsChanges.hasChanges` is true, the table has a views unit or `structureChange.views: true`, except a replaced id
   whose two tables hold equal views documents (§4).
-- DR-11 A `contentEqual` table and a `computed` row; a refused table's items, rows and fields are `refused` with its
-  code; rows of a created, removed or replaced table go with the structure (`tableExistence`).
+- DR-11 A refused table's items, rows and fields are `refused` with its code; rows of a created, removed or replaced
+  table go with the structure (`tableExistence`).
 - DR-12 Field changes: paths are JSON Pointers (a nested field `/dims/width`, an array element `/tags/1`, which
   selects the array's unit); an added field or element has `oldValue: null`, a removed one `newValue: null`, and a value
   is the one the native read computes; a created row has one root entry `''`, `FIELD_ADDED` with the whole
@@ -497,7 +518,7 @@ Items:
   field is `computed`; a value of a changed field goes with the structure (`structureBound`).
 - DR-13 Columns: a `meta` and a `schemaHash` difference under an unchanged structure select the `rowColumns` unit; a
   `publishedAt` difference with a published-at field selects that field unit; under a changed structure the
-  `schemaHash` goes with the structure, and a row that differs only there is not reported.
+  `schemaHash` goes with the structure; a row that differs only in `schemaHash` is not reported under either.
 - DR-14 Id takeover on both items; id exchanges with each `termination` (a swap, a 3-cycle, a chain into a free id,
   a chain into a deleted row, a chain longer than 50); `follows` on a reference rewritten by a rename, also when the
   rename is on another page or filtered out, and not on a reference edited by hand to another row.
@@ -519,7 +540,36 @@ Paging, filters, validation, snapshot:
 - DR-20 `null` for every optional input is treated as absent; an unknown branch is the native lookup error
   (`BadRequestException`, `A branch with this name does not exist in the project`).
 
+Changes without effect:
+
+- DR-21 A table whose only change is a value edited and set back (a price 49.90 → 54.50 → 49.90), a row whose only
+  stored difference is a formula output, and a row that differs only in `schemaHash` are in no item of any read and in
+  no count: `totalCount`, `tablesSummary`, `rowsSummary` of the summary and of a table item, `rowsWithUnits`,
+  `tableData.rows`. Pages of 1, 2 and 7 stay full until the last, which ends the read (`hasNextPage: false`); a filter
+  that matches only such rows lists nothing.
+- DR-22 A renamed row that also differs in `schemaHash` is `RENAMED`. A listed row whose `schemaHash` also differs
+  shows it in `columns`, and its row selector selects its `rowColumns` unit; committing the `tableData` selector of a
+  listed table also commits the `schemaHash` of a row of the table that no item shows.
+- DR-23 Rows that differ only in `meta` or `publishedAt` are listed and counted as `MODIFIED`, with their `columns`
+  and units.
+
 ## Changelog
+
+### Version 1.9 (2026-11-15)
+
+- §3: changes without effect are not shown. A row is reported by its id, its stored values (the leaves the catalogue
+  compares, for a pair whose data hash differs), `publishedAt` and `meta`: a row whose only stored difference is a
+  formula output, and a row that differs only in `schemaHash`, are no longer reported, and neither difference makes a
+  renamed row `RENAMED_AND_MODIFIED`. A table whose versions differ is listed only with a refusal, a structure or views
+  unit or a reported row, so a table whose content equals the last commit is no longer listed. What commit and revert
+  apply does not change.
+- §4, §9: the table selection state `contentEqual` (`ContentEqualSelection`) is removed; the `tableData` exception for
+  rows with only a computed difference is replaced by the `schemaHash`-only rows the selector also selects.
+- §5.1, §9: the row selection state `computed` is removed; a field or column can still be `computed`.
+- §6: `rowsWithUnits` has no exception.
+- §8: a table page also reads the row counts of the off-page tables its filters match that have nothing but rows to
+  show; a row query compares stored values leaf by leaf for pairs whose hash differs.
+- §10: DR-01, DR-02, DR-03, DR-05, DR-11 and DR-13 follow; DR-21 to DR-23 added.
 
 ### Version 1.8 (2026-11-15)
 

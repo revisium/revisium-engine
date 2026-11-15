@@ -72,7 +72,7 @@ async function listedTableCountsOf(
 ): Promise<ListedTableCounts[]> {
   const counts: ListedTableCounts[] = [];
 
-  for (const table of tables.listed) {
+  for (const table of await tables.shown()) {
     const rows = await tables.rowCountsOf(table);
 
     counts.push({

@@ -22,6 +22,7 @@ import type {
 } from 'src/features/partial-changes/selection/selection';
 import { TableEffectCheck } from 'src/features/partial-changes/writing/table-effect-check';
 import { DiffService } from 'src/features/share/diff.service';
+import { SystemTables } from 'src/features/share/system-tables.consts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { revertWhileNativeWriteLands } from '../../__tests__/support/revert-races';
 import { expectConsistentRevisions } from '../../__tests__/support/revision-consistency';
@@ -284,6 +285,89 @@ describe('exactly { all: true } on a Draft left with only content-equal versions
         },
       );
     });
+
+    it.each(OPERATIONS)(
+      'a %s of exactly { all: true } on a Draft whose only change is a shared schema created and removed unlinks the empty system table only the Draft holds',
+      async (operation) => {
+        const draft = await givenCommittedTablesWithOrders();
+        await draft.createSharedSchema('address', obj({ city: str() }));
+        await draft.removeSharedSchema('address');
+        const headRevisionId = await draft.revisionId('head');
+
+        expect(await draft.readDraftChangesSummary()).toMatchObject({
+          onlyChangesWithoutEffect: true,
+        });
+
+        const result = await apply(draft, operation, {
+          selection: WHOLE_DRAFT,
+        });
+
+        expect(result).toMatchObject({
+          status: 'empty',
+          draftHasChanges: false,
+        });
+        expect(await draft.revisionId('head')).toBe(headRevisionId);
+        expect(await draft.hasTable('draft', SystemTables.SharedSchemas)).toBe(
+          false,
+        );
+        expect(await draft.hasChanges()).toBe(false);
+      },
+    );
+
+    it.each(OPERATIONS)(
+      'a %s of exactly { all: true } keeps the content check of a relink for a table the partial operations refuse, whose structure analysis cannot be trusted',
+      async (operation) => {
+        const draft = await ChangesScenario.committedWithoutLedger(kit, {
+          [ORDERS]: {
+            schema: orderSchema,
+            rows: { o1: { price: 2, quantity: 3, total: 6 } },
+          },
+        });
+        await draft.writeRowBelowNativeValidation(ORDERS, 'o1', {
+          price: 2,
+          quantity: 3,
+          total: 7,
+        });
+        const ordersVersionId = await draft.tableVersionId('draft', ORDERS);
+
+        const result = await apply(draft, operation, {
+          selection: WHOLE_DRAFT,
+        });
+
+        expect(result).toMatchObject({
+          status: 'empty',
+          draftHasChanges: true,
+        });
+        expect(await draft.tableVersionId('draft', ORDERS)).toBe(
+          ordersVersionId,
+        );
+      },
+    );
+
+    it.each(OPERATIONS)(
+      'a %s of exactly { all: true } on a table with a stale formula output beside an edited row leaves a Draft equal to Head',
+      async (operation) => {
+        const draft = await givenOnlyAFormulaOutputRewritten();
+        await draft.createRows(ORDERS, {
+          o2: { price: 1, quantity: 1, total: 1 },
+        });
+        await draft.updateRow(ORDERS, 'o2', {
+          price: 4,
+          quantity: 1,
+          total: 0,
+        });
+
+        const result = await apply(draft, operation, {
+          selection: WHOLE_DRAFT,
+        });
+
+        expect(result).toMatchObject({
+          status: 'applied',
+          draftHasChanges: false,
+        });
+        await expectDraftEqualToHead(draft);
+      },
+    );
 
     it.each(OPERATIONS)(
       'a %s keeps the Draft version when the content check in its transaction finds a change with an effect that change detection missed',

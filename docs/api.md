@@ -827,9 +827,11 @@ The same clean-up covers every change without effect the Draft reads hide: a row
 formula output (every read computes the same value) and a row that differs only in the technical `schemaHash`. When
 those are all that remain, exactly `{ all: true }` selects none of them, so a preview is `empty` with
 `draftHasChanges: true`, and the commit or revert is `empty` with `draftHasChanges: false`, links the Head versions
-into the Draft and creates no revision. A Draft that also holds changes with an effect is applied as before and ends
-equal to Head; a commit then publishes the `schemaHash` differences with their units, and a stale stored formula
-output as the Draft holds it. `changes.summary` returns `onlyChangesWithoutEffect: true` when the Draft differs from
+into the Draft and creates no revision. It also unlinks a system table that only the Draft holds without rows (for
+example after the first shared schema was created and removed). A table without a migration ledger, or one whose Head
+schema fails its ledger check, keeps the strict content check, so its stale formula output stays. A Draft that also
+holds changes with an effect is applied as before and ends equal to Head; a commit then publishes the `schemaHash`
+differences with their units, and a stale stored formula output as the Draft holds it. `changes.summary` returns `onlyChangesWithoutEffect: true` when the Draft differs from
 Head while the reads show nothing: run or offer exactly `{ all: true }` then instead of a "has changes" badge over an
 empty list.
 

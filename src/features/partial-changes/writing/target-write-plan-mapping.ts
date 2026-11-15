@@ -15,6 +15,7 @@ import type {
 } from 'src/features/partial-changes/assembly/target-assembler';
 import {
   type ChangesSnapshot,
+  type SystemRows,
   type TablePair,
   versionOn,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
@@ -36,20 +37,36 @@ export interface WritableTarget {
 
 type SystemTableWriting = (plan: SystemTablePlan) => TableWritePlan;
 
+const SYSTEM_TABLES_OF_ROWS: readonly (readonly [
+  keyof SystemRows,
+  SystemTables,
+])[] = [
+  ['schemas', SystemTables.Schema],
+  ['migrations', SystemTables.Migration],
+  ['views', SystemTables.Views],
+  ['sharedSchemas', SystemTables.SharedSchemas],
+];
+
 export function targetWritePlanOf(writable: WritableTarget): TargetWritePlan {
   return writePlanOf(writable, systemTableWritePlanOf);
 }
 
 // Every table the plan read whose Draft and Head versions differ, as a relink candidate that keeps its Draft version:
-// the writer links the Head version instead only where its content check finds the two versions content-equal.
+// the writer links the Head version instead only where its content check finds the two versions content-equal. A
+// system table that only the Draft holds and that has no rows is unlinked: the Draft then lacks it as Head does, the
+// state before its first row was written, which a native revert also leaves.
 export function draftFollowsHeadPlanOf(
   writable: WritableTarget,
+  { systemRows }: Pick<ChangesSnapshot, 'systemRows'>,
 ): TargetWritePlan {
   const plan = targetWritePlanOf(writable);
 
   return {
     ...plan,
-    tables: plan.tables.filter(differsFromHead).map(keepingDraftVersion),
+    tables: [
+      ...plan.tables.filter(differsFromHead).map(keepingDraftVersion),
+      ...emptyDraftOnlySystemTablesOf(systemRows),
+    ],
   };
 }
 
@@ -186,6 +203,28 @@ function linkSideVersionIdOf({
   }
 
   return versionId;
+}
+
+// A system table without rows has no assembled plan, so its unlinking comes from the snapshot.
+function emptyDraftOnlySystemTablesOf(
+  systemRows: SystemRows,
+): TableWritePlan[] {
+  return SYSTEM_TABLES_OF_ROWS.flatMap(([rowsKey, tableId]) => {
+    const { versions, draft } = systemRows[rowsKey];
+
+    if (versions.head || !versions.draft || draft.length > 0) {
+      return [];
+    }
+
+    return [
+      {
+        identity: tableId,
+        draftVersionId: versions.draft.versionId,
+        target: { kind: 'linked' },
+        relinkCandidate: false,
+      },
+    ];
+  });
 }
 
 function differsFromHead({

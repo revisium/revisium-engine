@@ -47,11 +47,16 @@ import type {
   ChangesBranch,
   ComparedTable,
 } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { refusalCodeOf } from 'src/features/partial-changes/head-schema/head-schema-check';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { TableEffectCheck } from 'src/features/partial-changes/writing/table-effect-check';
 import { draftFollowsHeadPlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
+
+interface AppliedWrite {
+  readonly draftHasChanges: boolean;
+}
 
 type TargetWrite<Applied> = (plan: CompletePlan) => Promise<Applied>;
 
@@ -77,7 +82,7 @@ export class ChangeApplier {
     private readonly effectCheck: TableEffectCheck,
   ) {}
 
-  public apply<Applied>(
+  public apply<Applied extends AppliedWrite>(
     operation: ChangeOperation,
     input: ApplyChangesInput,
     writeTarget: TargetWrite<Applied>,
@@ -92,7 +97,7 @@ export class ChangeApplier {
     );
   }
 
-  private async planAndWrite<Applied>(
+  private async planAndWrite<Applied extends AppliedWrite>(
     request: ApplyRequest,
     writeTarget: TargetWrite<Applied>,
     deadline: DeadlineHandle,
@@ -122,7 +127,53 @@ export class ChangeApplier {
     await deadline.checkpoint();
 
     // The write takes the whole plan; only a refusal lists its details cut (SPEC §5.1).
-    return writeTarget(plan);
+    const applied = await writeTarget(plan);
+
+    return this.clearingWhatIsLeftWithoutEffect(
+      applied,
+      { request, plan },
+      deadline,
+      trace,
+    );
+  }
+
+  // A written table keeps the rows that had no unit, so after exactly { all: true } a stale formula output can be left
+  // beside the changes it applied; the same transaction plans the Draft again and normalises it when no unit is left.
+  private async clearingWhatIsLeftWithoutEffect<Applied extends AppliedWrite>(
+    applied: Applied,
+    { request, plan }: { request: ApplyRequest; plan: CompletePlan },
+    deadline: DeadlineHandle,
+    trace: OperationTrace,
+  ): Promise<Applied> {
+    if (!applied.draftHasChanges || !selectsWholeDraft(request.selection)) {
+      return applied;
+    }
+
+    const left = await this.plan(request, deadline);
+
+    if (
+      !left.planned ||
+      left.appliedUnits.length > 0 ||
+      left.blockers.length > 0
+    ) {
+      return applied;
+    }
+
+    const normalisation = await this.normalisationOf(left, request);
+
+    if (!normalisation) {
+      return applied;
+    }
+
+    return {
+      ...applied,
+      draftHasChanges: await this.normaliseDraft(
+        plan,
+        normalisation,
+        deadline,
+        trace,
+      ),
+    };
   }
 
   private async nothingToApply(
@@ -146,9 +197,10 @@ export class ChangeApplier {
     );
   }
 
-  // Links the Head versions of the content-equal Draft table versions; no unit is applied and no revision created.
+  // Links the Head versions of the Draft tables without a change with an effect; no unit is applied and no revision
+  // created. The operation log keeps the fields of the plan the operation decided on.
   private async normaliseDraft(
-    plan: CompletePlan,
+    tracedPlan: CompletePlan,
     normalisation: TargetWritePlan,
     deadline: DeadlineHandle,
     trace: OperationTrace,
@@ -157,7 +209,7 @@ export class ChangeApplier {
 
     const { draftHasChanges, relinkedTables } =
       await this.draftRevisionTargetApi.revertToTarget(normalisation);
-    trace.planned(() => ({ ...plannedFieldsOf(plan), relinkedTables }));
+    trace.planned(() => ({ ...plannedFieldsOf(tracedPlan), relinkedTables }));
 
     return draftHasChanges;
   }
@@ -172,7 +224,10 @@ export class ChangeApplier {
       return undefined;
     }
 
-    const normalisation = draftFollowsHeadPlanOf(plan.target);
+    const normalisation = draftFollowsHeadPlanOf(
+      plan.target,
+      plan.target.source.snapshot,
+    );
 
     if (normalisation.tables.length === 0) {
       return undefined;
@@ -248,7 +303,10 @@ function applyRequestOf(
   };
 }
 
-// A user table the reads analyse: not refused, with an unchanged structure (else it would have a structure unit).
+// A user table the reads analyse, with an unchanged structure (else it would have a structure unit). A table the partial
+// operations refuse keeps the strict content check: its structure analysis cannot be trusted, since an async migration
+// can rewrite the schema row both sides share while the Head rows keep their old shape (SPEC §6.10). Exactly
+// { all: true } does not refuse tables, so the refusal is asked here.
 function clearableTableOf(
   { identity }: TableWritePlan,
   { target: { source } }: CompletePlan,
@@ -257,15 +315,12 @@ function clearableTableOf(
   const pair = source.snapshot.tables.find(
     (table) => table.identity === identity,
   );
-  const refused = new Set(
-    source.catalogue.refusedTables.map(({ tableId }) => tableId),
-  );
 
   if (
     !compared ||
-    !pair?.head ||
+    !pair ||
     compared.structure.differs ||
-    refused.has(pair.head.id)
+    refusalCodeOf(pair, source.headSchema.sourceReplays) !== undefined
   ) {
     return undefined;
   }

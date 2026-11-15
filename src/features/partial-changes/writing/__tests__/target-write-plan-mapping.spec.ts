@@ -5,7 +5,11 @@ import type {
 } from 'src/features/draft-revision/commands/impl';
 import type { SystemTablePlan } from 'src/features/partial-changes/assembly/system-table-plans';
 import type { TablePlan } from 'src/features/partial-changes/assembly/target-assembler';
-import type { TablePair } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type { Row } from 'src/engine-prisma-types';
+import type {
+  SystemRows,
+  TablePair,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { SystemTables } from 'src/features/share/system-tables.consts';
 import {
   draftFollowsHeadPlanOf,
@@ -186,6 +190,7 @@ describe('draftFollowsHeadPlanOf', () => {
           },
         ],
       }),
+      { systemRows: systemRowsOf({}) },
     );
 
     expect(plan.tables).toEqual<TableWritePlan[]>([
@@ -206,6 +211,73 @@ describe('draftFollowsHeadPlanOf', () => {
     ]);
   });
 });
+
+describe('draftFollowsHeadPlanOf for a system table only the Draft holds', () => {
+  it('unlinks one without rows, and keeps one with rows and one that Head holds too', () => {
+    const plan = draftFollowsHeadPlanOf(writableTargetOf({}), {
+      systemRows: systemRowsOf({
+        sharedSchemas: { draft: 'shared-draft' },
+        views: { draft: 'views-draft', draftRows: [systemRow] },
+        migrations: { head: 'migrations-head', draft: 'migrations-draft' },
+      }),
+    });
+
+    expect(plan.tables).toEqual<TableWritePlan[]>([
+      {
+        identity: SystemTables.SharedSchemas,
+        draftVersionId: 'shared-draft',
+        target: { kind: 'linked' },
+        relinkCandidate: false,
+      },
+    ]);
+  });
+});
+
+interface SystemTableFixture {
+  readonly head?: string;
+  readonly draft?: string;
+  readonly draftRows?: readonly Row[];
+}
+
+const systemRow: Row = {
+  versionId: 'views-row',
+  createdId: 'views-row',
+  id: 'products',
+  readonly: false,
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  publishedAt: new Date(0),
+  data: {},
+  meta: {},
+  hash: 'hash',
+  schemaHash: 'schema-hash',
+};
+
+function systemRowsOf(
+  tables: Partial<Record<keyof SystemRows, SystemTableFixture>>,
+): SystemRows {
+  const rowsOf = ({
+    head,
+    draft,
+    draftRows = [],
+  }: SystemTableFixture = {}) => ({
+    head: [],
+    draft: draftRows,
+    versions: {
+      head:
+        head === undefined ? undefined : { versionId: head, readonly: true },
+      draft:
+        draft === undefined ? undefined : { versionId: draft, readonly: false },
+    },
+  });
+
+  return {
+    schemas: rowsOf(tables.schemas),
+    migrations: rowsOf(tables.migrations),
+    views: rowsOf(tables.views),
+    sharedSchemas: rowsOf(tables.sharedSchemas),
+  };
+}
 
 function linkedTableOf(identity: string, versionId: string): TablePlan {
   return {

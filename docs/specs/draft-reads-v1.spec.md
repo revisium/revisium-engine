@@ -97,11 +97,12 @@ whose only stored difference is a formula output is absent here and `MODIFIED` t
 `RENAMED` here when it is also renamed). A row that differs only in `schemaHash` is in neither. Every count of this
 specification counts reported rows only.
 
-The units of changes without effect stay in the change catalogue, so commit and revert apply what they did: a row that
-differs only in `schemaHash` keeps its `rowColumns` unit, which the table's `tableData` selector (offered whenever the
-table has such a unit, §4), the selection `{ all: true }` and the closure select, and a listed row's selector selects its own `schemaHash` difference with its
-other units (§5.1). A formula output has no unit, as before. Exactly `{ all: true }` clears the Draft versions of a
-table whose content equals the last commit (partial-changes-v1 §3.8).
+The units of changes without effect stay in the change catalogue, so a selection that names them applies them as
+before: a row that differs only in `schemaHash` keeps its `rowColumns` unit, which the table's `tableData` selector
+(offered whenever the table has such a unit, §4) and the closure select, and a listed row's selector selects its own
+`schemaHash` difference with its other units (§5.1). A formula output has no unit, as before. Exactly `{ all: true }`
+selects these `rowColumns` units together with other units, but none of them when they are the Draft's only units;
+it then clears every change without effect without a revision (partial-changes-v1 §3.8).
 
 ## 4. Table items
 
@@ -714,6 +715,7 @@ Summary:
 - §6, §8, §9, DR-29: the summary returns `onlyChangesWithoutEffect`, `true` when the Draft differs from Head while the
   reads show nothing, so a client can run exactly `{ all: true }`, which clears those changes without a revision
   (partial-changes-v1 v2.12 §3.8).
+- §3: exactly `{ all: true }` selects the `rowColumns` units of `schemaHash`-only rows only beside other units.
 
 ### Version 1.11 (2026-11-15)
 

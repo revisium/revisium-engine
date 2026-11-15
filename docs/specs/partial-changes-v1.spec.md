@@ -231,12 +231,24 @@ difference is without effect ends without changes and without a new revision:
 - When every unit of the Draft is a `rowColumns` unit that owns only `schemaHash`, exactly `{ all: true }` selects none
   of them: the plan is `empty` (no counts, no coverage, the fingerprint of a plan without units), it still reads every
   table, and the normalisation above runs. With any other unit it selects every unit as before.
-- In the normalisation, a user table that is not refused and whose structure is unchanged links its Head version when
-  the content check of the Draft reads finds no change with an effect in it: no row on one side only and no pair that
-  differs in `id`, the stored values at the leaves the catalogue compares, `publishedAt` or `meta`. That check leaves
-  out `schemaHash` and the formula outputs the structure keeps, and it is still a content check: a change with an
-  effect that change detection missed keeps the Draft version. Every other table (a system table, a refused table)
-  keeps the content check of §6.14 step 4.
+- In the normalisation, a user table whose structure is unchanged and that the partial operations would not refuse
+  links its Head version when the content check of the Draft reads finds no change with an effect in it: no row on one
+  side only and no pair that differs in `id`, the stored values at the leaves the catalogue compares, `publishedAt` or
+  `meta`. That check leaves out `schemaHash` and the formula outputs the structure keeps, and it is still a content
+  check: a change with an effect that change detection missed keeps the Draft version. Exactly `{ all: true }` refuses
+  no table (§6.10), so the refusal is asked here from the same ledger replays. A table that would be refused keeps the
+  content check of §6.14 step 4, as every system table does: its structure analysis cannot be trusted, since an async
+  migration can rewrite the schema row both sides share while the Head rows keep their old shape (damage (i), §6.10),
+  and a Head row that still holds a field the new schema removed would read as equal at every leaf.
+- A system table that only the Draft holds and that has no rows (for example after the first shared schema was
+  created and removed) is unlinked from the Draft. Head does not hold it either, so the Draft returns to the state
+  before its first row was written, the state a native revert also leaves; every native writer creates a missing
+  system table when it needs one.
+- After an applied operation of exactly `{ all: true }` that leaves `draftHasChanges: true`, the same transaction plans
+  exactly `{ all: true }` again and, when no unit and no blocker is left, runs this normalisation: a written table keeps
+  the rows that had no unit, so a stale stored formula output beside an applied row of the same table would otherwise
+  stay. The result's `draftHasChanges` is that of the normalisation; the operation log keeps the fields of the plan
+  that was applied.
 - Why dropping those Draft row versions loses nothing: a formula output is computed from the row's own stored values
   by the table's schema on every read, and the structure (with the formula) is the same on both sides, so every value
   a read returns is the same; the stored output only serves a filter or an order on that field, which then reads as in
@@ -247,8 +259,9 @@ difference is without effect ends without changes and without a new revision:
   formulas read only their own row.
 - A Draft that also holds changes with an effect is planned as before: a commit of exactly `{ all: true }` applies
   every unit, the `schemaHash` differences with their `rowColumns` units, and publishes a table without an applied
-  unit as the Draft holds it (a stale stored formula output reaches Head as stored, and every read still computes it),
-  so the new Draft equals Head; a revert of exactly `{ all: true }` leaves the Draft equal to Head.
+  unit as the Draft holds it (a stale stored formula output reaches Head as stored, and every read still computes it);
+  a revert of exactly `{ all: true }` reverts every unit. Either leaves the Draft equal to Head, through the step
+  above when a stale output was left in a written table.
 - A narrower selection keeps its scope as above.
 
 The summary of the Draft reads says when a Draft holds only changes without effect (`onlyChangesWithoutEffect`,
@@ -1782,9 +1795,11 @@ the preview does not fix them.
   after the preview.
 - **The normalisation of exactly `{ all: true }` needs no `expected`** (§3.8). `empty` is decided before `stale`
   (§5.6), so `expected` does not change an `empty` result, also one that normalises the Draft. The normalisation
-  applies no unit and changes no content: it links a Head version only where the content check in the same
-  transaction finds it equal to the Draft version, so there is nothing a preview could have shown that the operation
-  might change, as for a native whole commit or revert. A preview of exactly `{ all: true }` returns a fingerprint
+  applies no unit and changes nothing a read returns: it links a Head version only where a content check in the same
+  transaction finds the two versions equal, or equal but for changes without effect (a stored formula output, a
+  `schemaHash`, §3.8), and it unlinks a system table that only the Draft holds without rows. So the stored content it
+  replaces is never content a preview shows or a client selects, and there is nothing a preview could have shown that
+  the operation might change, as for a native whole commit or revert. A preview of exactly `{ all: true }` returns a fingerprint
   also when it is `empty`, as before; passed as `expected`, it neither enables nor prevents the normalisation. A
   native write between the preview and the apply that adds a unit makes the plan non-empty: the operation then applies
   it without `expected` and is `stale` with it.
@@ -2383,7 +2398,15 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   unchanged and every Draft table version is its Head version; `{ all: true, exclude: {} }` on the formula-only Draft is
   `empty` and writes nothing; when the content check of the Draft reads finds a change with an effect, the Draft version
   stays. Beside a change with an effect, a commit of exactly `{ all: true }` is `applied`, Head gets the `schemaHash`
-  and the stored formula output, and a revert of it is `applied`; both leave every Draft table version equal to Head.
+  and the stored formula output, and a revert of it is `applied`; both leave every Draft table version equal to Head. A Draft whose only change is a shared schema created and
+  removed reads `onlyChangesWithoutEffect: true`, and exactly `{ all: true }` unlinks the empty shared-schemas table
+  and is `empty` with `draftHasChanges: false`. A table without a migration ledger with only a stale formula output
+  keeps its Draft version (`draftHasChanges: true`). A stale formula output beside an edited row of the same table:
+  commit and revert of exactly `{ all: true }` are `applied` with `draftHasChanges: false`. Over random Drafts: a
+  published Draft given content-equal rows, `schemaHash` rewrites or a shared schema created and removed reads
+  `onlyChangesWithoutEffect: true`, and exactly `{ all: true }` leaves it without changes and without a new revision;
+  whenever the summary of a random Draft says so, its commit of exactly `{ all: true }` is `empty` with
+  `draftHasChanges: false`.
 
 ## 14. Test strategy
 
@@ -2538,8 +2561,11 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
 - §3.8, AS-100: exactly `{ all: true }` also clears rows that differ only in a stored formula output or only in
   `schemaHash`: when the Draft's only units own nothing but `schemaHash` it selects none of them and is `empty`; the
   normalisation links the Head version of a user table without a change with an effect, by the content check of the
-  Draft reads, and keeps the content check of §6.14 for other tables. Before, such a row kept `draftHasChanges: true`
-  after a formula-only clean-up, and `schemaHash`-only units were committed as a new revision.
+  Draft reads, keeps the content check of §6.14 for system tables and for tables the partial operations would refuse,
+  and unlinks a system table that only the Draft holds without rows; an applied operation of exactly `{ all: true }`
+  that leaves changes plans again and normalises what is left without effect. Before, such a row kept
+  `draftHasChanges: true` after a formula-only clean-up, and `schemaHash`-only units were committed as a new revision.
+- §9.2: the normalisation that needs no `expected` also replaces stored content that differs without effect.
 
 ### Version 2.11 (2026-11-15)
 

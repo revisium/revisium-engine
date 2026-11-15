@@ -37,7 +37,6 @@ export interface RefusedSelection {
 export const ROW_SELECTION_STATES = [
   'refused',
   'goesWith',
-  'computed',
   'selectable',
 ] as const;
 

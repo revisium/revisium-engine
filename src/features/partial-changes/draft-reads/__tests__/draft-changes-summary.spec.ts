@@ -1,4 +1,4 @@
-import { num, obj, str } from '@revisium/schema-toolkit/mocks';
+import { num, numFormula, obj, str } from '@revisium/schema-toolkit/mocks';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -34,6 +34,11 @@ const PHONE = 'phone';
 const productSchema = obj({ title: str() });
 const pricedSchema = obj({ title: str(), price: num() });
 const addressSchema = obj({ city: str() });
+const totalSchema = obj({
+  price: num(),
+  quantity: num(),
+  total: numFormula('price * quantity'),
+});
 const productViews: TableViewsData = {
   version: 1,
   defaultViewId: 'default',
@@ -99,6 +104,53 @@ describe('draft changes summary', () => {
 
       expect(summary.rowsSummary.total).toBe(0);
       expect(summary.tablesSummary.total).toBe(1);
+    });
+
+    it('counts neither a table nor a row whose change has no effect', async () => {
+      const draft = await ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: pricedSchema,
+          rows: { p1: { title: 'one', price: 49.9 } },
+        },
+        [NOTES]: { schema: productSchema, rows: { n1: { title: 'one' } } },
+        [GOODS]: {
+          schema: totalSchema,
+          rows: {
+            g1: { price: 2, quantity: 3, total: 6 },
+            g2: { price: 2, quantity: 3, total: 6 },
+          },
+        },
+      });
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 54.5 });
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 49.9 });
+      await draft.writeRowColumns(NOTES, 'n1', { schemaHash: 'other' });
+      await draft.writeRowBelowNativeValidation(GOODS, 'g1', {
+        price: 2,
+        quantity: 3,
+        total: 7,
+      });
+      await draft.updateRow(GOODS, 'g2', { price: 5, quantity: 3, total: 0 });
+
+      const summary = await draft.readDraftChangesSummary();
+
+      expect(summary).toMatchObject({
+        tablesSummary: {
+          total: 1,
+          added: 0,
+          modified: 1,
+          removed: 0,
+          renamed: 0,
+          replaced: 0,
+        },
+        rowsSummary: {
+          total: 1,
+          added: 0,
+          modified: 1,
+          removed: 0,
+          renamed: 0,
+        },
+        rowsWithUnits: 1,
+      });
     });
 
     it('counts a table that was only renamed as renamed and not as modified', async () => {

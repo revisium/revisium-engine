@@ -770,7 +770,7 @@ new Draft (`draftRevisionId`); later writes must use the new Draft id. A revert 
 A table can link a Draft version that differs from Head's version while no row differs in content, for example after
 a row was edited and edited back, or after every unit was applied by selectors and the operations did not read that
 table. Such a table has no unit, yet the Draft has changes: `draftHasChanges` and the branch's `touched` stay `true`,
-and the Draft reads list the table as `MODIFIED` with selection state `contentEqual`.
+while the Draft reads show no change for it (see "Changes without effect" in [Draft reads](#draft-reads)).
 
 A commit or revert of exactly `{ all: true }` clears it: when it finds no unit, it links the Head version of each such
 table into the Draft in its transaction, after a content check, and returns `empty` with `draftHasChanges: false`. A
@@ -879,10 +879,21 @@ engine.changes.summary({
   `previousRowId` (renamed), `changeType`, `fields` (`path` as a JSON Pointer, `changeType`, `oldValue`, `newValue`,
   `selection`), `columns` (`publishedAt`, `meta`, `schemaHash`), `selection`, and `idTakeover` / `idExchange` when a
   rename took over another row's id. `changeType` takes the native `ChangeType` values.
-- **Selection of an item.** A table is `selectable` (its `structure`, `views` and `tableData` selectors), `refused`
-  (with the refusal `code`) or `contentEqual`. A row is `selectable` (`row` selects all its `units`), `goesWith` a unit
-  that carries it (`reason`: `tableExistence`, `structureBound`, `rowExistence`), `computed` (only computed values
-  differ) or `refused`. A field or column is `unit`, `goesWith`, `computed` or `refused`.
+- **Selection of an item.** A table is `selectable` (its `structure`, `views` and `tableData` selectors) or
+  `refused` (with the refusal `code`). A row is `selectable` (`row` selects all its `units`), `goesWith` a unit that
+  carries it (`reason`: `tableExistence`, `structureBound`, `rowExistence`) or `refused`. A field or column is `unit`,
+  `goesWith`, `computed` or `refused`.
+- **Changes without effect.** The reads show only changes with an effect. A table whose content equals the last commit
+  (a value edited and set back), a row whose only stored difference is a formula output, and a row that differs only in
+  the technical `schemaHash` are in no item and in no count (`totalCount`, `tablesSummary`, `rowsSummary`,
+  `rowsWithUnits`, `tableData.rows`), and neither difference makes a renamed row `RENAMED_AND_MODIFIED`. Rows that
+  differ in `meta` or `publishedAt` are changes and are listed. Selectors still carry what is not shown: a row's
+  selector also selects its `schemaHash` difference, and a table item offers `tableData` whenever the table has row
+  units, also of rows no item shows, so applying every selector of a table item leaves none behind; `tableData.rows`
+  counts the shown rows only (it can be `0`). So a Draft can read as empty while `draftHasChanges` and the branch's
+  `touched` are `true`: exactly `{ all: true }` clears content-equal versions and applies `schemaHash` differences,
+  while a stored formula output that differs is cleared only by a native `revertChanges` or commit
+  ([SPEC](specs/draft-reads-v1.spec.md) §3).
 - **Paging.** Keyset pages: pass `pageInfo.endCursor` as `after` while `pageInfo.hasNextPage`. Each page reads its own
   snapshot. The two items of one row id are never split, so a row page can hold a few more items than `first`. A read
   refuses a cursor of the other read as malformed (400).

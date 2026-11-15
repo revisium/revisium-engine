@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.9 |
+| Version | 2.10 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -430,8 +430,9 @@ are counted in `counts`.
 - `structure` and `views` are present when the table has that unit, `true` when it is applied;
 - `rows` is the number of rows with row or field units, each row counted by its row selector as
   `tableData.rows` of the Draft reads counts it ([draft-reads-v1](draft-reads-v1.spec.md) §4), except that a row
-  whose only stored difference is a computed value has no unit and does not count here; every table with an applied
-  unit is affected (§6.2), so its rows are known;
+  that differs only in `schemaHash` has a `rowColumns` unit and counts here, while the Draft reads do not show it and
+  `tableData.rows` does not count it (a row whose only stored difference is a computed value has no unit and counts in
+  neither); every table with an applied unit is affected (§6.2), so its rows are known;
 - `appliedRows` are the rows all of whose units are applied, `partlyAppliedRows` those with some but not all applied.
 
 So a client shows a table's row changes as wholly in the plan when `appliedRows = rows`, without listing them.
@@ -2229,7 +2230,8 @@ The scenarios that speak of every unit of the Draft read them from the change ca
 - AS-88 Counts and coverage: `counts` has `selected` and `required` only, and a preview has no `sample`; `coverage`
   lists every user table with an applied unit: `structure`
   and `views` present exactly when the table has that unit, `rows` equal to the number of distinct row selectors of the
-  table's row and field units in the catalogue (and to `tableData.rows` of the Draft reads, draft-reads-v1 DR-05),
+  table's row and field units in the catalogue (and to `tableData.rows` of the Draft reads, draft-reads-v1 DR-05, plus
+  the rows that differ only in `schemaHash`, which the Draft reads do not show),
   `appliedRows = rows` when `tableData: [table]` is selected, a row
   with one of its two units selected counted in `partlyAppliedRows`, required additions counted as applied, and two
   entries (one with `side: 'head'`) when a rename took over the id of a removed table; no entry for transient
@@ -2427,6 +2429,12 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.10 (2026-11-15)
+
+- §5.1, AS-88: `coverage.rows` also counts a row that differs only in `schemaHash` (its `rowColumns` unit), which the
+  Draft reads no longer show or count in `tableData.rows` (draft-reads-v1 v1.9); the computed-only exception now
+  applies to both counts.
 
 ### Version 2.9 (2026-11-15)
 

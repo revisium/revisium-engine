@@ -16,6 +16,7 @@ import type {
   TableSelection,
 } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import { unitRefOf } from 'src/features/partial-changes/selection/unit-refs';
+import { publicTableIdOf } from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { pendingEntriesOf } from 'src/features/partial-changes/snapshot/ledger-attribution';
 import { SchemaImpactService } from 'src/features/revision-changes/services/schema-impact.service';
 import { ViewsComparisonService } from 'src/features/revision-changes/services/views-comparison.service';
@@ -109,7 +110,9 @@ function tableSelectionOf(
   const tableData = tableDataOf(table, counts);
 
   if (!structure && !views && !tableData) {
-    return { state: 'contentEqual' };
+    throw new Error(
+      `Table ${publicTableIdOf(table.pair)} is shown but has nothing to select`,
+    );
   }
 
   const selection: Mutable<SelectableTableSelection> = { state: 'selectable' };
@@ -141,12 +144,13 @@ export function tableDataRowsOf(
   return tableDataOf(table, counts)?.rows ?? 0;
 }
 
-// Rows of a table on one side only go with its structure, so they yield no unit.
+// Offered whenever the table has row units, also those of rows no item shows, so its selectors leave none behind; it
+// counts the rows shown. Rows of a table on one side only go with its structure, so they yield no unit.
 function tableDataOf(
   { pair }: DraftTable,
-  { rowsWithUnits }: ReportedRowCounts,
+  { rowsWithUnits, hasRowUnits }: ReportedRowCounts,
 ): TableData | undefined {
-  if (!pair.draft || rowsWithUnits === 0) {
+  if (!pair.draft || !hasRowUnits) {
     return undefined;
   }
 

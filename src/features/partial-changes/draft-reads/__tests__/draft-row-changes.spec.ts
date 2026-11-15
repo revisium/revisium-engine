@@ -412,18 +412,124 @@ describe('draft row changes', () => {
         expect.objectContaining(title),
       ]);
     });
+  });
 
-    it('says a row whose only stored difference is a formula output is computed', async () => {
-      const draft = await givenOrderWithOnlyItsFormulaOutputRewritten();
+  describe('changes without effect', () => {
+    it.each(PAGE_SIZES)(
+      'lists only the rows with an effect, on full pages of %i',
+      async (first) => {
+        const draft = await givenOrdersWithChangesWithoutEffect();
+
+        const pages = await draft.readEveryDraftRowPage({ first });
+
+        expect(rowItemsOf(pages).map(({ rowId }) => rowId)).toEqual([
+          'o1',
+          'o5',
+        ]);
+        expect(
+          pages.map(({ edges, pageInfo }) => [
+            edges.length,
+            pageInfo.hasNextPage,
+          ]),
+        ).toEqual(fullPagesOf(2, first));
+      },
+    );
+
+    it('lists no row under a filter that matches only rows without effect', async () => {
+      const draft = await givenOrdersWithChangesWithoutEffect();
+
+      const page = await draft.readDraftRowChanges({
+        first: 10,
+        filters: { search: 'o3' },
+      });
+
+      expect(page.edges).toEqual([]);
+      expect(page.pageInfo).toEqual({ hasNextPage: false, endCursor: null });
+    });
+
+    it('lists a row with an effect whose schema hash also differs, its row selector selecting the schema hash too', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateRow(PRODUCTS, 'p1', product('edited'));
+      await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: 'other' });
 
       const [item] = await readRowItems(draft);
+      const rowColumns = rowColumnsRef(PRODUCTS, 'p1', ['schemaHash']);
 
       expect(item).toMatchObject({
-        selection: { state: 'computed', units: [] },
-        fields: [],
-        columns: [],
+        changeType: ChangeType.Modified,
+        columns: [
+          {
+            column: 'schemaHash',
+            newValue: 'other',
+            selection: { state: 'unit', unit: rowColumns },
+          },
+        ],
+        selection: {
+          state: 'selectable',
+          units: [fieldRef(PRODUCTS, 'p1', '/title'), rowColumns],
+        },
       });
     });
+
+    it('commits through the table data selector it lists the schema hash of a row it does not list', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.updateRow(PRODUCTS, 'p1', product('edited'));
+      await draft.writeRowColumns(PRODUCTS, 'p2', { schemaHash: 'other' });
+      const [table] = (await draft.readDraftTableChanges({ first: 10 })).edges;
+      const selection =
+        table?.node.selection.state === 'selectable'
+          ? table.node.selection.tableData?.selector
+          : undefined;
+
+      await draft.commitChanges({ selection: selection ?? {} });
+
+      expect((await draft.row('head', PRODUCTS, 'p2')).schemaHash).toBe(
+        'other',
+      );
+      expect(await draft.hasChanges()).toBe(false);
+    });
+
+    async function givenOrdersWithChangesWithoutEffect(): Promise<ChangesScenario> {
+      const draft = await ChangesScenario.committed(kit, {
+        [ORDERS]: {
+          schema: orderSchema,
+          rows: Object.fromEntries(
+            ['o1', 'o2', 'o3', 'o4', 'o5'].map((rowId) => [
+              rowId,
+              { price: 49.9, quantity: 1, total: 49.9 },
+            ]),
+          ),
+        },
+      });
+      await draft.updateRow(ORDERS, 'o1', {
+        price: 54.5,
+        quantity: 1,
+        total: 0,
+      });
+      await draft.writeRowBelowNativeValidation(ORDERS, 'o2', {
+        price: 49.9,
+        quantity: 1,
+        total: 7,
+      });
+      await draft.writeRowColumns(ORDERS, 'o3', { schemaHash: 'other' });
+      await draft.updateRow(ORDERS, 'o4', {
+        price: 54.5,
+        quantity: 1,
+        total: 0,
+      });
+      await draft.updateRow(ORDERS, 'o4', {
+        price: 49.9,
+        quantity: 1,
+        total: 0,
+      });
+      await draft.updateRow(ORDERS, 'o5', {
+        price: 54.5,
+        quantity: 1,
+        total: 0,
+      });
+
+      return draft;
+    }
   });
 
   describe('structure changes', () => {
@@ -864,27 +970,6 @@ describe('draft row changes', () => {
       });
     });
 
-    it('reports a row whose only change is schemaHash under an unchanged structure with its rowColumns unit', async () => {
-      const draft = await givenCommittedProducts();
-      await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: 'other' });
-
-      const [item] = await readRowItems(draft);
-      const rowColumns = rowColumnsRef(PRODUCTS, 'p1', ['schemaHash']);
-
-      expect(item).toMatchObject({
-        selection: { state: 'selectable', units: [rowColumns] },
-        fields: [],
-        columns: [
-          {
-            column: 'schemaHash',
-            oldValue: expect.any(String),
-            newValue: 'other',
-            selection: { state: 'unit', unit: rowColumns },
-          },
-        ],
-      });
-    });
-
     it('gives a publishedAt change whose published-at field the structure removed its rowColumns unit, beside the structure', async () => {
       const draft = await givenCommittedArticle();
       await draft.updateRow(ARTICLES, 'a1', {
@@ -972,11 +1057,6 @@ describe('draft row changes', () => {
         row: 'a row that differs only in an added field',
         state: 'goesWith',
         given: givenProductsWithAnAddedField,
-      },
-      {
-        row: 'a row whose only stored difference is a formula output',
-        state: 'computed',
-        given: givenOrderWithOnlyItsFormulaOutputRewritten,
       },
     ])('gives $row an empty list of units', async ({ state, given }) => {
       const draft = await given();
@@ -1425,22 +1505,6 @@ describe('draft row changes', () => {
     });
   }
 
-  async function givenOrderWithOnlyItsFormulaOutputRewritten(): Promise<ChangesScenario> {
-    const draft = await ChangesScenario.committed(kit, {
-      [ORDERS]: {
-        schema: orderSchema,
-        rows: { o1: { price: 2, quantity: 3, total: 6 } },
-      },
-    });
-    await draft.writeRowBelowNativeValidation(ORDERS, 'o1', {
-      price: 2,
-      quantity: 3,
-      total: 7,
-    });
-
-    return draft;
-  }
-
   async function givenUnledgeredProductsWithAnEditedRow(): Promise<ChangesScenario> {
     const draft = await ChangesScenario.committed(kit, {
       [TAGS]: { schema: labelSchema },
@@ -1561,4 +1625,17 @@ function byRowId(left: NativeRowView, right: NativeRowView): number {
 
 function cursorOf(payload: Record<string, unknown>): string {
   return Buffer.from(JSON.stringify(payload)).toString('base64url');
+}
+
+// The [items, hasNextPage] of each page that pages of `first` give to `items` rows: full pages, the last one ending the read.
+function fullPagesOf(items: number, first: number): [number, boolean][] {
+  const pages: [number, boolean][] = [];
+
+  for (let listed = 0; listed < items; listed += first) {
+    const size = Math.min(first, items - listed);
+
+    pages.push([size, listed + size < items]);
+  }
+
+  return pages;
 }

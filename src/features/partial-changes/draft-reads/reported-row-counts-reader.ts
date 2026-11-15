@@ -8,6 +8,7 @@ import { TransactionPrismaService } from 'src/infrastructure/database/transactio
 
 export interface ReportedRowCounts extends RevisionChangeSummary {
   readonly rowsWithUnits: number;
+  readonly hasRowUnits: boolean;
 }
 
 @Injectable()

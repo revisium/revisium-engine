@@ -44,6 +44,7 @@ const NO_REPORTED_ROWS: ReportedRowCounts = {
   removed: 0,
   renamed: 0,
   rowsWithUnits: 0,
+  hasRowUnits: false,
 };
 
 @Injectable()
@@ -67,9 +68,11 @@ export class DraftTablesReader {
   }
 }
 
-// The tables a Draft read lists, in order, with their row counts read once per call.
+// The tables whose versions differ, in order, with their row counts read once per call.
 export class DraftTables {
   public readonly listed: readonly DraftTable[];
+
+  private shownTables?: Promise<DraftTable[]>;
 
   private readonly rowCounts = new Map<string, Promise<ReportedRowCounts>>();
   private tableCatalogue?: DraftCatalogue;
@@ -99,6 +102,13 @@ export class DraftTables {
     };
   }
 
+  // The tables a Draft read shows: a table whose content equals the last commit has no change with an effect.
+  public shown(): Promise<DraftTable[]> {
+    this.shownTables ??= this.tablesWithEffect();
+
+    return this.shownTables;
+  }
+
   public async matching({
     changeTypes,
     search,
@@ -110,7 +120,8 @@ export class DraftTables {
 
       if (
         hasIdContaining([draft?.id, head?.id], search) &&
-        (await this.matchesChangeTypes(table, changeTypes))
+        (await this.matchesChangeTypes(table, changeTypes)) &&
+        (await this.hasEffect(table))
       ) {
         matching.push(table);
       }
@@ -174,6 +185,35 @@ export class DraftTables {
     }
 
     return hasChangeTypeAmong(await this.changeTypeOf(table), changeTypes);
+  }
+
+  private async tablesWithEffect(): Promise<DraftTable[]> {
+    const shown: DraftTable[] = [];
+
+    for (const table of this.listed) {
+      if (await this.hasEffect(table)) {
+        shown.push(table);
+      }
+    }
+
+    return shown;
+  }
+
+  // Only a table with nothing but rows to show needs its row counts to tell.
+  private async hasEffect(table: DraftTable): Promise<boolean> {
+    const { pair } = table;
+
+    if (
+      this.catalogue.refusalOf(pair) ||
+      this.catalogue.structureOf(pair) ||
+      this.catalogue.viewsOf(pair)
+    ) {
+      return true;
+    }
+
+    const { total } = await this.rowCountsOf(table);
+
+    return total > 0;
   }
 
   private async changedBeyondTableId(table: DraftTable): Promise<boolean> {

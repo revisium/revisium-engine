@@ -39,7 +39,6 @@ const CHANGES_API_TYPES = [
   'CommitChangesResult',
   'CommittedDraft',
   'ComputedSelection',
-  'ContentEqualSelection',
   'DeferredPath',
   'DeferredRow',
   'DescribedUnitRef',
@@ -180,7 +179,7 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
     'wholeRowUnit',
   ],
   ROW_COLUMNS: ['meta', 'publishedAt', 'schemaHash'],
-  ROW_SELECTION_STATES: ['computed', 'goesWith', 'refused', 'selectable'],
+  ROW_SELECTION_STATES: ['goesWith', 'refused', 'selectable'],
   SELECTOR_SIDES: ['head'],
   STALE_CHANGES: ['content', 'operation', 'revisions', 'units', 'version'],
   STRUCTURE_FIELD_CHANGES: [
@@ -197,7 +196,7 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
     'replaced',
     'transient',
   ],
-  TABLE_SELECTION_STATES: ['contentEqual', 'refused', 'selectable'],
+  TABLE_SELECTION_STATES: ['refused', 'selectable'],
   UNIT_KINDS: [
     'field',
     'rowColumns',

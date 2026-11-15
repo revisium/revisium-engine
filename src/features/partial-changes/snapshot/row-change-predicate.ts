@@ -53,7 +53,7 @@ export function columnDiffers(column: ComparedRowColumn): Sql {
   return raw(`h."${column}" IS DISTINCT FROM d."${column}"`);
 }
 
-function leafDiffers(leaf: LeafOwner): Sql {
+export function leafDiffers(leaf: LeafOwner): Sql {
   const path = [...leaf.pointer.segments];
 
   return sql`(h."data" #> ${path}::text[]) IS DISTINCT FROM (d."data" #> ${path}::text[])`;

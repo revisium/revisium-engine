@@ -83,7 +83,6 @@ describe('Draft row reads over random Drafts', () => {
       const draft = await givenRandomDraft(kit, seed);
       const native = await draft.readNativeRowChanges();
       const all = await readEveryRow(draft);
-      const columns = new ReportedColumns(await readEveryTable(draft));
 
       for (const first of PAGE_SIZES) {
         expect(
@@ -91,12 +90,12 @@ describe('Draft row reads over random Drafts', () => {
         ).toEqual(all);
       }
 
-      expect(nativeViewsOf(all, columns).sort(byKey)).toEqual(
+      expect(nativeViewsOf(all).sort(byKey)).toEqual(
         native.map(viewOfNativeChange).sort(byKey),
       );
-      expect(
-        all.filter((item) => !isNativeChange(item, native, columns)),
-      ).toEqual(all.filter((item) => columns.differsOnlyInThem(item)));
+      expect(all.filter((item) => !isNativeChange(item, native))).toEqual(
+        all.filter(differsOnlyInRowColumns),
+      );
     },
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
@@ -112,7 +111,7 @@ describe('Draft row reads over random Drafts', () => {
       for (const table of tables) {
         expect([table.tableId, tableDataRowsOf(table)]).toEqual([
           table.tableId,
-          rowsWithUnitsOf(table, rows),
+          selectableRowsOf(table, rows),
         ]);
       }
 
@@ -124,7 +123,7 @@ describe('Draft row reads over random Drafts', () => {
   );
 
   it.each(RANDOM_DRAFT_SEEDS)(
-    'covers in a preview that selects the table data of a table the rows its table data counts, apart from computed-only rows, all applied (DR-05, AS-88, seed %i)',
+    'covers in a preview that selects the table data of a table the rows its table data counts, all applied (DR-05, AS-88, seed %i)',
     async (seed) => {
       const draft = await givenRandomDraft(kit, seed);
       const rows = await readEveryRow(draft);
@@ -339,60 +338,37 @@ function withoutUndefined(unit: object): object {
   );
 }
 
-// The native diff compares id and data only; the reads also compare publishedAt, meta, and schemaHash in a table whose
-// structure is unchanged (SPEC §3).
-class ReportedColumns {
-  private readonly changedStructures: ReadonlySet<string>;
-
-  constructor(tables: readonly DraftTableItem[]) {
-    this.changedStructures = new Set(
-      tables.flatMap(({ tableId, changeType, selection }) =>
-        changeType !== ChangeType.Added &&
-        changeType !== ChangeType.Removed &&
-        selection.state === 'selectable' &&
-        selection.structure
-          ? [tableId]
-          : [],
-      ),
-    );
-  }
-
-  public differsOnlyInThem(item: DraftRowItem): boolean {
-    return (
-      item.changeType === ChangeType.Modified &&
-      item.fields.length === 0 &&
-      this.differsIn(item)
-    );
-  }
-
-  public nativeChangeTypeOf(item: DraftRowItem): ChangeType {
-    if (
-      item.changeType === ChangeType.RenamedAndModified &&
-      item.fields.length === 0 &&
-      this.differsIn(item)
-    ) {
-      return ChangeType.Renamed;
-    }
-
-    return item.changeType;
-  }
-
-  private differsIn({ tableId, columns }: DraftRowItem): boolean {
-    return columns.some(
-      ({ column }) =>
-        column !== 'schemaHash' || !this.changedStructures.has(tableId),
-    );
-  }
+// The native diff compares id and data only; the reads also compare publishedAt and meta, and never report a
+// difference in schemaHash alone (SPEC §3).
+function differsOnlyInRowColumns(item: DraftRowItem): boolean {
+  return (
+    item.changeType === ChangeType.Modified &&
+    item.fields.length === 0 &&
+    differsInRowColumns(item)
+  );
 }
 
-function nativeViewsOf(
-  items: readonly DraftRowItem[],
-  columns: ReportedColumns,
-): RowChangeView[] {
+function nativeChangeTypeOf(item: DraftRowItem): ChangeType {
+  if (
+    item.changeType === ChangeType.RenamedAndModified &&
+    item.fields.length === 0 &&
+    differsInRowColumns(item)
+  ) {
+    return ChangeType.Renamed;
+  }
+
+  return item.changeType;
+}
+
+function differsInRowColumns({ columns }: DraftRowItem): boolean {
+  return columns.some(({ column }) => column !== 'schemaHash');
+}
+
+function nativeViewsOf(items: readonly DraftRowItem[]): RowChangeView[] {
   return items
-    .filter((item) => !columns.differsOnlyInThem(item))
+    .filter((item) => !differsOnlyInRowColumns(item))
     .map((item) => ({
-      key: keyOf(item.tableId, item.rowId, columns.nativeChangeTypeOf(item)),
+      key: keyOf(item.tableId, item.rowId, nativeChangeTypeOf(item)),
       fields: item.fields.map(({ path, changeType, oldValue, newValue }) => [
         path,
         changeType,
@@ -405,7 +381,6 @@ function nativeViewsOf(
 function isNativeChange(
   item: DraftRowItem,
   native: readonly RowChange[],
-  columns: ReportedColumns,
 ): boolean {
   return native.some(
     (change) =>
@@ -413,7 +388,7 @@ function isNativeChange(
         tableIdOfNative(change),
         rowIdOfNative(change),
         change.changeType,
-      ) === keyOf(item.tableId, item.rowId, columns.nativeChangeTypeOf(item)),
+      ) === keyOf(item.tableId, item.rowId, nativeChangeTypeOf(item)),
   );
 }
 
@@ -475,18 +450,6 @@ function tableDataRowsOf({ selection }: DraftTableItem): number {
   }
 
   return selection.tableData?.rows ?? 0;
-}
-
-// Selectable rows count by their row selector; a row whose only stored difference is computed counts too (§4).
-function rowsWithUnitsOf(
-  table: DraftTableItem,
-  rows: readonly DraftRowItem[],
-): number {
-  const computed = rowsOfTable(table, rows).filter(
-    ({ selection }) => selection.state === 'computed',
-  );
-
-  return selectableRowsOf(table, rows) + computed.length;
 }
 
 // The rows with units, each counted by its row selector: what a plan covers (partial-changes-v1 §5.1).

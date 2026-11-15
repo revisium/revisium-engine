@@ -1,4 +1,4 @@
-import { num, obj, str } from '@revisium/schema-toolkit/mocks';
+import { num, numFormula, obj, str } from '@revisium/schema-toolkit/mocks';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -8,7 +8,6 @@ import {
   removeField,
   replaceField,
 } from 'src/__tests__/fixtures/ledger-steps';
-import type { RowColumnsEdit } from 'src/__tests__/fixtures/branch-scenario';
 import {
   describeMigration,
   pendingMigrationIds,
@@ -19,6 +18,7 @@ import {
   encodeTableCursor,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
 import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
+import type { SelectionItems } from 'src/features/partial-changes/selection/selection';
 import type {
   DraftTableItem,
   DraftTablePage,
@@ -49,9 +49,15 @@ const PURCHASES = 'purchases';
 const NOTES = 'notes';
 const MEMOS = 'memos';
 const TAGS = 'tags';
+const TOTALS = 'totals';
 
 const productSchema = obj({ title: str(), price: num() });
 const labelSchema = obj({ label: str() });
+const totalSchema = obj({
+  price: num(),
+  quantity: num(),
+  total: numFormula('price * quantity'),
+});
 const orderViews = viewsNamed('Labels');
 
 const NO_VIEWS_CHANGE: ViewsChangeDetail = {
@@ -167,15 +173,6 @@ describe('draft table changes', () => {
       ]);
     });
 
-    it('says a table whose changed row versions are all content-equal has nothing to select', async () => {
-      const draft = await givenCommittedTables();
-      await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 1 });
-
-      expect(selectionsOf(await readTableItems(draft))).toEqual([
-        [PRODUCTS, ChangeType.Modified, { state: 'contentEqual' }],
-      ]);
-    });
-
     it('refuses the tables of a project without a migration table and returns them on the page', async () => {
       const draft = await ChangesScenario.committedWithoutLedger(kit, {
         [TAGS]: { schema: labelSchema, rows: { t1: { label: 'one' } } },
@@ -226,6 +223,159 @@ describe('draft table changes', () => {
       ]);
       expect(summary.tablesSummary).toMatchObject({ total: 2, replaced: 1 });
     });
+  });
+
+  describe('changes without effect', () => {
+    it.each<{ change: string; given: () => Promise<ChangesScenario> }>([
+      {
+        change: 'a price edited and set back to its committed value',
+        given: givenPriceEditedAndSetBack,
+      },
+      {
+        change: 'a row whose only stored difference is a formula output',
+        given: givenOnlyAFormulaOutputRewritten,
+      },
+      {
+        change: 'a row that differs only in its schema hash',
+        given: givenOnlyASchemaHashRewritten,
+      },
+    ])(
+      'neither lists nor counts a table whose only change is $change, on every page',
+      async ({ given }) => {
+        const draft = await given();
+
+        const pages = await draft.readEveryDraftTablePage({ first: 1 });
+
+        expect(pages.map(tableNamesOfPage)).toEqual([
+          { tables: [ORDERS], totalCount: 1, hasNextPage: false },
+        ]);
+      },
+    );
+
+    it('counts in a table only its rows with an effect', async () => {
+      const draft = await givenCommittedTotals();
+      await draft.updateRow(TOTALS, 't1', { price: 3, quantity: 3, total: 0 });
+      await draft.writeRowBelowNativeValidation(TOTALS, 't2', {
+        price: 2,
+        quantity: 3,
+        total: 7,
+      });
+      await draft.writeRowColumns(TOTALS, 't3', { schemaHash: 'other' });
+
+      const [item] = await readTableItems(draft);
+
+      expect(item).toMatchObject({
+        tableId: TOTALS,
+        rowsSummary: {
+          total: 1,
+          added: 0,
+          modified: 1,
+          removed: 0,
+          renamed: 0,
+        },
+        selection: {
+          state: 'selectable',
+          tableData: { selector: { tableData: [TOTALS] }, rows: 1 },
+        },
+      });
+    });
+
+    it('offers the table data selector of a listed table whose only row change has no effect, counting no row', async () => {
+      const draft = await givenViewsEditedBesideASchemaHashOnlyRow();
+
+      expect(selectionsOf(await readTableItems(draft))).toEqual([
+        [
+          ORDERS,
+          ChangeType.Modified,
+          {
+            state: 'selectable',
+            views: viewsRef(ORDERS),
+            tableData: { selector: { tableData: [ORDERS] }, rows: 0 },
+          },
+        ],
+      ]);
+    });
+
+    it.each<{ table: string; given: () => Promise<ChangesScenario> }>([
+      {
+        table: 'listed for its views',
+        given: givenViewsEditedBesideASchemaHashOnlyRow,
+      },
+      {
+        table: 'listed for its structure',
+        given: givenStructureChangedBesideASchemaHashOnlyRow,
+      },
+    ])(
+      'leaves no unit behind when every selector of a table $table is committed, also of a row it does not list',
+      async ({ given }) => {
+        const draft = await given();
+
+        for (const selection of selectorsOf(await readTableItems(draft))) {
+          await draft.commitChanges({ selection });
+        }
+
+        expect(await draft.listEveryUnit()).toEqual([]);
+      },
+    );
+
+    async function givenViewsEditedBesideASchemaHashOnlyRow(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTables();
+      await draft.updateViews(ORDERS, orderViews);
+      await draft.writeRowColumns(ORDERS, 'o1', { schemaHash: 'other' });
+
+      return draft;
+    }
+
+    async function givenStructureChangedBesideASchemaHashOnlyRow(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTables();
+      await draft.updateTable(ORDERS, [addField('color', str())]);
+      await draft.writeRowColumns(ORDERS, 'o1', { schemaHash: 'other' });
+
+      return draft;
+    }
+
+    async function givenPriceEditedAndSetBack(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTables();
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 54.5 });
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'one', price: 1 });
+      await draft.updateRow(ORDERS, 'o1', { label: 'edited' });
+
+      return draft;
+    }
+
+    async function givenOnlyAFormulaOutputRewritten(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTotals();
+      await draft.writeRowBelowNativeValidation(TOTALS, 't1', {
+        price: 2,
+        quantity: 3,
+        total: 7,
+      });
+      await draft.updateRow(ORDERS, 'o1', { label: 'edited' });
+
+      return draft;
+    }
+
+    async function givenOnlyASchemaHashRewritten(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTables();
+      await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: 'other' });
+      await draft.updateRow(ORDERS, 'o1', { label: 'edited' });
+
+      return draft;
+    }
+
+    function givenCommittedTotals(): Promise<ChangesScenario> {
+      return ChangesScenario.committed(kit, {
+        [ORDERS]: { schema: labelSchema, rows: { o1: { label: 'one' } } },
+        [TOTALS]: {
+          schema: totalSchema,
+          rows: {
+            t1: { price: 2, quantity: 3, total: 6 },
+            t2: { price: 2, quantity: 3, total: 6 },
+            t3: { price: 2, quantity: 3, total: 6 },
+          },
+        },
+      });
+    }
   });
 
   describe('ids', () => {
@@ -438,7 +588,7 @@ describe('draft table changes', () => {
       {
         filter: 'no filter',
         totalCount: 3,
-        reads: { [MEMOS]: 1, [PRODUCTS]: 0, [PURCHASES]: 0 },
+        reads: { [MEMOS]: 1, [PRODUCTS]: 1, [PURCHASES]: 0 },
       },
       {
         filter: 'ADDED, which no renamed table can match',
@@ -456,10 +606,10 @@ describe('draft table changes', () => {
         filter: 'MODIFIED, which needs the change type of every renamed table',
         changeTypes: [ChangeType.Modified],
         totalCount: 2,
-        reads: { [MEMOS]: 1, [PRODUCTS]: 0, [PURCHASES]: 1 },
+        reads: { [MEMOS]: 1, [PRODUCTS]: 1, [PURCHASES]: 1 },
       },
     ])(
-      'reads with $filter the row counts of the page and of an off-page renamed table only when the filter needs its change type',
+      'reads with $filter the row counts of the page, of an off-page table with only rows to show that the filter matches, and of an off-page renamed table only when the filter needs its change type',
       async ({ changeTypes, totalCount, reads }) => {
         const draft = await givenModifiedRenamedAndRenamedModifiedTables();
 
@@ -943,7 +1093,7 @@ describe('draft table changes', () => {
       });
     });
 
-    it('counts a renamed row whose schema hash differs under an unchanged structure as renamed and modified', async () => {
+    it('counts a renamed row whose schema hash differs under an unchanged structure as renamed only', async () => {
       const draft = await givenCommittedProductRows();
       await draft.renameRow(PRODUCTS, 'p1', 'p10');
       await draft.writeRowColumns(PRODUCTS, 'p10', { schemaHash: 'other' });
@@ -953,7 +1103,7 @@ describe('draft table changes', () => {
       expect(item?.rowsSummary).toEqual({
         total: 1,
         added: 0,
-        modified: 1,
+        modified: 0,
         removed: 0,
         renamed: 1,
       });
@@ -970,29 +1120,22 @@ describe('draft table changes', () => {
       expect(item?.rowsSummary).toMatchObject({ total: 1, modified: 1 });
     });
 
-    it.each<{ column: string; columns: RowColumnsEdit }>([
-      {
-        column: 'publishedAt',
-        columns: { publishedAt: '2026-01-01T00:00:00.000Z' },
-      },
-      { column: 'schemaHash', columns: { schemaHash: 'other' } },
-    ])(
-      'counts a row that differs only in $column under an unchanged structure as modified',
-      async ({ columns }) => {
-        const draft = await givenCommittedProductRows();
-        await draft.writeRowColumns(PRODUCTS, 'p1', columns);
+    it('counts a row that differs only in publishedAt under an unchanged structure as modified', async () => {
+      const draft = await givenCommittedProductRows();
+      await draft.writeRowColumns(PRODUCTS, 'p1', {
+        publishedAt: '2026-01-01T00:00:00.000Z',
+      });
 
-        const [item] = await readTableItems(draft);
+      const [item] = await readTableItems(draft);
 
-        expect(item?.rowsSummary).toEqual({
-          total: 1,
-          added: 0,
-          modified: 1,
-          removed: 0,
-          renamed: 0,
-        });
-      },
-    );
+      expect(item?.rowsSummary).toEqual({
+        total: 1,
+        added: 0,
+        modified: 1,
+        removed: 0,
+        renamed: 0,
+      });
+    });
 
     it('counts each edited row once in the table data, however many of its fields changed', async () => {
       const draft = await givenCommittedProductRows();
@@ -1292,21 +1435,22 @@ describe('draft table changes', () => {
       );
     });
 
-    it('reads the row links of each table on the page once, of no table off the page, and no native diff', async () => {
+    it('reads the row links of each table once, off the page only of a table that has nothing but rows to show, and no native diff', async () => {
       const draft = await givenCommittedTables();
+      await draft.updateRow(NOTES, 'n1', { label: 'edited' });
       await draft.updateRow(ORDERS, 'o1', { label: 'edited' });
-      await draft.updateRow(PRODUCTS, 'p1', { title: 'edited', price: 1 });
+      await draft.updateTable(PRODUCTS, [addField('color', str())]);
 
       const { result, linkSetReads, nativeDiffReads } =
         await draftReadQueriesDuring(
           kit,
-          await draft.linkSetsOf([ORDERS, PRODUCTS]),
+          await draft.linkSetsOf([NOTES, ORDERS, PRODUCTS]),
           () => draft.readDraftTableChanges({ first: 1 }),
         );
 
-      expect(nodesOf(result).map(({ tableId }) => tableId)).toEqual([ORDERS]);
-      expect(result.totalCount).toBe(2);
-      expect(linkSetReads).toEqual({ [ORDERS]: 1, [PRODUCTS]: 0 });
+      expect(nodesOf(result).map(({ tableId }) => tableId)).toEqual([NOTES]);
+      expect(result.totalCount).toBe(3);
+      expect(linkSetReads).toEqual({ [NOTES]: 1, [ORDERS]: 1, [PRODUCTS]: 0 });
       expect(nativeDiffReads).toEqual([]);
     });
   });
@@ -1390,6 +1534,20 @@ function selectionsOf(items: readonly DraftTableItem[]): TableSelectionView[] {
     changeType,
     selection,
   ]);
+}
+
+function selectorsOf(items: readonly DraftTableItem[]): SelectionItems[] {
+  return items.flatMap(({ selection }) => {
+    if (selection.state !== 'selectable') {
+      return [];
+    }
+
+    const { structure, views, tableData } = selection;
+
+    return [structure?.selector, views?.selector, tableData?.selector].filter(
+      (selector): selector is SelectionItems => selector !== undefined,
+    );
+  });
 }
 
 function idsOf({

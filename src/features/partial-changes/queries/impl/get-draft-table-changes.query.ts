@@ -25,17 +25,9 @@ export interface DraftTableChangesInput {
   readonly filters?: DraftTableChangesFilters | null;
 }
 
-export const TABLE_SELECTION_STATES = [
-  'refused',
-  'contentEqual',
-  'selectable',
-] as const;
+export const TABLE_SELECTION_STATES = ['refused', 'selectable'] as const;
 
 export type TableSelectionState = (typeof TABLE_SELECTION_STATES)[number];
-
-export interface ContentEqualSelection {
-  readonly state: 'contentEqual';
-}
 
 export interface TableData {
   readonly selector: SelectionItems;
@@ -49,10 +41,7 @@ export interface SelectableTableSelection {
   readonly tableData?: TableData;
 }
 
-export type TableSelection =
-  | RefusedSelection
-  | ContentEqualSelection
-  | SelectableTableSelection;
+export type TableSelection = RefusedSelection | SelectableTableSelection;
 
 export interface DraftTableItem {
   readonly tableId: string;

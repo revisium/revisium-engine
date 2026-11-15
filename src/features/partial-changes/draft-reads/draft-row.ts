@@ -227,10 +227,6 @@ class DraftRow {
       return this.selectableRow(units);
     }
 
-    if (this.loadedRow()) {
-      return withoutOwnUnits(COMPUTED);
-    }
-
     return withoutOwnUnits(this.goesWithStructure('structureBound'));
   }
 
@@ -409,7 +405,7 @@ class DraftRow {
 }
 
 function withoutOwnUnits(
-  selection: RefusedSelection | GoesWithSelection | typeof COMPUTED,
+  selection: RefusedSelection | GoesWithSelection,
 ): RowSelection {
   return { ...selection, units: [] };
 }

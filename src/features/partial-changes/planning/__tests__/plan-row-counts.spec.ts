@@ -223,6 +223,36 @@ describe('the rows a plan applies, by kind (SPEC §5.1, AS-101)', () => {
     });
   });
 
+  it('counts a row as selected when its only selected unit is its hidden schemaHash change and the closure adds its value (AS-101)', async () => {
+    const draft = await ChangesScenario.committed(kit, {
+      [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },
+      [PRODUCTS]: {
+        schema: productSchema,
+        rows: { p1: { title: 'one', category: 'c1' } },
+      },
+    });
+    await draft.createRows(CATEGORIES, { c9: { title: 'nine' } });
+    await draft.updateRow(PRODUCTS, 'p1', { title: 'one', category: 'c9' });
+    await draft.writeRowColumns(PRODUCTS, 'p1', { schemaHash: 'other' });
+
+    const preview = await draft.previewChanges({
+      operation: 'revert',
+      selection: {
+        rows: [rowOf(CATEGORIES, 'c9')],
+        rowColumns: [rowOf(PRODUCTS, 'p1')],
+      },
+    });
+
+    expect(preview).toMatchObject({
+      status: 'required',
+      counts: { selected: 2, required: 1 },
+      rowCounts: {
+        selected: rowsOf({ total: 2, added: 1, modified: 1 }),
+        required: NO_ROWS,
+      },
+    });
+  });
+
   it('counts the rows of neither a created table nor a structure, whose rows go with it', async () => {
     const draft = await ChangesScenario.committed(kit, {
       [CATEGORIES]: { schema: categorySchema, rows: { c1: { title: 'one' } } },

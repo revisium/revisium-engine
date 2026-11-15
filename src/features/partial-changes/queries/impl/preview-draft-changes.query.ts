@@ -25,7 +25,8 @@ export interface PreviewChangesInput {
 }
 
 export interface PreviewBase {
-  // When the preview started reading, by the engine's clock, which also stamps a row's last change (SPEC §9.2).
+  // When the preview started reading, by the application clock. A display hint for a stale result's places, not a
+  // freshness check: rows created natively or by an operation carry the database clock (SPEC §9.2).
   readonly plannedAt: Date;
   readonly headRevisionId: string;
   readonly draftRevisionId: string;

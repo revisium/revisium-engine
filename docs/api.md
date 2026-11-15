@@ -717,7 +717,7 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | --- | --- |
 | `status` | `ready`, `required`, `blocked` or `empty` (see [Statuses](#statuses)). |
 | `planned` | `false` only when a limit stopped the plan; then `status` is `blocked` with a `tooLarge` blocker. |
-| `plannedAt` | When the preview started reading, by the engine's clock; compare a `stale` result's `places` with it (see [The fingerprint](#the-fingerprint-and-stale)). |
+| `plannedAt` | When the preview started reading, by the application clock; a display hint for a `stale` result's `places`, not a freshness check (see [The fingerprint](#the-fingerprint-and-stale)). |
 | `headRevisionId`, `draftRevisionId` | The revisions the plan was made on. |
 | `fingerprint` | Pass it as `expected` to `commit` or `revert`; `null` when not `planned`. |
 | `counts` | `{ selected, required }`: selected units and required additions (`counts.required` equals `requiredTotal`); `null` when not `planned`. Units, not rows: a row with three edited values is three units. |
@@ -940,11 +940,15 @@ The fingerprint holds digests, not a list, and the engine keeps no plan between 
 `stale` result cannot name the units that changed since the preview. `places` names where the operation applies now:
 rows (`tableId`, `rowId`, `side`), tables (`structure` or `views`) and shared schemas, each with the kinds of its
 applied units and `changedAt`, the stored time of its last change (`null` for a deleted row), most recent first, at
-most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` of them with `placesTotal` counting all. The places whose `changedAt` is
-later than the preview's `plannedAt` changed after it: «The draft changed while you were picking: p-1042 was edited
-again. Your selection is kept.» Treat it as a display hint: a unit that disappeared is not a place (`unmatched` names
-selectors that match nothing now), a row edit that makes a selected schema change stale shows only as `content`, and
-clocks of different engine instances can differ a little ([SPEC §9.2](specs/partial-changes-v1.spec.md#92-rules)).
+most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` of them with `placesTotal` counting all. Name the places with
+`changedAt >= plannedAt` as changed after the preview: «The draft changed while you were picking: p-1042 was edited
+again. Your selection is kept.» This is a display hint; `changed` is the only freshness check. It can miss or
+over-report a place: `plannedAt` is the application clock, while `changedAt` is the application clock for native
+updates and renames but the database clock for created rows and for rows a partial commit or revert assembled, so
+the clocks can differ; times are stored to the millisecond, and `>=` errs towards naming a write of the same
+millisecond. A unit that disappeared is not a place (`unmatched` names selectors that match nothing now), and a row
+edit that makes a selected schema change stale shows only as `content`
+([SPEC §9.2](specs/partial-changes-v1.spec.md#92-rules)).
 
 A request with `expected` is never applied twice: a repeat, also a concurrent one, is `empty`, or `stale` when its
 selection now resolves to other units. A request without `expected` resolves its selection again on every call.

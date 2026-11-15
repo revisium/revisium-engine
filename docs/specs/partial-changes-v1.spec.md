@@ -478,7 +478,11 @@ a row with three edited fields is three units and one row.
 - `partlyApplied` counts the rows of which the plan applies some shown units but not all, for example one of two
   edited values; the client says «1 value of p-1042» instead of «1 row». Its own selection says which values it picked.
 - A row counts in `selected` when one of its applied units is selected, otherwise in `required`, so each row counts
-  in one of them.
+  in one of them. Membership is asked of all its applied units, the hidden `schemaHash` unit included, while the
+  kinds and `partlyApplied` use the shown units only. So a row whose only selected unit is its hidden `schemaHash`
+  change, and whose shown change the closure added, counts in `selected`: the caller selected that row (its
+  `rowColumns` selector), and counting it as added automatically would tell the user the engine picked a row they
+  picked themselves.
 - Operations count the same for a commit and a revert: the kind is that of the Draft change the operation applies or
   takes back.
 - Rows that go with a structure unit have no units of their own (the rows of a created or removed table; values of
@@ -718,7 +722,7 @@ Output:
 | --- | --- | --- |
 | `status` | `'ready' \| 'required' \| 'blocked' \| 'empty'` | §5.6. |
 | `planned` | boolean | `true` when the plan ran to its end; `false` only when a limit stopped it (`tooLarge`, §6.2 step 5, §6.5), and then `status` is `blocked`. |
-| `plannedAt` | timestamp | When the preview started reading, by the engine's clock, the clock native writers stamp a row's last change with; a client compares a `stale` result's places with it (§9.2). |
+| `plannedAt` | timestamp | When the preview started reading, by the application clock of the engine instance that served it. A display hint for the places of a `stale` result, not a freshness check (§9.2). |
 | `headRevisionId` | string | Head the plan was made on. |
 | `draftRevisionId` | string | Draft the plan was made on. |
 | `fingerprint` | string, or `null` when not `planned` | §9. |
@@ -1946,12 +1950,19 @@ the preview does not fix them.
   | `sharedSchema` | `sharedSchemaId` | The latest `updatedAt` of its Head and Draft rows. |
 
   A `rowColumns` unit that owns only `schemaHash` is no place (§5.1). The preview returns `plannedAt`, taken by the
-  engine's clock before it reads; the places whose `changedAt` is later changed after the preview: «p-1042 was edited
-  again». This is a hint for display, not a second freshness check, which `changed` remains:
-  - Content edits of rows and of a table's schema, views or migrations show up by their time. A row's `updatedAt` is
-    stamped by the writer of the change (the engine's clock, or the database's where a writer leaves it to the
-    column default), so clocks that differ between engine instances or the database can show a place a little before or
-    after `plannedAt`.
+  application clock before it reads. A client may name the places whose `changedAt` is not earlier than `plannedAt`
+  as changed after the preview: «p-1042 was edited again». This is a display hint and `changed` remains the only
+  freshness check; the hint can miss a place or name one too many:
+  - **Two clocks.** `plannedAt` is the application clock of the instance that served the preview. A row's `updatedAt`
+    is stamped by whoever wrote that row version: native updates and renames of rows and async migration batches use
+    the application clock of the instance that wrote it; native row creation and the row versions a partial commit or
+    revert assembles leave it to the column default, the database clock. The common «edited again» case, a native
+    update, compares two application clocks; a created row, or one written by another instance, compares clocks that
+    can differ by their skew. Within that difference a place can be missed or over-reported.
+  - **Milliseconds.** Both times are stored to the millisecond, so a write in the millisecond the preview started
+    cannot be ordered against it. The rule `changedAt >= plannedAt` (recommended) names such a write, erring towards
+    over-reporting a place the preview may already have seen; `changedAt > plannedAt` errs towards missing it.
+  - Content edits of a table's schema, views or migrations show by the same rule through their system rows.
   - A unit that disappeared (the selection now matches less) is no place; `unmatched` names a selector that matches
     nothing now, and `changed: ['units']` says that the units differ. A deleted row has no time.
   - A row edit that makes a selected structure stale through the structure digest (§9.1) shows only as `content`: the
@@ -1959,7 +1970,7 @@ the preview does not fix them.
   - With `changed: ['revisions']` only (a partial commit of other units), the places may all be older than
     `plannedAt`.
   Listing the places costs no read: the plan holds the applied units with their row versions and system rows; it sorts
-  them, O(n log n) for n applied units. Before v2.13 a `stale` result had no places.
+  them, O(n log n) for n applied units. Before v2.14 a `stale` result had no places.
 
 ## 10. Migration history and replicas
 

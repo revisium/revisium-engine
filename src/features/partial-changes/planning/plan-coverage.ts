@@ -175,16 +175,18 @@ function coverageOfTable(
 
 // A row counts by its units that the Draft reads show: a rowColumns unit that owns only schemaHash is a technical
 // difference no read shows, so a row with nothing else applied is no row, and leaving it out leaves no row partly
-// applied.
+// applied. Whether the row is selected is asked of all its applied units, the hidden one included: the caller selected
+// the row (SPEC §5.1).
 function countShownRow(
   rowUnits: readonly CatalogueUnit[],
   { applied, selected }: AppliedUnitKeys,
   tallies: Record<keyof PlanRowCounts, RowTally>,
 ): void {
+  const appliedUnits = rowUnits.filter(({ key }) => applied.has(key));
   const shown = rowUnits.filter(({ unit }) => !isOnlySchemaHash(unit));
-  const appliedUnits = shown.filter(({ key }) => applied.has(key));
+  const appliedShown = shown.filter(({ key }) => applied.has(key));
 
-  if (appliedUnits.length === 0) {
+  if (appliedShown.length === 0) {
     return;
   }
 
@@ -193,8 +195,8 @@ function countShownRow(
     : 'required';
 
   tallies[group].add(
-    new Set(appliedUnits.map(({ unit }) => rowKindOf(unit))),
-    appliedUnits.length < shown.length,
+    new Set(appliedShown.map(({ unit }) => rowKindOf(unit))),
+    appliedShown.length < shown.length,
   );
 }
 

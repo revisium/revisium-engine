@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { TargetWritePlan } from 'src/features/draft-revision/commands/impl';
+import type {
+  TableWritePlan,
+  TargetWritePlan,
+} from 'src/features/draft-revision/commands/impl';
 import { DraftRevisionTargetApiService } from 'src/features/draft-revision/draft-revision-target-api.service';
 import { DraftWriteAdmissionService } from 'src/features/draft/draft-write-admission.service';
 import type {
@@ -40,8 +43,12 @@ import {
   validateRequiredAdditionsAcceptance,
   validateSelection,
 } from 'src/features/partial-changes/selection/selection-validator';
-import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import type {
+  ChangesBranch,
+  ComparedTable,
+} from 'src/features/partial-changes/snapshot/changes-snapshot';
 import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
+import { TableEffectCheck } from 'src/features/partial-changes/writing/table-effect-check';
 import { draftFollowsHeadPlanOf } from 'src/features/partial-changes/writing/target-write-plan-mapping';
 import type { DeadlineHandle } from 'src/infrastructure/database/operation-deadline';
 import { OperationTransactionRunner } from 'src/infrastructure/database/operation-transaction-runner';
@@ -67,6 +74,7 @@ export class ChangeApplier {
     private readonly limits: PartialChangesLimits,
     private readonly snapshotReader: ChangesSnapshotReader,
     private readonly draftRevisionTargetApi: DraftRevisionTargetApiService,
+    private readonly effectCheck: TableEffectCheck,
   ) {}
 
   public apply<Applied>(
@@ -123,7 +131,7 @@ export class ChangeApplier {
     deadline: DeadlineHandle,
     trace: OperationTrace,
   ): Promise<NothingToApply> {
-    const normalisation = normalisationOf(plan, request);
+    const normalisation = await this.normalisationOf(plan, request);
 
     if (!normalisation) {
       return nothingToApplyOf(
@@ -152,6 +160,55 @@ export class ChangeApplier {
     trace.planned(() => ({ ...plannedFieldsOf(plan), relinkedTables }));
 
     return draftHasChanges;
+  }
+
+  // Only exactly { all: true } reads every table; a narrower selection leaves the tables it did not read as they are
+  // (SPEC §3.8).
+  private async normalisationOf(
+    plan: CompletePlan,
+    { selection }: ApplyRequest,
+  ): Promise<TargetWritePlan | undefined> {
+    if (!selectsWholeDraft(selection)) {
+      return undefined;
+    }
+
+    const normalisation = draftFollowsHeadPlanOf(plan.target);
+
+    if (normalisation.tables.length === 0) {
+      return undefined;
+    }
+
+    const tables: TableWritePlan[] = [];
+
+    for (const table of normalisation.tables) {
+      tables.push(await this.followingHeadWithoutEffect(table, plan));
+    }
+
+    return { ...normalisation, tables };
+  }
+
+  // A user table whose remaining differences have no effect links its Head version: its content check is that of the
+  // Draft reads, which leaves out schema hashes and formula outputs. Any other table keeps the content check of a
+  // relink candidate.
+  private async followingHeadWithoutEffect(
+    table: TableWritePlan,
+    plan: CompletePlan,
+  ): Promise<TableWritePlan> {
+    const compared = clearableTableOf(table, plan);
+
+    if (
+      !compared ||
+      table.headVersionId === undefined ||
+      (await this.effectCheck.hasChangeWithEffect(compared))
+    ) {
+      return table;
+    }
+
+    return {
+      ...table,
+      target: { kind: 'linked', versionId: table.headVersionId },
+      relinkCandidate: false,
+    };
   }
 
   private admitDraftWrite({
@@ -191,23 +248,29 @@ function applyRequestOf(
   };
 }
 
-// Only exactly { all: true } reads every table; a narrower selection leaves the tables it did not read as they are
-// (SPEC §3.8).
-function normalisationOf(
-  plan: CompletePlan,
-  { selection }: ApplyRequest,
-): TargetWritePlan | undefined {
-  if (!selectsWholeDraft(selection)) {
+// A user table the reads analyse: not refused, with an unchanged structure (else it would have a structure unit).
+function clearableTableOf(
+  { identity }: TableWritePlan,
+  { target: { source } }: CompletePlan,
+): ComparedTable | undefined {
+  const compared = source.tables.find((table) => table.identity === identity);
+  const pair = source.snapshot.tables.find(
+    (table) => table.identity === identity,
+  );
+  const refused = new Set(
+    source.catalogue.refusedTables.map(({ tableId }) => tableId),
+  );
+
+  if (
+    !compared ||
+    !pair?.head ||
+    compared.structure.differs ||
+    refused.has(pair.head.id)
+  ) {
     return undefined;
   }
 
-  const normalisation = draftFollowsHeadPlanOf(plan.target);
-
-  if (normalisation.tables.length === 0) {
-    return undefined;
-  }
-
-  return normalisation;
+  return compared;
 }
 
 function nothingToApplyOf(

@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.11 |
+| Version | 2.12 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -222,6 +222,37 @@ check per table on every operation (AS-74). A preview writes nothing; its `empty
 Draft's stored flag, so `true` there for exactly `{ all: true }` says that applying it normalises the Draft. Before
 v2.6 such an operation returned `empty` and wrote nothing, and only native `createRevision` or `revertChanges` cleared
 the Draft, while `{ all: true, exclude: {…} }` applied together with a unit did (AS-52).
+
+**Changes without effect.** Exactly `{ all: true }` also clears the other changes without effect that the Draft reads
+do not show ([draft-reads-v1](draft-reads-v1.spec.md) §3): a row that differs from Head only in a formula output that
+the structure keeps, and a row that differs only in `schemaHash` under an unchanged structure. So a Draft whose every
+difference is without effect ends without changes and without a new revision:
+
+- When every unit of the Draft is a `rowColumns` unit that owns only `schemaHash`, exactly `{ all: true }` selects none
+  of them: the plan is `empty` (no counts, no coverage, the fingerprint of a plan without units), it still reads every
+  table, and the normalisation above runs. With any other unit it selects every unit as before.
+- In the normalisation, a user table that is not refused and whose structure is unchanged links its Head version when
+  the content check of the Draft reads finds no change with an effect in it: no row on one side only and no pair that
+  differs in `id`, the stored values at the leaves the catalogue compares, `publishedAt` or `meta`. That check leaves
+  out `schemaHash` and the formula outputs the structure keeps, and it is still a content check: a change with an
+  effect that change detection missed keeps the Draft version. Every other table (a system table, a refused table)
+  keeps the content check of §6.14 step 4.
+- Why dropping those Draft row versions loses nothing: a formula output is computed from the row's own stored values
+  by the table's schema on every read, and the structure (with the formula) is the same on both sides, so every value
+  a read returns is the same; the stored output only serves a filter or an order on that field, which then reads as in
+  Head. The `schemaHash` of a row is technical state: the row invariant on it is a scan diagnostic, not a native
+  invariant (§6.10, predicate (a)), nothing selects or migrates rows by it, and the Head version it links carries the
+  hash its Head schema had, which is also what a native table rename leaves on the rows of the referencing tables.
+  Formula definitions and inputs in other tables are not this case: a changed formula is a structure change, and
+  formulas read only their own row.
+- A Draft that also holds changes with an effect is planned as before: a commit of exactly `{ all: true }` applies
+  every unit, the `schemaHash` differences with their `rowColumns` units, and publishes a table without an applied
+  unit as the Draft holds it (a stale stored formula output reaches Head as stored, and every read still computes it),
+  so the new Draft equals Head; a revert of exactly `{ all: true }` leaves the Draft equal to Head.
+- A narrower selection keeps its scope as above.
+
+The summary of the Draft reads says when a Draft holds only changes without effect (`onlyChangesWithoutEffect`,
+[draft-reads-v1](draft-reads-v1.spec.md) §6), so a client can run or offer exactly `{ all: true }`.
 
 ## 4. Selection
 
@@ -2345,6 +2376,14 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   and the new default; a reference given to a text field, or pointed at another table, reads `changed` with each
   side's `foreignKey`. A replaced table describes each field against the removed Head table; a created or removed
   table has no field.
+- AS-100 Changes without effect (§3.8). A Draft that holds only a row whose stored formula output differs from Head,
+  only a row whose `schemaHash` differs, or both with a table edited and set back: a preview of exactly `{ all: true }`
+  is `empty` with `counts` `{ selected: 0, required: 0 }` and `draftHasChanges: true`; its commit or revert is `empty`
+  with `draftHasChanges: false`, Head and the Draft keep their revision ids, the commit writer is not called, Head is
+  unchanged and every Draft table version is its Head version; `{ all: true, exclude: {} }` on the formula-only Draft is
+  `empty` and writes nothing; when the content check of the Draft reads finds a change with an effect, the Draft version
+  stays. Beside a change with an effect, a commit of exactly `{ all: true }` is `applied`, Head gets the `schemaHash`
+  and the stored formula output, and a revert of it is `applied`; both leave every Draft table version equal to Head.
 
 ## 14. Test strategy
 
@@ -2493,6 +2532,14 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.12 (2026-11-15)
+
+- §3.8, AS-100: exactly `{ all: true }` also clears rows that differ only in a stored formula output or only in
+  `schemaHash`: when the Draft's only units own nothing but `schemaHash` it selects none of them and is `empty`; the
+  normalisation links the Head version of a user table without a change with an effect, by the content check of the
+  Draft reads, and keeps the content check of §6.14 for other tables. Before, such a row kept `draftHasChanges: true`
+  after a formula-only clean-up, and `schemaHash`-only units were committed as a new revision.
 
 ### Version 2.11 (2026-11-15)
 

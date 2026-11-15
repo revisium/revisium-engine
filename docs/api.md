@@ -728,7 +728,7 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | `unmatched` | The selectors that matched no unit; `{}` when every selector matched, `null` when not `planned`. |
 | `refusedTables` | Tables that partial operations refuse on this branch (see [Refused tables](#refused-tables)); empty for exactly `{ all: true }`. |
 | `estimate` | What the plan measured against the limits. |
-| `draftHasChanges` | Only when `status` is `empty`: whether the Draft still differs from Head (its stored `hasChanges`). For exactly `{ all: true }`, `true` means the Draft holds only content-equal versions, which a commit or revert clears (see [Content-equal versions](#content-equal-versions)). |
+| `draftHasChanges` | Only when `status` is `empty`: whether the Draft still differs from Head (its stored `hasChanges`). For exactly `{ all: true }`, `true` means the Draft holds only changes without effect (content-equal versions, stale formula outputs, `schemaHash` differences), which a commit or revert clears (see [Content-equal versions](#content-equal-versions)). |
 
 A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts` and `unmatched` are `null`,
 `coverage`, `required` and `deferred` are empty, and `requiredTotal` is 0.
@@ -822,6 +822,16 @@ commit creates no revision, and Head and the Draft keep their ids. A preview of 
 returns `empty` with `draftHasChanges: true`, which tells a client that the commit or revert will clear it. Any other
 selection, `{ all: true, exclude: {} }` included, writes nothing when it is `empty`
 ([SPEC §3.8](specs/partial-changes-v1.spec.md#38-content-equal-versions)).
+
+The same clean-up covers every change without effect the Draft reads hide: a row whose only stored difference is a
+formula output (every read computes the same value) and a row that differs only in the technical `schemaHash`. When
+those are all that remain, exactly `{ all: true }` selects none of them, so a preview is `empty` with
+`draftHasChanges: true`, and the commit or revert is `empty` with `draftHasChanges: false`, links the Head versions
+into the Draft and creates no revision. A Draft that also holds changes with an effect is applied as before and ends
+equal to Head; a commit then publishes the `schemaHash` differences with their units, and a stale stored formula
+output as the Draft holds it. `changes.summary` returns `onlyChangesWithoutEffect: true` when the Draft differs from
+Head while the reads show nothing: run or offer exactly `{ all: true }` then instead of a "has changes" badge over an
+empty list.
 
 ### Listed details
 
@@ -961,9 +971,8 @@ engine.changes.summary({
   selector also selects its `schemaHash` difference, and a table item offers `tableData` whenever the table has row
   units, also of rows no item shows, so applying every selector of a table item leaves none behind; `tableData.rows`
   counts the shown rows only (it can be `0`). So a Draft can read as empty while `draftHasChanges` and the branch's
-  `touched` are `true`: exactly `{ all: true }` clears content-equal versions and applies `schemaHash` differences,
-  while a stored formula output that differs is cleared only by a native `revertChanges` or commit
-  ([SPEC](specs/draft-reads-v1.spec.md) §3).
+  `touched` are `true`; the summary then says `onlyChangesWithoutEffect: true`, and exactly `{ all: true }` clears
+  them without a revision (see [Content-equal versions](#content-equal-versions)).
 - **Paging.** Keyset pages: pass `pageInfo.endCursor` as `after` while `pageInfo.hasNextPage`. Each page reads its own
   snapshot. In the id order the items of one row id are never split; in the recent order only a replaced row's two
   items are kept together, while the deleted row of an id takeover and the rename into its id can be on two pages. So

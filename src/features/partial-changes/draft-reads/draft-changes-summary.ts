@@ -26,6 +26,7 @@ import {
   ChangeType,
   type RevisionChangeSummary,
 } from 'src/features/revision-changes/types';
+import { ChangesSnapshotReader } from 'src/features/partial-changes/snapshot/changes-snapshot-reader.service';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 
 type SummaryCounts = Pick<
@@ -48,7 +49,10 @@ interface ListedTableCounts {
 
 @Injectable()
 export class DraftChangesSummaryReader {
-  constructor(private readonly tablesReader: DraftTablesReader) {}
+  constructor(
+    private readonly tablesReader: DraftTablesReader,
+    private readonly snapshotReader: ChangesSnapshotReader,
+  ) {}
 
   public async read({
     branch,
@@ -56,16 +60,35 @@ export class DraftChangesSummaryReader {
   }: DraftChangesSummaryRequest): Promise<DraftChangesSummary> {
     const tables = await this.tablesReader.read(branch);
     const items = summaryItemsOf(tables);
+    const counts = countsOf(await listedTableCountsOf(tables));
 
     return {
       ...tables.readState,
-      ...countsOf(await listedTableCountsOf(tables)),
+      ...counts,
       ...itemsMatching(items, filters),
       sharedSchemasCount: items.sharedSchemas.length,
       transientTablesCount: items.transientTables.length,
       viewsOnlyTablesCount: items.viewsOnlyTables.length,
+      onlyChangesWithoutEffect:
+        showsNothing(counts, items) &&
+        (await this.snapshotReader.readDraftHasChanges(
+          tables.readState.draftRevisionId,
+        )),
     };
   }
+}
+
+// No table item and no summary item: whatever still makes the Draft differ from Head has no effect (SPEC §6).
+function showsNothing(
+  { tablesSummary }: SummaryCounts,
+  { sharedSchemas, transientTables, viewsOnlyTables }: SummaryItems,
+): boolean {
+  return (
+    tablesSummary.total === 0 &&
+    sharedSchemas.length === 0 &&
+    transientTables.length === 0 &&
+    viewsOnlyTables.length === 0
+  );
 }
 
 async function listedTableCountsOf(

@@ -1,4 +1,4 @@
-import { num, obj, str } from '@revisium/schema-toolkit/mocks';
+import { num, numFormula, obj, str } from '@revisium/schema-toolkit/mocks';
 import {
   createPartialChangesTestKit,
   type PartialChangesTestKit,
@@ -20,6 +20,7 @@ import type {
   FieldRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
+import { TableEffectCheck } from 'src/features/partial-changes/writing/table-effect-check';
 import { DiffService } from 'src/features/share/diff.service';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { revertWhileNativeWriteLands } from '../../__tests__/support/revert-races';
@@ -27,9 +28,15 @@ import { expectConsistentRevisions } from '../../__tests__/support/revision-cons
 
 const PRODUCTS = 'products';
 const LOGS = 'logs';
+const ORDERS = 'orders';
 
 const pricedSchema = obj({ title: str(), price: num() });
 const logSchema = obj({ entry: str() });
+const orderSchema = obj({
+  price: num(),
+  quantity: num(),
+  total: numFormula('price * quantity'),
+});
 
 const titleOf = (rowId: string): FieldRef => ({
   tableId: PRODUCTS,
@@ -138,12 +145,15 @@ describe('exactly { all: true } on a Draft left with only content-equal versions
     );
 
     it.each(OPERATIONS)(
-      'a %s keeps the Draft version when the content check in its transaction finds a difference that change detection missed',
+      'a %s keeps the Draft version when the content checks in its transaction find a difference that change detection missed',
       async (operation) => {
         const draft = await givenEveryUnitApplied(operation);
         const logsVersionId = await draft.tableVersionId('draft', LOGS);
         jest
           .spyOn(kit.module.get(DiffService), 'hasTableVersionContentDiffs')
+          .mockResolvedValue(true);
+        jest
+          .spyOn(kit.module.get(TableEffectCheck), 'hasChangeWithEffect')
           .mockResolvedValue(true);
 
         const result = await apply(draft, operation, {
@@ -211,6 +221,203 @@ describe('exactly { all: true } on a Draft left with only content-equal versions
       expect(result).toMatchObject({ status: 'empty', draftHasChanges: true });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });
+  });
+
+  describe('a Draft left with only changes without effect', () => {
+    const LEFTOVERS: {
+      leftovers: string;
+      given: () => Promise<ChangesScenario>;
+    }[] = [
+      {
+        leftovers: 'a row whose only stored difference is a formula output',
+        given: givenOnlyAFormulaOutputRewritten,
+      },
+      {
+        leftovers: 'a row that differs only in its schema hash',
+        given: givenOnlyASchemaHashRewritten,
+      },
+      {
+        leftovers: 'every kind of change without effect',
+        given: givenEveryKindOfChangeWithoutEffect,
+      },
+    ];
+
+    describe.each(LEFTOVERS)('$leftovers', ({ given }) => {
+      it.each(OPERATIONS)(
+        'previews a %s of exactly { all: true } as empty that says the Draft still has changes',
+        async (operation) => {
+          const draft = await given();
+
+          await expect(
+            draft.previewChanges({ operation, selection: WHOLE_DRAFT }),
+          ).resolves.toMatchObject({
+            status: 'empty',
+            counts: { selected: 0, required: 0 },
+            draftHasChanges: true,
+          });
+        },
+      );
+
+      it.each(OPERATIONS)(
+        'a %s of exactly { all: true } links the Head versions into the Draft and is empty without changes left, creating no revision',
+        async (operation) => {
+          const draft = await given();
+          const headRevisionId = await draft.revisionId('head');
+          const draftRevisionId = await draft.revisionId('draft');
+          const head = (await branchContentOf(kit, draft)).head;
+          const commits = jest.spyOn(targetApi(), 'commitToTarget');
+
+          const result = await apply(draft, operation, {
+            selection: WHOLE_DRAFT,
+          });
+
+          expect(result).toEqual<NothingToApply>({
+            status: 'empty',
+            headRevisionId,
+            draftRevisionId,
+            draftHasChanges: false,
+          });
+          expect(commits).not.toHaveBeenCalled();
+          expect(await draft.revisionId('head')).toBe(headRevisionId);
+          expect((await branchContentOf(kit, draft)).head).toEqual(head);
+          await expectDraftEqualToHead(draft);
+        },
+      );
+    });
+
+    it.each(OPERATIONS)(
+      'a %s keeps the Draft version when the content check in its transaction finds a change with an effect that change detection missed',
+      async (operation) => {
+        const draft = await givenOnlyAFormulaOutputRewritten();
+        const ordersVersionId = await draft.tableVersionId('draft', ORDERS);
+        jest
+          .spyOn(kit.module.get(TableEffectCheck), 'hasChangeWithEffect')
+          .mockResolvedValue(true);
+
+        const result = await apply(draft, operation, {
+          selection: WHOLE_DRAFT,
+        });
+
+        expect(result).toMatchObject({
+          status: 'empty',
+          draftHasChanges: true,
+        });
+        expect(await draft.tableVersionId('draft', ORDERS)).toBe(
+          ordersVersionId,
+        );
+      },
+    );
+
+    it.each(OPERATIONS)(
+      'a %s keeps its scope: { all: true, exclude: {} } on a Draft with only a stale formula output is empty and writes nothing',
+      async (operation) => {
+        const draft = await givenOnlyAFormulaOutputRewritten();
+        const contents = await branchContentsOf(kit, draft);
+
+        const result = await apply(draft, operation, {
+          selection: { all: true, exclude: {} },
+        });
+
+        expect(result).toMatchObject({
+          status: 'empty',
+          draftHasChanges: true,
+        });
+        expect(await branchContentsOf(kit, draft)).toEqual(contents);
+      },
+    );
+
+    it('a commit of exactly { all: true } beside a change with an effect applies it with the schema hash, publishes the tables without a unit as the Draft holds them, and leaves a Draft equal to Head', async () => {
+      const draft = await givenEveryKindOfChangeWithoutEffect();
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
+      const headRevisionId = await draft.revisionId('head');
+
+      const result = await draft.commitChanges({ selection: WHOLE_DRAFT });
+
+      expect(result).toMatchObject({
+        status: 'applied',
+        draftHasChanges: false,
+      });
+      expect(await draft.revisionId('head')).not.toBe(headRevisionId);
+      expect((await draft.row('head', PRODUCTS, 'p2')).schemaHash).toBe(
+        'other',
+      );
+      expect((await draft.row('head', ORDERS, 'o1')).data).toEqual({
+        price: 2,
+        quantity: 3,
+        total: 7,
+      });
+      await expectDraftEqualToHead(draft);
+    });
+
+    it('a revert of exactly { all: true } beside a change with an effect reverts it and leaves a Draft equal to Head', async () => {
+      const draft = await givenEveryKindOfChangeWithoutEffect();
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'uno', price: 1 });
+
+      const result = await draft.revertChanges({ selection: WHOLE_DRAFT });
+
+      expect(result).toMatchObject({
+        status: 'applied',
+        draftHasChanges: false,
+      });
+      await expectDraftEqualToHead(draft);
+    });
+
+    async function givenOnlyAFormulaOutputRewritten(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTablesWithOrders();
+      await draft.writeRowBelowNativeValidation(ORDERS, 'o1', {
+        price: 2,
+        quantity: 3,
+        total: 7,
+      });
+
+      return draft;
+    }
+
+    async function givenOnlyASchemaHashRewritten(): Promise<ChangesScenario> {
+      const draft = await givenCommittedTablesWithOrders();
+      await draft.writeRowColumns(PRODUCTS, 'p2', { schemaHash: 'other' });
+
+      return draft;
+    }
+
+    async function givenEveryKindOfChangeWithoutEffect(): Promise<ChangesScenario> {
+      const draft = await givenOnlyAFormulaOutputRewritten();
+      await draft.writeRowColumns(PRODUCTS, 'p2', { schemaHash: 'other' });
+      await draft.updateRow(LOGS, 'l1', { entry: 'restarted' });
+      await draft.updateRow(LOGS, 'l1', { entry: 'started' });
+
+      return draft;
+    }
+
+    function givenCommittedTablesWithOrders(): Promise<ChangesScenario> {
+      return ChangesScenario.committed(kit, {
+        [PRODUCTS]: {
+          schema: pricedSchema,
+          rows: {
+            p1: { title: 'one', price: 1 },
+            p2: { title: 'two', price: 2 },
+          },
+        },
+        [LOGS]: { schema: logSchema, rows: { l1: { entry: 'started' } } },
+        [ORDERS]: {
+          schema: orderSchema,
+          rows: { o1: { price: 2, quantity: 3, total: 6 } },
+        },
+      });
+    }
+
+    async function expectDraftEqualToHead(
+      draft: ChangesScenario,
+    ): Promise<void> {
+      for (const tableId of [PRODUCTS, LOGS, ORDERS]) {
+        expect([tableId, await draft.tableVersionId('draft', tableId)]).toEqual(
+          [tableId, await draft.tableVersionId('head', tableId)],
+        );
+      }
+
+      expect(await draft.hasChanges()).toBe(false);
+      expect(await draft.readUnitList()).toMatchObject({ units: [] });
+    }
   });
 
   describe('a Draft without any change', () => {

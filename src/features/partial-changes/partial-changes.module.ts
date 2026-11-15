@@ -11,6 +11,7 @@ import { DraftRowPages } from 'src/features/partial-changes/draft-reads/draft-ro
 import { DraftTableItems } from 'src/features/partial-changes/draft-reads/draft-table-items';
 import { DraftTablePages } from 'src/features/partial-changes/draft-reads/draft-table-pages';
 import { DraftTablesReader } from 'src/features/partial-changes/draft-reads/draft-tables';
+import { TableEffectCheck } from 'src/features/partial-changes/writing/table-effect-check';
 import { ReportedRowCountsReader } from 'src/features/partial-changes/draft-reads/reported-row-counts-reader';
 import { ReportedRowPairsReader } from 'src/features/partial-changes/draft-reads/reported-row-pairs-reader';
 import { PageRenamesReader } from 'src/features/partial-changes/draft-reads/page-renames';
@@ -70,6 +71,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     ChangePlanner,
     ChangeApplier,
     ReportedRowCountsReader,
+    TableEffectCheck,
     DraftTablesReader,
     DraftTableItems,
     DraftTablePages,

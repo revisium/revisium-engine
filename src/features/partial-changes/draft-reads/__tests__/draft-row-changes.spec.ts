@@ -1272,6 +1272,44 @@ describe('draft row changes', () => {
 
       expect(row).toEqual([rowItemOf(all, 'p1')]);
     });
+
+    it('reads by the id of a takeover both items that show it, told apart by change type and previous row id', async () => {
+      const draft = await givenCommittedProducts();
+      await draft.removeRow(PRODUCTS, 'p1');
+      await draft.renameRow(PRODUCTS, 'p2', 'p1');
+      await draft.updateRow(PRODUCTS, 'p1', product('edited', 5, ['x']));
+      const all = await readRowItems(draft);
+      const limited = rowItemsOf([
+        await draft.readDraftRowChanges({ first: 100, fieldsPerRow: 1 }),
+      ]);
+
+      const rest = rowItemsOf([
+        await draft.readDraftRowChanges({
+          first: 100,
+          filters: { tableId: PRODUCTS, rowIds: ['p1'] },
+        }),
+      ]);
+      const expanded = limited.find(
+        ({ previousRowId }) => previousRowId === 'p2',
+      );
+
+      expect(rest.map((item) => [nameOf(item), item.previousRowId])).toEqual([
+        ['products/p1 REMOVED', undefined],
+        ['products/p1 RENAMED_AND_MODIFIED', 'p2'],
+      ]);
+      expect(expanded?.fields).toHaveLength(1);
+      const whole = rest.find(
+        ({ changeType, previousRowId }) =>
+          changeType === expanded?.changeType &&
+          previousRowId === expanded.previousRowId,
+      );
+
+      expect(whole).toEqual(
+        all.find(({ previousRowId }) => previousRowId === 'p2'),
+      );
+      expect(whole?.fields.length).toBeGreaterThan(1);
+      expect(whole?.fields).toHaveLength(expanded?.fieldsTotal ?? 0);
+    });
   });
 
   describe('replaced rows', () => {

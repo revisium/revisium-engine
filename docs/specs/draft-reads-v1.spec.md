@@ -235,8 +235,13 @@ it computes travel with the structure unit.
 `fieldsTotal` is the number of all of them; without it `fields` lists all and `fieldsTotal` equals their number. The
 limit cuts `fields` only: `selection` (its `row` selector selects every unit of the row, the cut ones too), `columns`,
 `idTakeover`, `idExchange` and the `follows` of the listed entries are those of the unlimited read. A client reads the
-rest of one row by `filters: { tableId, rowIds: [rowId] }` without the limit (§7), which lists that row and nothing
-else of the table, so no per-row cursor is needed: a row's field changes are computed whole on every read (§8).
+rest of an item's field changes by `filters: { tableId, rowIds: [rowId] }` without the limit (§7). That read returns
+every item that shows the id, which can be more than the one item: a deleted row and the rename that took over its id
+(`REMOVED`, and `RENAMED` or `RENAMED_AND_MODIFIED` with `previousRowId`), the two items of a replaced row (`REMOVED`
+and `ADDED`, both `replaced`), and with a `tableId` that two tables show (a replaced table id, or a removed table and
+the renamed table that took over its id) the rows of both (the renamed table's carry `previousTableId`). The client
+takes the item it expanded by `(previousTableId, previousRowId, changeType)`, which tells these apart within one
+`tableId` and `rowId`. No per-row cursor is needed: a row's field changes are computed whole on every read (§8).
 
 `columns` lists, for a row on both sides, each differing column among `publishedAt`, `meta` and `schemaHash`
 (`DraftColumnChange`: `column`, `oldValue`, `newValue`, `selection`). Each gets the unit that owns it in the catalogue
@@ -404,8 +409,13 @@ anti-join of the table's two link sets (a created or removed table reads the row
   diff.
 - `rowIds` and `replaced` add no scan: `rowIds` applies with the other filters after the anti-join (with `tableId`, so
   a call reads one table, or the two of a replaced id), and a renamed row's Head id is checked against the table's
-  reported pairs; `replaced` is a window count over the table's reported pairs by row id, in the row query and in the
-  row counts.
+  reported pairs. `replaced` looks at the pairs on one side only, the only candidates: the row query groups them by
+  row id (a hash aggregate) and marks the pairs whose row id holds two; the row counts take the replaced rows as the
+  pairs on one side less their distinct row ids, an aggregate they already compute for `rowsWithUnits`. A table of
+  edited rows pays no sort or window over its pairs. Measured on a table of 100,000 edited rows and on one of 30,000
+  deleted rows with 20,000 created again at their ids and 10,000 created: the row counts as before; a row page about
+  60 ms over a page without the mark (the page's pairs are kept once more), where a window over all pairs cost 120–300
+  ms.
 
 No read joins every row of both revisions. Measured on the PoC in the sandbox, one table of 1,000,000 rows with 1,000
 rows edited: a row page of 50 or 500 1.6–1.8 s, a table page 1.6 s, the summary 1.6 s, against 31–34 s through the
@@ -619,7 +629,9 @@ Lines of the list:
 
 - DR-24 Field limit: with `fieldsPerRow` every item equals the unlimited item with `fields` cut to its first
   `fieldsPerRow` entries, on every page size; `fieldsTotal` is the number of all entries (0 keeps the totals and lists
-  none); the item read by `tableId` and `rowIds: [rowId]` without the limit lists all of them.
+  none); the item read by `tableId` and `rowIds: [rowId]` without the limit lists all of them, also when the read
+  returns two items of the id (a deleted row and the rename that took over its id), told apart by `changeType` and
+  `previousRowId`.
 - DR-25 Replaced rows: both items `replaced: true`, `REMOVED` then `ADDED`, one `rowReplace` unit and selector, each
   with its whole side; a deleted row and the rename into its id, and the rows of a replaced table id, are not
   `replaced`; `rowsSummary` of the summary and the table item counts the row once in `replaced` and `total`.
@@ -632,15 +644,16 @@ Lines of the list:
 ### Version 1.10 (2026-11-15)
 
 - §1, §5.2, §9: `rowChanges` takes `fieldsPerRow` (0–1,000): each row item lists at most that many field changes,
-  and every row item carries `fieldsTotal`, the number of all of them. The rest of one row is read by `rowIds`
-  without the limit; the cut saves payload, not the diff.
+  and every row item carries `fieldsTotal`, the number of all of them. The rest of an item's changes is read by
+  `rowIds` without the limit, which returns every item that shows the id; the client takes its item by
+  `(previousTableId, previousRowId, changeType)`. The cut saves payload, not the diff.
 - §1, §7, §9: the row filter `rowIds` (with `tableId`, at most 100) selects rows by exact id; filters combine by AND.
 - §5.6, §9: a replaced row stays two items, now marked `replaced: true`; its kind is `REPLACED` (`DraftRowChangeKind`,
   `DRAFT_ROW_CHANGE_KINDS`), which the row `changeTypes` filter takes and `ADDED` / `REMOVED` no longer match. The
   table reads refuse `REPLACED`.
 - §4, §6, §9: `rowsSummary` (`DraftRowsSummary`) counts lines: a replaced row once, in the new `replaced` count, no
   longer in `added` and `removed`, and once in `total`.
-- §8: costs of the field limit, `rowIds` and `replaced`.
+- §8: costs of the field limit, `rowIds` and `replaced`, measured.
 - §10: DR-04, DR-06 and DR-16 follow; DR-24 to DR-26 added. The plan's `coverage` and `tableData.rows` (DR-05)
   already counted a replaced row once and do not change.
 

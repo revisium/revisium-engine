@@ -62,9 +62,6 @@ const ONE_SIDED = raw(`(h."versionId" IS NULL OR d."versionId" IS NULL)`);
 
 const IDS_DIFFER = raw(`h."id" <> d."id"`);
 
-// The deleted and the created row of a replaced row: the two pairs on one side only at one row id.
-const REPLACED = sql`${ONE_SIDED} AND count(*) FILTER (WHERE ${ONE_SIDED}) OVER (PARTITION BY coalesce(d."id", h."id")) = 2`;
-
 const NOTHING_DIFFERS = raw('FALSE');
 
 const UNIT_COLUMNS = ['publishedAt', 'meta', 'schemaHash'] as const;
@@ -72,6 +69,19 @@ const UNIT_COLUMNS = ['publishedAt', 'meta', 'schemaHash'] as const;
 const PAIR_ON_ONE_SIDE = raw(
   `("headVersionId" IS NULL OR "draftVersionId" IS NULL)`,
 );
+
+// The row ids of the replaced rows: a deleted and a created row at one id are the two pairs on one side only there.
+// Only the pairs on one side are grouped, so a table of edited rows pays no sort or window over its pairs.
+const REPLACED_ROW_IDS = sql`replaced_row_ids AS (
+  SELECT "rowId" FROM reported WHERE ${PAIR_ON_ONE_SIDE}
+  GROUP BY "rowId" HAVING count(*) = 2
+)`;
+
+const REPORTED = raw('reported AS');
+
+// The row ids of the pairs on one side only, which always yield a unit in a compared table. The row counts use this one
+// aggregate twice, so the database sorts those pairs once.
+const ONE_SIDED_ROW_IDS = sql`count(DISTINCT "rowId") FILTER (WHERE ${PAIR_ON_ONE_SIDE})`;
 
 const HEAD_ONLY_PAIR_FIRST = raw(`p."draftVersionId" IS NOT NULL`);
 
@@ -147,12 +157,13 @@ export function reportedRowCountsSql(rows: TableRows): Sql {
   }
 
   return sql`
-    WITH ${comparedPairsCtes(rows.table)}
-    SELECT
-      (count(*) FILTER (WHERE NOT "replaced") + count(DISTINCT "rowId") FILTER (WHERE "replaced"))::int AS "total",
-      count(*) FILTER (WHERE "changeType" = ${ChangeType.Added} AND NOT "replaced")::int AS "added",
-      count(*) FILTER (WHERE "changeType" = ${ChangeType.Removed} AND NOT "replaced")::int AS "removed",
-      count(DISTINCT "rowId") FILTER (WHERE "replaced")::int AS "replaced",
+    WITH ${comparedPairsCtes(rows.table)},
+    counts AS (
+      SELECT
+      count(*) AS "pairs",
+      count(*) FILTER (WHERE "changeType" = ${ChangeType.Added}) AS "addedPairs",
+      count(*) FILTER (WHERE "changeType" = ${ChangeType.Removed}) AS "removedPairs",
+      ${replacedRowsCount()} AS "replaced",
       count(*) FILTER (
         WHERE "changeType" = ANY(${[ChangeType.Renamed, ChangeType.RenamedAndModified]}::text[])
       )::int AS "renamed",
@@ -164,8 +175,21 @@ export function reportedRowCountsSql(rows: TableRows): Sql {
         SELECT 1 FROM ${ROW_VERSIONS_PAIRED_BY_IDENTITY}
         WHERE ${ONE_SIDED} OR ${rowHasUnitsOfItsOwn(rows.table.structure)}
       ) AS "hasRowUnits"
-    FROM pairs
+      FROM pairs
+    )
+    SELECT ("pairs" - "replaced")::int AS "total",
+           ("addedPairs" - "replaced")::int AS "added",
+           ("removedPairs" - "replaced")::int AS "removed",
+           "replaced"::int AS "replaced",
+           "renamed", "modified", "rowsWithUnits", "hasRowUnits"
+    FROM counts
   `;
+}
+
+// A row id holds at most one pair on each side only, and a replaced row both: each replaced row adds one pair on one
+// side to its distinct row id. So it is counted without marking the pairs, which would sort every pair of the table.
+function replacedRowsCount(): Sql {
+  return sql`(count(*) FILTER (WHERE ${PAIR_ON_ONE_SIDE}) - ${ONE_SIDED_ROW_IDS})`;
 }
 
 // Every row of a table on one side only is reported, and goes with its structure.
@@ -184,13 +208,13 @@ function oneSidedRowCountsSql({ side, tableVersionId }: OneSidedRows): Sql {
 function rowsWithUnitsCount(): Sql {
   return sql`(
     count(*) FILTER (WHERE "yieldsUnit" AND NOT ${PAIR_ON_ONE_SIDE})
-    + count(DISTINCT "rowId") FILTER (WHERE "yieldsUnit" AND ${PAIR_ON_ONE_SIDE})
+    + ${ONE_SIDED_ROW_IDS}
   )::int`;
 }
 
-function reportedPairsCtes(rows: TableRows, pairs: Sql = PAIRS): Sql {
+function reportedPairsCtes(rows: TableRows, pairs: Sql): Sql {
   if (rows.kind === 'compared') {
-    return comparedPairsCtes(rows.table, pairs);
+    return comparedPairsWithReplacedCtes(rows.table, pairs);
   }
 
   return oneSidedPairsCte(rows, pairs);
@@ -207,10 +231,21 @@ function comparedPairsCtes(table: ComparedTable, pairs: Sql = PAIRS): Sql {
              h."id" AS "headRowId",
              h."versionId" AS "headVersionId", d."versionId" AS "draftVersionId",
              ${changeTypeOf(structure)} AS "changeType",
-             (${REPLACED}) AS "replaced",
              (${ONE_SIDED} OR ${rowChangePredicate(structure)}) AS "yieldsUnit"
       FROM ${ROW_VERSIONS_PAIRED_BY_IDENTITY}
       WHERE ${ONE_SIDED} OR ${IDS_DIFFER} OR ${contentWithEffectDiffers(structure)}
+    )
+  `;
+}
+
+// The pairs of a compared table, each marked whether it is one of the two items of a replaced row.
+function comparedPairsWithReplacedCtes(table: ComparedTable, pairs: Sql): Sql {
+  return sql`
+    ${comparedPairsCtes(table, REPORTED)},
+    ${REPLACED_ROW_IDS},
+    ${pairs} (
+      SELECT r.*, (${PAIR_ON_ONE_SIDE} AND r."rowId" IN (SELECT "rowId" FROM replaced_row_ids)) AS "replaced"
+      FROM reported r
     )
   `;
 }

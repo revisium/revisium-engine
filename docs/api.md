@@ -935,8 +935,10 @@ engine.changes.summary({
   (`±`) with both sides whole. They are never split across pages, and every filter lists both or neither.
 - **Field limit.** With `fieldsPerRow`, each row item lists only its first field changes, in native order, and
   `fieldsTotal` counts all of them (it is there without the limit too). The row's `selection` and `columns` do not
-  change. To read the rest of one row, read it by `filters: { tableId, rowIds: [rowId] }` without the limit. The
-  limit saves payload, not work: the page still computes the whole diff of each row.
+  change. To read the rest of an item's changes, read `filters: { tableId, rowIds: [rowId] }` without the limit: it
+  returns every item that shows the id (a deleted row and the rename that took over its id, both items of a replaced
+  row, the rows of both tables of a replaced table id), so take your item by `previousTableId`, `previousRowId` and
+  `changeType`. The limit saves payload, not work: the page still computes the whole diff of each row.
 - **Selection of an item.** A table is `selectable` (its `structure`, `views` and `tableData` selectors) or
   `refused` (with the refusal `code`). A row is `selectable` (`row` selects all its `units`), `goesWith` a unit that
   carries it (`reason`: `tableExistence`, `structureBound`, `rowExistence`) or `refused`. A field or column is `unit`,

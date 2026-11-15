@@ -2092,7 +2092,8 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   empty `fields`; a renamed table with a field change as `changed` with `previousTableId`.
 - AS-60b A structure unit that a preview names as a required unit, as the `structure` of a deferred row or as the
   `unit` of a blocker, and that a refused commit or revert names in `required` or in a blocker, carries the
-  `structureChange` the catalogue gives for that unit.
+  `structureChange` the catalogue gives for that unit; over random Drafts, the plan of each unit's selector selects
+  exactly that unit, with that `structureChange` (AS-61).
 - AS-60c Annotations: a changed default, description or title of a field at its Head pointer is `annotated` with its
   sorted `annotations`, also for an array replaced with annotated item fields or item object; an object whose own
   description changed is an `annotated` entry at its pointer beside the added or changed fields inside it; a field
@@ -2418,8 +2419,9 @@ new major version.
   `coverage` and `required` describe a plan.
 - §8.2, §11: the operation timeout and the `READ ONLY` transaction of §8.2 are named for the preview and the Draft
   reads.
-- §13: AS-60, AS-60b, AS-61, AS-65, AS-88 and AS-92 reworded; AS-66 withdrawn. The tests read every unit of a Draft from
-  the change catalogue through an internal test path.
+- §13: AS-17, AS-47d, AS-49, AS-60 – AS-62, AS-65, AS-75, AS-76, AS-80 and AS-85 – AS-88 name the catalogue, the
+  preview or the Draft reads instead of the listing, and AS-92 the six operations; AS-66 is withdrawn. The tests read
+  every unit of a Draft from the change catalogue through an internal test path.
 
 ### Version 2.7 (2026-11-11)
 

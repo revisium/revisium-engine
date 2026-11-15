@@ -283,6 +283,10 @@ export class EngineApiService {
     summary: (
       ...args: Parameters<PartialChangesApiService['draftChangesSummary']>
     ) => this.partialChangesApi.draftChangesSummary(...args),
+
+    fieldValue: (
+      ...args: Parameters<PartialChangesApiService['draftFieldValue']>
+    ) => this.partialChangesApi.draftFieldValue(...args),
   };
 
   // --- Branches ---

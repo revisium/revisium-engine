@@ -42,12 +42,15 @@ const CHANGES_API_TYPES = [
   'DeferredPath',
   'DeferredRow',
   'DescribedUnitRef',
+  'DraftArrayLengths',
   'DraftChangesSummary',
   'DraftChangesSummaryInput',
   'DraftColumnChange',
   'DraftEdge',
   'DraftFieldChange',
   'DraftFieldChangeType',
+  'DraftFieldValue',
+  'DraftFieldValueInput',
   'DraftPageInfo',
   'DraftReadState',
   'DraftRowChangeKind',
@@ -62,6 +65,9 @@ const CHANGES_API_TYPES = [
   'DraftTableItem',
   'DraftTablePage',
   'DraftTablesSummary',
+  'DraftTextRange',
+  'DraftValueCut',
+  'DraftValueSide',
   'FieldRef',
   'FieldSchema',
   'FieldSelection',
@@ -168,6 +174,8 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
     'REPLACED',
   ],
   DRAFT_ROW_ORDERS: ['id', 'recent'],
+  DRAFT_VALUE_CUTS: ['omitted', 'prefix'],
+  DRAFT_VALUE_SIDES: ['draft', 'head'],
   FIELD_SELECTION_STATES: ['computed', 'goesWith', 'refused', 'unit'],
   FOLLOW_REASONS: ['referenceRename'],
   GOES_WITH_REASONS: ['rowExistence', 'structureBound', 'tableExistence'],
@@ -348,6 +356,30 @@ const CODE_UNIONS_EQUAL_THEIR_LISTS = {
         >,
       ]
     >(),
+  DRAFT_VALUE_CUTS:
+    unionsEqual<
+      [
+        Equal<engine.DraftValueCut, ListMember<typeof engine.DRAFT_VALUE_CUTS>>,
+        Equal<
+          NonNullable<engine.DraftFieldChange['oldValueCut']>,
+          engine.DraftValueCut
+        >,
+        Equal<
+          NonNullable<engine.DraftFieldChange['newValueCut']>,
+          engine.DraftValueCut
+        >,
+      ]
+    >(),
+  DRAFT_VALUE_SIDES:
+    unionsEqual<
+      [
+        Equal<
+          engine.DraftValueSide,
+          ListMember<typeof engine.DRAFT_VALUE_SIDES>
+        >,
+        Equal<engine.DraftFieldValueInput['side'], engine.DraftValueSide>,
+      ]
+    >(),
   FIELD_SELECTION_STATES:
     unionsEqual<
       [
@@ -521,6 +553,8 @@ const RESULT_PARTS_HAVE_THEIR_NAMES = unionsEqual<
     >,
     Equal<engine.DraftChangesSummary['rowsSummary'], engine.DraftRowsSummary>,
     Equal<engine.DraftTableItem['rowsSummary'], engine.DraftRowsSummary>,
+    Equal<engine.DraftRowItem['arrays'][number], engine.DraftArrayLengths>,
+    Equal<NonNullable<engine.DraftFieldValue['text']>, engine.DraftTextRange>,
     Equal<
       engine.PlanEstimate['mixedTables'][number],
       engine.MixedTableEstimate
@@ -540,6 +574,7 @@ const RESULT_PARTS_HAVE_THEIR_NAMES = unionsEqual<
 
 const CHANGES_OPERATIONS = [
   'commit',
+  'fieldValue',
   'preview',
   'revert',
   'rowChanges',
@@ -644,7 +679,7 @@ describe('EngineApiService.changes (AS-92)', () => {
     await kit.close();
   });
 
-  it('exposes the six operations in the changes namespace, without a flat list of units', () => {
+  it('exposes the seven operations in the changes namespace, without a flat list of units', () => {
     expect(Object.keys(changes).sort()).toEqual(CHANGES_OPERATIONS);
   });
 
@@ -756,6 +791,43 @@ describe('EngineApiService.changes (AS-92)', () => {
     expect(await changes.tableChanges({ branch, first: 10 })).toMatchObject({
       edges: [],
       totalCount: 0,
+    });
+  });
+
+  it('reads a long value cut in the row read, then its rest by the value read', async () => {
+    const longTitle = `Desk lamp ${'x'.repeat(40)}`;
+    await givenCommittedProducts({ lamp: { title: 'Lamp', price: 10 } });
+    await updateDraftProduct('lamp', { title: longTitle, price: 10 });
+
+    const page = await changes.rowChanges({
+      branch,
+      first: 10,
+      maxValueBytes: 20,
+    });
+    const [field] = page.edges[0]?.node.fields ?? [];
+    const rest = await changes.fieldValue({
+      branch,
+      tableId: PRODUCTS,
+      rowId: 'lamp',
+      path: '/title',
+      side: 'draft',
+      offset: 18,
+    });
+
+    expect(field).toMatchObject({
+      oldValue: 'Lamp',
+      newValue: longTitle.slice(0, 18),
+      newValueBytes: longTitle.length + 2,
+      newValueCut: 'prefix',
+    });
+    expect(rest).toEqual({
+      headRevisionId: page.headRevisionId,
+      draftRevisionId: page.draftRevisionId,
+      refusedTables: [],
+      value: longTitle.slice(18),
+      valueBytes: longTitle.length + 2,
+      valueToken: field?.newValueToken,
+      text: { offset: 18, totalLength: longTitle.length },
     });
   });
 
@@ -895,6 +967,18 @@ describe('EngineApiService.changes (AS-92)', () => {
       'summary',
       () => changes.summary({ branch, filters: { search: 'a\u0000' } }),
       'filters.search must not contain the NUL character',
+    ],
+    [
+      'fieldValue',
+      () =>
+        changes.fieldValue({
+          branch,
+          tableId: PRODUCTS,
+          rowId: 'lamp',
+          path: 'title',
+          side: 'draft',
+        }),
+      'path must be a JSON Pointer',
     ],
   ])(
     'refuses malformed input of %s as a bad request',

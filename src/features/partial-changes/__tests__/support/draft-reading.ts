@@ -6,6 +6,10 @@ import type {
   DraftChangesSummaryInput,
 } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import type {
+  DraftFieldValue,
+  DraftFieldValueInput,
+} from 'src/features/partial-changes/queries/impl/get-draft-field-value.query';
+import type {
   DraftRowChangesInput,
   DraftRowItem,
   DraftRowPage,
@@ -37,6 +41,7 @@ export type DraftTablePaging = Omit<DraftTableOptions, 'after'>;
 export type DraftRowOptions = Omit<DraftRowChangesInput, 'branch'>;
 export type DraftRowPaging = Omit<DraftRowOptions, 'after'>;
 export type DraftSummaryOptions = Omit<DraftChangesSummaryInput, 'branch'>;
+export type DraftValueOptions = Omit<DraftFieldValueInput, 'branch'>;
 export type NativeTableFilters = Pick<
   TableChangesFilters,
   'changeTypes' | 'search'
@@ -126,6 +131,14 @@ export function readDraftChangesSummary(
   options: DraftSummaryOptions,
 ): Promise<DraftChangesSummary> {
   return kit.partialChangesApi.draftChangesSummary({ ...options, branch });
+}
+
+export function readDraftFieldValue(
+  kit: PartialChangesTestKit,
+  branch: ChangesBranch,
+  options: DraftValueOptions,
+): Promise<DraftFieldValue> {
+  return kit.partialChangesApi.draftFieldValue({ ...options, branch });
 }
 
 export async function readEveryDraftTablePage(

@@ -4,16 +4,19 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import {
   DRAFT_ROW_CHANGE_KINDS,
+  type DraftFieldChange,
   type DraftRowChangeKind,
   type DraftRowChangesFilters,
   type DraftRowItem,
   type DraftRowOrder,
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
+import type { DraftValueSide } from 'src/features/partial-changes/queries/impl/get-draft-field-value.query';
 import type { DraftTableItem } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { UnitRef } from 'src/features/partial-changes/selection/unit-refs';
 import {
   ChangeType,
   type RowChange,
+  RowChangeDetailType,
 } from 'src/features/revision-changes/types';
 import { compareCodePoints } from 'src/features/share/utils/compare-code-points';
 import { addressedUnitOfListed } from '../../__tests__/support/change-listing';
@@ -35,6 +38,8 @@ const ALL_ROWS = 5_000;
 const SEARCHED_ROWS = 5;
 const SMALL_PAGE = 2;
 const FIELDS_PER_ROW = 1;
+const MAX_VALUE_BYTES = 4;
+const READ_VALUES = 30;
 const RECENT: DraftRowOrder = 'recent';
 
 interface RowChangeView {
@@ -130,6 +135,66 @@ describe('Draft row reads over random Drafts', () => {
           })),
         );
       }
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'cuts every value over the value limit as the oracle does and changes nothing else, on every page size (seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const all = await readEveryRow(draft);
+
+      for (const first of PAGE_SIZES) {
+        const limited = rowItemsOf(
+          await draft.readEveryDraftRowPage({
+            first,
+            maxValueBytes: MAX_VALUE_BYTES,
+          }),
+        );
+
+        expect(limited.map(withoutTokens)).toEqual(
+          all.map((item) => ({
+            ...item,
+            fields: item.fields.map((change) =>
+              cutByOracle(change, MAX_VALUE_BYTES),
+            ),
+          })),
+        );
+        expect(
+          limited.flatMap(({ fields }) => fields.filter(hasMisplacedToken)),
+        ).toEqual([]);
+      }
+    },
+    RANDOM_DRAFT_SEED_TIMEOUT_MS,
+  );
+
+  it.each(RANDOM_DRAFT_SEEDS)(
+    'reads each side of a field change whole by the ids of its item on that side (seed %i)',
+    async (seed) => {
+      const draft = await givenRandomDraft(kit, seed);
+      const sides = sideValuesOf(
+        await readEveryRow(draft),
+        await readEveryRow(draft, undefined, undefined, MAX_VALUE_BYTES),
+      );
+      const read: SideValue[] = [];
+
+      for (const { side, tableId, rowId, path } of sides) {
+        const { value, valueBytes, valueToken } =
+          await draft.readDraftFieldValue({ tableId, rowId, path, side });
+
+        read.push({
+          side,
+          tableId,
+          rowId,
+          path,
+          value,
+          valueBytes,
+          valueToken,
+        });
+      }
+
+      expect(read).toEqual(sides);
     },
     RANDOM_DRAFT_SEED_TIMEOUT_MS,
   );
@@ -332,9 +397,15 @@ describe('Draft row reads over random Drafts', () => {
     draft: ChangesScenario,
     filters?: DraftRowChangesFilters,
     orderBy?: DraftRowOrder,
+    maxValueBytes?: number,
   ): Promise<DraftRowItem[]> {
     return rowItemsOf([
-      await draft.readDraftRowChanges({ first: ALL_ROWS, filters, orderBy }),
+      await draft.readDraftRowChanges({
+        first: ALL_ROWS,
+        filters,
+        orderBy,
+        maxValueBytes,
+      }),
     ]);
   }
 
@@ -458,6 +529,167 @@ function tableIdsShownBy({
   previousTableId,
 }: DraftTableItem): string[] {
   return [tableId, previousTableId].filter(isDefined);
+}
+
+interface SideValue {
+  readonly side: DraftValueSide;
+  readonly tableId: string;
+  readonly rowId: string;
+  readonly path: string;
+  readonly value: unknown;
+  readonly valueBytes: number | null;
+  readonly valueToken: string | null;
+}
+
+// A side over the limit: a string as its longest prefix of whole characters whose JSON text fits, any other value null.
+function cutByOracle(
+  change: DraftFieldChange,
+  limit: number,
+): DraftFieldChange {
+  return {
+    ...change,
+    ...sideCutByOracle(
+      'old',
+      change.oldValue,
+      change.changeType !== RowChangeDetailType.FieldAdded,
+      limit,
+    ),
+    ...sideCutByOracle(
+      'new',
+      change.newValue,
+      change.changeType !== RowChangeDetailType.FieldRemoved,
+      limit,
+    ),
+  };
+}
+
+function sideCutByOracle(
+  side: 'old' | 'new',
+  value: unknown,
+  present: boolean,
+  limit: number,
+): Record<string, unknown> {
+  if (!present) {
+    return { [`${side}ValueBytes`]: null };
+  }
+
+  const bytes = jsonBytesByOracle(value);
+
+  if (bytes <= limit) {
+    return { [`${side}Value`]: value, [`${side}ValueBytes`]: bytes };
+  }
+
+  if (typeof value !== 'string') {
+    return {
+      [`${side}Value`]: null,
+      [`${side}ValueBytes`]: bytes,
+      [`${side}ValueCut`]: 'omitted',
+    };
+  }
+
+  let prefix = '';
+
+  for (const character of value) {
+    if (jsonBytesByOracle(prefix + character) > limit) {
+      break;
+    }
+
+    prefix += character;
+  }
+
+  return {
+    [`${side}Value`]: prefix,
+    [`${side}ValueBytes`]: bytes,
+    [`${side}ValueCut`]: 'prefix',
+  };
+}
+
+function jsonBytesByOracle(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
+
+// The value tokens are opaque: the value read checks them; the oracle checks only that a side has one exactly when
+// it has a value.
+function withoutTokens(item: DraftRowItem): DraftRowItem {
+  return {
+    ...item,
+    fields: item.fields.map(
+      ({
+        oldValueToken: _oldValueToken,
+        newValueToken: _newValueToken,
+        ...change
+      }) => change,
+    ),
+  };
+}
+
+function hasMisplacedToken({
+  changeType,
+  oldValueToken,
+  newValueToken,
+}: DraftFieldChange): boolean {
+  return (
+    (typeof oldValueToken !== 'string') ===
+      (changeType !== RowChangeDetailType.FieldAdded) ||
+    (typeof newValueToken !== 'string') ===
+      (changeType !== RowChangeDetailType.FieldRemoved) ||
+    (changeType === RowChangeDetailType.FieldAdded && oldValueToken !== null) ||
+    (changeType === RowChangeDetailType.FieldRemoved && newValueToken !== null)
+  );
+}
+
+// Up to READ_VALUES sides of the field changes spread over the read, each addressed by the ids of its item on its side,
+// with the tokens the read under the value limit gives them.
+function sideValuesOf(
+  items: readonly DraftRowItem[],
+  limited: readonly DraftRowItem[],
+): SideValue[] {
+  const sides = items.flatMap((item, itemIndex) =>
+    item.fields.flatMap((change, fieldIndex) =>
+      sidesOfChange(
+        item,
+        change,
+        limited[itemIndex]?.fields[fieldIndex] ?? change,
+      ),
+    ),
+  );
+  const step = Math.max(Math.floor(sides.length / READ_VALUES), 1);
+
+  return sides.filter((_, index) => index % step === 0).slice(0, READ_VALUES);
+}
+
+function sidesOfChange(
+  { tableId, previousTableId, rowId, previousRowId }: DraftRowItem,
+  { path, changeType, oldValue, newValue }: DraftFieldChange,
+  { oldValueToken, newValueToken }: DraftFieldChange,
+): SideValue[] {
+  const sides: SideValue[] = [];
+
+  if (changeType !== RowChangeDetailType.FieldAdded) {
+    sides.push({
+      side: 'head',
+      tableId: previousTableId ?? tableId,
+      rowId: previousRowId ?? rowId,
+      path,
+      value: oldValue,
+      valueBytes: jsonBytesByOracle(oldValue),
+      valueToken: oldValueToken ?? 'missing',
+    });
+  }
+
+  if (changeType !== RowChangeDetailType.FieldRemoved) {
+    sides.push({
+      side: 'draft',
+      tableId,
+      rowId,
+      path,
+      value: newValue,
+      valueBytes: jsonBytesByOracle(newValue),
+      valueToken: newValueToken ?? 'missing',
+    });
+  }
+
+  return sides;
 }
 
 // Up to SEARCHED_ROWS rows spread over the read.

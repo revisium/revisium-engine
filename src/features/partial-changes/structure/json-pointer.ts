@@ -1,5 +1,6 @@
 const SEPARATOR = '/';
 const INVALID_ESCAPE = /~(?![01])/;
+const ARRAY_INDEX = /^(?:0|[1-9]\d*)$/;
 
 export class JsonPointer {
   public static readonly root = new JsonPointer([]);
@@ -44,9 +45,11 @@ export class JsonPointer {
     ]);
   }
 
+  // Follows JSON only: an object member by its key, an array element by its canonical index; undefined when the
+  // document holds no value at the pointer.
   public valueIn(data: unknown): unknown {
     return this.segments.reduce<unknown>(
-      (value, segment) => ownPropertyOf(value, segment),
+      (value, segment) => memberOf(value, segment),
       data,
     );
   }
@@ -84,12 +87,33 @@ function unescapeSegment(segment: string): string {
   return segment.replaceAll('~1', '/').replaceAll('~0', '~');
 }
 
-function ownPropertyOf(value: unknown, name: string): unknown {
-  if (!isObject(value) || !Object.prototype.hasOwnProperty.call(value, name)) {
+function memberOf(value: unknown, segment: string): unknown {
+  if (Array.isArray(value)) {
+    return elementOf(value, segment);
+  }
+
+  if (
+    !isObject(value) ||
+    !Object.prototype.hasOwnProperty.call(value, segment)
+  ) {
     return undefined;
   }
 
-  return value[name];
+  return value[segment];
+}
+
+function elementOf(array: readonly unknown[], segment: string): unknown {
+  if (!ARRAY_INDEX.test(segment)) {
+    return undefined;
+  }
+
+  const index = Number(segment);
+
+  if (index >= array.length) {
+    return undefined;
+  }
+
+  return array[index];
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -7,8 +7,10 @@ import {
   encodeRowCursor,
 } from 'src/features/partial-changes/draft-reads/draft-cursor';
 import {
+  type ComputedData,
   type DraftRowEntry,
   draftRowItemOf,
+  type FieldListing,
 } from 'src/features/partial-changes/draft-reads/draft-row';
 import type { DraftTable } from 'src/features/partial-changes/draft-reads/draft-tables';
 import { PageRenamesReader } from 'src/features/partial-changes/draft-reads/page-renames';
@@ -37,10 +39,9 @@ export interface PagedTable {
   readonly companions: readonly ReportedRowPair[];
 }
 
-// How a page lists its items: the order its cursors follow, and the field limit of each item.
-export interface RowListing {
+// How a page lists its items: the order its cursors follow, and the field and value limits of each item.
+export interface RowListing extends FieldListing {
   readonly orderBy: DraftRowOrder;
-  readonly fieldsPerRow?: number;
 }
 
 interface PageRow {
@@ -48,6 +49,12 @@ interface PageRow {
   readonly pair: ReportedRowPair;
   readonly head?: Row;
   readonly draft?: Row;
+}
+
+// The field changes of a row and the computed data they were taken from.
+interface ComputedRowChanges {
+  readonly fieldChanges: FieldChange[];
+  readonly computed: ComputedData;
 }
 
 const SIDES: readonly RevisionSide[] = ['head', 'draft'];
@@ -64,7 +71,7 @@ export class DraftRowItems {
   public async edgesOf(
     page: readonly PagedTable[],
     compared: ComparedSnapshot,
-    { orderBy, fieldsPerRow }: RowListing,
+    { orderBy, ...fieldListing }: RowListing,
   ): Promise<DraftEdge<DraftRowItem>[]> {
     if (page.length === 0) {
       return [];
@@ -79,10 +86,10 @@ export class DraftRowItems {
     const companions = page.flatMap((paged) =>
       paged.companions.map((pair) => pageRowOf(paged, pair, versions)),
     );
-    const fieldChanges = await this.fieldChangesOf(rows, compared.snapshot);
+    const rowChanges = await this.fieldChangesOf(rows, compared.snapshot);
     const entries = rows.map((row, index) => ({
       row,
-      entry: entryOf(row, fieldChanges[index] ?? []),
+      entry: entryOf(row, rowChanges[index]),
     }));
     const pageRows = changedRowsOf(
       [...rows, ...companions],
@@ -100,7 +107,7 @@ export class DraftRowItems {
 
     return entries.map(({ row, entry }) => ({
       cursor: cursorOf(row, orderBy),
-      node: draftRowItemOf(entry, catalogue, renames, fieldsPerRow),
+      node: draftRowItemOf(entry, catalogue, renames, fieldListing),
     }));
   }
 
@@ -108,7 +115,7 @@ export class DraftRowItems {
   private async fieldChangesOf(
     rows: readonly PageRow[],
     revisions: HeadAndDraft,
-  ): Promise<FieldChange[][]> {
+  ): Promise<ComputedRowChanges[]> {
     const computed = rows.map(computableCopyOf);
 
     for (const side of SIDES) {
@@ -121,9 +128,14 @@ export class DraftRowItems {
       }
     }
 
-    return computed.map(({ head, draft }) =>
-      this.rowDiff.analyzeFieldChanges(head?.data ?? null, draft?.data ?? null),
-    );
+    return computed.map(({ head, draft }) => {
+      const data = { head: head?.data ?? null, draft: draft?.data ?? null };
+
+      return {
+        fieldChanges: this.rowDiff.analyzeFieldChanges(data.head, data.draft),
+        computed: data,
+      };
+    });
   }
 }
 
@@ -152,9 +164,13 @@ function pageRowOf(
 
 function entryOf(
   { paged, pair, head, draft }: PageRow,
-  fieldChanges: readonly FieldChange[],
+  changes: ComputedRowChanges | undefined,
 ): DraftRowEntry {
-  return { table: paged.table.pair, pair, head, draft, fieldChanges };
+  if (!changes) {
+    throw new Error(`The page row ${pair.rowId} has no field changes`);
+  }
+
+  return { table: paged.table.pair, pair, head, draft, ...changes };
 }
 
 // The catalogue of a page holds the pairs a plan loads for the page's row ids, also those a filter left out; it
@@ -220,7 +236,7 @@ function rowsByTableIdOn(
   return rowsByTable;
 }
 
-function revisionIdOn(
+export function revisionIdOn(
   { headRevisionId, draftRevisionId }: HeadAndDraft,
   side: RevisionSide,
 ): string {

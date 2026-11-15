@@ -47,6 +47,47 @@ describe('JsonPointer', () => {
       ).toBe(expected);
     },
   );
+
+  describe('value in a document', () => {
+    const document = {
+      title: 'Lamp',
+      tags: ['a', 'b'],
+      parts: [{ name: 'x' }],
+      empty: null,
+    };
+
+    it.each([
+      { pointer: '', expected: document },
+      { pointer: '/title', expected: 'Lamp' },
+      { pointer: '/tags/0', expected: 'a' },
+      { pointer: '/tags/1', expected: 'b' },
+      { pointer: '/parts/0/name', expected: 'x' },
+      { pointer: '/empty', expected: null },
+    ])(
+      'reads "$pointer" by object keys and array indexes',
+      ({ pointer, expected }) => {
+        expect(JsonPointer.parse(pointer).valueIn(document)).toEqual(expected);
+      },
+    );
+
+    it.each([
+      '/missing',
+      '/tags/length',
+      '/tags/01',
+      '/tags/-',
+      '/tags/2',
+      '/tags/-1',
+      '/tags/1.0',
+      '/tags/ 1',
+      '/title/length',
+      '/title/0',
+      '/empty/x',
+      '/parts/0/constructor',
+      '/__proto__',
+    ])('finds no value at "%s", which is not in the document', (pointer) => {
+      expect(JsonPointer.parse(pointer).valueIn(document)).toBeUndefined();
+    });
+  });
 });
 
 function pointerOf(segments: readonly string[]): JsonPointer {

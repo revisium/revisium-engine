@@ -550,7 +550,7 @@ Returns: `{ edges: [{ cursor, node: RowChange }], pageInfo, totalCount }`
 The whole-Draft `createRevision` and `revertChanges` are unchanged. Every method takes `branch: { projectId,
 branchName }` (`ChangesBranch`) and acts on that branch's Head and Draft. This section is a guide; the contract is in
 [partial-changes-v1](specs/partial-changes-v1.spec.md) (units, selection, plans, results, fingerprint, limits) and
-[draft-reads-v1](specs/draft-reads-v1.spec.md) (the three reads). Every type named here is exported from
+[draft-reads-v1](specs/draft-reads-v1.spec.md) (the Draft reads). Every type named here is exported from
 `@revisium/engine` under that name, and so is every object type that a result holds, also where this guide writes it
 inline: a table item's `TableData`, a page's `DraftEdge`, the summary's `DraftTablesSummary`, the estimate's
 `MixedTableEstimate`, the row selection `SelectableRowSelection`, and the two `blocked` results
@@ -562,6 +562,7 @@ inline: a table item's `TableData`, a page's `DraftEdge`, the summary's `DraftTa
 | `changes.summary` | Totals of the Draft's changes, and the changes that no table item shows | no |
 | `changes.tableChanges` | Pages the changed tables, each with how its changes are selected | no |
 | `changes.rowChanges` | Pages the changed rows with their field and column changes, each with how it is selected | no |
+| `changes.fieldValue` | Reads one value of a row on the Head or the Draft side whole, or a part of a long string | no |
 | `changes.preview` | Plans a commit or a revert of a selection | no |
 | `changes.commit` | Publishes the selected changes into Head | yes |
 | `changes.revert` | Takes the selected changes out of the Draft | yes |
@@ -930,8 +931,20 @@ engine.changes.rowChanges({
   } | null;
   fieldsPerRow?: number | null;                      // 0–1,000
   orderBy?: DraftRowOrder | null;                    // 'id' (default) or 'recent'; 'recent' requires filters.tableId
+  maxValueBytes?: number | null;                     // 2–1,048,576: cut each side of a field change over it
 }): Promise<DraftRowPage>
 // { edges: DraftEdge<DraftRowItem>[], pageInfo, headRevisionId, draftRevisionId, refusedTables }
+
+engine.changes.fieldValue({
+  branch: ChangesBranch;
+  tableId: string;                                   // the table id on that side (or the other id of a renamed table)
+  rowId: string;                                     // the row id on that side (or the other id of a renamed row)
+  path: string;                                      // JSON Pointer; '' for the whole row data
+  side: DraftValueSide;                              // 'head' | 'draft'
+  offset?: number | null;                            // a string only: UTF-16 code units, default 0
+  limit?: number | null;                             // a string only: 1–1,048,576, default the rest
+}): Promise<DraftFieldValue>
+// { value, valueBytes, valueToken, text?: { offset, totalLength }, headRevisionId, draftRevisionId, refusedTables }
 
 engine.changes.summary({
   branch: ChangesBranch;
@@ -942,7 +955,7 @@ engine.changes.summary({
 - **Items.** A table item has `tableId`, `previousTableId` (renamed), `changeType`, `replaced`, `rowsSummary`,
   `schemaMigrations`, `viewsChanges` and `selection`. A row item has `tableId`, `previousTableId`, `rowId`,
   `previousRowId` (renamed), `changeType`, `replaced`, `changedAt`, `fields` (`path` as a JSON Pointer, `changeType`, `oldValue`,
-  `newValue`, `selection`), `fieldsTotal`, `columns` (`publishedAt`, `meta`, `schemaHash`), `selection`, and
+  `newValue`, `selection`), `fieldsTotal`, `arrays`, `columns` (`publishedAt`, `meta`, `schemaHash`), `selection`, and
   `idTakeover` / `idExchange` when a rename took over another row's id. `changeType` takes the native `ChangeType`
   values.
 - **One line per row.** A replaced row (deleted and created again under one id) is two adjacent items, `REMOVED`
@@ -954,6 +967,54 @@ engine.changes.summary({
   returns every item that shows the id (a deleted row and the rename that took over its id, both items of a replaced
   row, the rows of both tables of a replaced table id), so take your item by `previousTableId`, `previousRowId` and
   `changeType`. The limit saves payload, not work: the page still computes the whole diff of each row.
+- **Large values.** With `maxValueBytes` (the admin UI uses 20 KB), every listed field change carries
+  `oldValueBytes` and `newValueBytes`, the size of each whole side as compact JSON in UTF-8 (`null` for a side without
+  the value), and a side over the limit is cut. A string is cut to its longest prefix within the limit, never inside a
+  character, and marked `…ValueCut: 'prefix'`. Any other value (an object, an array, the whole row of a created or
+  removed row) cannot be cut into valid JSON: it reads `null`, marked `…ValueCut: 'omitted'`. Strings stay JSON
+  strings, so a client shows them quoted. «Show more» reads the rest with `fieldValue`:
+
+  ```typescript
+  // in rowChanges with maxValueBytes: 20:
+  { path: '/description', changeType: 'FIELD_MODIFIED', oldValue: 'Short', oldValueBytes: 7,
+    newValue: 'A very long descri', newValueBytes: 48213, newValueCut: 'prefix',
+    oldValueToken: '…', newValueToken: 'q3Z…', selection: … }
+  { path: '', changeType: 'FIELD_ADDED', oldValue: null, oldValueBytes: null,
+    newValue: null, newValueBytes: 3120, newValueCut: 'omitted', selection: … }   // a created row
+
+  await engine.changes.fieldValue({ branch, tableId: 'products', rowId: 'lamp', path: '/description',
+    side: 'draft', offset: 18, limit: 10000 });
+  // { value: 'ption of the lamp …', valueBytes: 48213, valueToken: 'q3Z…', text: { offset: 18, totalLength: 48211 }, … }
+  ```
+
+  `fieldValue` reads by the ids of the side: for a row item use `tableId` and `rowId` on the Draft side, and
+  `previousTableId ?? tableId` and `previousRowId ?? rowId` on the Head side; that also tells apart the two sides of a
+  replaced row and an id takeover. A renamed table or row is found by its other id too, while no table or row of the
+  side holds it. It returns `value: null, valueBytes: null` when the side has no value there. `offset` and `limit`
+  apply to a string; a part never splits a surrogate pair, so take the next `offset` from `text.offset` plus the part's
+  `length`. Compare `valueToken` with the token of the part you continue (`…ValueToken` of the cut side, or the
+  `valueToken` of the first part): a Draft row edit keeps the revision ids, so only a different token tells that the
+  value changed; then restart from `offset: 0`. The token is a hash of the value's content, so edits of other fields or
+  rows keep it. `path` follows JSON only: `/tags/length` or `/tags/01` has no value. It reads the one row version by
+  id, not the table's changes.
+- **Arrays.** Arrays are compared by index: `/tags/1` is the second element on each side, and no element is matched
+  by an id or reported as moved; an array is selected and committed whole. Each row item carries `arrays`, the arrays
+  at and around its listed field changes with their lengths, so a client folds unchanged elements («… 12 unchanged
+  items») without reading the array:
+
+  ```typescript
+  // tags ['a', 'b'] → ['a', 'c', 'd']
+  fields: [{ path: '/tags/1', … }, { path: '/tags/2', changeType: 'FIELD_ADDED', … }],
+  arrays: [{ path: '/tags', oldLength: 2, newLength: 3 }]
+  // groups[0].tags gained an element: both arrays, outer first
+  arrays: [{ path: '/groups', oldLength: 2, newLength: 2 }, { path: '/groups/0/tags', oldLength: 1, newLength: 2 }]
+  ```
+
+  A length is `null` on a side whose value is not an array there (an array a structure change added or removed). With
+  `fieldsPerRow`, `arrays` holds only the arrays of the listed entries.
+- **Missing or `null`.** The change type tells which side holds a value: `FIELD_ADDED` has none in Head,
+  `FIELD_REMOVED` none in the Draft. A stored `null` of a typed field reads as that type's value (`""` for a string),
+  as in the native row read.
 - **Recently changed.** `changedAt` is the time of the row's last change in the Draft: the `updatedAt` of its Draft
   row version, which every native write of the row sets (create, update, patch, file upload, rename, a reference
   rewritten by a rename, a partial commit or revert that merges the row). Both items of a replaced row carry the
@@ -1049,7 +1110,8 @@ without a hand-kept mirror:
 `REFERENCED_ENTITY_KINDS`, `CAUSE_ROLES`, `BLOCKER_CODES`, `REFUSAL_CODES`, `PREVIEW_STATUSES`, `APPLY_STATUSES`,
 `STALE_CHANGES`, and for the Draft reads
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `DRAFT_FIELD_CHANGE_TYPES`,
-`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`. The operations of the
+`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`, `DRAFT_ROW_CHANGE_KINDS`, `DRAFT_ROW_ORDERS`,
+`DRAFT_VALUE_CUTS`, `DRAFT_VALUE_SIDES`. The operations of the
 [Schema Ledger](#schema-ledger) have their own lists.
 
 The Draft read items also carry the native diff types, exported with them: `ChangeType`, `RowChangeDetailType`,

@@ -492,6 +492,30 @@ describe('Partial operation log', () => {
       ]);
     });
 
+    it('log one entry for a value read, with the side and the size of the value and no value', async () => {
+      const draft = await givenEditedNotes(['n1']);
+      const entries = loggedEntries();
+
+      await draft.readDraftFieldValue({
+        tableId: NOTES,
+        rowId: 'n1',
+        path: '/title',
+        side: 'draft',
+        offset: 2,
+        limit: 4,
+      });
+
+      expect(entries.finished()).toEqual<OperationLogEntry[]>([
+        {
+          ...(await expectedEntryOf(draft, 'fieldValue')),
+          outcome: 'read',
+          side: 'draft',
+          valueBytes: SECRET_TITLE.length + 2,
+          refusedTables: 0,
+        },
+      ]);
+    });
+
     it('log the refused tables of a read', async () => {
       const draft = await ChangesScenario.committedWithoutLedger(kit, {
         [NOTES]: { schema: noteSchema, rows: { n1: { title: 'one' } } },

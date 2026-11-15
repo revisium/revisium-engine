@@ -44,6 +44,7 @@ export interface DraftRowChangesInput {
   readonly filters?: DraftRowChangesFilters | null;
   readonly fieldsPerRow?: number | null;
   readonly orderBy?: DraftRowOrder | null;
+  readonly maxValueBytes?: number | null;
 }
 
 export interface SelectableRowSelection {
@@ -68,6 +69,12 @@ export const DRAFT_FIELD_CHANGE_TYPES = [
 
 export type DraftFieldChangeType = (typeof DRAFT_FIELD_CHANGE_TYPES)[number];
 
+// How a side over the byte limit is returned: a string as its longest prefix within the limit; any other value omitted
+// (null), since a part of it is no JSON value.
+export const DRAFT_VALUE_CUTS = ['prefix', 'omitted'] as const;
+
+export type DraftValueCut = (typeof DRAFT_VALUE_CUTS)[number];
+
 // The rename whose cascade rewrote a reference.
 export interface FollowedUnit {
   readonly unit: UnitRef;
@@ -79,8 +86,23 @@ export interface DraftFieldChange {
   readonly changeType: DraftFieldChangeType;
   readonly oldValue: unknown;
   readonly newValue: unknown;
+  // With maxValueBytes: the bytes of each whole side's JSON text, null for a side without the value, and the cut sides.
+  readonly oldValueBytes?: number | null;
+  readonly newValueBytes?: number | null;
+  // With maxValueBytes: the token of each whole side, as changes.fieldValue returns it; null for a side without the value.
+  readonly oldValueToken?: string | null;
+  readonly newValueToken?: string | null;
+  readonly oldValueCut?: DraftValueCut;
+  readonly newValueCut?: DraftValueCut;
   readonly selection: FieldSelection;
   readonly follows?: FollowedUnit;
+}
+
+// An array at or around a listed field change: its number of elements on each side, null where that side has none.
+export interface DraftArrayLengths {
+  readonly path: string;
+  readonly oldLength: number | null;
+  readonly newLength: number | null;
 }
 
 // A rename into the id of a deleted row: both items carry the deletion and the rename.
@@ -112,6 +134,7 @@ export interface DraftRowItem {
   readonly changedAt: Date | null;
   readonly fields: readonly DraftFieldChange[];
   readonly fieldsTotal: number;
+  readonly arrays: readonly DraftArrayLengths[];
   readonly columns: readonly DraftColumnChange[];
   readonly selection: RowSelection;
   readonly idTakeover?: IdTakeover;

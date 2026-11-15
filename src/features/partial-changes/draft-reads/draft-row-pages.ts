@@ -45,7 +45,7 @@ export class DraftRowPages {
   public async readPage(
     request: DraftRowChangesRequest,
   ): Promise<DraftRowPage> {
-    const { branch, first, filters, fieldsPerRow } = request;
+    const { branch, first, filters, fieldsPerRow, maxValueBytes } = request;
     const tables = await this.tablesReader.read(branch);
     const page = await this.readPairs(
       tablesFrom(tablesWithRowsOf(tables.listed, filters), request),
@@ -54,6 +54,7 @@ export class DraftRowPages {
     const edges = await this.rowItems.edgesOf(page.tables, tables.compared, {
       orderBy: request.orderBy,
       fieldsPerRow,
+      maxValueBytes,
     });
 
     return {

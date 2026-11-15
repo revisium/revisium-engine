@@ -6,6 +6,7 @@ import { RowMerger } from 'src/features/partial-changes/assembly/row-merger';
 import { TargetAssembler } from 'src/features/partial-changes/assembly/target-assembler';
 import { DependencyClosure } from 'src/features/partial-changes/closure/dependency-closure';
 import { DraftChangesSummaryReader } from 'src/features/partial-changes/draft-reads/draft-changes-summary';
+import { DraftFieldValues } from 'src/features/partial-changes/draft-reads/draft-field-values';
 import { DraftRowItems } from 'src/features/partial-changes/draft-reads/draft-row-items';
 import { DraftRowPages } from 'src/features/partial-changes/draft-reads/draft-row-pages';
 import { DraftTableItems } from 'src/features/partial-changes/draft-reads/draft-table-items';
@@ -79,6 +80,7 @@ import { DatabaseModule } from 'src/infrastructure/database/database.module';
     PageRenamesReader,
     DraftRowItems,
     DraftRowPages,
+    DraftFieldValues,
     DraftChangesSummaryReader,
     PartialChangesApiService,
     ...PARTIAL_CHANGES_QUERY_HANDLERS,

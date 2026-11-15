@@ -13,6 +13,11 @@ import {
 import { ListingValidationError } from 'src/features/partial-changes/draft-reads/listing-validation-error';
 import type { DraftChangesSummaryInput } from 'src/features/partial-changes/queries/impl/get-draft-changes-summary.query';
 import {
+  DRAFT_VALUE_SIDES,
+  type DraftFieldValueInput,
+  type DraftValueSide,
+} from 'src/features/partial-changes/queries/impl/get-draft-field-value.query';
+import {
   DRAFT_ROW_CHANGE_KINDS,
   DRAFT_ROW_ORDERS,
   type DraftRowChangeKind,
@@ -21,6 +26,7 @@ import {
 } from 'src/features/partial-changes/queries/impl/get-draft-row-changes.query';
 import type { DraftTableChangesInput } from 'src/features/partial-changes/queries/impl/get-draft-table-changes.query';
 import type { ChangesBranch } from 'src/features/partial-changes/snapshot/changes-snapshot';
+import { JsonPointer } from 'src/features/partial-changes/structure/json-pointer';
 import { ChangeType } from 'src/features/revision-changes/types';
 
 export interface TableFilters {
@@ -52,7 +58,19 @@ export type DraftRowChangesRequest = RowPaging & {
   readonly first: number;
   readonly filters: RowFilters;
   readonly fieldsPerRow?: number;
+  readonly maxValueBytes?: number;
 };
+
+// A value of one row on one side; offset and limit select a part of a string, in UTF-16 code units.
+export interface DraftFieldValueRequest {
+  readonly branch: ChangesBranch;
+  readonly tableId: string;
+  readonly rowId: string;
+  readonly pointer: JsonPointer;
+  readonly side: DraftValueSide;
+  readonly offset: number;
+  readonly limit?: number;
+}
 
 export interface DraftChangesSummaryRequest {
   readonly branch: ChangesBranch;
@@ -62,6 +80,11 @@ export interface DraftChangesSummaryRequest {
 const MAX_PAGE_SIZE = 5_000;
 const MAX_FIELDS_PER_ROW = 1_000;
 const MAX_ROW_IDS = 100;
+// The JSON text of the empty string, the shortest a cut string can be.
+const MIN_VALUE_BYTES = 2;
+const MAX_VALUE_BYTES = 1_048_576;
+const MAX_TEXT_LIMIT = 1_048_576;
+const VALUE_SIDES: ReadonlySet<unknown> = new Set(DRAFT_VALUE_SIDES);
 const CHANGE_TYPES: ReadonlySet<unknown> = new Set(Object.values(ChangeType));
 const ROW_CHANGE_KINDS: ReadonlySet<unknown> = new Set(DRAFT_ROW_CHANGE_KINDS);
 const ROW_ORDERS: ReadonlySet<unknown> = new Set(DRAFT_ROW_ORDERS);
@@ -93,6 +116,7 @@ export function rowChangesRequestOf({
   filters,
   fieldsPerRow,
   orderBy,
+  maxValueBytes,
 }: DraftRowChangesInput): DraftRowChangesRequest {
   const rowFilters = rowFiltersOf(filters);
 
@@ -102,6 +126,27 @@ export function rowChangesRequestOf({
     ...rowPagingOf(rowOrderOf(orderBy, rowFilters), after),
     filters: rowFilters,
     fieldsPerRow: fieldsPerRowOf(fieldsPerRow),
+    maxValueBytes: maxValueBytesOf(maxValueBytes),
+  };
+}
+
+export function fieldValueRequestOf({
+  branch,
+  tableId,
+  rowId,
+  path,
+  side,
+  offset,
+  limit,
+}: DraftFieldValueInput): DraftFieldValueRequest {
+  return {
+    branch,
+    tableId: idOf('tableId', tableId),
+    rowId: idOf('rowId', rowId),
+    pointer: pointerOf(path),
+    side: valueSideOf(side),
+    offset: offsetOf(offset),
+    limit: textLimitOf(limit),
   };
 }
 
@@ -164,22 +209,80 @@ function rowPagingOf(orderBy: DraftRowOrder, after: unknown): RowPaging {
 }
 
 function fieldsPerRowOf(fieldsPerRow: unknown): number | undefined {
-  if (fieldsPerRow === undefined || fieldsPerRow === null) {
+  return optionalIntegerOf('fieldsPerRow', fieldsPerRow, 0, MAX_FIELDS_PER_ROW);
+}
+
+function maxValueBytesOf(maxValueBytes: unknown): number | undefined {
+  return optionalIntegerOf(
+    'maxValueBytes',
+    maxValueBytes,
+    MIN_VALUE_BYTES,
+    MAX_VALUE_BYTES,
+  );
+}
+
+function idOf(name: string, id: unknown): string {
+  if (!isIdText(id) || id === '') {
+    throw new ListingValidationError(
+      `${name} must be a non-empty string without the NUL character`,
+    );
+  }
+
+  return id;
+}
+
+function pointerOf(path: unknown): JsonPointer {
+  if (typeof path !== 'string' || !JsonPointer.isValid(path)) {
+    throw new ListingValidationError('path must be a JSON Pointer');
+  }
+
+  return JsonPointer.parse(path);
+}
+
+function valueSideOf(side: unknown): DraftValueSide {
+  if (!isValueSide(side)) {
+    throw new ListingValidationError(
+      `side must be one of ${DRAFT_VALUE_SIDES.join(', ')}`,
+    );
+  }
+
+  return side;
+}
+
+function isValueSide(value: unknown): value is DraftValueSide {
+  return VALUE_SIDES.has(value);
+}
+
+function offsetOf(offset: unknown): number {
+  return optionalIntegerOf('offset', offset, 0, Number.MAX_SAFE_INTEGER) ?? 0;
+}
+
+function textLimitOf(limit: unknown): number | undefined {
+  return optionalIntegerOf('limit', limit, 1, MAX_TEXT_LIMIT);
+}
+
+function optionalIntegerOf(
+  name: string,
+  value: unknown,
+  min: number,
+  max: number,
+): number | undefined {
+  if (value === undefined || value === null) {
     return undefined;
   }
 
   if (
-    typeof fieldsPerRow !== 'number' ||
-    !Number.isInteger(fieldsPerRow) ||
-    fieldsPerRow < 0 ||
-    fieldsPerRow > MAX_FIELDS_PER_ROW
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < min ||
+    value > max
   ) {
     throw new ListingValidationError(
-      `fieldsPerRow must be an integer from 0 to ${MAX_FIELDS_PER_ROW}`,
+      `${name} must be an integer from ${min} to ${max}`,
     );
   }
 
-  return fieldsPerRow;
+  return value;
 }
 
 function cursorOf<Position>(

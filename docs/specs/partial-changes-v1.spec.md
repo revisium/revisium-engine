@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.12 |
+| Version | 2.13 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -1911,7 +1911,7 @@ Each Draft read ([draft-reads-v1]), preview, commit and revert logs one structur
 
 | Field | Value |
 | --- | --- |
-| `operation` | `tableChanges`, `rowChanges`, `summary`, `preview`, `commit` or `revert`. |
+| `operation` | `tableChanges`, `rowChanges`, `summary`, `fieldValue`, `preview`, `commit` or `revert`. |
 | `projectId`, `branchName` | From the input, when they are strings. |
 | `headRevisionId`, `draftRevisionId` | The revisions the plan of the last attempt (or the Draft read) read; absent when the last attempt failed before planning. |
 | `durationMs` | From the start of the operation to its result, endpoint notification excluded. |
@@ -1923,6 +1923,7 @@ Each Draft read ([draft-reads-v1]), preview, commit and revert logs one structur
 | `relinkedTables` | Commit and revert with outcome `empty`: the number of tables whose Draft link the normalisation of exactly `{ all: true }` changed to the Head version (§3.8); absent when it wrote nothing. |
 | `pageSize`, `returned` | `tableChanges` and `rowChanges`: the `first` the caller asked for and the number of items on the page. |
 | `filters` | Draft reads: the names of the filters given (`changeTypes`, `search`, `tableId`), never their values. |
+| `side`, `valueBytes` | `fieldValue`: the side read and the size in bytes of the whole value (`null` when the side has no value there), never the value. |
 | `error`, `errorCode` | Only on `warn`: the error's name and its code (an engine code such as `OPERATION_TIMEOUT` or `SERIALIZATION_CONFLICT`, or a database code such as `P2002`). Exhausted attempts log `SERIALIZATION_CONFLICT`, with `attempts` counting every attempt made. |
 
 An entry never holds row data, values, selectors or an error message, since a message can quote them. The
@@ -2564,6 +2565,11 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.13 (2026-11-15)
+
+- §11.1: the operation log covers the new Draft read `changes.fieldValue` ([draft-reads-v1] §5.8): `operation`
+  `fieldValue`, with `side` and `valueBytes`, never the value.
 
 ### Version 2.12 (2026-11-15)
 

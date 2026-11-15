@@ -4,7 +4,7 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 1.10 |
+| Version | 1.11 |
 | Status | Accepted; implemented ([ADR-002] delivery, PRs 8–11): PR 8, `changes.tableChanges` and `changes.summary` with their paging and filters; PR 9, `changes.rowChanges` with row items, fields, columns and keyset pages; PR 10, `idTakeover`, `idExchange` and `follows` (§5.3–§5.5); PR 11, the row `filters` of §1 and §7. ADR-002 PR 2 (views follow the structure, #178) has landed, so the §4 rules that name `views` or `structureChange.views`, and DR-10, hold. The reads are on the facade since ADR-002 PR 12 (#145) |
 | Date | 2026-11-15 |
 | Parent ADR | [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
@@ -30,15 +30,16 @@ Every operation takes `branch: { projectId: string; branchName: string }` and is
 | Operation | Input | Output |
 | --- | --- | --- |
 | `changes.tableChanges` | `branch`; `first` (integer 1–5,000); `after` (cursor, optional); `filters: { changeTypes?, search? }` (optional) | `DraftTablePage` (§9): table items, `pageInfo`, `totalCount`, ids, `refusedTables` |
-| `changes.rowChanges` | `branch`; `first` (integer 1–5,000); `after` (optional); `filters: { tableId?, rowIds?, changeTypes?, search? }` (optional); `fieldsPerRow` (integer 0–1,000, optional) | `DraftRowPage` (§9): row items, `pageInfo`, ids, `refusedTables`; no `totalCount` |
+| `changes.rowChanges` | `branch`; `first` (integer 1–5,000); `after` (optional); `filters: { tableId?, rowIds?, changeTypes?, search? }` (optional); `fieldsPerRow` (integer 0–1,000, optional); `orderBy` (`'id'`, the default, or `'recent'`, which requires `filters.tableId`; optional, §7) | `DraftRowPage` (§9): row items, `pageInfo`, ids, `refusedTables`; no `totalCount` |
 | `changes.summary` | `branch`; `filters: { changeTypes?, search? }` (optional, those of `tableChanges`) | `DraftChangesSummary` (§9) |
 
 - An optional input given as `null` is treated as absent, at any depth, as in partial-changes-v1 §5.
 - `first` outside 1–5,000 or not an integer, a malformed `after`, a cursor of another operation (a table cursor passed
   to `rowChanges` or the reverse), a cursor longer than 16,384 characters or nested deeper than three levels, a filter
   of a wrong type, a `search` or a row id holding the NUL character (no id holds it), `fieldsPerRow` outside 0–1,000
-  or not an integer, `rowIds` without `tableId` or with more than 100 ids, or `REPLACED` among the `changeTypes` of
-  `tableChanges` or `summary` → validation error (a `BadRequestException`) before the snapshot.
+  or not an integer, `rowIds` without `tableId` or with more than 100 ids, `REPLACED` among the `changeTypes` of
+  `tableChanges` or `summary`, an `orderBy` other than `id` and `recent`, `recent` without `filters.tableId`, or a
+  row cursor of the other order → validation error (a `BadRequestException`) before the snapshot.
 - An unknown project or branch → the native lookup error, a `BadRequestException` (partial-changes-v1 §5.9).
 - `changeTypes` takes the native `ChangeType` values (`ADDED`, `REMOVED`, `MODIFIED`, `RENAMED`,
   `RENAMED_AND_MODIFIED`); the `changeTypes` of `rowChanges` also take `REPLACED`, the kind of a replaced row (§5.6).
@@ -172,8 +173,8 @@ A listed table that is not refused always has one of them (§3).
 
 A row item (`DraftRowItem`, §9) is addressed by `tableId` (Draft id, else the Head id of a removed table),
 `previousTableId` (Head id of a renamed table, on every row of it), `rowId` (Draft id, else the Head id of a removed
-row) and `previousRowId` (Head id of a renamed row). It carries `changeType` (§3), `replaced` (§5.6), `fields` and
-`fieldsTotal` (§5.2), `columns`, `selection`, and `idTakeover` / `idExchange` where they apply.
+row) and `previousRowId` (Head id of a renamed row). It carries `changeType` (§3), `replaced` (§5.6), `changedAt`
+(§5.7), `fields` and `fieldsTotal` (§5.2), `columns`, `selection`, and `idTakeover` / `idExchange` where they apply.
 
 ### 5.1 Row selection
 
@@ -306,6 +307,26 @@ table's replaced row is still `replaced`.
 The two items stay because `changeType` takes the native values, which have none for a replaced row, and each side
 keeps its native field entry, so DR-03 holds unchanged; `replaced` on row items mirrors `replaced` on table items.
 
+### 5.7 Time of the last change
+
+`changedAt` is the time of the row's last change in the Draft: the stored `updatedAt` of its Draft row version, to the
+millisecond. Every native writer of a Draft row version sets it to the moment of its write:
+
+| Writer | `updatedAt` of the Draft version |
+| --- | --- |
+| create rows (also a row created again at a deleted id, and the rows of a created table) | the moment of creation |
+| update and patch rows, upload a file, a reference rewritten by a rename | the moment of the write |
+| rename rows | the moment of the rename |
+| a structure change (`updateTable`, synchronous or by background migration) | the moment it rewrites each row: every row of the table, changed by it or not |
+| a partial commit or revert that writes a merged version of a row | the moment of that write; a row it leaves as it was keeps its version and its time |
+
+So for each kind of item: a created (`ADDED`), `MODIFIED`, `RENAMED` or `RENAMED_AND_MODIFIED` row carries the time of
+its Draft version; both items of a replaced row carry the time of its created row (the deletion has no version to stamp,
+and it happened before the creation at its id); a removed row carries `null`, as the Draft keeps no version of it.
+A structure change that rewrites every row of a table gives each of them its time, so after it the rows of that
+table read as changed at that moment, the rows it did not change included when they are reported for an earlier edit;
+the stored time cannot tell the two writes apart. Only a stored time per kind of write could (out of scope).
+
 ## 6. Summary
 
 `changes.summary` returns (`DraftChangesSummary`, §9):
@@ -345,11 +366,24 @@ row's deleted row before the row created at its id, and a deleted row before the
 does not depend on internal ids, so copies of a project list their items in the same order. Within one read state,
 `(tableId, changeType)` identifies a table item and `(tableId, rowId, changeType)` a row item.
 
+**Recent order** (`orderBy: 'recent'`, `rowChanges` with `filters.tableId`). The rows with a time (§5.7) newest first,
+then the removed rows; ties, and the removed rows among themselves, by row id by code point; of two items at one position
+the one whose row exists only in Head first. A replaced row's two items share their created row's time, so they stay
+adjacent, `REMOVED` then `ADDED`. A deleted row and the rename that took over its id are two positions: the rename by
+its time, the deleted row among the removed rows; each still carries `idTakeover`. When `tableId` selects two tables
+(a replaced table id, or a removed table and the table renamed into its id), the rows of the table in the Draft come
+first and those of the removed table, which are all removed, after them. Times change with every write, so within one
+read state `(tableId, rowId, changeType)` still identifies a row item, while its position follows its time.
+
 **Paging.** Keyset pages: `after` is the `endCursor` of the previous page, an opaque cursor naming the last table, or
-the last table and row id; offset cursors are refused. Every edge carries the cursor of its position; the two items of
-one row id can share it. Row items that share a row id are never split across pages: a table's page is fetched
-`WITH TIES`, so a row page can hold a few more items than `first`. `pageInfo.hasNextPage` says whether an item follows
-the page. `tableChanges` returns `totalCount`, the number of tables matching its filters. `rowChanges` returns no total
+the last table and row id, and in the recent order also the time of the last line; offset cursors are refused, and so
+is a row cursor of the other order. Every edge carries the cursor of its position; the items at one position can
+share it. Items at one position are never split across pages: a table's page is fetched `WITH TIES`, so a row page
+can hold a few more items than `first`. In the id order a position is a row id, so the items that share a row id (a
+replaced row's two items, a deleted row and the rename that took over its id) are never split. In the recent order a
+position is a time and a row id, so only a replaced row's two items share one and are never split; the deleted row of
+an id takeover and the rename into its id are at two positions and can be on two pages. `pageInfo.hasNextPage` says
+whether an item follows the page. `tableChanges` returns `totalCount`, the number of tables matching its filters. `rowChanges` returns no total
 (§8).
 
 **Row filters** (`rowChanges`), applied after the anti-join, so they add no scan:
@@ -416,6 +450,12 @@ anti-join of the table's two link sets (a created or removed table reads the row
   deleted rows with 20,000 created again at their ids and 10,000 created: the row counts as before; a row page about
   60 ms over a page without the mark (the page's pairs are kept once more), where a window over all pairs cost 120–300
   ms.
+- The recent order adds no scan: the row query takes the time from the Draft row versions the anti-join already
+  reads, a replaced row's time from the aggregate that marks it, and sorts the table's matching pairs by time and row
+  id instead of by row id (a top-N sort either way, as no index serves either order), and it always looks up the
+  page's companions, since a deleted row is placed apart from the rename that took over its id. Measured on a table of
+  100,000 edited rows, median of 5 runs, two rounds: a page of 50, first or in the middle, 1.0–1.06 s in the id order
+  (as before) and 1.06–1.15 s in the recent order; the anti-join dominates both.
 
 No read joins every row of both revisions. Measured on the PoC in the sandbox, one table of 1,000,000 rows with 1,000
 rows edited: a row page of 50 or 500 1.6–1.8 s, a table page 1.6 s, the summary 1.6 s, against 31–34 s through the
@@ -433,8 +473,10 @@ type DraftRowChangesFilters = { tableId?: string | null; rowIds?: string[] | nul
   changeTypes?: DraftRowChangeKind[] | null; search?: string | null };
 type DraftTableChangesInput = { branch: ChangesBranch; first: number; after?: string | null;
   filters?: DraftTableChangesFilters | null };
+type DraftRowOrder = 'id' | 'recent';
 type DraftRowChangesInput = { branch: ChangesBranch; first: number; after?: string | null;
-  filters?: DraftRowChangesFilters | null; fieldsPerRow?: number | null };   // fieldsPerRow: 0–1,000
+  filters?: DraftRowChangesFilters | null; fieldsPerRow?: number | null;   // fieldsPerRow: 0–1,000
+  orderBy?: DraftRowOrder | null };                                          // 'id' when absent; 'recent' needs tableId
 type DraftChangesSummaryInput = { branch: ChangesBranch; filters?: DraftTableChangesFilters | null };
 
 type DraftReadState = { headRevisionId: string; draftRevisionId: string; refusedTables: RefusedTable[] };
@@ -466,6 +508,7 @@ type DraftRowItem = {
   previousRowId?: string;                     // Head id of a renamed row
   changeType: ChangeType;
   replaced: boolean;                          // one of the two items of a replaced row
+  changedAt: Date | null;                     // last change in the Draft (§5.7); null for a removed row
   fields: DraftFieldChange[];                 // native field changes, in native order, at most fieldsPerRow
   fieldsTotal: number;                        // the number of all field changes of the row
   columns: DraftColumnChange[];               // publishedAt, meta, schemaHash of a row on both sides
@@ -523,9 +566,9 @@ built of (`MigrationType`, `JsonPatchOp`, `JsonPatchOperation`, `HistoryPatch`, 
 holds the values of the native `RowChangeDetailType` that the row value diff produces, and the package exports that
 enum too. Every code union has a runtime list next to it, from which the type is derived (partial-changes-v1 §5.10):
 `TABLE_SELECTION_STATES`, `ROW_SELECTION_STATES`, `FIELD_SELECTION_STATES`, `DRAFT_FIELD_CHANGE_TYPES`,
-`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`, `DRAFT_ROW_CHANGE_KINDS`. Every type of this section
-is exported under its name, `DraftEdge`, `TableData`, `SelectableRowSelection`, `DraftTablesSummary`,
-`DraftRowsSummary` and `DraftRowChangeKind` included.
+`GOES_WITH_REASONS`, `FOLLOW_REASONS`, `ID_EXCHANGE_TERMINATIONS`, `DRAFT_ROW_CHANGE_KINDS`, `DRAFT_ROW_ORDERS`. Every
+type of this section is exported under its name, `DraftEdge`, `TableData`, `SelectableRowSelection`,
+`DraftTablesSummary`, `DraftRowsSummary`, `DraftRowChangeKind` and `DraftRowOrder` included.
 
 ## 10. Acceptance scenarios
 
@@ -595,7 +638,8 @@ Items:
 Paging, filters, validation, snapshot:
 
 - DR-15 Paging until `hasNextPage = false` returns the same items as one large page, for pages of 1 to 5,000; the two
-  items of one row id are never split; offset and foreign cursors are refused; `first` of 0, 5,001 or 1.5 is refused
+  items of one row id are never split in the id order, nor a replaced row's two items in the recent order; offset
+  and foreign cursors are refused; `first` of 0, 5,001 or 1.5 is refused
   before the snapshot.
 - DR-16 Row filters: `tableId` of a replaced id lists both tables' rows; of a renamed table's Head id lists it only
   when no item shows the id; `changeTypes` `RENAMED` and `MODIFIED` include `RENAMED_AND_MODIFIED`, `REPLACED` lists
@@ -636,10 +680,39 @@ Lines of the list:
   with its whole side; a deleted row and the rename into its id, and the rows of a replaced table id, are not
   `replaced`; `rowsSummary` of the summary and the table item counts the row once in `replaced` and `total`.
 - DR-26 Validation: `rowIds` without `tableId`, not an array, with a non-string or a NUL id, or with more than 100 ids;
-  `fieldsPerRow` of -1, 1,001, 1.5 or a string; `REPLACED` in the table reads' `changeTypes` → validation error
-  before the snapshot; `null` for each is absent.
+  `fieldsPerRow` of -1, 1,001, 1.5 or a string; `REPLACED` in the table reads' `changeTypes`; an unknown `orderBy`,
+  `recent` without `tableId`, a recent cursor whose time is not a real UTC time to the millisecond from year 1 (no year
+  0, month 13, day 32 or hour 25) or `null` → validation error before the snapshot; `null` for each is absent.
+
+Recent order:
+
+- DR-27 Over random Drafts, for every table id: each item's `changedAt` equals the stored `updatedAt` of its Draft row
+  version (of the created row for both items of a replaced row, `null` for a removed row), also in the id order; the
+  recent read lists the items of the id read sorted by §7 (the table in the Draft before the removed table of its id,
+  rows with a time newest first, removed rows last, ties by row id, the Head-only item first); pages of 1, 2 and 7
+  return the same items; every row filter and `fieldsPerRow` select from it exactly what they select from the id order.
+- DR-28 Scenarios: one row of each kind ordered by stamped times; equal times by row id in code points; the times the
+  native writers set (an edit, a rename, a creation, a second edit moves a row first); a structure change gives every
+  rewritten row its time; a replaced row's two items adjacent at its created row's time and on one page at page sizes
+  1 and 2; a rename into a deleted row's id at its time and the deletion last, both with `idTakeover` on pages of one;
+  the rows of a table created at a replaced table id before the removed table's rows; a renamed table by its Head id;
+  `orderBy: 'id'` and `null` read what the absent order reads; a cursor of one order is refused under the other.
 
 ## Changelog
+
+### Version 1.11 (2026-11-15)
+
+- §1, §7, §9: `rowChanges` takes `orderBy` (`DraftRowOrder`, `DRAFT_ROW_ORDERS`): `id` (the default, unchanged) or
+  `recent`, the rows of one table id by the time of their last change, newest first, removed rows last, ties by row id.
+  `recent` requires `filters.tableId`; every filter and `fieldsPerRow` apply under it. Its cursor carries the time of
+  the last line (a UTC time to the millisecond from year 1, or `null`) and is refused under the id order, and the
+  reverse. Items at one position are never split: a row id in the id order, a replaced row's two items in the recent
+  order, where an id takeover's two items are at two positions (§7, DR-15).
+- §5.7, §9: every row item carries `changedAt`, the stored `updatedAt` of its Draft row version; both items of a
+  replaced row carry the created row's time; a removed row `null`. A structure change gives every row it rewrites its
+  time.
+- §8: cost of the recent order, measured.
+- §10: DR-26 follows; DR-27 and DR-28 added.
 
 ### Version 1.10 (2026-11-15)
 

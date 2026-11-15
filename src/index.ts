@@ -417,6 +417,7 @@ export {
 export {
   DRAFT_FIELD_CHANGE_TYPES,
   DRAFT_ROW_CHANGE_KINDS,
+  DRAFT_ROW_ORDERS,
   type DraftColumnChange,
   type DraftFieldChange,
   type DraftFieldChangeType,
@@ -424,6 +425,7 @@ export {
   type DraftRowChangesFilters,
   type DraftRowChangesInput,
   type DraftRowItem,
+  type DraftRowOrder,
   type DraftRowPage,
   type FollowedUnit,
   type IdExchange,

@@ -18,6 +18,13 @@ export interface RowPosition {
   readonly rowId: string;
 }
 
+// The last line of a page in the recent order: its time (null for a removed row) and its row id.
+export interface RecentRowPosition extends RowPosition {
+  readonly changedAt: string | null;
+}
+
+const CHANGE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const FIRST_STORED_YEAR = 1;
 const TABLE_CURSOR_PARTS: ReadonlySet<string> = new Set([
   'tableId',
   'headOnly',
@@ -25,6 +32,10 @@ const TABLE_CURSOR_PARTS: ReadonlySet<string> = new Set([
 const ROW_CURSOR_PARTS: ReadonlySet<string> = new Set([
   ...TABLE_CURSOR_PARTS,
   'rowId',
+]);
+const RECENT_ROW_CURSOR_PARTS: ReadonlySet<string> = new Set([
+  ...ROW_CURSOR_PARTS,
+  'changedAt',
 ]);
 
 export function compareTablePositions(
@@ -73,6 +84,58 @@ export function decodeRowCursor(text: string): RowPosition {
     table: { tableId: parts.tableId, headOnly: parts.headOnly },
     rowId: parts.rowId,
   };
+}
+
+export function encodeRecentRowCursor({
+  table,
+  rowId,
+  changedAt,
+}: RecentRowPosition): string {
+  return encodeCursor('recentRows', {
+    tableId: table.tableId,
+    headOnly: table.headOnly,
+    rowId,
+    changedAt,
+  });
+}
+
+export function decodeRecentRowCursor(text: string): RecentRowPosition {
+  const parts = cursorPartsOf(text, 'recentRows', RECENT_ROW_CURSOR_PARTS);
+
+  if (
+    !parts ||
+    !isTablePosition(parts) ||
+    typeof parts.rowId !== 'string' ||
+    !isChangeTime(parts.changedAt)
+  ) {
+    throw malformedCursor();
+  }
+
+  return {
+    table: { tableId: parts.tableId, headOnly: parts.headOnly },
+    rowId: parts.rowId,
+    changedAt: parts.changedAt,
+  };
+}
+
+// A time as the read issues it, in UTC to the millisecond, or null for a removed row: a real calendar time that the
+// database timestamp holds. It has no year 0, and four digits stay far below its last year.
+function isChangeTime(value: unknown): value is string | null {
+  if (value === null) {
+    return true;
+  }
+
+  if (typeof value !== 'string' || !CHANGE_TIME.test(value)) {
+    return false;
+  }
+
+  const time = new Date(value);
+
+  return (
+    !Number.isNaN(time.getTime()) &&
+    time.toISOString() === value &&
+    time.getUTCFullYear() >= FIRST_STORED_YEAR
+  );
 }
 
 function isTablePosition(parts: Fields): parts is Fields & TablePosition {

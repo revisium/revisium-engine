@@ -5,7 +5,8 @@ import {
 } from 'src/features/partial-changes/input/fields';
 
 // One kind per operation that issues cursors: an operation accepts only its own.
-export type CursorKind = 'tables' | 'rows';
+// The row read issues one kind per order, so a cursor of one order is refused under the other.
+export type CursorKind = 'tables' | 'rows' | 'recentRows';
 
 // Bounds the work spent on any cursor text, far above the longest cursor issued: a row position of two ids.
 export const MAX_CURSOR_LENGTH = 16_384;

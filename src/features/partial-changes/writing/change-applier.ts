@@ -26,6 +26,7 @@ import {
   listedBlockersOf,
   listedRequiredOf,
 } from 'src/features/partial-changes/planning/listed-details';
+import { listedPlacesOf } from 'src/features/partial-changes/planning/plan-places';
 import {
   changesSincePreview,
   decidePlanStatus,
@@ -378,6 +379,11 @@ function unappliedChangesOf(
         headRevisionId: plan.headRevisionId,
         draftRevisionId: plan.draftRevisionId,
         unmatched: plan.unmatched,
+        ...listedPlacesOf(
+          plan.target.source.catalogue,
+          plan.appliedUnits,
+          maxListedDetails,
+        ),
       };
   }
 }

@@ -29,7 +29,10 @@ conservative: raise them once the operation logs show what operations really cos
 | `PARTIAL_CHANGES_MAX_ATTEMPTS` | `3` | 1 or more | Serializable attempts of a commit or revert, and of the schema ledger backfill, on serialization failures. When the last one fails serialization, the operation fails with `SERIALIZATION_CONFLICT` (409). From the third attempt on, each attempt holds the branch write fence exclusively, so with `1` or `2` no attempt is escalated. |
 
 Each setting is read once at startup, and the effective values are logged (`Partial changes limits: …`,
-`Partial operation settings: …`), with the variable each value came from when it is not the default.
+`Partial operation settings: …`), with the variable each value came from when it is not the default. Every preview
+also returns the effective `PARTIAL_CHANGES_MAX_CHANGED_ROWS`, `PARTIAL_CHANGES_MAX_PER_ROW_WORK` and
+`PARTIAL_CHANGES_MAX_MIXED_TABLE_LINKS` as `limits` next to its `estimate`, so a client can warn before a limit is
+reached.
 
 Each Draft read, preview, commit and revert, and each schema ledger backfill and repair, logs one
 structured entry through the NestJS logger with the context `OperationLog` (messages `Partial changes operation

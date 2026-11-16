@@ -717,10 +717,12 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | --- | --- |
 | `status` | `ready`, `required`, `blocked` or `empty` (see [Statuses](#statuses)). |
 | `planned` | `false` only when a limit stopped the plan; then `status` is `blocked` with a `tooLarge` blocker. |
+| `plannedAt` | When the preview started reading, by the application clock; a display hint for a `stale` result's `places`, not a freshness check (see [The fingerprint](#the-fingerprint-and-stale)). |
 | `headRevisionId`, `draftRevisionId` | The revisions the plan was made on. |
 | `fingerprint` | Pass it as `expected` to `commit` or `revert`; `null` when not `planned`. |
-| `counts` | `{ selected, required }`: selected units and required additions (`counts.required` equals `requiredTotal`); `null` when not `planned`. |
-| `coverage` | Per user table with an applied unit: `rows`, `appliedRows`, `partlyAppliedRows`, and whether its `structure` and `views` are applied. |
+| `counts` | `{ selected, required }`: selected units and required additions (`counts.required` equals `requiredTotal`); `null` when not `planned`. Units, not rows: a row with three edited values is three units. |
+| `rowCounts` | The rows the operation applies, as `{ selected, required }`, each `{ total, added, modified, removed, renamed, replaced, partlyApplied }` (see [Rows by kind](#rows-by-kind)); `null` when not `planned`. |
+| `coverage` | Per user table with an applied unit: `rows`, `appliedRows`, `partlyAppliedRows`, whether its `structure` and `views` are applied, and its `rowCounts`. |
 | `required` | The required additions, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` (see [Listed details](#listed-details)): `unit` (with its `selector`) and `reason` (`code`, `site`, `references`, `cause`, `because`). |
 | `requiredTotal` | Every required addition, listed or not; 0 when not `planned`. |
 | `blockers` | What prevents the operation, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS`, each with a `code` and a `message`; `migrationInProgress` while an async migration runs on the branch. |
@@ -729,16 +731,42 @@ Writes nothing. The result (`PlannedPreview | StoppedPreview`, discriminated by 
 | `unmatched` | The selectors that matched no unit; `{}` when every selector matched, `null` when not `planned`. |
 | `refusedTables` | Tables that partial operations refuse on this branch (see [Refused tables](#refused-tables)); empty for exactly `{ all: true }`. |
 | `estimate` | What the plan measured against the limits. |
+| `limits` | `{ maxChangedRows, maxPerRowWork, maxMixedTableLinks }`: the limits of this engine instance ([ENV.md](../ENV.md)) that `changedRows`, `perRowWorkRows` and each table's `linksCopied` are compared against, also when not `planned`. A client warns before a limit is reached and explains a `tooLarge` blocker with them. |
 | `draftHasChanges` | Only when `status` is `empty`: whether the Draft still differs from Head (its stored `hasChanges`). For exactly `{ all: true }`, `true` means the Draft holds only changes without effect (content-equal versions, stale formula outputs, `schemaHash` differences, an empty views table only it holds), which a commit or revert clears, or an empty schema, migration or shared-schemas table only it holds, which stays (see [Content-equal versions](#content-equal-versions)). |
 
-A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts` and `unmatched` are `null`,
-`coverage`, `required` and `deferred` are empty, and `requiredTotal` is 0.
+A plan stopped by a limit returns no value of the plan: `fingerprint`, `counts`, `rowCounts` and `unmatched` are
+`null`, `coverage`, `required` and `deferred` are empty, and `requiredTotal` is 0.
 
 ```json
-{ "status": "blocked", "planned": false, "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
-  "fingerprint": null, "counts": null, "coverage": [], "unmatched": null, "required": [], "requiredTotal": 0,
-  "deferred": [], "refusedTables": [], "blockers": [{ "code": "tooLarge", "message": "…" }],
-  "blockersTotal": 1, "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] } }
+{ "status": "blocked", "planned": false, "plannedAt": "2026-11-15T10:00:00.000Z",
+  "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
+  "fingerprint": null, "counts": null, "rowCounts": null, "coverage": [], "unmatched": null, "required": [],
+  "requiredTotal": 0, "deferred": [], "refusedTables": [], "blockers": [{ "code": "tooLarge", "message": "…" }],
+  "blockersTotal": 1, "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] },
+  "limits": { "maxChangedRows": 20000, "maxPerRowWork": 2000, "maxMixedTableLinks": 100000 } }
+```
+
+«Too many changes for a partial commit (120,000 of 20,000). Commit the whole draft instead.» `changedRows` counts
+every changed row of each affected table, so picking fewer rows of the same table does not lower it.
+
+#### Rows by kind
+
+`rowCounts` says how many rows the operation applies, as a screen says it: «Commit 4 rows to master · 3 selected + 1
+added automatically». A row counts once, in `selected` when one of its applied changes is selected, otherwise in
+`required`. Its kinds are those of the Draft reads' `rowsSummary`: `added`, `removed`, `replaced` (a replaced row
+once), `renamed`, and `modified` when a value, `publishedAt` or `meta` of the row is applied; a renamed and edited row
+counts in `renamed` and in `modified`. `partlyApplied` counts the rows of which only some changes are applied, such as
+one of two edited values: «Commit 1 value of p-1042». A row that differs only in `schemaHash`, which the Draft reads
+do not show, counts as no row, and the rows that go with a schema change (the rows of a created table, values of
+changed fields) count in no kind: `structure: true` says they are applied. Selecting a table's `tableData` counts
+`total` equal to that table's `tableData.rows` in the Draft reads, and `added`, `removed`, `replaced`, `renamed` equal
+to its `rowsSummary` ([SPEC §5.1](specs/partial-changes-v1.spec.md#51-common-types)).
+
+```json
+{ "counts": { "selected": 5, "required": 1 },
+  "rowCounts": {
+    "selected": { "total": 4, "added": 0, "modified": 2, "removed": 1, "renamed": 1, "replaced": 1, "partlyApplied": 1 },
+    "required": { "total": 1, "added": 1, "modified": 0, "removed": 0, "renamed": 0, "replaced": 0, "partlyApplied": 0 } } }
 ```
 
 Each call plans anew from the current Draft, so a transport that serves `preview` as a query keeps it out of client
@@ -800,10 +828,10 @@ status is `applied`, except that an `empty` commit or revert of exactly `{ all: 
 
 | `status` | Fields |
 | --- | --- |
-| `applied` | `headRevisionId`, `draftRevisionId`, `applied` (`{ selected, required }`), `draftHasChanges` (whether the Draft still differs from Head). A commit also returns `previousHeadRevisionId` and `renumberedMigrations` (`{ from, to }[]`, pending migration ids it renumbered). |
+| `applied` | `headRevisionId`, `draftRevisionId`, `applied` (`{ selected, required }`), `rowCounts` and `coverage` (as the preview of the same plan showed them: «Committed 4 rows · revision …»), `draftHasChanges` (whether the Draft still differs from Head). A commit also returns `previousHeadRevisionId` and `renumberedMigrations` (`{ from, to }[]`, pending migration ids it renumbered). |
 | `required` | `required`: additions to accept with `includeRequired: true`, or to add to the selection by their `selector`; `requiredTotal` (see [Listed details](#listed-details)). |
 | `blocked` | `planned`, `blockers`, `blockersTotal`, `required`, `requiredTotal`; `unmatched` when `planned`. |
-| `stale` | `changed`, the current `headRevisionId` and `draftRevisionId`, and the current `unmatched` (see [The fingerprint](#the-fingerprint-and-stale)). |
+| `stale` | `changed`, the current `headRevisionId` and `draftRevisionId`, the current `unmatched`, and `places` with `placesTotal` (see [The fingerprint](#the-fingerprint-and-stale)). |
 | `empty` | The current `headRevisionId` and `draftRevisionId`; `unmatched` when some selectors matched nothing; `draftHasChanges` (whether the Draft still differs from Head). A repeat of an applied operation is `empty`. |
 
 A commit turns the Draft revision into the new Head (`headRevisionId` is the former Draft revision id) and creates a
@@ -899,8 +927,28 @@ match anything) and previews again, so the user reviews the new plan:
 
 ```json
 { "status": "stale", "changed": ["content"], "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
-  "unmatched": {} }
+  "unmatched": {},
+  "places": [
+    { "kind": "row", "tableId": "products", "rowId": "p-1042", "units": ["field"],
+      "changedAt": "2026-11-15T10:02:41.120Z" },
+    { "kind": "row", "tableId": "products", "rowId": "p-1043", "units": ["field"],
+      "changedAt": "2026-11-15T09:51:07.004Z" }],
+  "placesTotal": 2 }
 ```
+
+The fingerprint holds digests, not a list, and the engine keeps no plan between the preview and the operation, so a
+`stale` result cannot name the units that changed since the preview. `places` names where the operation applies now:
+rows (`tableId`, `rowId`, `side`), tables (`structure` or `views`) and shared schemas, each with the kinds of its
+applied units and `changedAt`, the stored time of its last change (`null` for a deleted row), most recent first, at
+most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` of them with `placesTotal` counting all. Name the places with
+`changedAt >= plannedAt` as changed after the preview: «The draft changed while you were picking: p-1042 was edited
+again. Your selection is kept.» This is a display hint; `changed` is the only freshness check. It can miss or
+over-report a place: `plannedAt` is the application clock, while `changedAt` is the application clock for native
+updates and renames but the database clock for created rows and for rows a partial commit or revert assembled, so
+the clocks can differ; times are stored to the millisecond, and `>=` errs towards naming a write of the same
+millisecond. A unit that disappeared is not a place (`unmatched` names selectors that match nothing now), and a row
+edit that makes a selected schema change stale shows only as `content`
+([SPEC §9.2](specs/partial-changes-v1.spec.md#92-rules)).
 
 A request with `expected` is never applied twice: a repeat, also a concurrent one, is `empty`, or `stale` when its
 selection now resolves to other units. A request without `expected` resolves its selection again on every call.

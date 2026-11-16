@@ -54,6 +54,8 @@ export class RevertDraftChangesHandler implements ICommandHandler<
       headRevisionId: plan.headRevisionId,
       draftRevisionId: plan.draftRevisionId,
       applied: plan.counts,
+      rowCounts: plan.rowCounts,
+      coverage: plan.coverage,
       draftHasChanges,
     };
   }

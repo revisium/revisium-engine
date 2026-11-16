@@ -87,6 +87,10 @@ const CHANGES_API_TYPES = [
   'PlanBlocker',
   'PlanCounts',
   'PlanEstimate',
+  'PlanLimits',
+  'PlanPlace',
+  'PlanPlaceKind',
+  'PlanRowCounts',
   'PlannedChangesBlocked',
   'PlannedPreview',
   'PreviewBase',
@@ -108,6 +112,7 @@ const CHANGES_API_TYPES = [
   'RevertChangesResult',
   'RevertedDraft',
   'RowColumn',
+  'RowKindCounts',
   'RowRef',
   'RowSelection',
   'RowSelectionState',
@@ -180,6 +185,7 @@ const CODE_LISTS: Readonly<Record<string, readonly string[]>> = {
   FOLLOW_REASONS: ['referenceRename'],
   GOES_WITH_REASONS: ['rowExistence', 'structureBound', 'tableExistence'],
   ID_EXCHANGE_TERMINATIONS: ['cycle', 'deletedOccupant', 'freeId', 'truncated'],
+  PLAN_PLACE_KINDS: ['row', 'sharedSchema', 'table'],
   PREVIEW_STATUSES: ['blocked', 'empty', 'ready', 'required'],
   REASON_SITE_KINDS: [
     'migration',
@@ -417,6 +423,13 @@ const CODE_UNIONS_EQUAL_THEIR_LISTS = {
         Equal<engine.IdExchange['termination'], engine.IdExchangeTermination>,
       ]
     >(),
+  PLAN_PLACE_KINDS:
+    unionsEqual<
+      [
+        Equal<engine.PlanPlaceKind, ListMember<typeof engine.PLAN_PLACE_KINDS>>,
+        Equal<engine.PlanPlace['kind'], engine.PlanPlaceKind>,
+      ]
+    >(),
   PREVIEW_STATUSES:
     unionsEqual<
       [
@@ -563,6 +576,12 @@ const RESULT_PARTS_HAVE_THEIR_NAMES = unionsEqual<
       engine.ChangesBlocked,
       engine.PlannedChangesBlocked | engine.StoppedChangesBlocked
     >,
+    Equal<engine.PreviewBase['limits'], engine.PlanLimits>,
+    Equal<engine.PlannedPreview['rowCounts'], engine.PlanRowCounts>,
+    Equal<engine.PlanRowCounts['selected'], engine.RowKindCounts>,
+    Equal<engine.TableCoverage['rowCounts'], engine.PlanRowCounts>,
+    Equal<engine.CommittedDraft['rowCounts'], engine.PlanRowCounts>,
+    Equal<engine.ChangesStale['places'][number], engine.PlanPlace>,
     Equal<
       Variant<engine.RowSelection, 'selectable'>,
       {
@@ -842,20 +861,36 @@ describe('EngineApiService.changes (AS-92)', () => {
     });
 
     await updateDraftProduct('lamp', { title: 'Floor lamp', price: 10 });
+    const stale = await changes.commit({
+      branch,
+      selection: lampTitleSelection,
+      expected: preview.fingerprint,
+    });
 
-    expect(
-      await changes.commit({
-        branch,
-        selection: lampTitleSelection,
-        expected: preview.fingerprint,
-      }),
-    ).toEqual({
+    expect(stale).toEqual({
       status: 'stale',
       changed: ['content'],
       headRevisionId: preview.headRevisionId,
       draftRevisionId: preview.draftRevisionId,
       unmatched: {},
+      places: [
+        {
+          kind: 'row',
+          tableId: 'products',
+          rowId: 'lamp',
+          units: ['field'],
+          changedAt: expect.any(Date) as Date,
+        },
+      ],
+      placesTotal: 1,
     });
+    expect(
+      stale.status === 'stale' &&
+        stale.places.map(
+          ({ changedAt }) =>
+            changedAt !== null && changedAt >= preview.plannedAt,
+        ),
+    ).toEqual([true]);
   });
 
   it('treats null optional inputs as absent in every operation', async () => {
@@ -888,13 +923,14 @@ describe('EngineApiService.changes (AS-92)', () => {
         selection: { ...lampTitleSelection, all: null, exclude: null },
         includeRequired: null,
       }),
-    ).toEqual(
-      await changes.preview({
+    ).toEqual({
+      ...(await changes.preview({
         branch,
         operation: 'commit',
         selection: lampTitleSelection,
-      }),
-    );
+      })),
+      plannedAt: expect.any(Date) as Date,
+    });
     expect(
       await changes.revert({
         branch,

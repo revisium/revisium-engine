@@ -26,6 +26,8 @@ import {
 } from 'src/__tests__/fixtures/readonly-draft-versions';
 import { ledgerIdsOf } from 'src/__tests__/fixtures/stored-ledger';
 import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
+import type { PlanPlace } from 'src/features/partial-changes/planning/plan-places';
+import { oneSelectedValueOf } from '../../__tests__/support/row-counts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import type { RevisionSide } from '../../__tests__/support/snapshot-reading';
 import { titleOf } from '../../__tests__/support/field-refs';
@@ -111,6 +113,7 @@ describe('revertChanges', () => {
         headRevisionId,
         draftRevisionId,
         applied: { selected: 1, required: 0 },
+        ...oneSelectedValueOf({ tableId: PRODUCTS, rows: 2, partly: true }),
         draftHasChanges: true,
       });
       await expectDraftRow(draft, PRODUCTS, 'p1', { title: 'one', price: 10 });
@@ -186,6 +189,7 @@ describe('revertChanges', () => {
         headRevisionId,
         draftRevisionId,
         applied: { selected: 1, required: 0 },
+        ...oneSelectedValueOf({ tableId: PRODUCTS, rows: 2, partly: true }),
         draftHasChanges: true,
       });
       await expectDraftRow(draft, PRODUCTS, 'p1', { title: 'one', price: 10 });
@@ -278,6 +282,8 @@ describe('revertChanges', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: {},
+        places: expect.any(Array) as PlanPlace[],
+        placesTotal: expect.any(Number) as number,
       });
       expect(await branchContentsOf(kit, draft)).toEqual(contents);
     });

@@ -5,12 +5,17 @@ import {
 } from 'src/__tests__/kit/create-partial-changes-test-kit';
 import { branchContentsOf } from 'src/__tests__/fixtures/branch-content';
 import type { ChangesStale } from 'src/features/partial-changes/commands/impl/apply-changes';
+import type { PlanPlace } from 'src/features/partial-changes/planning/plan-places';
+import type { PreviewChangesResult } from 'src/features/partial-changes/queries/impl/preview-draft-changes.query';
+import type { CommitChangesResult } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
+import type { RevertChangesResult } from 'src/features/partial-changes/commands/impl/revert-draft-changes.command';
 import type { ChangeOperation } from 'src/features/partial-changes/plan/change-operation';
 import type {
   FieldRef,
   Selection,
 } from 'src/features/partial-changes/selection/selection';
 import type { CommitOptions } from '../../__tests__/support/change-committing';
+import { addField } from 'src/__tests__/fixtures/ledger-steps';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 
 const CATEGORIES = 'categories';
@@ -39,6 +44,8 @@ const titleOfC1: Selection = {
 };
 
 const OPERATIONS: ChangeOperation[] = ['commit', 'revert'];
+const EARLIER = '2026-01-01T00:00:00.000Z';
+const LATER = '2026-01-02T00:00:00.000Z';
 
 describe('a stale commit or revert says what changed (SPEC §9.2, AS-90)', () => {
   let kit: PartialChangesTestKit;
@@ -134,6 +141,102 @@ describe('a stale commit or revert says what changed (SPEC §9.2, AS-90)', () =>
     },
   );
 
+  it.each(OPERATIONS)(
+    'a %s names the places it applies now, most recently changed first, so the one edited after the preview is told apart (AS-103)',
+    async (operation) => {
+      const draft = await givenEditedCatalog();
+      await draft.stampDraftRowChanges(PRODUCTS, { p1: EARLIER, p2: LATER });
+      const preview = await draft.previewChanges({
+        operation,
+        selection: titlesOfP1AndP2,
+      });
+      await draft.updateRow(PRODUCTS, 'p1', { title: 'one!', category: 'c1' });
+
+      const result = await apply(draft, operation, {
+        selection: titlesOfP1AndP2,
+        expected: fingerprintOfPreview(preview),
+      });
+
+      expect(result).toMatchObject({
+        status: 'stale',
+        changed: ['content'],
+        places: [
+          { kind: 'row', tableId: PRODUCTS, rowId: 'p1', units: ['field'] },
+          {
+            kind: 'row',
+            tableId: PRODUCTS,
+            rowId: 'p2',
+            units: ['field'],
+            changedAt: new Date(LATER),
+          },
+        ],
+        placesTotal: 2,
+      });
+      expect(editedAfter(result, preview.plannedAt)).toEqual(['products/p1']);
+    },
+  );
+
+  it('names a structure by its table, a deleted row last without a time, and the units of each place (AS-103)', async () => {
+    const draft = await givenEditedCatalog();
+    await draft.removeRow(PRODUCTS, 'p2');
+    await draft.renameRow(PRODUCTS, 'p1', 'p1x');
+    await draft.updateTable(CATEGORIES, [addField('color', str())]);
+    const selection: Selection = {
+      rows: [
+        { tableId: PRODUCTS, rowId: 'p1x' },
+        { tableId: PRODUCTS, rowId: 'p2' },
+      ],
+      structures: [{ tableId: CATEGORIES }],
+    };
+    const preview = await draft.previewChanges({
+      operation: 'commit',
+      selection,
+    });
+    await draft.updateRow(PRODUCTS, 'p1x', { title: 'one!', category: 'c1' });
+
+    const result = await apply(draft, 'commit', {
+      selection,
+      expected: fingerprintOfPreview(preview),
+    });
+
+    expect(result).toMatchObject({
+      status: 'stale',
+      places: [
+        {
+          kind: 'row',
+          tableId: PRODUCTS,
+          rowId: 'p1x',
+          units: ['field', 'rowRename'],
+        },
+        {
+          kind: 'table',
+          tableId: CATEGORIES,
+          units: ['structure'],
+          changedAt: expect.any(Date) as Date,
+        },
+        {
+          kind: 'row',
+          tableId: PRODUCTS,
+          rowId: 'p2',
+          units: ['rowDelete'],
+          changedAt: null,
+        },
+      ],
+      placesTotal: 3,
+    });
+    expect(editedAfter(result, preview.plannedAt)).toEqual(['products/p1x']);
+  });
+
+  async function apply(
+    draft: ChangesScenario,
+    operation: ChangeOperation,
+    options: CommitOptions,
+  ) {
+    return operation === 'commit'
+      ? draft.commitChanges(options)
+      : draft.revertChanges(options);
+  }
+
   async function expectStale(
     draft: ChangesScenario,
     operation: ChangeOperation,
@@ -154,8 +257,18 @@ describe('a stale commit or revert says what changed (SPEC §9.2, AS-90)', () =>
       headRevisionId: await draft.revisionId('head'),
       draftRevisionId: await draft.revisionId('draft'),
       unmatched,
+      places: expect.any(Array) as PlanPlace[],
+      placesTotal: expect.any(Number) as number,
     });
     expect(await branchContentsOf(kit, draft)).toEqual(contents);
+  }
+
+  function fingerprintOfPreview(preview: PreviewChangesResult): string {
+    if (!preview.planned) {
+      throw new Error('A limit stopped the preview');
+    }
+
+    return preview.fingerprint;
   }
 
   async function fingerprintOf(
@@ -193,3 +306,21 @@ describe('a stale commit or revert says what changed (SPEC §9.2, AS-90)', () =>
     return draft;
   }
 });
+
+// The places of a stale result whose last change is later than the preview, as a client tells them.
+function editedAfter(
+  result: CommitChangesResult | RevertChangesResult,
+  plannedAt: Date,
+): string[] {
+  if (result.status !== 'stale') {
+    return [];
+  }
+
+  return result.places.flatMap((place) =>
+    place.kind === 'row' &&
+    place.changedAt !== null &&
+    place.changedAt >= plannedAt
+      ? [`${place.tableId}/${place.rowId}`]
+      : [],
+  );
+}

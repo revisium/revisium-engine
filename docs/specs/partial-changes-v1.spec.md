@@ -4,9 +4,9 @@
 
 | Property | Value |
 | --- | --- |
-| Version | 2.13 |
+| Version | 2.14 |
 | Status | Accepted; the API revision of v2.0 is implemented and documented ([ADR-002] delivery): PR 1, the selection vocabulary, landed (#175); PR 2, views follow the structure, landed (#178); PR 3, annotated structure descriptions, landed (#181); PR 4, reason sites and causes, landed (#184); PR 5, deferred values, landed (#185); PR 6, plan results, landed (#186); PR 7, the fingerprint in parts and stale details, landed (#187); PR 12, the `changes` namespace of the facade and the package exports, landed (#145); PR 13, `docs/api.md`, landed (#188) |
-| Date | 2026-11-15 |
+| Date | 2026-11-16 |
 | Parent ADR | [ADR-001](../adr/ADR-001-partial-commit-and-revert.md), amended by [ADR-002](../adr/ADR-002-draft-reads-and-public-changes-api.md) |
 | Requirements | [REQ-001](../requirements/REQ-001-partial-commit-and-revert.md): REQ-001.BR-001 … REQ-001.BR-009; REQ-001.BR-006 and REQ-001.BR-008 are withdrawn |
 | Evidence | [research/partial-changes-poc-v2.md](../research/partial-changes-poc-v2.md) (PoC v2, `c86e86c`, tag `archive/partial-changes-poc-v2`); the Draft changes PoC (engine `poc/draft-diff` `ddb22c6`, core and admin `poc/partial-changes`) for v2.0 |
@@ -446,11 +446,55 @@ the defaults and listed them in `defaulted: DeferredValue[]` (`{ path; value }`)
 A plan that a limit stopped (§6.2 step 5, §6.5) returns the estimate it measured up to the stop: after the changed-row
 guard only `changedRows`, the other fields 0 and `mixedTables` empty.
 
+**PlanLimits** `{ maxChangedRows: integer; maxPerRowWork: integer; maxMixedTableLinks: integer }`: the limits of §11
+as this engine instance read them at startup, which the estimate is compared against: `changedRows` with
+`maxChangedRows`, `perRowWorkRows` with `maxPerRowWork`, and the `linksCopied` of each mixed table with
+`maxMixedTableLinks`. A preview returns them next to its estimate, planned or stopped (§5.3), so a client warns before
+a limit is reached (for example when `changedRows` passes 80% of `maxChangedRows`) and explains a `tooLarge` blocker
+with the limit it exceeded. They are configuration, not part of the plan: the fingerprint does not cover them. Before
+v2.14 a client could not see them; the `tooLarge` message alone named the limit.
+
 **PlanCounts** `{ selected: integer; required: integer }`: selected units after exclusions, and required additions
 (disjoint from them). Their sum is the number of units the operation applies with `includeRequired`. Results do not
 count the units that stay in the Draft: an operation reads only its affected tables (§6.2), so such a count would be
 partial. A client reads what stays from the Draft reads ([draft-reads-v1](draft-reads-v1.spec.md) §6); an applied
 result says whether the Draft still has changes (§5.4).
+
+**RowKindCounts** `{ total; added; modified; removed; renamed; replaced; partlyApplied }` (integers) and
+**PlanRowCounts** `{ selected: RowKindCounts; required: RowKindCounts }` count the rows an operation applies through
+their own units, as a client says it: «Commit 4 rows · 3 selected + 1 added automatically». `PlanCounts` counts units;
+a row with three edited fields is three units and one row.
+
+- A row is counted once, by its row selector (its id and `side`), as the coverage counts it (TableCoverage below).
+  It counts only when the plan applies at least one of its *shown* units: every row unit and field unit except a
+  `rowColumns` unit that owns only `schemaHash`, a technical difference the Draft reads do not show (§3.8). So a row that
+  differs only in `schemaHash` is no row, and that unit never makes a row partly applied.
+- `total` counts the rows. The kinds name what the plan applies to the row, as the Draft reads name row changes
+  (`rowsSummary`, [draft-reads-v1](draft-reads-v1.spec.md) §4): `added` for an applied `rowCreate`, `removed` for
+  `rowDelete`, `replaced` for `rowReplace` (a replaced row counts once), `renamed` for `rowRename`, `modified` for an
+  applied `field` unit or a shown `rowColumns` unit. A renamed row whose values are applied too counts as `renamed`
+  and as `modified`, as the Draft reads count `RENAMED_AND_MODIFIED`; so `added + removed + replaced` plus the rows
+  that are `renamed` or `modified` is `total`.
+- `partlyApplied` counts the rows of which the plan applies some shown units but not all, for example one of two
+  edited values; the client says «1 value of p-1042» instead of «1 row». Its own selection says which values it picked.
+- A row counts in `selected` when one of its applied units is selected, otherwise in `required`, so each row counts
+  in one of them. Membership is asked of all its applied units, the hidden `schemaHash` unit included, while the
+  kinds and `partlyApplied` use the shown units only. So a row whose only selected unit is its hidden `schemaHash`
+  change, and whose shown change the closure added, counts in `selected`: the caller selected that row (its
+  `rowColumns` selector), and counting it as added automatically would tell the user the engine picked a row they
+  picked themselves.
+- Operations count the same for a commit and a revert: the kind is that of the Draft change the operation applies or
+  takes back.
+- Rows that go with a structure unit have no units of their own (the rows of a created or removed table; values of
+  changed fields, §3.3) and are not counted; `structure: true` in the coverage says the structure, with them, is
+  applied, and the Draft reads count them.
+
+**Relation to the Draft reads.** For a table on both sides, a plan that applies every row unit of the table
+(`tableData: [table]`) counts in that table's entry `selected.total` equal to `tableData.rows` of the table item,
+and `added`, `removed`, `replaced` and `renamed` equal to its `rowsSummary`; its `modified` counts the rows with a
+`field` unit or a shown `rowColumns` unit, which is at most `rowsSummary.modified`: the Draft reads also count as
+modified a row whose values differ only at changed fields (no unit of its own) or a renamed row whose other changes
+all go with the structure. `required` of that entry is empty and nothing is partly applied (AS-101).
 
 **Listed details.** A result lists at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` (default 200, §11) entries of
 `required` and at most as many of `blockers`, and counts every entry in `requiredTotal` and `blockersTotal` next to
@@ -466,7 +510,7 @@ operation log (§11.1) are computed from the whole plan. In a planned preview `c
 `requiredExcluded` blockers a preview took 0.8–1.2 MB.
 
 **TableCoverage** `{ tableId: string; previousTableId?: string; side?: 'head'; structure?: boolean; views?: boolean;
-rows: integer; appliedRows: integer; partlyAppliedRows: integer }`: how much of one user table a plan applies,
+rows: integer; appliedRows: integer; partlyAppliedRows: integer; rowCounts: PlanRowCounts }`: how much of one user table a plan applies,
 counting selected and required units alike, for every user table with an applied unit, ordered by `tableId` in
 code-point order with a `side: 'head'` entry before the other entry of its id. A replaced table id has one entry, for
 its one structure unit (its rows have no row units). Transient structure units and shared schemas have no entry; they
@@ -481,6 +525,10 @@ are counted in `counts`.
   `tableData.rows` does not count it (a row whose only stored difference is a computed value has no unit and counts in
   neither); every table with an applied unit is affected (§6.2), so its rows are known;
 - `appliedRows` are the rows all of whose units are applied, `partlyAppliedRows` those with some but not all applied.
+- `rowCounts` counts the rows of the table the plan applies, by kind (PlanRowCounts above). Unlike `rows`,
+  `appliedRows` and `partlyAppliedRows`, which count a row that differs only in `schemaHash` (kept as they were), it
+  counts only the rows the Draft reads show. The preview's and the applied result's `rowCounts` is the sum over the
+  coverage; transient structures and shared schemas hold no rows.
 
 So a client shows a table's row changes as wholly in the plan when `appliedRows = rows`, without listing them.
 
@@ -674,10 +722,12 @@ Output:
 | --- | --- | --- |
 | `status` | `'ready' \| 'required' \| 'blocked' \| 'empty'` | §5.6. |
 | `planned` | boolean | `true` when the plan ran to its end; `false` only when a limit stopped it (`tooLarge`, §6.2 step 5, §6.5), and then `status` is `blocked`. |
+| `plannedAt` | timestamp | When the preview started reading, by the application clock of the engine instance that served it. A display hint for the places of a `stale` result, not a freshness check (§9.2). |
 | `headRevisionId` | string | Head the plan was made on. |
 | `draftRevisionId` | string | Draft the plan was made on. |
 | `fingerprint` | string, or `null` when not `planned` | §9. |
 | `counts` | PlanCounts, or `null` when not `planned` | §5.1. |
+| `rowCounts` | PlanRowCounts, or `null` when not `planned` | The rows the operation applies, by kind, selected and required (§5.1); the sum of `coverage[].rowCounts`. |
 | `coverage` | TableCoverage[] | §5.1; empty when not `planned`. |
 | `refusedTables` | `{ tableId: string; code: 'headSchemaInconsistent' \| 'unledgeredTable' }[]` | Every refused table of the branch (§6.10); empty for exactly `{ all: true }`. Their units are not computed or counted. |
 | `required` | RequiredUnit[] | The required additions with their reasons, at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS` (§5.1 listed details); empty when not `planned`. |
@@ -687,11 +737,12 @@ Output:
 | `deferred` | DeferredRow[] | Commit only, in the unit order of their units (§5.2); empty when not `planned`. |
 | `unmatched` | UnmatchedSelectors, or `null` when not `planned` | §4.5; an empty object when every selector matched. |
 | `estimate` | PlanEstimate | §5.1, §6.5; limits in §11. When not `planned`, what was measured up to the stop. |
+| `limits` | PlanLimits | The limits the estimate is compared against (§5.1, §11), also when not `planned`. |
 | `draftHasChanges` | boolean, only when `status` is `empty` | The Draft's stored `hasChanges`. For exactly `{ all: true }`, `true` means that the Draft holds only content-equal versions and that a commit or revert links their Head versions (§3.8). |
 
 A plan stopped by a limit returns no value of the plan, whichever limit stopped it: the changed-row guard stops it
-before the selection is resolved, a closure estimate after (§6.5), and in both cases `fingerprint`, `counts` and
-`unmatched` are `null` and the lists are empty, because what the closure found before the stop is not the plan.
+before the selection is resolved, a closure estimate after (§6.5), and in both cases `fingerprint`, `counts`,
+`rowCounts` and `unmatched` are `null` and the lists are empty, because what the closure found before the stop is not the plan.
 Before v2.0 such a preview returned `fingerprint: ''`, zero counts and `unmatched: {}`, which read as "every selector
 matched".
 
@@ -711,10 +762,10 @@ Output by status:
 
 | Status | Fields |
 | --- | --- |
-| `applied` | `previousHeadRevisionId`; `headRevisionId` (the former Draft revision, now Head); `draftRevisionId` (new Draft); `applied: PlanCounts` (the units applied); `draftHasChanges` (the new Draft's `hasChanges`, which the writer recomputes from the table versions, §6.13 step 7: `false` when the commit took every difference, `true` while a unit, a refused table or a content-equal version of an unread table remains, §3.8); `renumberedMigrations: { from: string; to: string }[]` (the pending migrations the commit renumbered, §6.8; empty when none). |
+| `applied` | `previousHeadRevisionId`; `headRevisionId` (the former Draft revision, now Head); `draftRevisionId` (new Draft); `applied: PlanCounts` (the units applied); `rowCounts: PlanRowCounts` and `coverage: TableCoverage[]` (the rows and tables applied, as the preview of the same plan showed them, §5.1: «Committed 4 rows»); `draftHasChanges` (the new Draft's `hasChanges`, which the writer recomputes from the table versions, §6.13 step 7: `false` when the commit took every difference, `true` while a unit, a refused table or a content-equal version of an unread table remains, §3.8); `renumberedMigrations: { from: string; to: string }[]` (the pending migrations the commit renumbered, §6.8; empty when none). |
 | `required` | `required`, `requiredTotal` (§5.1 listed details). |
 | `blocked` | `planned` (as in a preview), `blockers`, `blockersTotal`, `required`, `requiredTotal`, `unmatched` (an empty object when every selector matched); when a limit stopped the plan (`planned: false`), `required` is empty, `requiredTotal` is 0 and `unmatched` absent, as in §5.3. |
-| `stale` | `changed`, `headRevisionId`, `draftRevisionId` (current), `unmatched` (§9.2). |
+| `stale` | `changed`, `headRevisionId`, `draftRevisionId` (current), `unmatched`, `places` and `placesTotal` (§9.2). |
 | `empty` | `headRevisionId`, `draftRevisionId` (current), `unmatched` (when some selectors did not match), `draftHasChanges` (the Draft's `hasChanges`: recomputed when exactly `{ all: true }` normalised the Draft, §3.8, otherwise as stored). |
 
 ### 5.5 `revertChanges`
@@ -898,6 +949,7 @@ added (§6.9).
 | `PREVIEW_STATUSES` | `PreviewChangesResult.status` (§5.6) |
 | `APPLY_STATUSES` | `CommitChangesResult.status`, `RevertChangesResult.status` (§5.6) |
 | `STALE_CHANGES` | `ChangesStale.changed` (§9.2) |
+| `PLAN_PLACE_KINDS` | `PlanPlace.kind` (§9.2) |
 
 **Transport contract (delivery stage 4).** Names are proposals; they avoid the native `revertChanges`.
 
@@ -939,15 +991,15 @@ added (§6.9).
 **Exported names.** The package exports the types of §5.11 and of draft-reads-v1 §9 under these names. Names that
 would clash with native diff payloads or read as generic nouns are qualified: the structure classifications are
 `StructureTableChange` and `StructureFieldChange` (native `TableChange`, `RowChange` and `FieldChange` are the native
-diff payloads, and no type of this API reuses those names), the plan's blocker, counts and estimate are `PlanBlocker`,
-`PlanCounts` and `PlanEstimate`, a deferred row is `DeferredRow`, a reason `RequiredReason`, and the selection-state
+diff payloads, and no type of this API reuses those names), the plan's blocker, counts, row counts, estimate, limits and places are `PlanBlocker`,
+`PlanCounts`, `PlanRowCounts` (of `RowKindCounts`), `PlanEstimate`, `PlanLimits` and `PlanPlace`, a deferred row is `DeferredRow`, a reason `RequiredReason`, and the selection-state
 variants of the Draft reads end in `Selection` (`GoesWithSelection`, `FieldUnitSelection`, …). Each code list is
 exported with the union type derived from it, also where §5.11 spells the union inline (`PreviewStatus`,
-`ApplyStatus`, `ReasonSiteKind`, `ReferencedEntityKind`, and `TableSelectionState`, `RowSelectionState` and
+`ApplyStatus`, `ReasonSiteKind`, `ReferencedEntityKind`, `PlanPlaceKind`, and `TableSelectionState`, `RowSelectionState` and
 `FieldSelectionState` of the Draft reads). Every object type that a result holds has an exported name, so a typed
 transport maps each of its types to one engine name (`MixedTableEstimate`, `PlannedChangesBlocked`,
 `StoppedChangesBlocked`, `FieldSchema`, `ObjectOwnSchema`, and those of draft-reads-v1 §9); only the variants of a discriminated union written inline
-(`Unit`, `ReasonSite`, `ReferencedEntity`) and the parts of an intersection have none. As for the other engine features, the package also exports `PartialChangesModule` and
+(`Unit`, `ReasonSite`, `ReferencedEntity`, `PlanPlace`) and the parts of an intersection have none. As for the other engine features, the package also exports `PartialChangesModule` and
 `PartialChangesApiService`.
 
 ### 5.11 TypeScript types
@@ -1017,23 +1069,27 @@ type DeferredRow = { unit: DescribedUnitRef; omitted: DeferredPath[]; structure:
 type PlanEstimate = { changedRows: number; mergedRows: number; perRowWorkRows: number;
   mixedTables: MixedTableEstimate[] };
 type MixedTableEstimate = { tableId: string; linksCopied: number; linksAdded: number };
+type PlanLimits = { maxChangedRows: number; maxPerRowWork: number; maxMixedTableLinks: number };
 type PlanCounts = { selected: number; required: number };
+type RowKindCounts = { total: number; added: number; modified: number; removed: number; renamed: number;
+  replaced: number; partlyApplied: number };
+type PlanRowCounts = { selected: RowKindCounts; required: RowKindCounts };
 type TableCoverage = { tableId: string; previousTableId?: string; side?: SelectorSide; structure?: boolean;
-  views?: boolean; rows: number; appliedRows: number; partlyAppliedRows: number };
+  views?: boolean; rows: number; appliedRows: number; partlyAppliedRows: number; rowCounts: PlanRowCounts };
 type RefusedTable = { tableId: string; code: RefusalCode };
 type RefusalCode = 'headSchemaInconsistent' | 'unledgeredTable';
 
 type ChangeOperation = 'commit' | 'revert';
 type PreviewChangesInput = { branch: ChangesBranch; operation: ChangeOperation; selection: SelectionInput;
   includeRequired?: boolean | null };
-type PreviewBase = { headRevisionId: string; draftRevisionId: string; refusedTables: RefusedTable[];
-  blockers: PlanBlocker[]; blockersTotal: number; estimate: PlanEstimate };
+type PreviewBase = { plannedAt: Date; headRevisionId: string; draftRevisionId: string; refusedTables: RefusedTable[];
+  blockers: PlanBlocker[]; blockersTotal: number; estimate: PlanEstimate; limits: PlanLimits };
 type PlannedPreview = PreviewBase & { status: 'ready' | 'required' | 'blocked' | 'empty'; planned: true;
-  fingerprint: string; counts: PlanCounts; coverage: TableCoverage[]; required: RequiredUnit[];
+  fingerprint: string; counts: PlanCounts; rowCounts: PlanRowCounts; coverage: TableCoverage[]; required: RequiredUnit[];
   requiredTotal: number; deferred: DeferredRow[]; unmatched: UnmatchedSelectors;
   draftHasChanges?: boolean };  // only with status 'empty'
 type StoppedPreview = PreviewBase & { status: 'blocked'; planned: false; fingerprint: null; counts: null;
-  coverage: []; required: []; requiredTotal: 0; deferred: []; unmatched: null };
+  rowCounts: null; coverage: []; required: []; requiredTotal: 0; deferred: []; unmatched: null };
 type PreviewChangesResult = PlannedPreview | StoppedPreview;
 
 type CommitChangesInput = { branch: ChangesBranch; selection: SelectionInput; includeRequired?: boolean | null;
@@ -1047,15 +1103,20 @@ type PlannedChangesBlocked = { status: 'blocked'; planned: true; blockers: PlanB
   required: RequiredUnit[]; requiredTotal: number; unmatched: UnmatchedSelectors };
 type StoppedChangesBlocked = { status: 'blocked'; planned: false; blockers: PlanBlocker[]; blockersTotal: number;
   required: []; requiredTotal: 0 };  // a limit
+type PlanPlaceKind = 'row' | 'table' | 'sharedSchema';
+type PlanPlace =
+  | { kind: 'row'; tableId: string; rowId: string; side?: SelectorSide; units: UnitKind[]; changedAt: Date | null }
+  | { kind: 'table'; tableId: string; side?: SelectorSide; units: UnitKind[]; changedAt: Date | null }
+  | { kind: 'sharedSchema'; sharedSchemaId: string; changedAt: Date | null };
 type ChangesStale = { status: 'stale'; changed: StaleChange[]; headRevisionId: string; draftRevisionId: string;
-  unmatched: UnmatchedSelectors };
+  unmatched: UnmatchedSelectors; places: PlanPlace[]; placesTotal: number };
 type NothingToApply = { status: 'empty'; headRevisionId: string; draftRevisionId: string;
   unmatched?: UnmatchedSelectors; draftHasChanges: boolean };
 type CommittedDraft = { status: 'applied'; previousHeadRevisionId: string; headRevisionId: string;
-  draftRevisionId: string; applied: PlanCounts; draftHasChanges: boolean;
-  renumberedMigrations: MigrationRenumbering[] };
+  draftRevisionId: string; applied: PlanCounts; rowCounts: PlanRowCounts; coverage: TableCoverage[];
+  draftHasChanges: boolean; renumberedMigrations: MigrationRenumbering[] };
 type RevertedDraft = { status: 'applied'; headRevisionId: string; draftRevisionId: string; applied: PlanCounts;
-  draftHasChanges: boolean };
+  rowCounts: PlanRowCounts; coverage: TableCoverage[]; draftHasChanges: boolean };
 type UnappliedChanges = ChangesRequireAdditions | ChangesBlocked | ChangesStale | NothingToApply;
 type CommitChangesResult = CommittedDraft | UnappliedChanges;
 type RevertChangesResult = RevertedDraft | UnappliedChanges;
@@ -1075,11 +1136,20 @@ created in the Draft.
 ```
 
 ```json
-{ "status": "required", "planned": true, "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
+{ "status": "required", "planned": true, "plannedAt": "2026-11-15T10:00:00.000Z",
+  "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
   "fingerprint": "pcf2.…", "counts": { "selected": 1, "required": 1 },
+  "rowCounts": {
+    "selected": { "total": 1, "added": 0, "modified": 1, "removed": 0, "renamed": 0, "replaced": 0,
+                  "partlyApplied": 1 },
+    "required": { "total": 1, "added": 1, "modified": 0, "removed": 0, "renamed": 0, "replaced": 0,
+                  "partlyApplied": 0 } },
   "coverage": [
-    { "tableId": "categories", "rows": 1, "appliedRows": 1, "partlyAppliedRows": 0 },
-    { "tableId": "products", "rows": 3, "appliedRows": 0, "partlyAppliedRows": 1 }],
+    { "tableId": "categories", "rows": 1, "appliedRows": 1, "partlyAppliedRows": 0,
+      "rowCounts": { "selected": { "total": 0, "…": 0 }, "required": { "total": 1, "added": 1, "…": 0 } } },
+    { "tableId": "products", "rows": 3, "appliedRows": 0, "partlyAppliedRows": 1,
+      "rowCounts": { "selected": { "total": 1, "modified": 1, "partlyApplied": 1, "…": 0 },
+                     "required": { "total": 0, "…": 0 } } }],
   "required": [{
     "unit": { "kind": "rowCreate", "tableId": "categories", "rowId": "c9",
               "selector": { "rows": [{ "tableId": "categories", "rowId": "c9" }] } },
@@ -1092,11 +1162,41 @@ created in the Draft.
                                        { "tableId": "products", "rowId": "p1", "path": "/category" }] } } },
                 "because": "products/p1/category references categories/c9, which exists only in the Draft" } }],
   "requiredTotal": 1, "blockers": [], "blockersTotal": 0, "deferred": [], "unmatched": {}, "refusedTables": [],
-  "estimate": { "changedRows": 4, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] } }
+  "estimate": { "changedRows": 4, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] },
+  "limits": { "maxChangedRows": 20000, "maxPerRowWork": 2000, "maxMixedTableLinks": 100000 } }
 ```
 
-The caller commits the same selection with `"includeRequired": true, "expected": "pcf2.…"`, or adds the listed
-`selector` to its selection, and gets `"status": "applied"` with `"applied": { "selected": 1, "required": 1 }`.
+(`"…": 0` abbreviates the other kinds, all 0.) A client says «Commit 2 rows to master · 1 selected + 1 added
+automatically», and for the partly applied `p1` «1 value». The caller commits the same selection with `"includeRequired": true, "expected": "pcf2.…"`, or adds
+the listed `selector` to its selection, and gets `"status": "applied"` with `"applied": { "selected": 1, "required":
+1 }` and the same `rowCounts` and `coverage`.
+
+**Row counts of a mixed selection.** The Draft creates `c9`, edits `title` and `category` of `p1` (now `c9`), renames
+`p2` to `p2x` and edits it, deletes `p3` and replaces `p4`. A commit preview of `p1/category` and the rows `p2x`, `p3`
+and `p4` (`counts` `{ "selected": 5, "required": 1 }`: five units and one required unit) counts rows:
+
+```json
+{ "rowCounts": {
+    "selected": { "total": 4, "added": 0, "modified": 2, "removed": 1, "renamed": 1, "replaced": 1,
+                  "partlyApplied": 1 },
+    "required": { "total": 1, "added": 1, "modified": 0, "removed": 0, "renamed": 0, "replaced": 0,
+                  "partlyApplied": 0 } } }
+```
+
+«Commit 5 rows to master · 4 selected + 1 added automatically»: `p2x` counts as renamed and modified, `p1` as
+modified and partly applied (its `title` stays).
+
+**Applied.** The commit with `includeRequired` and the preview's fingerprint returns what it applied:
+
+```json
+{ "status": "applied", "previousHeadRevisionId": "rev-h1", "headRevisionId": "rev-d1", "draftRevisionId": "rev-d2",
+  "applied": { "selected": 5, "required": 1 },
+  "rowCounts": { "selected": { "total": 4, "…": "as previewed" }, "required": { "total": 1, "added": 1, "…": 0 } },
+  "coverage": [{ "tableId": "categories", "…": "as previewed" }, { "tableId": "products", "…": "as previewed" }],
+  "draftHasChanges": true, "renumberedMigrations": [] }
+```
+
+«Committed 5 rows · revision rev-d1».
 
 **`blocked`: a required unit is excluded.**
 
@@ -1116,12 +1216,22 @@ The caller commits the same selection with `"includeRequired": true, "expected":
   "blockersTotal": 1, "required": [], "requiredTotal": 0, "unmatched": {} }
 ```
 
-**`stale`: a selected field was edited again after the preview.**
+**`stale`: a selected field was edited again after the preview.** The preview of `p-1042/title` and `p-1043/title`
+returned `"plannedAt": "2026-11-15T10:00:00.000Z"`; `p-1042` was edited at 10:02.
 
 ```json
 { "status": "stale", "changed": ["content"], "headRevisionId": "rev-h1", "draftRevisionId": "rev-d1",
-  "unmatched": {} }
+  "unmatched": {},
+  "places": [
+    { "kind": "row", "tableId": "products", "rowId": "p-1042", "units": ["field"],
+      "changedAt": "2026-11-15T10:02:41.120Z" },
+    { "kind": "row", "tableId": "products", "rowId": "p-1043", "units": ["field"],
+      "changedAt": "2026-11-15T09:51:07.004Z" }],
+  "placesTotal": 2 }
 ```
+
+The client names the places changed after `plannedAt`: «The draft changed while you were picking: p-1042 was edited
+again. Your selection is kept.»
 
 **A preview stopped by a limit.** The affected tables have more changed rows than `maxChangedRows`.
 
@@ -1130,8 +1240,14 @@ The caller commits the same selection with `"includeRequired": true, "expected":
   "fingerprint": null, "counts": null, "coverage": [], "unmatched": null, "required": [], "requiredTotal": 0,
   "deferred": [], "refusedTables": [],
   "blockers": [{ "code": "tooLarge", "message": "…" }], "blockersTotal": 1,
-  "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] } }
+  "estimate": { "changedRows": 120000, "mergedRows": 0, "perRowWorkRows": 0, "mixedTables": [] },
+  "limits": { "maxChangedRows": 20000, "maxPerRowWork": 2000, "maxMixedTableLinks": 100000 } }
 ```
+
+The client compares `changedRows` with `maxChangedRows`: «Too many changes in products for a partial commit (120,000
+of 20,000). Commit the whole draft instead.» A planned preview with `changedRows` at 18,000 lets it warn before the
+limit. Since `changedRows` counts every changed row of each affected table in full (§6.2), picking fewer rows of the
+same table does not lower it.
 
 **Commit of a structure unit with renumbering.** The Draft holds migration `2026-10-20T10:00:00.000Z` for
 `products` and a later one, `2026-10-21T09:00:00.000Z`, for `orders`; only `orders` is committed, at
@@ -1821,6 +1937,40 @@ the preview does not fix them.
   units and their content can be unchanged, and `changed` is `['revisions']`. The result also carries the current
   `headRevisionId` and `draftRevisionId` and the current `unmatched`, so a caller drops the selectors that no longer
   match before it previews again. It carries no new fingerprint: the caller previews again to review the new plan.
+- **Where the Draft changed.** The fingerprint holds two digests and no list, and the engine keeps no plan between a
+  preview and an operation, so a `stale` result cannot say which units differ from the preview, which appeared or
+  which disappeared. What it can say from the plan it just made is where the operation applies now and when each place
+  last changed. `places` lists them (`PlanPlace`), most recently changed first, places without a time last, ties in unit
+  order; at most `PARTIAL_CHANGES_MAX_LISTED_DETAILS`, with `placesTotal` counting all (§5.1 listed details):
+
+  | `kind` | Fields | `changedAt` |
+  | --- | --- | --- |
+  | `row` | `tableId`, `rowId`, `side?` (the row selector, as the coverage counts rows), `units` (the kinds of its applied units, in `UNIT_KINDS` order) | The `updatedAt` of its Draft version (a replaced row: of the created row), as `changedAt` of the Draft reads; `null` for a deleted row. |
+  | `table` | `tableId`, `side?` (as the structure or views unit addresses it), `units` (`structure` or `views`) | The latest `updatedAt` of the schema, views and migration rows the unit holds, Head and Draft. |
+  | `sharedSchema` | `sharedSchemaId` | The latest `updatedAt` of its Head and Draft rows. |
+
+  A `rowColumns` unit that owns only `schemaHash` is no place (§5.1). The preview returns `plannedAt`, taken by the
+  application clock before it reads. A client may name the places whose `changedAt` is not earlier than `plannedAt`
+  as changed after the preview: «p-1042 was edited again». This is a display hint and `changed` remains the only
+  freshness check; the hint can miss a place or name one too many:
+  - **Two clocks.** `plannedAt` is the application clock of the instance that served the preview. A row's `updatedAt`
+    is stamped by whoever wrote that row version: native updates and renames of rows and async migration batches use
+    the application clock of the instance that wrote it; native row creation and the row versions a partial commit or
+    revert assembles leave it to the column default, the database clock. The common «edited again» case, a native
+    update, compares two application clocks; a created row, or one written by another instance, compares clocks that
+    can differ by their skew. Within that difference a place can be missed or over-reported.
+  - **Milliseconds.** Both times are stored to the millisecond, so a write in the millisecond the preview started
+    cannot be ordered against it. The rule `changedAt >= plannedAt` (recommended) names such a write, erring towards
+    over-reporting a place the preview may already have seen; `changedAt > plannedAt` errs towards missing it.
+  - Content edits of a table's schema, views or migrations show by the same rule through their system rows.
+  - A unit that disappeared (the selection now matches less) is no place; `unmatched` names a selector that matches
+    nothing now, and `changed: ['units']` says that the units differ. A deleted row has no time.
+  - A row edit that makes a selected structure stale through the structure digest (§9.1) shows only as `content`: the
+    table place carries the time of its system rows, not of its rows.
+  - With `changed: ['revisions']` only (a partial commit of other units), the places may all be older than
+    `plannedAt`.
+  Listing the places costs no read: the plan holds the applied units with their row versions and system rows; it sorts
+  them, O(n log n) for n applied units. Before v2.14 a `stale` result had no places.
 
 ## 10. Migration history and replicas
 
@@ -1902,6 +2052,11 @@ once (`Partial changes limits: …`, `Partial operation settings: …`), each th
 variable it came from.
 
 `all: true` reads every table, so a Draft above `maxChangedRows` can be committed whole only natively.
+
+Every preview returns the effective `maxChangedRows`, `maxPerRowWork` and `maxMixedTableLinks` as `limits` next to its
+`estimate` (§5.1 PlanLimits, §5.3), planned or stopped by a limit. They are not returned without a plan: the Draft
+reads ([draft-reads-v1](draft-reads-v1.spec.md)) do not measure `changedRows` as a plan does (an affected table counts
+in full, §6.2), so limits there would not tell a client how near it is.
 
 ### 11.1 Operation logs
 
@@ -2417,6 +2572,28 @@ The scenarios that speak of every unit of the Draft read them from the change ca
   shared schema created and removed reads `onlyChangesWithoutEffect: true`, and exactly `{ all: true }` leaves it
   without changes and without a new revision; whenever the summary of a random Draft says so, its commit of exactly
   `{ all: true }` is `empty` with `draftHasChanges: false`.
+- AS-101 Rows by kind (§5.1). The Draft creates `c9`, edits `title` and `category` of `p1` (now `c9`), renames `p2` to
+  `p2x` and edits it, deletes `p3` and replaces `p4`. A commit preview of `p1/category` and the rows `p2x`, `p3`, `p4`
+  counts `selected` `{ total: 4, modified: 2, removed: 1, renamed: 1, replaced: 1, partlyApplied: 1 }` and `required`
+  `{ total: 1, added: 1 }`, per table in the coverage and summed in `rowCounts`; a revert preview of the rows `c9`,
+  `p2x`, `p3`, `p4` counts `c9` as a selected added row and `p1` as a required modified row, partly applied. The
+  commit or revert with `includeRequired` and the preview's fingerprint returns the preview's `applied` counts,
+  `rowCounts` and `coverage`. A row that differs only in `schemaHash` is in `coverage.rows` and in no row count, and its
+  `schemaHash` unit leaves a row whose edited value is applied wholly applied; a `meta` edit counts as modified. A
+  revert of `c9` and the `rowColumns` unit of `p1`, whose other difference is its `schemaHash`, requires `p1/category`
+  and counts `p1` as a selected modified row. The structure of a created table counts no row. Over random Drafts, the commit preview of the table data of each table
+  counts `selected.total` equal to the table's `tableData.rows`, `added`, `removed`, `replaced` and `renamed` equal to
+  its `rowsSummary`, `modified` equal to the rows whose row read lists a `field` or shown `rowColumns` unit and at most
+  `rowsSummary.modified`, with no required and no partly applied row.
+- AS-102 Limits with the estimate (§5.1, §11): every preview, planned or stopped by any limit, returns `limits` with the
+  instance's configured `maxChangedRows`, `maxPerRowWork` and `maxMixedTableLinks` (the defaults when nothing is
+  configured).
+- AS-103 Where the Draft changed (§9.2). After a preview of `p1/title` and `p2/title`, `p1` is edited again: the commit,
+  and the revert, with the preview's fingerprint is `stale` (`content`) and lists `p1` first, with a `changedAt` not
+  earlier than the preview's `plannedAt`, then `p2` with its stored time, earlier; `placesTotal: 2`. A deleted row comes last
+  with `changedAt: null`, a selected structure is a `table` place with `units: ['structure']`, and a renamed and edited
+  row lists `['field', 'rowRename']`. With `maxListedDetails` = 2 a stale operation over six places lists two, the
+  edited row first, with `placesTotal: 6`. The e2e facade test reads «lamp» as the place edited after the preview.
 
 ## 14. Test strategy
 
@@ -2565,6 +2742,31 @@ Archived v1 (tag `archive/draft-changes-v1`): browse operations, `planDraftChang
    [schema-ledger-backfill-v1](schema-ledger-backfill-v1.spec.md).
 
 ## Changelog
+
+### Version 2.14 (2026-11-16)
+
+What a plan and a result tell a screen: rows by kind, the limits, and where the Draft changed. The API is
+unreleased; the change only adds fields. What commit and revert apply, the fingerprint and the limits' values are
+unchanged; the operation log is unchanged.
+
+- §5.1, §5.3, §5.4, AS-101: `RowKindCounts` and `PlanRowCounts` count the rows an operation applies through their own
+  units, by the kinds of the Draft reads (`added`, `modified`, `removed`, `renamed`, `replaced`, a replaced row once,
+  a renamed and edited row as both), with `partlyApplied`, split into selected and required. Each coverage entry has
+  `rowCounts`; the preview has their sum as `rowCounts` (`null` when stopped), and an applied commit or revert returns
+  `rowCounts` and `coverage` as well. A `rowColumns` unit that owns only `schemaHash` counts as no row, but a row it
+  was selected by counts as selected. The relation to `tableData.rows` and `rowsSummary` of the Draft reads is stated
+  and checked over random Drafts. Before, only units were counted, and `coverage.rows` counts a `schemaHash`-only row (kept).
+- §5.1, §5.3, §11, AS-102: `PlanLimits`: every preview returns `limits` (`maxChangedRows`, `maxPerRowWork`,
+  `maxMixedTableLinks`) next to its `estimate`. Not returned without a plan (§11).
+- §5.3, §9.2, AS-103: the preview returns `plannedAt`; a `stale` result lists `places` (`PlanPlace`: rows, tables
+  and shared schemas the operation applies now, with their unit kinds and the time of their last change, most
+  recent first) and `placesTotal`, cut like `required`. The engine cannot name the units that changed since the
+  preview without keeping the plan; a client names, as a display hint, the places with `changedAt >= plannedAt`.
+  §9.2 states the clocks (`plannedAt` is the application clock; `changedAt` the application clock for native updates
+  and the database clock for created and assembled rows) and what the hint misses or over-reports.
+- §5.10, §5.11: the package exports `PlanLimits`, `PlanRowCounts`, `RowKindCounts`, `PlanPlace`, `PlanPlaceKind`
+  and the list `PLAN_PLACE_KINDS`.
+- §5.12: examples of row counts, an applied result, a stopped preview with its limits and a stale result with places.
 
 ### Version 2.13 (2026-11-15)
 

@@ -29,6 +29,7 @@ import {
   type UnitList,
 } from '../../__tests__/support/change-listing';
 import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
+import { oneSelectedValueOf } from '../../__tests__/support/row-counts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import { FORBIDDEN_NULL_FIELDS } from '../../__tests__/support/forbidden-null-fields';
 import { expectRefusedBeforeAnyTransaction } from '../../__tests__/support/input-refusal';
@@ -129,6 +130,7 @@ describe('commitChanges', () => {
         headRevisionId: formerDraftRevisionId,
         draftRevisionId: await draft.revisionId('draft'),
         applied: { selected: 1, required: 0 },
+        ...oneSelectedValueOf({ tableId: PRODUCTS, rows: 2, partly: true }),
         draftHasChanges: true,
         renumberedMigrations: [],
       });
@@ -253,6 +255,7 @@ describe('commitChanges', () => {
         headRevisionId: formerDraftRevisionId,
         draftRevisionId: await draft.revisionId('draft'),
         applied: { selected: 1, required: 0 },
+        ...oneSelectedValueOf({ tableId: PRODUCTS, rows: 2, partly: true }),
         draftHasChanges: true,
         renumberedMigrations: [],
       });

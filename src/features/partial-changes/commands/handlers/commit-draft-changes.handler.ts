@@ -68,6 +68,8 @@ export class CommitDraftChangesHandler implements ICommandHandler<
       headRevisionId,
       draftRevisionId,
       applied: plan.counts,
+      rowCounts: plan.rowCounts,
+      coverage: plan.coverage,
       draftHasChanges,
       renumberedMigrations: renumberedMigrationsOf(
         plan.target.assembled.ledger,

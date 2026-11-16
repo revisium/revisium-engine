@@ -11,6 +11,7 @@ import type {
 } from 'src/features/partial-changes/commands/impl/commit-draft-changes.command';
 import type { Selection } from 'src/features/partial-changes/selection/selection';
 import { recordEndpointNotifications } from 'src/__tests__/fixtures/endpoint-notifications';
+import { editedValuePlaceOf } from '../../__tests__/support/row-counts';
 import { ChangesScenario } from '../../__tests__/support/changes-scenario';
 import {
   commitOvertakenBy,
@@ -387,6 +388,8 @@ describe('commitChanges racing other writers', () => {
         headRevisionId: await draft.revisionId('head'),
         draftRevisionId: await draft.revisionId('draft'),
         unmatched: titleOfP1,
+        places: [editedValuePlaceOf(PRODUCTS, 'p2')],
+        placesTotal: 1,
       });
       await expectData(draft, 'head', PRODUCTS, 'p2', {
         title: 'two',
